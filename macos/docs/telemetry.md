@@ -109,20 +109,27 @@ To read a site, `release.sh --publish` archives each release's dSYMs in
 ```
 
 `hung` instead of `unclean` means there was no crash report but macOS kept a
-hang report: Wortel stopped answering and was force quit. Spindump writes it
+hang report from that run: Wortel stopped answering at some point, and the run
+then did not quit. Usually that is one event, a hang that was force quit, but
+the report does not prove the hang is what ended the run (if macOS also keeps
+reports of hangs that pass, a short one followed by a power cut reads the
+same); `lasted` is what tells the two apart. Spindump writes it
 as `Wortel_<date>_<host>.hang`, a text report of every process on the Mac,
 ten megabytes and more. Both `~/Library/Logs/DiagnosticReports` and
 `/Library/Logs/DiagnosticReports` are looked in (which one macOS uses for a
 hang was not seen on the Mac this was written on; the system folder is
-readable by admin users and skipped otherwise), and only the first 512 KB of
-the newest match is read: the header and the hung process's own section,
-which spindump puts first. It is reduced to `app_hung`: `activity`, which of
+readable by admin users and skipped otherwise). Of the newest few matches (at
+most three, newest first) only the first 512 KB is read: the header and the
+hung process's own section, which spindump puts first. A report whose process
+`UID` is not this user's is skipped, since the system folder is shared by
+everyone on the Mac. It is reduced to `app_hung`: `activity`, which of
 a closed set of kinds of code the main thread's heaviest stack was in
 (`swiftui`, `appkit`, `wortel`, `waiting`, `io`, `other`, decided by the
 frameworks in it); `site` and `signature` from that stack's frames inside
 Wortel's binary, read exactly like a crash's; `hung_version` and `hung_arch`;
-`lasted`, the hang's length as a duration bucket; and `memory`, the app's
-footprint then as one of four ranges. The host name, paths, symbols and other
+`lasted`, the hang's length as a duration bucket (`unknown` when the report
+does not say); and `memory`, the app's footprint then as one of four ranges
+(where it ended up, when it moved while it was sampled). The host name, paths, symbols and other
 processes are never read into anything sent; `TelemetryTests` feeds it a
 report carrying them. The first hang anyone sent (2026-11-23, by mail) read
 `swiftui`, `7ff4`, `<24h`, `8gb+` this way.

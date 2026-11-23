@@ -163,13 +163,13 @@ enum TelemetryEvent: Equatable {
     case appCrashed(signal: CrashSignal, exception: CrashException, site: CodeOffset?,
                     signature: CrashSignature?, version: CalVer?, arch: CrashArch)
 
-    /// The run before this launch stopped answering and was force quit, and
-    /// macOS kept a hang report of it. The same reduction as a crash, plus what
+    /// The run before this launch did not quit, and macOS kept a report of it
+    /// having stopped answering (usually: it hung and was force quit). The same reduction as a crash, plus what
     /// a hang needs: what kind of code the main thread was stuck in, how long
     /// it was stuck and how much memory the app held, all as closed sets. See
     /// `HangReport`.
     case appHung(activity: HangActivity, site: CodeOffset?, signature: CrashSignature?,
-                 version: CalVer?, arch: CrashArch, lasted: DurationBucket, memory: MemoryBucket?)
+                 version: CalVer?, arch: CrashArch, lasted: DurationBucket?, memory: MemoryBucket?)
 
     /// The last event this install will ever send: reporting was turned off.
     /// Sent, rather than silently stopping, because the opt-out rate is the one
@@ -259,7 +259,7 @@ enum TelemetryEvent: Equatable {
             return ["activity": activity.rawValue,
                     "site": site?.rawValue ?? "none", "signature": signature?.rawValue ?? "none",
                     "hung_version": version?.rawValue ?? "unknown", "hung_arch": arch.rawValue,
-                    "lasted": lasted.rawValue, "memory": memory?.rawValue ?? "unknown"]
+                    "lasted": lasted?.rawValue ?? "unknown", "memory": memory?.rawValue ?? "unknown"]
         case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled, .sessionArchived, .sessionUnarchived,
              .reminderSet:
             return [:]
@@ -441,7 +441,8 @@ enum AttentionCause: String {
 /// How the run before this launch ended. `none` is the first launch, when
 /// there was no run before. `unclean` is anything that ended without the app
 /// quitting: a force quit, `kill -9`, a power cut, or a crash nobody reported.
-/// `hung` is a force quit macOS kept a hang report of (`HangReport`).
+/// `hung` is such a run during which macOS kept a hang report (`HangReport`),
+/// most often a hang that was force quit.
 enum PreviousExit: String, CaseIterable {
     case none
     case clean
@@ -536,11 +537,12 @@ enum HangActivity: String, CaseIterable {
     init(stack: [(image: String, symbol: String)], executable: String) {
         guard let leaf = stack.last else { self = .other; return }
         if leaf.image == "libsystem_kernel.dylib" {
-            let name = leaf.symbol
-            if ["wait", "mach_msg", "semaphore", "ulock", "psynch", "kevent", "select", "poll"]
-                .contains { name.contains($0) } { self = .waiting; return }
-            if ["read", "write", "open", "close", "fsync", "stat", "getattrlist", "fcntl", "pagein"]
-                .contains { name.contains($0) } { self = .io; return }
+            // Whole system call names, not substrings: `read` is inside
+            // `thread_switch`. `__psynch_cvwait + 8` and `read$NOCANCEL` are
+            // reduced to `psynch_cvwait` and `read` first.
+            let name = Self.syscall(leaf.symbol)
+            if Self.waits.contains(name) { self = .waiting; return }
+            if Self.fileCalls.contains(name) { self = .io; return }
         }
         // Up from the leaf, past the plumbing every stack has, to the first
         // frame that says whose work it was.
@@ -559,6 +561,28 @@ enum HangActivity: String, CaseIterable {
             return
         }
         self = .other
+    }
+
+    private static let waits: Set<String> = [
+        "psynch_cvwait", "psynch_mutexwait", "psynch_rw_rdlock", "psynch_rw_wrlock", "ulock_wait", "ulock_wait2",
+        "semaphore_wait_trap", "semaphore_timedwait_trap", "semwait_signal", "mach_msg", "mach_msg2_trap",
+        "mach_msg_trap", "mach_msg_overwrite", "kevent", "kevent64", "kevent_qos", "kevent_id", "workq_kernreturn",
+        "select", "poll", "wait4", "waitid", "thread_switch", "swtch_pri",
+    ]
+    private static let fileCalls: Set<String> = [
+        "read", "pread", "readv", "preadv", "write", "pwrite", "writev", "pwritev", "open", "openat", "close",
+        "fsync", "fcntl", "stat", "stat64", "fstat", "fstat64", "lstat", "lstat64", "fstatat64", "getattrlist",
+        "fgetattrlist", "getattrlistbulk", "getdirentries64", "access", "unlink", "rename", "mkdir", "rmdir",
+    ]
+
+    /// `__read_nocancel + 8` → `read`.
+    static func syscall(_ symbol: String) -> String {
+        var name = Substring(symbol.split(separator: " ").first ?? "")
+        while name.hasPrefix("_") { name = name.dropFirst() }
+        for suffix in ["$NOCANCEL", "_nocancel"] where name.hasSuffix(suffix) {
+            name = name.dropLast(suffix.count)
+        }
+        return String(name)
     }
 }
 

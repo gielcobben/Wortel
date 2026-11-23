@@ -391,7 +391,8 @@ final class TelemetryTests: XCTestCase {
         Identifier:       com.gielcobben.Wortel
         Version:          2026.47.4 (2026.47.4)
         Architecture:     arm64
-        Footprint:        30.00 GB
+        UID:              501
+        Footprint:        29.98 GB -> 30.00 GB (+18.2 MB)
         Num threads:      10
 
           Thread 0x8a992a    DispatchQueue "com.apple.main-thread"(1)    11 samples (1-11)    priority 47 (base 47)
@@ -406,7 +407,7 @@ final class TelemetryTests: XCTestCase {
 
     func testHangReportReducesToNumbersAndClosedSets() throws {
         let summary = try XCTUnwrap(HangReport.reduce(Self.hangReport, executable: "Wortel",
-                                                      bundleID: "com.gielcobben.Wortel"))
+                                                      bundleID: "com.gielcobben.Wortel", uid: 501))
         XCTAssertEqual(summary.activity, .swiftui)
         // Ours only, innermost first, the repeat folded, dyld and AppKit gone.
         XCTAssertEqual(summary.offsets.map(\.value), [32756, 32400])
@@ -414,7 +415,8 @@ final class TelemetryTests: XCTestCase {
         // The process's slice, not the machine's `arm64e` above `Command:`.
         XCTAssertEqual(summary.arch, .arm64)
         XCTAssertEqual(summary.lasted, .underDay)
-        // Its own section's footprint, not the next process's.
+        // Its own section's footprint, not the next process's, and where it
+        // ended up when it moved during the sample.
         XCTAssertEqual(summary.memory, .eightGBOrMore)
         XCTAssertEqual(try XCTUnwrap(summary.hungAt).timeIntervalSince1970, 1_795_374_491.555, accuracy: 0.01)
 
@@ -431,6 +433,9 @@ final class TelemetryTests: XCTestCase {
     }
 
     func testHangReportOfAnythingElseIsIgnored() {
+        XCTAssertNotNil(HangReport.reduce(Self.hangReport, executable: "Wortel", bundleID: nil, uid: 501))
+        // Another user's Wortel, in the system folder everyone shares.
+        XCTAssertNil(HangReport.reduce(Self.hangReport, executable: "Wortel", bundleID: nil, uid: 502))
         XCTAssertNil(HangReport.reduce(Self.hangReport, executable: "Wortel", bundleID: "com.gielcobben.Wortel.test"))
         XCTAssertNil(HangReport.reduce(Self.hangReport, executable: "wortel-keeper", bundleID: nil))
         XCTAssertNil(HangReport.reduce("not a report", executable: "Wortel", bundleID: nil))
@@ -445,11 +450,11 @@ final class TelemetryTests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wortel-hang-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        try Self.hangReport.write(to: dir.appendingPathComponent("Wortel_2026-11-23-083657_Some-Mac.hang"),
-                                  atomically: true, encoding: .utf8)
-        // Neither another app's report nor a crash report is read as a hang.
-        try Self.hangReport.write(to: dir.appendingPathComponent("Wortelish_2026-11-23-083657_Some-Mac.hang"),
-                                  atomically: true, encoding: .utf8)
+        // This user's, wherever the tests run.
+        let mine = Self.hangReport.replacingOccurrences(of: "UID:              501",
+                                                        with: "UID:              \(getuid())")
+        try mine.write(to: dir.appendingPathComponent("Wortel_2026-11-23-083657_Some-Mac.hang"),
+                       atomically: true, encoding: .utf8)
         let hung = Date(timeIntervalSince1970: 1_795_374_491.555)
         let missing = dir.appendingPathComponent("not-there")
         XCTAssertNotNil(HangReport.latest(after: hung.addingTimeInterval(-3_600), in: [missing, dir],
@@ -457,6 +462,33 @@ final class TelemetryTests: XCTestCase {
         // Hung before that run started: an older run's, already counted.
         XCTAssertNil(HangReport.latest(after: hung.addingTimeInterval(60), in: [dir],
                                        executable: "Wortel", bundleID: "com.gielcobben.Wortel"))
+
+        // Alone in a folder, neither another app's `.hang` whose name starts
+        // the same nor our report under a crash report's name is read.
+        let others = FileManager.default.temporaryDirectory.appendingPathComponent("wortel-hang-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: others, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: others) }
+        try mine.write(to: others.appendingPathComponent("Wortelish_2026-11-23-083657_Some-Mac.hang"),
+                       atomically: true, encoding: .utf8)
+        try mine.write(to: others.appendingPathComponent("Wortel-2026-11-23-083657.ips"),
+                       atomically: true, encoding: .utf8)
+        XCTAssertNil(HangReport.latest(after: hung.addingTimeInterval(-3_600), in: [others],
+                                       executable: "Wortel", bundleID: "com.gielcobben.Wortel"))
+    }
+
+    func testHangFootprintAndLength() {
+        XCTAssertEqual(HangReport.bytes(footprint: "30.00 GB"), 32_212_254_720)
+        XCTAssertEqual(HangReport.bytes(footprint: "11.05 MB -> 11.08 MB (+32 KB)"), UInt64(11.08 * 1_048_576))
+        XCTAssertNil(HangReport.bytes(footprint: "lots"))
+        // No `Duration:` is unknown, not the shortest bucket; the header's two
+        // times stand in when they are there.
+        let noDuration = Self.hangReport.replacingOccurrences(of: "Duration:         44893.65s\n", with: "")
+        XCTAssertEqual(HangReport.reduce(noDuration, executable: "Wortel", bundleID: nil, uid: 501)?.lasted, .underDay)
+        let neither = noDuration.replacingOccurrences(of: "End time:         2026-11-23 08:36:25.202 +0100\n", with: "")
+        let summary = HangReport.reduce(neither, executable: "Wortel", bundleID: nil, uid: 501)
+        XCTAssertNotNil(summary)
+        XCTAssertNil(summary?.lasted)
+        XCTAssertEqual(summary?.event.properties["lasted"], "unknown")
     }
 
     func testHangActivityFromTheStack() {
@@ -468,6 +500,11 @@ final class TelemetryTests: XCTestCase {
                        .waiting)
         XCTAssertEqual(activity(base + [("Wortel", "x"), ("libsystem_kernel.dylib", "mach_msg2_trap")]), .waiting)
         XCTAssertEqual(activity(base + [("Wortel", "x"), ("libsystem_kernel.dylib", "read")]), .io)
+        XCTAssertEqual(activity(base + [("Wortel", "x"), ("libsystem_kernel.dylib", "__read_nocancel + 8")]), .io)
+        // A spin on a lock yields in `thread_switch`, which holds `read` but is
+        // no file call.
+        XCTAssertEqual(activity(base + [("Wortel", "x"), ("libsystem_kernel.dylib", "thread_switch + 8")]), .waiting)
+        XCTAssertEqual(activity(base + [("Wortel", "x"), ("libsystem_kernel.dylib", "__pthread_kill + 8")]), .wortel)
         XCTAssertEqual(activity(base + [("SwiftUICore", "x"), ("Wortel", "y"), ("libswiftCore.dylib", "z")]), .wortel)
         XCTAssertEqual(activity(base + [("Wortel", "y"), ("AttributeGraph", "z"), ("libobjc.A.dylib", "w")]),
                        .swiftui)
@@ -628,7 +665,7 @@ final class TelemetryTests: XCTestCase {
             }
         }
         events.append(.appHung(activity: .other, site: nil, signature: nil, version: nil, arch: .other,
-                               lasted: .underMinute, memory: nil))
+                               lasted: nil, memory: nil))
         let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .remind, .cd, .list, .read, .send,
                                     .wait, .version]
         for verb in verbs {

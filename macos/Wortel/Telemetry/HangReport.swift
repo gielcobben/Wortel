@@ -36,7 +36,7 @@ enum HangReport {
         let offsets: [CodeOffset]
         let version: CalVer
         let arch: CrashArch
-        let lasted: DurationBucket
+        let lasted: DurationBucket?
         let memory: MemoryBucket?
         /// When it stopped answering, from the report's header. Not sent: it
         /// ties the report to the run that ended uncleanly.
@@ -62,6 +62,11 @@ enum HangReport {
     /// The newest hang report of this app that started after `date`, reduced.
     /// nil when there is none: an unclean exit that was not a hang macOS
     /// caught (a `kill -9`, a power cut, a crash it kept no report of).
+    ///
+    /// **What it proves.** That the run hung at some point and then did not
+    /// quit, not that the hang is what ended it: if macOS also keeps reports
+    /// of hangs that pass, a short one followed hours later by a power cut
+    /// reads the same. `lasted` is what tells the two apart in the numbers.
     static func latest(after date: Date, in directories: [URL] = directories,
                        executable: String = Bundle.main.executableURL?.lastPathComponent ?? "Wortel",
                        bundleID: String? = Bundle.main.bundleIdentifier) -> Summary? {
@@ -90,8 +95,11 @@ enum HangReport {
     /// One `.hang` file's text (its head is enough) to a summary. Pure, so the
     /// format is pinned in `TelemetryTests`. nil for anything that isn't a hang
     /// of a released build of this app: another bundle id (an isolated test
-    /// copy), another event (a spin, a CPU report), or no release version.
-    static func reduce(_ text: String, executable: String, bundleID: String?) -> Summary? {
+    /// copy), another event (a spin, a CPU report), no release version, or
+    /// another user's process (`/Library/Logs/DiagnosticReports` is shared by
+    /// everyone on the Mac).
+    static func reduce(_ text: String, executable: String, bundleID: String?,
+                       uid: UInt32 = getuid()) -> Summary? {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
 
         // The header: `Key:   value` lines up to the first rule. The machine's
@@ -111,6 +119,9 @@ enum HangReport {
         guard let version = CalVer(header["Version"]?.split(separator: " ").first.map(String.init))
         else { return nil }
 
+        let process = processFields(lines, executable: executable, pid: header["PID"])
+        if let owner = process["UID"], owner != String(uid) { return nil }
+
         let frames = heaviestMainStack(lines)
         var offsets: [CodeOffset] = []
         for frame in frames.reversed() where frame.image == executable {
@@ -122,8 +133,8 @@ enum HangReport {
                        offsets: offsets,
                        version: version,
                        arch: CrashArch(architecture: header["Architecture"]),
-                       lasted: DurationBucket(seconds: seconds(header["Duration"]) ?? 0),
-                       memory: footprint(lines, executable: executable, pid: header["PID"]).map(MemoryBucket.init(bytes:)),
+                       lasted: lasted(header),
+                       memory: process["Footprint"].flatMap(bytes(footprint:)).map(MemoryBucket.init(bytes:)),
                        hungAt: header["Date/Time"].flatMap(date(from:)))
     }
 
@@ -168,31 +179,50 @@ enum HangReport {
                      offset: offset)
     }
 
-    /// The hung process's `Footprint:`, from its own section (`Process: Wortel
-    /// [pid]`), in bytes.
-    static func footprint(_ lines: [Substring], executable: String, pid: String?) -> UInt64? {
-        let heading = "\(executable) [\(pid ?? "")"
+    /// The `Key: value` lines of the hung process's own section (`Process:
+    /// Wortel [pid]`), where its `UID:` and `Footprint:` are. Empty without one.
+    static func processFields(_ lines: [Substring], executable: String, pid: String?) -> [String: String] {
         guard let start = lines.firstIndex(where: { line in
             guard let (key, value) = field(line), key == "Process" else { return false }
-            return pid == nil ? value.hasPrefix(executable + " [") : value.hasPrefix(heading + "]")
-        }) else { return nil }
+            return value.hasPrefix(pid.map { "\(executable) [\($0)]" } ?? "\(executable) [")
+        }) else { return [:] }
+        var fields: [String: String] = [:]
         for line in lines[(start + 1)...] {
             if line.isEmpty { break }
-            guard let (key, value) = field(line), key == "Footprint" else { continue }
-            // `30.00 GB`, `812.45 MB`, `96.0 KB`
-            let parts = value.split(separator: " ")
-            guard parts.count == 2, let amount = Double(parts[0]) else { return nil }
-            let unit: Double
-            switch parts[1] {
-            case "KB": unit = 1_024
-            case "MB": unit = 1_048_576
-            case "GB": unit = 1_073_741_824
-            case "TB": unit = 1_099_511_627_776
-            default: return nil
-            }
-            return UInt64(amount * unit)
+            guard let (key, value) = field(line), fields[key] == nil else { continue }
+            fields[key] = value
         }
-        return nil
+        return fields
+    }
+
+    /// A `Footprint:` in bytes: `30.00 GB`, or, when it moved while it was
+    /// sampled, `29.98 GB -> 30.00 GB (+18.2 MB)`, which is read as where it
+    /// ended up.
+    static func bytes(footprint value: String) -> UInt64? {
+        var text = Substring(value)
+        if let arrow = text.range(of: "->", options: .backwards) { text = text[arrow.upperBound...] }
+        if let paren = text.firstIndex(of: "(") { text = text[..<paren] }
+        let parts = text.split(separator: " ")
+        guard parts.count == 2, let amount = Double(parts[0]), amount >= 0 else { return nil }
+        let unit: Double
+        switch parts[1] {
+        case "KB": unit = 1_024
+        case "MB": unit = 1_048_576
+        case "GB": unit = 1_073_741_824
+        case "TB": unit = 1_099_511_627_776
+        default: return nil
+        }
+        return UInt64(amount * unit)
+    }
+
+    /// How long it was unresponsive: `Duration:`, or failing that the header's
+    /// two times. nil rather than a guess, so a format change reads as
+    /// `unknown` instead of as a run of short hangs.
+    private static func lasted(_ header: [String: String]) -> DurationBucket? {
+        if let seconds = seconds(header["Duration"]) { return DurationBucket(seconds: seconds) }
+        guard let start = header["Date/Time"].flatMap(date(from:)),
+              let end = header["End time"].flatMap(date(from:)), end >= start else { return nil }
+        return DurationBucket(seconds: end.timeIntervalSince(start))
     }
 
     /// `Key:      value` (spindump pads to a column). nil for anything else.

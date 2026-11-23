@@ -62,11 +62,11 @@ about the thing it happened to:
   where in Wortel's own code it happened, as a number that only the build's
   own debug file can turn into a name. Never the report itself, nothing named
   in it, and nothing about other programs
-- if the time before, Wortel stopped responding and was force quit, and macOS
-  kept a report of it: the same as for a crash, plus what kind of code it was
-  stuck in (for example drawing the window, or waiting), roughly how long it
-  was stuck (as a range like "under an hour"), and roughly how much memory it
-  was using (as a range like "2 to 8 GB")
+- if the time before did not end normally and macOS kept a report of Wortel
+  having stopped responding during it: the same as for a crash, plus what kind
+  of code it was stuck in (for example drawing the window, or waiting),
+  roughly how long it was stuck (as a range like "under an hour"), and roughly
+  how much memory it was using (as a range like "2 to 8 GB")
 - the app quit, and roughly how long it ran
 - a session was created, and whether that was from the menu, the `wortel`
   command, a worktree, opening a folder, the shortcut that starts one in

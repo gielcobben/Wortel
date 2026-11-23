@@ -168,6 +168,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         processes.roots = { [weak manager] in manager?.processRoots ?? [] }
         processes.projectRoots = { [weak manager] in manager?.projectRoots ?? [] }
         processes.startSampling()
+        // Setup's "An agent" row: its installer's one line, on a prompt, for
+        // the person to read and run (`AgentInstall`). Wortel runs nothing.
+        Permissions.shared.installAgent = { [weak self] agent in
+            self?.manager.offerCommand(agent.line)
+        }
         manager.onNeedsAttention = { [weak self] session, kind, title, body, alert in
             self?.postAttentionNotification(session, kind: kind, title: title, body: body, alert: alert)
         }
@@ -339,25 +344,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Native "a session needs you" notifications. The signal is
         // program-authored (e.g. Claude Code emits OSC 777 on a permission/idle
         // prompt because libghostty sets TERM_PROGRAM=ghostty) — we just relay
-        // it. Ask once; if the user declines, the sidebar dot + Dock badge still
-        // work.
+        // it. If the user declines, the sidebar dot + Dock badge still work.
+        //
+        // **Not asked for here.** macOS asks once, and at launch that once was
+        // spent before anyone had seen what a notification from Wortel is
+        // for: of the first ten installs that report, seven had them off.
+        // The question is put the first time there is something to say
+        // (`whenNotificationsAnswered`), so the prompt arrives with its own
+        // reason. Launch only reads what was already decided.
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        // The grant is remembered because the turn-end chime is played by us,
-        // not by Notification Center (see playTurnDoneChime): someone who
-        // declined notifications should not be chimed at anyway.
-        // `.badge` is here for the **Dock badge**, which is drawn by us rather
-        // than by Notification Center — `NSApp.dockTile.badgeLabel`. Once an app
-        // registers with `UNUserNotificationCenter`, macOS gates that badge on
-        // the same per-app "Badges" permission, so an app that asks only for
-        // alerts and sounds can set `badgeLabel` all day and the Dock will
-        // ignore it. Which is exactly what it was doing.
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+        center.getNotificationSettings { settings in
+            let granted = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+            let decided = settings.authorizationStatus != .notDetermined
             DispatchQueue.main.async {
                 Self.notificationsAuthorized = granted
-                Permissions.shared.refresh()
+                if decided { Self.notificationsDecided = true }
             }
         }
+        Permissions.shared.refresh()
 
         // The side column's tabs: a side shell that exits takes its tab with
         // it, in the window its session is in.
@@ -469,6 +475,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Hangs off the ⓘ in the sidebar, which is also where it lives
             // afterwards: shown once, reachable forever.
             TelemetryNotice.shared.presentFirstRunIfNeeded()
+            // Whether this Mac has an agent at all, asked until the answer
+            // has been yes once and never after. Here, after the first
+            // frame, for the same reason as everything else in this block.
+            Permissions.shared.lookForAgent()
         }
     }
 
@@ -928,7 +938,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Trade-off: an NSSound isn't routed by Notification Center, so it is
         // heard even when a Focus would have suppressed the banner.
         content.sound = (alert && kind.chime == .alert) ? .default : nil
-        if alert, kind.chime == .soft { Self.playTurnDoneChime() }
         content.userInfo = [Self.sessionKey: session.id.uuidString]
         let request = UNNotificationRequest(
             identifier: session.id.uuidString, content: content, trigger: nil)
@@ -939,19 +948,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // system and nothing told them apart.
         let id = session.id.uuidString
         let sound = content.sound != nil ? "alert" : (alert && kind.chime == .soft ? "chime" : "none")
-        UNUserNotificationCenter.current().add(request) { error in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
-                AgentStatusLog.log.debug("""
-                    banner \(error == nil ? "handed to Notification Center" : "refused", privacy: .public) \
-                    sound=\(sound, privacy: .public) \
-                    allowed=\(settings.authorizationStatus == .authorized, privacy: .public) \
-                    banners=\(settings.alertSetting == .enabled, privacy: .public) \
-                    \(error.map { "error=\($0.localizedDescription)" } ?? "", privacy: .public) \
-                    id=\(id, privacy: .public)
-                    """)
+        Self.whenNotificationsAnswered { [weak session] in
+            // The first time, this runs when the prompt is answered, which
+            // can be an hour on: by then the session may have been seen to,
+            // and a banner for it would be news about nothing.
+            guard session?.attention != nil else { return }
+            if alert, kind.chime == .soft { Self.playTurnDoneChime() }
+            UNUserNotificationCenter.current().add(request) { error in
+                UNUserNotificationCenter.current().getNotificationSettings { settings in
+                    AgentStatusLog.log.debug("""
+                        banner \(error == nil ? "handed to Notification Center" : "refused", privacy: .public) \
+                        sound=\(sound, privacy: .public) \
+                        allowed=\(settings.authorizationStatus == .authorized, privacy: .public) \
+                        banners=\(settings.alertSetting == .enabled, privacy: .public) \
+                        \(error.map { "error=\($0.localizedDescription)" } ?? "", privacy: .public) \
+                        id=\(id, privacy: .public)
+                        """)
+                }
             }
         }
     }
+
+    // MARK: - Asking for notifications
+
+    /// Run `post` once macOS has an answer about notifications, asking for
+    /// one the first time: the system's prompt, at the moment there is
+    /// something to say. Once it is decided `post` runs at once, in this
+    /// call, as it did when the question was put at launch: a reminder
+    /// handed over on the way out of the app can't wait for a reply.
+    /// `post` runs whatever the answer: what Notification Center is handed
+    /// and may not show is its own business.
+    ///
+    /// The grant is remembered because the turn-end chime is played by us,
+    /// not by Notification Center (see playTurnDoneChime): someone who
+    /// declined notifications should not be chimed at anyway.
+    ///
+    /// `.badge` is here for the **Dock badge**, which is drawn by us rather
+    /// than by Notification Center — `NSApp.dockTile.badgeLabel`. Once an app
+    /// registers with `UNUserNotificationCenter`, macOS gates that badge on
+    /// the same per-app "Badges" permission, so an app that asks only for
+    /// alerts and sounds can set `badgeLabel` all day and the Dock will
+    /// ignore it. Which is exactly what it was doing.
+    private static func whenNotificationsAnswered(_ post: @escaping @MainActor @Sendable () -> Void) {
+        if notificationsDecided {
+            post()
+            return
+        }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            DispatchQueue.main.async {
+                notificationsAuthorized = granted
+                notificationsDecided = true
+                Permissions.shared.refresh()
+                post()
+            }
+        }
+    }
+
+    /// macOS has an answer, yes or no, so nothing is left to ask. False
+    /// until launch has read it, which only costs the first post a round
+    /// trip that shows nothing.
+    private static var notificationsDecided = false
 
     // MARK: - Reminders
 
@@ -988,9 +1044,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let when = Calendar.current.dateComponents(
             [.year, .month, .day, .hour, .minute, .second, .timeZone],
             from: date.addingTimeInterval(SessionManager.reminderFallbackDelay))
-        center.add(UNNotificationRequest(
+        let request = UNNotificationRequest(
             identifier: id, content: reminderContent(sessionID: session.id, name: session.name),
-            trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: false)))
+            trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: false))
+        // Setting a reminder is asking to be told, so it is also a moment
+        // to ask macOS. Answered after the reminder was taken back or moved
+        // (`remindAt` is no longer this date), nothing is left behind.
+        whenNotificationsAnswered { [weak session] in
+            guard session?.remindAt == date else { return }
+            center.add(request)
+        }
     }
 
     /// A reminder went off for a session nobody is looking at. Unless the
@@ -1009,8 +1072,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// Whether the user allowed notifications, remembered from the launch
-    /// prompt. Only gates the chime we play ourselves — everything Notification
+    /// Whether the user allowed notifications, read at launch and again each
+    /// time the question is put (`whenNotificationsAnswered`). Only gates the chime we play ourselves — everything Notification
     /// Center delivers is already gated by the system.
     private static var notificationsAuthorized = false
 

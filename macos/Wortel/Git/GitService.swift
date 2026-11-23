@@ -80,6 +80,12 @@ enum GitService {
     private static let gitEnvironment: [String: String] = {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = toolPath(env["PATH"])
+        // No developer tools, so `/usr/bin/git` is the stub that raises
+        // macOS's installer, but there is a git of the person's own: that
+        // one, by coming first. Decided once: either works after an install.
+        if case .other(let directory) = DeveloperTools.current {
+            env["PATH"] = directory + ":" + (env["PATH"] ?? "")
+        }
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_OPTIONAL_LOCKS"] = "0"
         // A path handed to git is that path. Without this every one is a
@@ -240,7 +246,12 @@ enum GitService {
 
     static func run(_ args: [String], in directory: String, input: Data? = nil,
                     timeout: TimeInterval? = nil) async -> CommandResult {
-        await execute(gitArguments(args), environment: gitEnvironment, in: directory,
+        // Never started on a Mac without it (`DeveloperTools`): the stub in
+        // `/usr/bin` would answer with macOS's installer, not with git.
+        guard DeveloperTools.current.canRun else {
+            return CommandResult(status: 127, stdout: "", stderr: DeveloperTools.missingMessage)
+        }
+        return await execute(gitArguments(args), environment: gitEnvironment, in: directory,
                       input: input, timeout: timeout)
     }
 
@@ -1149,7 +1160,7 @@ enum GitService {
     static func runData(_ args: [String], in directory: String) async -> Data {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                guard let out = makePipe(),
+                guard DeveloperTools.current.canRun, let out = makePipe(),
                       let pid = spawn(gitArguments(args), environment: gitEnvironment,
                                       in: directory, stdin: nil,
                                       stdout: out.write.fileDescriptor, stderr: nil)

@@ -391,6 +391,12 @@ log stream --level info --predicate 'subsystem == "com.gielcobben.Wortel" && cat
 - macOS notification banners require a signed `/Applications` build
   (`./scripts/release.sh`); ad-hoc Debug builds only get the sidebar dot and
   Dock badge.
+- macOS asks about notifications once, so the question is put with the first
+  banner or the first reminder, never at launch
+  (`AppDelegate.whenNotificationsAnswered`). The first banner waits for the
+  answer and is dropped if its session was seen to meanwhile. Once macOS has
+  an answer a post is handed over in the same call, as before: a reminder
+  rescheduled on the way out of the app cannot wait for a reply.
 - Ghostty's GTK apprt drops progress not refreshed within 15s. Wortel must not
   copy that: a spinner that is still true must not go out. Stuck-busy safety
   comes from the command ending at the next shell prompt instead.

@@ -500,6 +500,7 @@ targets:
       - path: Wortel/Browser/BrowserAddress.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
       - path: Wortel/Git/GitService.swift
+      - path: Wortel/Git/DeveloperTools.swift
       - path: Wortel/Git/GitRepoModel.swift
       - path: Wortel/Git/GitMessage.swift
       - path: Wortel/Git/GitRepoWatcher.swift
@@ -566,6 +567,7 @@ targets:
       # Which of them the Mac has: reading the login shell's answer out of
       # whatever its startup files print around it.
       - path: Wortel/Settings/AgentDiscovery.swift
+      - path: Wortel/Settings/AgentInstall.swift
       # Sort Unread First: a drawn order over the stored one, and the rules that
       # hold the selected row and a pending click's row still. Every way it's
       # wrong is a row sliding out from under the pointer, which no build or

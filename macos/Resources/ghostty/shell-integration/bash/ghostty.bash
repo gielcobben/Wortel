@@ -96,6 +96,13 @@ if [[ -n "${WORTEL_BIN_DIR-}" && ":$PATH:" != *":${WORTEL_BIN_DIR-}:"* ]]; then
   export PATH="$WORTEL_BIN_DIR:$PATH"
 fi
 
+# WORTEL: ~/.local/bin, last, where Claude Code's installer (and uv, pipx)
+# put their commands and a new Mac does not look. Appended, and whether or
+# not the folder exists yet. See the zsh copy.
+if [[ -n "${HOME-}" && ":$PATH:" != *":${HOME-}/.local/bin:"* ]]; then
+  export PATH="$PATH:$HOME/.local/bin"
+fi
+
 # And take Contents/MacOS back off — the core adds it whatever the `path`
 # feature says, and the only file in it is the app's own executable, which a
 # case-insensitive disk hands over for `wortel`. See the zsh copy.

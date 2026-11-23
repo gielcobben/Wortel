@@ -42,22 +42,50 @@ struct SourceControlPanel: View {
                 EmptyView()
             }
         }
+        // Git was installed while "Git is not installed" was up: the folder
+        // is asked again, now that asking can be answered.
+        .onChange(of: Permissions.shared.developerTools) { _, now in
+            if now == .granted { panel.resolveAgain() }
+        }
         // No background on purpose. As an inspector split item the system supplies
         // the material itself (Liquid Glass on macOS 26), and painting anything
         // opaque here — a tinted fill, or an NSVisualEffectView — sits on top of
         // that material and blocks it. Width now comes from .inspectorColumnWidth.
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: panel.resolvedNonRepo ? "folder" : "arrow.triangle.branch")
-                .font(.system(size: 26))
-                .foregroundStyle(.tertiary)
-            Text(panel.resolvedNonRepo ? "Not a git repository" : "No repository")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    @ViewBuilder private var emptyState: some View {
+        if Permissions.shared.developerTools == .denied {
+            // A new Mac: nothing here can be read until git is there, and
+            // "not a git repository" would be blaming the folder for it.
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.tertiary)
+                Text("Git is not installed")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Text("It comes with Apple\u{2019}s command line tools.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Install\u{2026}") { Permissions.shared.fixDeveloperTools() }
+                    .controlSize(.small)
+                    .padding(.top, 4)
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: panel.resolvedNonRepo ? "folder" : "arrow.triangle.branch")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.tertiary)
+                Text(panel.resolvedNonRepo ? "Not a git repository" : "No repository")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

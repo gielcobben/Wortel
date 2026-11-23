@@ -1399,6 +1399,8 @@ final class SessionManager {
                 session.liveConversationID = nil
             }
             if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
+            // An agent, here: nothing asks whether this Mac has one again.
+            if marker != nil { Permissions.shared.noteAgent() }
             if session.runningModel != marker?.model { session.runningModel = marker?.model }
             session.runningArgv = marker?.argv
             session.runningShellPID = marker?.shellPID
@@ -4543,6 +4545,9 @@ final class SessionManager {
     private func programStatus(_ session: Session, _ report: ProgramStatusReport, replayed: Bool) {
         let id = session.id
         let before = programRecords[id]
+        // A program that says what it is doing is an agent, whatever its
+        // name: this Mac has one.
+        Permissions.shared.noteAgent()
         AgentStatusLog.log.debug("""
             status \(report.logDescription, privacy: .public) \(replayed ? "replayed " : "", privacy: .public)\
             after \(before?.effective?.state.rawValue ?? "nothing", privacy: .public) \
@@ -4769,6 +4774,9 @@ final class SessionManager {
                   let terminal = session.surfaceView?.keeperSession,
                   TerminalModeRecorder.shared.modes(for: terminal).bracketedPaste else { return }
             session.silentAgent = agent
+            // How often the triangle is really shown, per agent: what decides
+            // whether helping with the update is worth building.
+            Telemetry.capture(.agentOutdated(agent: AgentName(command: agent)))
             AgentStatusLog.log.debug("""
                 status: \(agent, privacy: .public) said nothing in \(Int(Self.silencePatience))s, saying so \
                 id=\(id.uuidString, privacy: .public)
@@ -5034,6 +5042,38 @@ final class SessionManager {
             if view.isHidden || view.superview == nil { HibernationPolicy.shared.hidden(view) }
         }
         return view
+    }
+
+    /// Put `line` on a prompt for the person to run: there, unsent, as if they
+    /// had typed it and not yet pressed Return. For a command that is theirs
+    /// to read first (an agent's own installer, `AgentInstall`).
+    ///
+    /// In the session in front when its shell is at a prompt. Otherwise in a
+    /// new plain session, typed before the shell has read a byte, so it is
+    /// waiting on the first prompt: a line pasted into whatever is running
+    /// there (an editor, a build asking a question) would be typed into that.
+    func offerCommand(_ line: String) {
+        if let session = (placingWindow ?? activeWindow)?.selected, let view = session.surfaceView,
+           shellIsAtPrompt(session, view) {
+            view.sendText(line, scripted: true)
+            view.window?.makeFirstResponder(view)
+            return
+        }
+        _ = newSession(starting: .line(line))
+    }
+
+    /// The shell of `session` has its terminal and nothing under it. The
+    /// same reading a resume is typed on (`wake`), asked once and not again:
+    /// a no here costs a new session, not a wrong keystroke.
+    private func shellIsAtPrompt(_ session: Session, _ view: SurfaceView) -> Bool {
+        guard session.runningAgent == nil, !view.isHibernated, !view.isRestoring,
+              let pty = view.ptyHost, let root = view.shellPID else { return false }
+        let table = ProcessTable.snapshot()
+        let shellPID = ProcessTable.shell(of: root, in: table)
+        guard let shell = table.first(where: { $0.pid == shellPID }),
+              ProcessTable.isShell(shell.name), !shell.isExiting else { return false }
+        return pty.foregroundProcessGroup() == shell.pgid
+            && ProcessTable.work(under: shellPID, in: table).isEmpty
     }
 
     /// A session by id — what the CLI has, since a shell knows its session as

@@ -33,6 +33,20 @@ synthetic; `WortelTests` pins all of them):
   `GitRepoModel` is `@MainActor`, so parsing a regenerated lock file's 51MB
   patch there froze the app — terminal included — for 1.2s.
 
+**Git is only started on a Mac that has one** (`DeveloperTools`). On a new
+Mac `/usr/bin/git` is a stub that raises macOS's "install the command line
+developer tools" dialog, and Wortel runs git without being asked. So
+`GitService.run` and `runData` first read from the disk whether a developer
+directory with a git exists, the way `xcode-select` resolves one (the
+selection link if there is one, else Xcode in Applications, else the command
+line tools). A yes is kept for the run; a no is read again each time, so git
+works the moment an install finishes. While it is missing a command fails
+with a sentence and no process, the two panes say "Git is not installed" with
+an Install… button (`xcode-select --install`, Apple's installer), and the
+permissions popover lists it (`Permissions.developerTools`, read again
+whenever Wortel comes to the front, which is also when the pane asks about
+its folder again).
+
 `refresh()` runs one `git status` at a time (it's a full worktree walk; the
 FSEvents watcher fires on every write, and bursts used to stack scans), and
 watches `# branch.oid` so a commit made **in the terminal** — the normal way —

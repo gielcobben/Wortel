@@ -178,6 +178,14 @@
         set paths = [$E:WORTEL_BIN_DIR $@paths]
     }
   }
+  # WORTEL: ~/.local/bin, last, where Claude Code's installer (and uv, pipx)
+  # put their commands and a new Mac does not look. See the zsh copy.
+  if (has-env HOME) {
+    var local-bin = $E:HOME/.local/bin
+    if (not (has-value $paths $local-bin)) {
+        set paths = [$@paths $local-bin]
+    }
+  }
   if (and (has-value $features sudo) (not-eq "" $E:TERMINFO) (has-external sudo)) {
     edit:add-var sudo~ $sudo-with-terminfo~
   }

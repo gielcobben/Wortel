@@ -97,6 +97,7 @@ final class PermissionsNotice: NSObject, NSPopoverDelegate {
         self.popover = popover
         responder = anchor.window?.firstResponder
         Permissions.shared.refresh()
+        Permissions.shared.lookForAgent()
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         anchor.isSelected = true
     }
@@ -111,6 +112,16 @@ final class PermissionsNotice: NSObject, NSPopoverDelegate {
         responder = nil
         popover = nil
         Permissions.shared.revealed = false
+        Permissions.shared.popoverClosed()
+    }
+
+    /// Put away before something is typed into a terminal: the keyboard goes
+    /// back to it in `popoverDidClose`, and the typing comes after.
+    func close() {
+        // At once, not after the fade: what is typed next must find the
+        // keyboard already back with the terminal.
+        popover?.animates = false
+        popover?.close()
     }
 }
 
@@ -119,6 +130,40 @@ private struct PermissionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // What a new Mac lacks that is not a permission, each only while
+            // it is missing: on a Mac that has both, this section is not here.
+            if permissions.needsSetup {
+                Text("Setup")
+                    .font(.system(size: 13, weight: .semibold))
+                if permissions.agent == .denied {
+                    PermissionRow(
+                        symbol: "terminal",
+                        title: "An agent",
+                        detail: "Pick one and its install command is typed for you to run.",
+                        optional: false,
+                        state: permissions.agent,
+                        action: "Install",
+                        choices: AgentInstall.offered.map { agent in
+                            PermissionRow.Choice(title: agent.name) {
+                                PermissionsNotice.shared.close()
+                                // After the popover has handed the keyboard back.
+                                DispatchQueue.main.async { permissions.installAgent?(agent) }
+                            }
+                        },
+                        fix: {})
+                }
+                if permissions.developerTools == .denied {
+                    PermissionRow(
+                        symbol: "arrow.triangle.branch",
+                        title: "Git",
+                        detail: "For worktrees, Changes and History. Part of Apple\u{2019}s command line tools.",
+                        optional: false,
+                        state: permissions.developerTools,
+                        action: "Install\u{2026}",
+                        fix: { permissions.fixDeveloperTools() })
+                }
+                Divider()
+            }
             Text("Permissions")
                 .font(.system(size: 13, weight: .semibold))
             PermissionRow(
@@ -131,12 +176,12 @@ private struct PermissionsView: View {
             PermissionRow(
                 symbol: "internaldrive",
                 title: "Full Disk Access",
-                detail: "Lets what you run in a session read any folder, like Mail's and Safari's, without asking for each one.",
+                detail: "Lets what you run read any folder, like Mail\u{2019}s, without asking each time.",
                 optional: true,
                 state: permissions.fullDiskAccess,
                 fix: { permissions.fixFullDiskAccess() })
             Divider()
-            Text("Anything else, like the camera or the microphone, is asked for by the program that needs it, when it needs it.")
+            Text("Anything else, like the camera or the microphone, is asked for by the program that needs it.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -152,7 +197,16 @@ private struct PermissionRow: View {
     let detail: String
     let optional: Bool
     let state: Permissions.State
+    var action = "Grant"
+    /// More than one way to fix it: the button becomes a pull-down of these.
+    var choices: [Choice] = []
     let fix: () -> Void
+
+    struct Choice: Identifiable {
+        let title: String
+        let pick: () -> Void
+        var id: String { title }
+    }
 
     private var granted: Bool { state == .granted }
 
@@ -165,33 +219,42 @@ private struct PermissionRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 15))
-                .foregroundStyle(tint)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(.system(size: 13))
-                    if optional {
-                        Text("Optional")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(.quaternary))
-                    }
+        // One line that says what it is and holds its button, then what it
+        // is for under it, across the whole width.
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15))
+                    .foregroundStyle(tint)
+                    // From the same left edge as the line under it.
+                    .frame(width: 22, alignment: .leading)
+                Text(title)
+                    .font(.system(size: 13))
+                if optional {
+                    Text("Optional")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(.quaternary))
                 }
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                trailing
             }
-            Spacer(minLength: 8)
-            trailing
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                // Stops short of the buttons' column, the same in every row
+                // whatever its button's width: the text has one right edge
+                // and each button has air under it. The details are written
+                // to fit two lines at this width.
+                .padding(.trailing, Self.buttonColumn)
         }
     }
+
+    /// The widest button (the agent menu) and the gap before it.
+    private static let buttonColumn: CGFloat = 80
 
     @ViewBuilder private var trailing: some View {
         if granted {
@@ -199,8 +262,17 @@ private struct PermissionRow: View {
                 .font(.system(size: 15))
                 .foregroundStyle(.white, .green)
                 .accessibilityLabel("Granted")
+        } else if !choices.isEmpty {
+            Menu(action) {
+                ForEach(choices) { choice in
+                    Button(choice.title, action: choice.pick)
+                }
+            }
+            .menuStyle(.borderedButton)
+            .controlSize(.small)
+            .fixedSize()
         } else if state != .unknown || optional {
-            Button("Grant", action: fix)
+            Button(action, action: fix)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }

@@ -753,6 +753,19 @@ _ghostty_deferred_init() {
       builtin export PATH="$WORTEL_BIN_DIR:$PATH"
     fi
 
+    # WORTEL: ~/.local/bin, last. It is where Claude Code's own installer puts
+    # `claude` (and where uv, pipx and others put theirs), and a Mac that has
+    # never had a dotfile does not look there: the installer says to add a
+    # line to ~/.zshrc, the line is missed, and the first thing a new session
+    # says is "command not found: claude". Appended, so it can never win over
+    # anything already found, and whether or not the folder exists yet: the
+    # shell that runs the installer is the one that has to find the result.
+    # This runs after the person's own startup files, so a PATH they set
+    # there is kept and only what it lacks is added.
+    if [[ -n "$HOME" ]] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+      builtin export PATH="$PATH:$HOME/.local/bin"
+    fi
+
     # And take Contents/MacOS back off, because the core puts it there whatever
     # the `path` feature says — verified from inside a session: the feature list
     # arrives as "ssh-env,ssh-terminfo,title" and the directory is on PATH

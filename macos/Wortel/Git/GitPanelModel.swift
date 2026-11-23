@@ -1236,6 +1236,15 @@ final class GitPanelModel {
         Task { await resolve(cwd: cwd) }
     }
 
+    /// Ask again where the folder on screen is. For the one answer that can
+    /// change with nothing about the session changing: git arrived
+    /// (`DeveloperTools`), and "no repository" was only ever "no git".
+    func resolveAgain() {
+        guard repo == nil else { return }
+        nonRepoCwds.removeAll()
+        resolveCurrent()
+    }
+
     /// Only the repo on screen scans when its work tree changes; every other
     /// cached model just notes that it's stale (see `GitRepoModel.setActive`).
     /// Hidden means none at all, which is what "no git work runs while hidden"

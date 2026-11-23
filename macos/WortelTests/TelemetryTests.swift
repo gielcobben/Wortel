@@ -634,6 +634,7 @@ final class TelemetryTests: XCTestCase {
         }
         for agent in AgentName.allCases {
             events.append(.agentStarted(kind: agent))
+            events.append(.agentOutdated(agent: agent))
             events.append(.agentWoke(agent: agent))
             for cause in SleepCause.allCases { events.append(.agentSlept(agent: agent, cause: cause)) }
         }

@@ -69,6 +69,25 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   exists so that Wortel never needs a per-agent integration (`76ea9f8`).
 - **2026-08-04. No invented benchmark numbers**, on the site or anywhere
   (`a55082b`).
+- **2026-11-23. A Mac with no agent is told so once, and offered three.**
+  Of the first ten installs that report, three never started an agent and
+  none of those came back another day. The permissions popover gets a Setup
+  section, there only while something is missing: "An agent" (Claude Code,
+  Codex or Pi) and "Git" (`decisions.md`, Git panel). Picking an agent puts
+  that agent's own one-line installer on a prompt, unsent
+  (`AgentInstall`, `SessionManager.offerCommand`): the person reads it and
+  presses Return, in their own shell. Wortel downloads, runs and installs
+  nothing, and writes nothing into the agent afterwards, so "the agent is a
+  guest" holds. Only agents whose installer needs nothing a new Mac lacks:
+  a line starting with `npm` or `brew` is two more installs there. Each
+  line was read off the agent's own page that day. Whether the Mac has an
+  agent is asked (the usual folders, then the login shell) only until the
+  answer has been yes once, or an agent has started in a session, and never
+  after. The missing agent raises the sidebar's icon until the popover has
+  been opened once: someone who uses Wortel as a plain terminal is told one
+  time. Not built: the same for updating an agent that is too old. Which
+  installer it came from can be guessed wrong, and how often it happens is
+  not known yet (`agent_outdated`, below, counts it).
 
 ## Window, terminal and keys
 
@@ -953,6 +972,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the agent came from npm, Homebrew or its own installer.
 - **2026-09-10. The screen fallback stays for Pi.** An upstream request for it
   to report progress was declined.
+- **2026-11-23. Notifications are asked for when there is one to show, not
+  at launch.** macOS puts the question once. At launch it was answered before
+  anyone had seen what a notification from Wortel is for: of the first ten
+  installs that report, seven had them off at their latest launch (a count
+  that includes allowed with every way of showing one turned off). Now the
+  prompt comes with the first banner (a session out of sight that finished
+  or needs you) or the first reminder set, and that banner is posted once it
+  is answered, if the session still wants anyone. Until then the permissions
+  icon is in the sidebar with its Grant button, as it is for a no. Not
+  checked: the Dock badge before the question has been put, which needs a
+  signed build on a Mac that was never asked.
 
 ## Agent resume
 
@@ -1300,6 +1330,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `gpg.program` is not blanked: the Commit button signs with the user's. The
   filter-driver gap stays, as for any git-aware prompt
   (`macos/docs/architecture/git-panel.md`).
+- **2026-11-23. Git is never started on a Mac that has none.** `/usr/bin/git`
+  is always there, and without Xcode or Apple's command line tools it is a
+  stub that raises macOS's installer. Wortel runs git unasked (a row's
+  branch, the Changes pane), so that dialog would have come at a moment
+  nobody chose. Whether git can run is read from the disk first
+  (`DeveloperTools`, the way `xcode-select` resolves a developer directory),
+  and while it can't, the git panes say "Git is not installed" with an
+  Install… button and the permissions popover has a Git row. Both open
+  Apple's own installer (`xcode-select --install`): Wortel downloads and
+  installs nothing itself. A git of the person's own (Nix, MacPorts) is used
+  when Apple's is absent. Not reproduced on a Mac without the tools: the
+  detection is tested, the stub's dialog is Apple's documented behaviour.
 
 ## Files, previews, browser
 
@@ -1425,6 +1467,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   checksum of the bundled terminfo and the remote step always runs `tic`, so
   the 5ebe501 entry (overline, `Se` to the default cursor) replaces an old one.
   The list is in `macos/docs/debugging.md`.
+- **2026-11-23. `~/.local/bin` is on the PATH of every shell Wortel starts,
+  last.** Claude Code's own installer puts `claude` there, a Mac that never
+  had a dotfile does not look there, and the installer's note about adding
+  a line to `~/.zshrc` is missed: the first thing a new session said was
+  "command not found: claude" (reported 2026-11-23, from a new Mac).
+  Appended by the shell integration after the person's own startup files,
+  so it never wins over anything already found and a PATH set there is
+  kept. Added whether or not the folder exists, because the shell that runs
+  the installer is the one that has to find the result (checked in zsh and
+  bash: not found, install, found, same shell). The cost, on purpose:
+  `claude` then runs in Wortel and not in another terminal until that line
+  is added. fish and elvish have the same lines and were not run.
 
 ## Release and updates
 
@@ -1469,6 +1523,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   closed sets, buckets and offsets into our binary, the same bargain as
   `app_crashed`. MetricKit's hang diagnostics were not used, for the same
   reason as for crashes: the `.hang` file is the one the person can open.
+- **2026-11-23. `agent_outdated` counts the warning triangle.** An agent
+  that can report its state ran in a version too old to: which agent, from
+  the fixed list, once per run that stays silent. Three of the first seven
+  people who started an agent never got a status from it and nothing said
+  why. It decides whether helping with an update is worth building.
 
 ## Website
 

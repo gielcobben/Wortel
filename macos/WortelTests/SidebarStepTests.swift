@@ -68,9 +68,9 @@ final class SidebarStepTests: XCTestCase {
 
     // MARK: - After a close
 
-    func testClosingInTheMiddleLandsOnTheRowAbove() {
-        XCTAssertEqual(SidebarStep.afterClosing("c", in: rows), "b",
-                       "⌘N then ⌘W lands back where it started")
+    func testClosingInTheMiddleLandsOnTheRowThatSlidesUp() {
+        XCTAssertEqual(SidebarStep.afterClosing("b", in: rows), "c",
+                       "the row below takes the closed one's place on screen")
     }
 
     func testClosingTheLastRowLandsOnTheRowAbove() {
@@ -90,29 +90,62 @@ final class SidebarStepTests: XCTestCase {
         XCTAssertNil(SidebarStep.afterClosing("z", in: [String]()))
     }
 
-    func testClosingWhileSortedLandsOnTheRowAboveOnScreen() {
+    func testClosingWhileSortedLandsOnTheRowBelowOnScreen() {
         let sorted = ["c", "a", "b", "d"]
-        XCTAssertEqual(SidebarStep.afterClosing("a", in: sorted), "c")
+        XCTAssertEqual(SidebarStep.afterClosing("c", in: sorted), "a")
     }
 
-    // MARK: - After closing a session you just made
+    // MARK: - Back to where you were
 
     /// ⌘N on "c" at the top level puts "n" on top. ⌘W there goes back to "c",
     /// not to "a", the row that happens to be under the new one.
     func testClosingASessionJustMadeLandsOnTheOneItWasMadeFrom() {
         let made = ["n", "a", "b", "c", "d"]
-        XCTAssertEqual(SidebarStep.afterClosing("n", in: made, madeFrom: "c"), "c")
+        XCTAssertEqual(SidebarStep.afterClosing("n", in: made, trail: ["c"]), "c")
     }
 
-    func testAnOpenerWithNoRowIsNoAnswer() {
-        let made = ["n", "a", "b"]
-        XCTAssertEqual(SidebarStep.afterClosing("n", in: made, madeFrom: "z"), "a",
-                       "closed or folded away: the row below the top one, as ever")
-        XCTAssertEqual(SidebarStep.afterClosing("b", in: made, madeFrom: "z"), "a")
+    func testTheMostRecentVisitWins() {
+        XCTAssertEqual(SidebarStep.afterClosing("a", in: rows, trail: ["d", "b"]), "d")
     }
 
-    func testAnOpenerDoesNotBringARowBackThatIsNotDrawn() {
-        XCTAssertNil(SidebarStep.afterClosing("z", in: rows, madeFrom: "a"))
-        XCTAssertNil(SidebarStep.afterClosing("a", in: ["a"], madeFrom: "a"))
+    func testTheClosingRowItselfIsSkipped() {
+        XCTAssertEqual(SidebarStep.afterClosing("a", in: rows, trail: ["a", "c"]), "c",
+                       "closing again right after landing walks further back")
+    }
+
+    func testATrailEntryWithNoRowIsSkipped() {
+        XCTAssertEqual(SidebarStep.afterClosing("a", in: rows, trail: ["z", "c"]), "c")
+        XCTAssertEqual(SidebarStep.afterClosing("b", in: rows, trail: ["z"]), "c",
+                       "closed or folded away: the row below, as with no trail")
+    }
+
+    func testATrailDoesNotBringARowBackThatIsNotDrawn() {
+        XCTAssertNil(SidebarStep.afterClosing("z", in: rows, trail: ["a"]))
+        XCTAssertNil(SidebarStep.afterClosing("a", in: ["a"], trail: ["a"]))
+    }
+
+    // MARK: - Which visits count
+
+    private let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+
+    func testAGlanceDoesNotCount() {
+        XCTAssertFalse(SidebarStep.visitCounts(arrived: t0, left: t0 + 1, lastInput: nil))
+    }
+
+    func testStayingCounts() {
+        XCTAssertTrue(SidebarStep.visitCounts(
+            arrived: t0, left: t0 + SidebarStep.visitCountsAfter, lastInput: nil))
+    }
+
+    func testUsingItCountsHoweverShort() {
+        XCTAssertTrue(SidebarStep.visitCounts(arrived: t0, left: t0 + 0.5, lastInput: t0 + 0.2))
+    }
+
+    func testInputFromAnEarlierVisitDoesNotCount() {
+        XCTAssertFalse(SidebarStep.visitCounts(arrived: t0, left: t0 + 1, lastInput: t0 - 60))
+    }
+
+    func testTheSessionInFrontAtLaunchCounts() {
+        XCTAssertTrue(SidebarStep.visitCounts(arrived: nil, left: t0, lastInput: nil))
     }
 }

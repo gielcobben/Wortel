@@ -794,6 +794,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (`Chrome.sectionHeader`), measures 3.2:1 and 2.6:1, chosen by eye in the
   running app. Branch lines stay tertiary: a small second line under a name,
   read after it.
+- **2026-11-23. Closing the session you're in goes back to the one you were
+  in before it**, in that window, replacing "otherwise the row above" from
+  2026-11-18. The rows' order says little about what you were doing: new rows
+  go on top, folders come first, and the row above was often unrelated. The
+  "just made" rule is now one case of it: the session ⌘N was pressed in goes
+  on the way back however short the visit. Any other visit goes on it only if
+  it lasted 3 seconds or you typed, clicked or scrolled in it, so clicking
+  past rows or stepping with ⌥⌘↓ leaves nothing behind. With no way back
+  (after launch, or it was closed, moved or folded away) the row below, which
+  slides into the closed row's place so the selection stays put on screen, as
+  in Finder and Mail; the bottom row's is the one above. Never a session that
+  wants attention: moving you somewhere you didn't pick is ⌘⌥]'s to do, when
+  asked. The cost is a ⌘W sweep, which walks back through where you were
+  rather than down the list (`SidebarStep.afterClosing`,
+  `SessionWindow.trail`).
 
 ## Sessions
 

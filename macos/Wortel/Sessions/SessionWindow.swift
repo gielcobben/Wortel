@@ -33,6 +33,16 @@ final class SessionWindow {
     /// Written by its outline after each change; never read for drawing.
     @ObservationIgnored var sidebarRowOrder: [Session.ID] = []
 
+    /// The sessions this window was in before the one in front, most recent
+    /// first, each once: where closing the front one goes back to
+    /// (`SidebarStep.afterClosing`). Only visits that counted
+    /// (`SidebarStep.visitCounts`), and the session a new one was made from.
+    /// Not persisted, as Back's history isn't.
+    @ObservationIgnored var trail: [Session.ID] = []
+    /// When the session in front came to the front. nil for the one restored
+    /// at launch.
+    @ObservationIgnored var arrivedAt: Date?
+
     /// On screen: not miniaturized, not fully covered. Set from occlusion.
     @ObservationIgnored var isVisible = true
 

@@ -25,19 +25,40 @@ enum SidebarStep {
         return rows[((index + step) % n + n) % n]
     }
 
-    /// What to select when `closing` goes: the row above it, or the row
-    /// below when it is the top one. nil when it isn't drawn or is alone.
+    /// What to select when `closing` goes: the session you were in before
+    /// it, else the row that slides up into its place, else (it was the
+    /// bottom row) the row above. nil when it isn't drawn or is alone.
     ///
-    /// `opener` is the session `closing` was made from, given only while the
-    /// selection has not left `closing` since: then that row is the answer,
-    /// as closing a browser tab you just opened goes back to the tab it came
-    /// from. ⌘N, do the thing, ⌘W is a round trip wherever the new row was
-    /// put, and at the top level that is the top of the list, far from where
-    /// ⌘N was pressed. An opener with no row (closed, or folded away) is no
-    /// answer, and the row above is.
-    static func afterClosing<ID: Equatable>(_ closing: ID, in rows: [ID], madeFrom opener: ID? = nil) -> ID? {
+    /// `trail` is the sessions this window was in before, most recent first,
+    /// only the visits that counted (`visitCounts`). Going back there is the
+    /// answer because the sidebar's order says little about what you were
+    /// doing: new rows go on top, folders come first, and the row next to the
+    /// one you close is often unrelated. ⌘N, do the thing, ⌘W is the
+    /// commonest case of it, as closing a browser tab you just opened goes
+    /// back to the tab it came from. A trail entry with no row (closed, moved
+    /// to another window, folded away) is skipped.
+    ///
+    /// Without a trail, the row below: it moves up into the closed row's
+    /// place, so the selection stays where it was on screen, as Finder and
+    /// Mail do after a delete.
+    static func afterClosing<ID: Equatable>(_ closing: ID, in rows: [ID], trail: [ID] = []) -> ID? {
         guard let index = rows.firstIndex(of: closing), rows.count > 1 else { return nil }
-        if let opener, opener != closing, rows.contains(opener) { return opener }
-        return index > 0 ? rows[index - 1] : rows[index + 1]
+        if let back = trail.first(where: { $0 != closing && rows.contains($0) }) { return back }
+        return index + 1 < rows.count ? rows[index + 1] : rows[index - 1]
+    }
+
+    /// How long a session has to be in front before leaving it puts it on
+    /// the trail, unless you used it: long enough that stepping through rows
+    /// with ⌥⌘↓ or clicking past them leaves nothing behind.
+    static let visitCountsAfter: TimeInterval = 3
+
+    /// Whether a visit that began at `arrived` and ended at `left` goes on
+    /// the trail: it lasted `visitCountsAfter`, or you typed, clicked or
+    /// scrolled in it since `arrived` (`lastInput`). An unknown arrival (the
+    /// session in front at launch) counts: it was where you were last time.
+    static func visitCounts(arrived: Date?, left: Date, lastInput: Date?) -> Bool {
+        guard let arrived else { return true }
+        if let lastInput, lastInput >= arrived { return true }
+        return left.timeIntervalSince(arrived) >= visitCountsAfter
     }
 }

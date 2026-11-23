@@ -186,7 +186,15 @@ final class SessionManager {
     func select(_ id: Session.ID?, in window: SessionWindow) {
         let oldValue = window.selectedID
         guard id != oldValue else { return }
+        let now = Date()
+        // The session you leave goes on the way back if the visit counted.
+        if let oldValue, sessions.contains(where: { $0.id == oldValue }),
+           SidebarStep.visitCounts(arrived: window.arrivedAt, left: now,
+                                   lastInput: lastTypedAt[oldValue]) {
+            noteTrail(oldValue, in: window)
+        }
         window.selectedID = id
+        window.arrivedAt = id == nil ? nil : now
         // The lead moved from somewhere that isn't a ⌘-click inside the
         // selection (a plain click, ⌘2, a notification): one row again.
         if window === activeWindow, !(id.map(sidebarSelection.ids.contains) ?? false) {
@@ -208,9 +216,6 @@ final class SessionManager {
         if currentTabs[session.id] == nil {
             currentTabs[session.id] = session.workspace.front(of: .main) ?? .session
         }
-        // Gone to another session: the one just made is one among the
-        // rest now, and closing it later is not a way back.
-        if justMade?.session != session.id { justMade = nil }
         arrive(at: session, in: window)
         // Left the previous session before it could count as read; start the
         // caught-up clock on the one you just landed on.
@@ -246,10 +251,12 @@ final class SessionManager {
     /// Sessions in the order they were last selected, most recent first: what
     /// ⌘P lists before you type (SessionSwitcherMatch).
     @ObservationIgnored private(set) var recentSessionIDs: [Session.ID] = []
-    /// The session just made and the one it was made from, for as long as the
-    /// selection has not left the new one: closing it then goes back there
-    /// (`SidebarStep.afterClosing`), wherever in the sidebar the new row went.
-    @ObservationIgnored private var justMade: (session: Session.ID, from: Session.ID)?
+
+    /// Put `id` at the front of `window`'s way back (`SessionWindow.trail`).
+    private func noteTrail(_ id: Session.ID, in window: SessionWindow) {
+        window.trail.removeAll { $0 == id }
+        window.trail.insert(id, at: 0)
+    }
 
     // MARK: Back and Forward
 
@@ -1941,13 +1948,15 @@ final class SessionManager {
             inFolder: dir, rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
             selected: (placingWindow ?? activeWindow)?.selectedID, pinned: pinnedIDs)
         sessions.insert(session, at: index)
-        let madeFrom = (placingWindow ?? activeWindow)?.selectedID
+        let madeIn = placingWindow ?? activeWindow
+        let madeFrom = madeIn?.selectedID
         normalizeOrder() // slot the new row into its folder's contiguous block
         // Never select into a hidden row.
         if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }
         selectedID = session.id
-        // After the selection moved, which forgot the last one.
-        justMade = madeFrom.map { (session: session.id, from: $0) }
+        // Making a session from one is using it, however short the visit:
+        // ⌘N, do the thing, ⌘W lands back where ⌘N was pressed.
+        if let madeFrom, let madeIn { noteTrail(madeFrom, in: madeIn) }
         scheduleSave()
         if reported { Telemetry.capture(.sessionCreated(via: origin, command: usesCommand)) }
         return session
@@ -2697,13 +2706,12 @@ final class SessionManager {
             """)
         let home = window(of: session)
         let wasSelected = session.id == home.selectedID
-        // Over the rows as drawn, so it is the row above on screen, sorted
-        // or not, and never one inside a folded section. Or the session this
-        // one was made from, when you never left it.
+        // The session you were in before this one, else the row below on
+        // screen. Over the rows as drawn, sorted or not, so never one inside
+        // a folded section.
         let drawnNeighbour = SidebarStep.afterClosing(
-            session.id, in: drawnRows(in: home),
-            madeFrom: justMade?.session == session.id ? justMade?.from : nil)
-        if justMade?.session == session.id || justMade?.from == session.id { justMade = nil }
+            session.id, in: drawnRows(in: home), trail: home.trail)
+        for window in windows { window.trail.removeAll { $0 == session.id } }
         let hadAttention = session.needsAttention
         sleepTimers.removeValue(forKey: session.id)?.cancel()
         hiddenSince.removeValue(forKey: session.id)
@@ -2789,15 +2797,14 @@ final class SessionManager {
             return
         }
 
-        // The round trip (⌘N, do the thing, ⌘W) lands back where it started:
-        // on the session the closed one was made from, if you never left it.
-        // Otherwise the row *above*, not the one that slid into the closed
-        // row's slot. Only the topmost row has nothing above it, and there
-        // the row below is the only answer. Within the window it was in.
+        // Back to the session you were in before (⌘N, do the thing, ⌘W lands
+        // where it started), else the row that slid into the closed one's
+        // place, else the row above. Within the window it was in. The stored
+        // order is the answer only when nothing was drawn to go by.
         if wasSelected {
             let neighbour = drawnNeighbour.flatMap { id in left.contains { $0.id == id } ? id : nil }
-            let above = sessions[..<min(index, sessions.count)].last { window(of: $0) === home }
-            select(neighbour ?? above?.id ?? left[0].id, in: home)
+            let below = sessions[min(index, sessions.count)...].first { window(of: $0) === home }
+            select(neighbour ?? below?.id ?? left.last?.id, in: home)
         }
         scheduleSave()
     }

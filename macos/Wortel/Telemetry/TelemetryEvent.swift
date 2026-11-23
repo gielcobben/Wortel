@@ -163,6 +163,14 @@ enum TelemetryEvent: Equatable {
     case appCrashed(signal: CrashSignal, exception: CrashException, site: CodeOffset?,
                     signature: CrashSignature?, version: CalVer?, arch: CrashArch)
 
+    /// The run before this launch stopped answering and was force quit, and
+    /// macOS kept a hang report of it. The same reduction as a crash, plus what
+    /// a hang needs: what kind of code the main thread was stuck in, how long
+    /// it was stuck and how much memory the app held, all as closed sets. See
+    /// `HangReport`.
+    case appHung(activity: HangActivity, site: CodeOffset?, signature: CrashSignature?,
+                 version: CalVer?, arch: CrashArch, lasted: DurationBucket, memory: MemoryBucket?)
+
     /// The last event this install will ever send: reporting was turned off.
     /// Sent, rather than silently stopping, because the opt-out rate is the one
     /// number that says whether opt-out was the right default. Nothing follows
@@ -196,6 +204,7 @@ enum TelemetryEvent: Equatable {
         case .sessionUnarchived: return "session_unarchived"
         case .reminderSet: return "reminder_set"
         case .appCrashed: return "app_crashed"
+        case .appHung: return "app_hung"
         case .globalHotkeyUsed: return "global_hotkey_used"
         case .windowOpened: return "window_opened"
         case .sessionMovedWindow: return "session_moved_window"
@@ -246,6 +255,11 @@ enum TelemetryEvent: Equatable {
             return ["signal": signal.rawValue, "exception": exception.rawValue,
                     "site": site?.rawValue ?? "none", "signature": signature?.rawValue ?? "none",
                     "crashed_version": version?.rawValue ?? "unknown", "crashed_arch": arch.rawValue]
+        case let .appHung(activity, site, signature, version, arch, lasted, memory):
+            return ["activity": activity.rawValue,
+                    "site": site?.rawValue ?? "none", "signature": signature?.rawValue ?? "none",
+                    "hung_version": version?.rawValue ?? "unknown", "hung_arch": arch.rawValue,
+                    "lasted": lasted.rawValue, "memory": memory?.rawValue ?? "unknown"]
         case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled, .sessionArchived, .sessionUnarchived,
              .reminderSet:
             return [:]
@@ -427,11 +441,13 @@ enum AttentionCause: String {
 /// How the run before this launch ended. `none` is the first launch, when
 /// there was no run before. `unclean` is anything that ended without the app
 /// quitting: a force quit, `kill -9`, a power cut, or a crash nobody reported.
+/// `hung` is a force quit macOS kept a hang report of (`HangReport`).
 enum PreviousExit: String, CaseIterable {
     case none
     case clean
     case unclean
     case crashed
+    case hung
 }
 
 // ---- crashes: every value below is built from numbers or a closed set -----
@@ -490,6 +506,76 @@ enum CrashArch: String, CaseIterable {
         case "ARM-64": self = .arm64
         case "X86-64": self = .x86_64
         default: self = .other
+        }
+    }
+
+    /// A hang report's `Architecture:` line, which names the slice.
+    init(architecture: String?) {
+        switch architecture {
+        case "arm64", "arm64e": self = .arm64
+        case "x86_64", "x86_64h": self = .x86_64
+        default: self = .other
+        }
+    }
+}
+
+/// What kind of code the main thread was in when it stopped answering,
+/// decided by the *framework* of its heaviest stack, innermost first. Symbol
+/// names are looked at only to tell a wait from work, and never leave this
+/// type: what is sent is one of these words.
+///
+/// - `waiting`: blocked in the kernel on a lock, a semaphore or a message.
+/// - `io`: blocked in the kernel on a file.
+/// - `wortel`: busy in our own code (the `site` says where).
+/// - `swiftui`: inside SwiftUI's update or layout, the first hang's case.
+/// - `appkit`: inside AppKit or drawing.
+enum HangActivity: String, CaseIterable {
+    case waiting, io, wortel, swiftui, appkit, other
+
+    /// `stack` is (image, symbol), outermost frame first.
+    init(stack: [(image: String, symbol: String)], executable: String) {
+        guard let leaf = stack.last else { self = .other; return }
+        if leaf.image == "libsystem_kernel.dylib" {
+            let name = leaf.symbol
+            if ["wait", "mach_msg", "semaphore", "ulock", "psynch", "kevent", "select", "poll"]
+                .contains { name.contains($0) } { self = .waiting; return }
+            if ["read", "write", "open", "close", "fsync", "stat", "getattrlist", "fcntl", "pagein"]
+                .contains { name.contains($0) } { self = .io; return }
+        }
+        // Up from the leaf, past the plumbing every stack has, to the first
+        // frame that says whose work it was.
+        let plumbing: Set<String> = [
+            "libsystem_kernel.dylib", "libsystem_pthread.dylib", "libsystem_platform.dylib",
+            "libsystem_malloc.dylib", "libsystem_c.dylib", "libdispatch.dylib", "libobjc.A.dylib",
+            "libswiftCore.dylib", "libc++.1.dylib", "libc++abi.dylib", "CoreFoundation", "Foundation", "dyld",
+        ]
+        for frame in stack.reversed() where !plumbing.contains(frame.image) {
+            switch frame.image {
+            case executable: self = .wortel
+            case "SwiftUI", "SwiftUICore", "AttributeGraph": self = .swiftui
+            case "AppKit", "HIToolbox", "QuartzCore", "CoreGraphics", "CoreText", "Metal": self = .appkit
+            default: self = .other
+            }
+            return
+        }
+        self = .other
+    }
+}
+
+/// How much memory the app held, from a report's `Footprint:`. Four ranges:
+/// enough to tell a leak from a normal app, and nothing finer.
+enum MemoryBucket: String, CaseIterable {
+    case under512MB = "<512mb"
+    case under2GB = "<2gb"
+    case under8GB = "<8gb"
+    case eightGBOrMore = "8gb+"
+
+    init(bytes: UInt64) {
+        switch bytes {
+        case ..<(512 << 20): self = .under512MB
+        case ..<(2 << 30): self = .under2GB
+        case ..<(8 << 30): self = .under8GB
+        default: self = .eightGBOrMore
         }
     }
 }

@@ -67,13 +67,16 @@ enum ExitMarker {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// The reportable answer. Pure, so the four cases are tested rather than
+    /// The reportable answer. Pure, so the cases are tested rather than
     /// trusted. `crashReported` is whether macOS left a crash report for the
-    /// run that ended uncleanly; without one, all we know is that it did not
-    /// quit.
-    static func previousExit(firstLaunch: Bool, markerFound: Bool, crashReported: Bool) -> PreviousExit {
+    /// run that ended uncleanly, `hangReported` a hang report (a force quit
+    /// of an app that had stopped answering); a crash wins, being the end.
+    /// Without either, all we know is that it did not quit.
+    static func previousExit(firstLaunch: Bool, markerFound: Bool, crashReported: Bool,
+                             hangReported: Bool = false) -> PreviousExit {
         if firstLaunch { return .none }
         guard markerFound else { return .clean }
-        return crashReported ? .crashed : .unclean
+        if crashReported { return .crashed }
+        return hangReported ? .hung : .unclean
     }
 }

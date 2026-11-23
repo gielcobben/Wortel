@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
-updated: 2026-11-20
+updated: 2026-11-23
 nav: Privacy
 order: 10
 ---
@@ -55,13 +55,18 @@ about the thing it happened to:
 - the app started, roughly how many sessions came back (as a range like "4-7",
   never an exact count), and roughly how many agents resumed; whether this is
   the first time it has started on this Mac; whether the time before, it quit
-  normally or ended some other way (a crash or a force quit); and whether macOS
-  allows it to show notifications
+  normally or ended some other way (a crash, a hang or a force quit); and
+  whether macOS allows it to show notifications
 - if the time before ended in a crash that macOS kept a report of: which kind
   of crash it was, the version, whether the Mac is Apple Silicon or Intel, and
   where in Wortel's own code it happened, as a number that only the build's
   own debug file can turn into a name. Never the report itself, nothing named
   in it, and nothing about other programs
+- if the time before, Wortel stopped responding and was force quit, and macOS
+  kept a report of it: the same as for a crash, plus what kind of code it was
+  stuck in (for example drawing the window, or waiting), roughly how long it
+  was stuck (as a range like "under an hour"), and roughly how much memory it
+  was using (as a range like "2 to 8 GB")
 - the app quit, and roughly how long it ran
 - a session was created, and whether that was from the menu, the `wortel`
   command, a worktree, opening a folder, the shortcut that starts one in

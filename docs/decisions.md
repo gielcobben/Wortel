@@ -1462,6 +1462,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   only, no location from the IP (`4ea8d49`, `fbd7a9a`).
 - **2026-08-10. The privacy page lists every event**, and says that update
   checks cannot be opted out of (`ccdaa86`).
+- **2026-11-23. A hang is reported like a crash.** The first hang a user sent
+  (twelve hours stuck in SwiftUI layout at 30 GB) had read only as
+  `previous_exit: unclean`, and nothing in the numbers said where. After an
+  unclean run the head of macOS's `.hang` report is reduced to `app_hung`:
+  closed sets, buckets and offsets into our binary, the same bargain as
+  `app_crashed`. MetricKit's hang diagnostics were not used, for the same
+  reason as for crashes: the `.hang` file is the one the person can open.
 
 ## Website
 

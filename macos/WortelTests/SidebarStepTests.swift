@@ -120,8 +120,30 @@ final class SidebarStepTests: XCTestCase {
     }
 
     func testATrailDoesNotBringARowBackThatIsNotDrawn() {
-        XCTAssertNil(SidebarStep.afterClosing("z", in: rows, trail: ["a"]))
         XCTAssertNil(SidebarStep.afterClosing("a", in: ["a"], trail: ["a"]))
+        XCTAssertNil(SidebarStep.afterClosing("z", in: rows, trail: ["y"]))
+    }
+
+    /// ⌘N then a quick ⌘W, before the outline has drawn the new row: still
+    /// back to where ⌘N was pressed.
+    func testAWayBackNeedsNoRowForTheOneClosing() {
+        XCTAssertEqual(SidebarStep.afterClosing("n", in: rows, trail: ["c"]), "c")
+    }
+
+    // MARK: - Closing several at once
+
+    func testSeveralClosingGoBackPastTheOthers() {
+        XCTAssertEqual(SidebarStep.afterClosing("a", in: rows, trail: ["b", "d"], closingToo: ["b"]), "d")
+    }
+
+    func testSeveralClosingStepOverTheOthersBelow() {
+        XCTAssertEqual(SidebarStep.afterClosing("a", in: rows, closingToo: ["b"]), "c")
+        XCTAssertEqual(SidebarStep.afterClosing("c", in: rows, closingToo: ["d"]), "b",
+                       "nothing left below: the nearest row above")
+    }
+
+    func testClosingEveryRowLandsNowhere() {
+        XCTAssertNil(SidebarStep.afterClosing("a", in: rows, trail: ["b"], closingToo: ["b", "c", "d"]))
     }
 
     // MARK: - Which visits count

@@ -804,11 +804,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   past rows or stepping with ⌥⌘↓ leaves nothing behind. With no way back
   (after launch, or it was closed, moved or folded away) the row below, which
   slides into the closed row's place so the selection stays put on screen, as
-  in Finder and Mail; the bottom row's is the one above. Never a session that
-  wants attention: moving you somewhere you didn't pick is ⌘⌥]'s to do, when
-  asked. The cost is a ⌘W sweep, which walks back through where you were
-  rather than down the list (`SidebarStep.afterClosing`,
-  `SessionWindow.trail`).
+  in Finder and Mail; the bottom row's is the one above. Closing several
+  selected rows at once follows the same rule, stepping over all of them.
+  Attention plays no part: going to whatever is waiting is ⌘⌥]'s to do, when
+  asked, and a close never seeks it out. The cost is a ⌘W sweep, which walks
+  back through where you were rather than down the list
+  (`SidebarStep.afterClosing`, `SessionWindow.trail`).
 
 ## Sessions
 

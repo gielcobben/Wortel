@@ -27,7 +27,8 @@ enum SidebarStep {
 
     /// What to select when `closing` goes: the session you were in before
     /// it, else the row that slides up into its place, else (it was the
-    /// bottom row) the row above. nil when it isn't drawn or is alone.
+    /// bottom row) the row above. nil when no row would be left, or when
+    /// there is no trail to go by and `closing` isn't drawn.
     ///
     /// `trail` is the sessions this window was in before, most recent first,
     /// only the visits that counted (`visitCounts`). Going back there is the
@@ -41,10 +42,19 @@ enum SidebarStep {
     /// Without a trail, the row below: it moves up into the closed row's
     /// place, so the selection stays where it was on screen, as Finder and
     /// Mail do after a delete.
-    static func afterClosing<ID: Equatable>(_ closing: ID, in rows: [ID], trail: [ID] = []) -> ID? {
-        guard let index = rows.firstIndex(of: closing), rows.count > 1 else { return nil }
-        if let back = trail.first(where: { $0 != closing && rows.contains($0) }) { return back }
-        return index + 1 < rows.count ? rows[index + 1] : rows[index - 1]
+    ///
+    /// `others` close with it (several rows selected): none of them is an
+    /// answer, and "below" and "above" step over them.
+    static func afterClosing<ID: Equatable>(_ closing: ID, in rows: [ID], trail: [ID] = [],
+                                            closingToo others: [ID] = []) -> ID? {
+        let staying = rows.filter { $0 != closing && !others.contains($0) }
+        guard !staying.isEmpty else { return nil }
+        // The way back needs no place in the rows: a row closed before the
+        // outline drew it still goes back to where you were.
+        if let back = trail.first(where: staying.contains) { return back }
+        guard let index = rows.firstIndex(of: closing) else { return nil }
+        return rows[(index + 1)...].first(where: staying.contains)
+            ?? rows[..<index].last(where: staying.contains)
     }
 
     /// How long a session has to be in front before leaving it puts it on

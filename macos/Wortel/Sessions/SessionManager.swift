@@ -102,6 +102,8 @@ final class SessionManager {
             let above = rows[..<min(index, rows.count)].last { !movingIDs.contains($0) }
             let pick = above ?? staying.first ?? sessions(in: source).first { !movingIDs.contains($0.id) }?.id
             select(pick, in: source)
+            // Not a way back from here any more: it is in another window.
+            source.trail.removeAll { movingIDs.contains($0) }
         }
         for session in moving { session.windowID = destination.id }
         normalizeOrder()
@@ -1127,6 +1129,9 @@ final class SessionManager {
         if let pick = mine.first(where: { $0.id == wanted }) ?? mine.first {
             select(pick.id, in: active)
         }
+        // Restored, not arrived at: where you were last time counts as a
+        // visit however soon you leave it (`SidebarStep.visitCounts`).
+        for window in windows { window.arrivedAt = nil }
         onActivateWindow?(active)
     }
 
@@ -2864,9 +2869,11 @@ final class SessionManager {
     /// session archived), but the selection moves once, and the archive and
     /// the session list are each written once.
     ///
-    /// The selection moves *first*. Closing the selected session picks the row
-    /// above it, which in a batch is often the next to go: it would start that
-    /// session's shell and mark it read only to close it a moment later.
+    /// The selection moves *first*, by the rule a single close follows
+    /// (`SidebarStep.afterClosing`) with every session in the batch stepped
+    /// over: chosen one at a time, the answer is often the next to go, which
+    /// would start that session's shell and mark it read only to close it a
+    /// moment later.
     func end(_ batch: [Session]) {
         let closing = batch.filter { session in sessions.contains { $0.id == session.id } }
         guard closing.count > 1 else {
@@ -2880,10 +2887,14 @@ final class SessionManager {
             guard let index = mine.firstIndex(where: { $0.id == current }) else { continue }
             // None left in it (the window is closing with all of them):
             // nothing in front, rather than each next one's shell started
-            // only to be closed.
-            let survivor = mine[..<index].last(where: { !closingIDs.contains($0.id) })
-                ?? mine[index...].first(where: { !closingIDs.contains($0.id) })
-            select(survivor?.id, in: window)
+            // only to be closed. The stored order only when nothing drawn
+            // answers.
+            let drawn = SidebarStep.afterClosing(
+                current, in: drawnRows(in: window), trail: window.trail, closingToo: Array(closingIDs))
+            let survivor = drawn
+                ?? mine[index...].first(where: { !closingIDs.contains($0.id) })?.id
+                ?? mine[..<index].last(where: { !closingIDs.contains($0.id) })?.id
+            select(survivor, in: window)
         }
         let items = closing.compactMap(archivedEntry(for:))
         if !items.isEmpty {

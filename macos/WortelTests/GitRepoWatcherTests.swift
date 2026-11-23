@@ -178,6 +178,13 @@ final class GitRepoWatcherExclusionTests: XCTestCase {
         GitFixture.sh("mkdir -p ninth && printf 'a\\n' > a.txt", in: repo)
         let root = GitWorktree.realPath(repo.path)
         let excluding = (1...8).map { "\(root)/nothing-\($0)" } + ["\(root)/ninth"]
+        // Let the setup's own writes (the repository, a.txt, ninth/) through
+        // FSEvents before the quiet half starts. A stream made "since now" can
+        // still be handed a write from just before it when fseventsd is behind,
+        // and a.txt is reported as the root, which no exclusion covers: on a CI
+        // runner that woke the watch on 2026-11-23 and failed this test for a
+        // reason that has nothing to do with the ninth exclusion.
+        Thread.sleep(forTimeInterval: 1)
 
         let quiet = expectation(description: "a write in the ninth exclusion woke the watch")
         quiet.isInverted = true

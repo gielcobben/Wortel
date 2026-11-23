@@ -73,3 +73,13 @@ jobs:
           key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/GhosttyKit/ghostty.ref', 'macos/GhosttyKit/spm.ref', 'macos/GhosttyKit/zig.version', 'macos/GhosttyKit/Patches/**', 'macos/scripts/build-ghostty.sh') }}
 
       - run: ./scripts/check.sh macos
+
+      # check.sh runs xcodebuild -quiet, which names a failing test but not
+      # its assertion. The result bundle has both.
+      - name: Test results, when a test failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WortelTests-xcresult
+          path: ~/Library/Developer/Xcode/DerivedData/*/Logs/Test/*.xcresult
+          retention-days: 7

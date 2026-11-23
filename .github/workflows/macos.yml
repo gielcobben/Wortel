@@ -1,44 +1,52 @@
-# What ./scripts/check.sh runs, on every pull request and every push to main.
-# Nothing here signs, deploys or publishes.
-name: check
+# ./scripts/check.sh macos, on a pull request or a push to main that changes
+# the app. Nothing here signs, deploys or publishes.
+#
+# A macOS minute costs ten Linux minutes on a private repository, so this
+# runs only when something it tests changed: a change to the site, the
+# Worker or the docs never starts it. The site and the Worker are web.yml.
+name: macos
 
 on:
   push:
     branches: [main]
+    paths:
+      - "macos/**"
+      - "!macos/docs/**"
+      - "!macos/*.md"
+      - "!macos/bench/**"
+      - "scripts/check.sh"
+      - "LICENSE"
+      - "THIRD-PARTY-NOTICES.md"
+      - ".github/workflows/macos.yml"
   pull_request:
+    paths:
+      - "macos/**"
+      - "!macos/docs/**"
+      - "!macos/*.md"
+      - "!macos/bench/**"
+      - "scripts/check.sh"
+      - "LICENSE"
+      - "THIRD-PARTY-NOTICES.md"
+      - ".github/workflows/macos.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push makes the run before it moot, on main as much as on a branch.
 concurrency:
-  group: check-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  web-and-updates:
-    name: updates + web
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          # Both package.json files say ">=22.18": type stripping, which
-          # `node --test worker/*.test.ts` depends on, is on by default from there.
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            updates/package-lock.json
-            web/package-lock.json
-      - run: ./scripts/check.sh updates
-      - run: ./scripts/check.sh web
-
   macos:
     name: macos
     # Xcode 26 or later: the app imports FoundationModels, which is only in
     # the macOS 26 SDK.
     runs-on: macos-26
-    timeout-minutes: 60
+    # A green run is about ten minutes with Ghostty cached. A hang should cost
+    # half an hour, not an hour.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -65,12 +73,27 @@ jobs:
 
       # Ghostty from source is about five minutes. build-ghostty.sh keys its
       # cache on these same inputs (and on itself), and installs from it when
-      # the build is there.
+      # the build is there. Restore and save are separate steps so a build is
+      # kept as soon as it exists: with one actions/cache step it was only
+      # saved when every test passed too, and no run reused one.
+      # A cache saved on a pull request is that pull request's alone; one
+      # saved on main is every branch's.
       - name: Ghostty build cache
-        uses: actions/cache@v4
+        id: ghostty-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/sh.wortel.ghostty/builds
           key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/GhosttyKit/ghostty.ref', 'macos/GhosttyKit/spm.ref', 'macos/GhosttyKit/zig.version', 'macos/GhosttyKit/Patches/**', 'macos/scripts/build-ghostty.sh') }}
+
+      - name: Ghostty
+        run: macos/scripts/build-ghostty.sh
+
+      - name: Save the Ghostty build
+        if: steps.ghostty-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Caches/sh.wortel.ghostty/builds
+          key: ${{ steps.ghostty-cache.outputs.cache-primary-key }}
 
       # KeeperTerminalProtocolTests is left out here, and only here. Under CPU
       # pressure a second attach to a live session now and then gets a channel

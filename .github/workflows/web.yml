@@ -1,0 +1,46 @@
+# ./scripts/check.sh updates and web, on a pull request or a push to main
+# that changes either. Nothing here signs, deploys or publishes. The app is
+# macos.yml.
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "updates/**"
+      - "scripts/check.sh"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "updates/**"
+      - "scripts/check.sh"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-and-updates:
+    name: updates + web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Both package.json files say ">=22.18": type stripping, which
+          # `node --test worker/*.test.ts` depends on, is on by default from there.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            updates/package-lock.json
+            web/package-lock.json
+      - run: ./scripts/check.sh updates
+      - run: ./scripts/check.sh web

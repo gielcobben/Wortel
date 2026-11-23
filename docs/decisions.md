@@ -1483,5 +1483,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (9e7f675) on this Mac with the class run under `taskpolicy -b`: two of four
   runs failed. So it is a keeper race that load exposes, possibly what a blank
   terminal after a reattach is, and it is open. CI skips the class through
-  `XCODEBUILD_FLAGS` in `.github/workflows/check.yml`; `./scripts/check.sh`
+  `XCODEBUILD_FLAGS` in `.github/workflows/macos.yml`; `./scripts/check.sh`
   still runs it. Remove the skip with the fix.
+- **2026-11-23. CI runs only what a change touches.** The first day of CI
+  used about 75 macOS minutes, which a private repository bills at ten times
+  a Linux minute, and GitHub warned about the monthly limit. The one
+  workflow became two with path filters: `macos.yml` (the app, `check.sh`,
+  the licence files) and `web.yml` (`web/`, `updates/`), so docs and site
+  changes never start a Mac. A newer push cancels the run before it, on
+  `main` too. The Ghostty build is saved as soon as it exists rather than
+  only when every test passes: no run had reused one, so every run spent
+  five minutes building it again. A hung run stops at 30 minutes, not 60.

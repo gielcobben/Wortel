@@ -16,6 +16,30 @@ each one copies C-pointer data synchronously, then hops to the main thread
 (`DispatchQueue.main.async`) for anything touching AppKit. `handleAction`
 deliberately returns `false` for tabs, splits, inspector, command palette, etc.
 — that "unhandled" is how Wortel enforces "those features don't exist."
+`false` is never a way to have libghostty do a thing itself: since Ghostty
+`f9e8ef02d` its fallback for a clicked link opens nothing on macOS, so OPEN_URL
+takes every link (`docs/architecture/files-and-previews.md`).
+
+**The clipboard** (the runtime's clipboard callbacks). libghostty has two
+clipboards here: `STANDARD` is the system one, `SELECTION` a pasteboard of
+Wortel's own (`<bundle id>.selection`), as Ghostty.app has. A mouse selection
+goes to the selection pasteboard (`copy-on-select`, Ghostty's macOS default
+`primary` since its 1.4) and a middle click pastes it (`middle-click-action`,
+`primary-paste`); ⌘C and ⌘V are the system clipboard. Before 2026.47.4's
+Ghostty the runtime said it had no selection clipboard and libghostty fell back
+to the system one; on the new Ghostty that fallback is gone, and selecting
+copied nowhere and a middle click pasted nothing. The confirm callback tells
+two things apart by their request kind: an unsafe-looking paste of yours is
+approved without a prompt (multi-line pastes into an agent are the main
+gesture), and a program reading the clipboard (OSC 52, kitty's OSC 5522) is
+refused with `ghostty_surface_deny_clipboard_request`, which answers it
+(`docs/decisions.md`, 2026-11-21).
+
+**A shell that ends** is told to libghostty with how long it ran, up to when
+its pty hung up (`SurfaceView.finishProcess`). It was told 0, and an exit
+inside `abnormal-command-exit-runtime` (250 ms) reads as a failed launch: a red
+banner, and the session kept open after `exit`. A shell that really dies at
+once still gets that banner.
 
 **`SurfaceView`** (`Wortel/Ghostty/SurfaceView.swift`, ~750 lines) — the NSView
 hosting one surface. Ported from Ghostty.app's `SurfaceView_AppKit.swift` and
@@ -47,7 +71,16 @@ directory, bells, progress, a command ending).
 `keyDown`/`performKeyEquivalent`/`doCommand` coordinate via `lastPerformKeyEvent`
 and `keyTextAccumulator` to make IME (Korean/Japanese) and unclaimed command
 keys work; preserve the upstream comments when touching it. `GhosttyInput.swift`
-holds the NSEvent↔ghostty translation helpers and `KeyboardLayout`.
+holds the NSEvent↔ghostty translation helpers and `KeyboardLayout`, as ported
+from Ghostty v1.3.1. Ghostty.app's input fixes since then (to 5ebe501) are in
+`KeyInputText.swift` (pure, tested) and `keyDown`/`insertText`: text an input
+method commits outside a key (Dictation, the emoji picker) goes through the key
+encoder, never `ghostty_surface_text`, which is a paste and showed up in an
+agent as one; a key that commits a composition sends the text alone, and is
+replayed only for an arrow; a control key while composing is the input
+method's; no key text starts with DEL; and `doCommand` performs nothing, so
+⌘↑/⌘↓ are libghostty's previous and next prompt (verified by build and unit
+tests 2026-11-23, not yet by hand).
 The view is also an **AXTextArea** (`SurfaceView+Accessibility.swift`) so
 screen readers and read-aloud apps get the visible screen, the selection and
 per-range screen bounds. Every range is UTF-16 into the visible text, mapped to

@@ -723,6 +723,10 @@ targets:
       # string an agent printed: relative to the repo, with a full stop or a
       # `:42` stuck to it. Each one opened nothing before it was a type.
       - path: Wortel/Ghostty/TerminalLink.swift
+      # What text goes with a key, and which key an input method's commit
+      # still sends. Pure, and each wrong answer is a key sent twice or a
+      # word arriving as a paste, which no test with a keyboard catches.
+      - path: Wortel/Ghostty/KeyInputText.swift
       # How each editor is told a line: pure string shapes, each one a
       # file opened at the top when it's wrong.
       - path: Wortel/Preview/ExternalEditor.swift

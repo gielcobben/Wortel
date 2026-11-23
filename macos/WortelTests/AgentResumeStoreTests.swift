@@ -56,6 +56,16 @@ final class AgentResumeStoreTests: XCTestCase {
     /// Markers written before the format carried model/cwd/argv were a single
     /// bare agent name. One may still be on disk from an agent that was mid-run
     /// across the upgrade, and dropping it would strand that session.
+    /// A folder whose name held a newline wrote a second `agent=` line, and
+    /// the last one won. On a fresh start an agent without a launcher is
+    /// typed as it is, so a command there would have run.
+    func testAnAgentThatIsNotANameIsRefused() {
+        let marker = "agent=claude\nmodel=\ncwd=/tmp/a\nagent=x; touch /tmp/owned\nargv=claude\n"
+        XCTAssertNil(AgentResumeStore.parse(marker))
+        XCTAssertNil(AgentResumeStore.parse("agent=$(id)\n"))
+        XCTAssertEqual(AgentResumeStore.parse("agent=claude\ncwd=/tmp\n")?.agent, "claude")
+    }
+
     func testParsesLegacyBareAgentName() throws {
         let marker = try XCTUnwrap(AgentResumeStore.parse("claude\n"))
         XCTAssertEqual(marker.agent, "claude")

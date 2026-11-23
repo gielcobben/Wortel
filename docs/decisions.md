@@ -674,6 +674,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   be repainted, since when it last set to work was not saved and anything
   typed since it started counts; and zsh says `terminated` for a Codex ended
   this way, which is true.
+- **2026-11-23. Text from an input method is typed, not pasted.** Dictation,
+  the emoji picker and an input method's commit went to libghostty as a
+  paste (`ghostty_surface_text`), so an agent with bracketed paste on showed
+  dictated words as "[Pasted text]". They now go through the key encoder,
+  ported from Ghostty.app (ecbeb60ca, 751a60df6), with its fixes for keys
+  that commit or edit a composition and for DEL as key text. Wortel's
+  `doCommand` no longer scrolls to the top or bottom on ⌘↑/⌘↓: it overrode
+  libghostty's previous and next prompt (Ghostty 30fdc8f4c). Not ported:
+  Ghostty.app's split focus clicks and its menu shortcut translation, which
+  Wortel has no equivalent of.
 
 ## Sidebar
 
@@ -1276,6 +1286,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   on a right-clicked link. libghostty finds links only for ⌘-click, so the
   app had to read the cell under the pointer itself, the menu didn't appear
   when tried, and ⌘-click plus the editor button already cover it.
+- **2026-11-23. Every ⌘-clicked link in a terminal is opened by the app**, not
+  handed back to libghostty. Its Oct 2026 change makes the macOS fallback
+  refuse matched URLs and OSC 8 links, so in 2026.47.4 no web link opened.
+  Web and mail links open directly; another app's scheme asks first, as a
+  page's does; a link with hidden characters does nothing.
+- **2026-11-23. A selection goes to a pasteboard of Wortel's own.** Ghostty's
+  1.4 defaults on macOS (`copy-on-select = primary`, `middle-click-action =
+  primary-paste`) only work with a selection clipboard, so Wortel has one, as
+  Ghostty.app does: selecting no longer replaces what ⌘C copied, and a middle
+  click pastes the selection. Until 2026.47.4 a selection went to the system
+  clipboard because the old Ghostty fell back to it, not because it was
+  chosen; on the new one it went nowhere. When Claude Code has the mouse it
+  copies a selection itself (OSC 52), which still reaches the clipboard.
 - **2026-11-09. A page or a document never opens another app without a yes**
   (`fd2d45c`).
 - **2026-09-29. Files and browsers are tabs.** The Markdown preview moved from
@@ -1341,6 +1364,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-08-08. PATH is set through `WORTEL_BIN_DIR`, and `Contents/MacOS` is
   removed from it in zsh and bash.** fish and elvish get the prepend only.
   libghostty's `env_vars` only adds and was silently ignored (`b24f2bb`).
+- **2026-11-23. Upstream shell fixes are ported by hand, and a new terminfo
+  reaches hosts already set up.** Ghostty's fixes after v1.3.1 (a directory
+  name could inject escape sequences, `SetEnv` clobbered the user's ssh
+  config, bash's exit status and PROMPT_COMMAND bugs) went into Wortel's
+  copies, not a re-vendor: upstream's ssh is now a binary Wortel does not
+  ship. bash's title is printed with control bytes removed rather than put in
+  PS1 as `\w`, which passes them through. The ssh cache entry carries a
+  checksum of the bundled terminfo and the remote step always runs `tic`, so
+  the 5ebe501 entry (overline, `Se` to the default cursor) replaces an old one.
+  The list is in `macos/docs/debugging.md`.
 
 ## Release and updates
 

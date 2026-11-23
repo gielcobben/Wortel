@@ -55,7 +55,22 @@ open ~/Library/Developer/Xcode/DerivedData/Wortel-*/Build/Products/Debug/Wortel.
   `zig.version`) and Xcode's Metal toolchain (`xcodebuild -downloadComponent
   MetalToolchain`). `check.sh` and `release.sh` run it first. To move Ghostty:
   change the two refs, run it, fix what the patches no longer apply to (they
-  fail loudly on a changed anchor), and run `check-terminals.sh`.
+  fail loudly on a changed anchor), and run `check-terminals.sh`. Then bring
+  the two resource copies along: the shell integration (`docs/debugging.md`,
+  "The shell integration is three copies") and the terminfo, below.
+- **`Resources/terminfo` is the commit's own entry, compiled here.** Nothing
+  builds it automatically. Ghostty's build makes it from
+  `src/terminfo/ghostty.zig` (`ghostty +terminfo`, then `tic -x`); without
+  that binary, a few lines of Zig that import the commit's `ghostty.zig` and
+  `Source.zig` and print `ghostty.encode(...)` give the same source (`zig run`
+  works on the file alone). Compile it with `/usr/bin/tic -x -o <dir>`, copy
+  only `78/xterm-ghostty` over (`67/ghostty` is a symlink to it, and `78/` is
+  the sentinel the core finds its resources by), and check that
+  `infocmp -x -A Resources/terminfo xterm-ghostty` shows exactly the commit's
+  capabilities. Done this way on 2026-11-23 for 5ebe501: the same steps on
+  v1.3.1 reproduced the previous file byte for byte. A changed entry reaches
+  hosts that `ssh` already set up on their next `ssh`, because the cache in
+  `Resources/ghostty/bin/ghostty` is keyed by the file's checksum.
 - **Package versions are pinned in `macos/Package.resolved`** (tracked; the
   project's own copy is generated and ignored). `release.sh` copies it into the
   generated project and builds with `-onlyUsePackageVersionsFromResolvedFile`,

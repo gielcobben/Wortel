@@ -157,6 +157,12 @@ _ghostty_deferred_init() {
                 # unconditionally add mark1 and markB.
                 builtin local mark2=$'%{\e]133;A;k=s\a%}'
                 builtin local markB=$'%{\e]133;B\a%}'
+                # If PS1 ends with a bare '%', it combines with the '{'
+                # in markB to form a '%{' prompt escape, swallowing the
+                # marker and producing a visible '{'. Fix by doubling the
+                # trailing '%' so it becomes a literal '%%'. (Ghostty
+                # 43f3dc5f1.)
+                [[ $PS1 == *[^%]% || $PS1 == % ]] && PS1=$PS1%
                 PS1=${mark1}${PS1}${markB}
 
                 # Handle multiline prompts by marking newline-separated
@@ -179,6 +185,7 @@ _ghostty_deferred_init() {
                 fi
 
                 # PS2 mark is needed when clearing the prompt on resize
+                [[ $PS2 == *[^%]% || $PS2 == % ]] && PS2=$PS2%
                 PS2=${mark2}${PS2}${markB}
 
                 # Save the marked PS1 so we can detect modifications
@@ -611,7 +618,7 @@ _ghostty_deferred_init() {
                 {
                     builtin print -r -- "agent=$reply[1]"
                     builtin print -r -- "model=$reply[2]"
-                    builtin print -r -- "cwd=$reply[3]"
+                    builtin print -r -- "cwd=${reply[3]//[[:cntrl:]]/}"
                     builtin print -r -- "argv=$reply[4]"
                     # The shell's own pid. The agent runs as a descendant of it,
                     # so the app can ask the process table whether it is *really*
@@ -649,7 +656,18 @@ _ghostty_deferred_init() {
     # and immune to both. A remote shell over ssh reports its own hostname and
     # is still correctly rejected: that integration is the remote host's copy,
     # not this one.
-    _ghostty_report_pwd() { builtin print -nu $_ghostty_fd '\e]7;kitty-shell-cwd://localhost'"$PWD"'\a'; }
+    #
+    # The directory name comes from the filesystem, so it is untrusted text
+    # (Ghostty 6eb24a0f0). Plain `print` expands backslash escapes in every
+    # argument, $PWD included, so a directory named 'x\a\e]52;c;SGVsbG8=\a'
+    # ended this OSC 7 early and wrote "Hello" to the clipboard with OSC 52; a
+    # raw ESC or BEL byte in the name did the same. So `print -r` (a backslash
+    # in the path stays a backslash), the framing ESC and BEL written with
+    # $'...', and ${PWD//[[:cntrl:]]} to drop raw control bytes from the name.
+    _ghostty_report_pwd() {
+      builtin print -rnu $_ghostty_fd -- \
+        $'\e]7;kitty-shell-cwd://localhost'"${PWD//[[:cntrl:]]}"$'\a'
+    }
     chpwd_functions=(${chpwd_functions[@]} "_ghostty_report_pwd")
     # An executed program could change cwd and report the changed cwd, so also report cwd at each new prompt
     # as in this case chpwd_functions is insufficient. chpwd_functions is still needed for things like: cd x && something
@@ -782,8 +800,11 @@ _ghostty_deferred_init() {
 
         # Configure environment variables for remote session
         if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
-          ssh_opts+=(-o "SetEnv COLORTERM=truecolor")
-          ssh_opts+=(-o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION")
+          # SendEnv, not `SetEnv COLORTERM=truecolor`: a SetEnv given with -o
+          # replaces every SetEnv in the user's own ~/.ssh/config (ssh takes the
+          # first value of an option). COLORTERM is set on the ssh command at
+          # the bottom instead. (Ghostty 69554f414.)
+          ssh_opts+=(-o "SendEnv COLORTERM TERM_PROGRAM TERM_PROGRAM_VERSION")
         fi
 
         # Install terminfo on remote host if needed
@@ -810,15 +831,20 @@ _ghostty_deferred_init() {
               ssh_terminfo=$(infocmp -0 -x xterm-ghostty 2>/dev/null)
 
               if [[ -n "$ssh_terminfo" ]]; then
-                print "Setting up xterm-ghostty terminfo on $ssh_hostname..." >&2
+                print -r -- "Setting up xterm-ghostty terminfo on $ssh_hostname..." >&2
 
                 ssh_cpath_dir=$(mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null) || ssh_cpath_dir="/tmp/ghostty-ssh-$ssh_user.$$"
                 ssh_cpath="$ssh_cpath_dir/socket"
 
+                # Wortel: install first, then accept an entry already there
+                # only when this host has no tic. Upstream's script stopped at
+                # any existing xterm-ghostty, so a host set up by an older
+                # release never got a newer entry, even once the cache had let
+                # go of it (see Resources/ghostty/bin/ghostty). Into
+                # ~/.terminfo always, so root never overwrites the system's.
                 if builtin print -r "$ssh_terminfo" | command ssh "${ssh_opts[@]}" -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s "$@" '
+                  command -v tic >/dev/null 2>&1 && mkdir -p ~/.terminfo 2>/dev/null && tic -x -o ~/.terminfo - 2>/dev/null && exit 0
                   infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-                  command -v tic >/dev/null 2>&1 || exit 1
-                  mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
                   exit 1
                 ' 2>/dev/null; then
                   ssh_term="xterm-ghostty"
@@ -839,7 +865,7 @@ _ghostty_deferred_init() {
         fi
 
         # Execute SSH with TERM environment variable
-        TERM="$ssh_term" command ssh "${ssh_opts[@]}" "$@"
+        TERM="$ssh_term" COLORTERM=truecolor command ssh "${ssh_opts[@]}" "$@"
       }
     fi
 

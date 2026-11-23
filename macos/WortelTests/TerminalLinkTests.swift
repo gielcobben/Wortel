@@ -36,7 +36,32 @@ final class TerminalLinkTests: XCTestCase {
 
     // MARK: - Path or web link
 
-    func testWebLinksAndOtherSchemesAreLibghosttys() {
+    // MARK: - Other links
+
+    /// 2026.47.4: no web link opened, in Pi first (its links are OSC 8),
+    /// because libghostty stopped opening them itself.
+    func testWebAndMailLinksOpen() {
+        for link in ["https://wortel.sh", "http://example.com/a?b=c#d", "HTTPS://Example.com",
+                     "mailto:a@b.c"] {
+            XCTAssertEqual(TerminalLink.external(link), .open(URL(string: link)!), link)
+        }
+    }
+
+    func testOtherSchemesAsk() {
+        for link in ["vscode://file/a", "tel:0612345678", "ssh://host", "x-man-page://ls"] {
+            XCTAssertEqual(TerminalLink.external(link), .ask(URL(string: link)!), link)
+        }
+    }
+
+    func testMalformedOrHiddenLinksAreRefused() {
+        for link in ["https:relative", "http://", "mailto:", "file:///tmp/nothing-here",
+                     "https://wortel.sh/\u{202E}gpj.exe", "https://a.com\u{200B}.b.com",
+                     "https://wortel.sh/\na", "no scheme", ""] {
+            XCTAssertEqual(TerminalLink.external(link), .refuse, link)
+        }
+    }
+
+    func testWebLinksAndOtherSchemesAreNotPaths() {
         for link in ["https://wortel.sh", "http://localhost:3000", "mailto:a@b.c", "tel:0612345678",
                      "ssh://host", "vscode://file/a", "x-man-page://ls"] {
             XCTAssertFalse(TerminalLink.isPath(link), link)

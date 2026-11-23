@@ -5,6 +5,8 @@ import GhosttyKit
 // Input translation helpers, ported from Ghostty.app's Ghostty.Input.swift
 // and NSEvent+Extension.swift (Ghostty v1.3.1). Ported mechanically — do not
 // "improve": the odd-looking details are load-bearing for IME/dead keys.
+// Fixes Ghostty.app made to its keyboard path since then are ported into
+// `KeyInputText.swift` and `SurfaceView.keyDown`/`insertText`, not here.
 
 enum GhosttyInput {
     /// Translate NSEvent modifier flags to the ghostty mods bitmask,

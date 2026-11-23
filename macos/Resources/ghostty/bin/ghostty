@@ -10,6 +10,17 @@
 #
 # Entries expire after 30 days, so a host rebuilt under the same name gets its
 # terminfo again. The cache lives in Wortel's data folder, beside sessions.json.
+#
+# Each entry also carries a checksum of the terminfo entry this app ships
+# (Resources/terminfo/78/xterm-ghostty, found from this script's own path).
+# A host set up with an older entry no longer matches, so the next `ssh`
+# installs the new one, the same way upstream versions its cache (69b9abf09).
+# Entries written before the checksum existed have no third field, and miss
+# once. The integration's remote step always runs `tic`, so the new entry
+# replaces an old one already there. The callers' contract is unchanged:
+# they pass only --host or --add.
+#
+# Lines are "user@host<TAB>epoch seconds<TAB>checksum".
 
 if [ "$1" != "+ssh-cache" ]; then
   echo "Wortel has no ghostty command; this only answers its shell integration." >&2
@@ -32,18 +43,25 @@ cache="$dir/ssh-terminfo-hosts"
 now=$(date +%s)
 max_age=$((30 * 24 * 60 * 60))
 
+# cksum is POSIX and in /usr/bin; CRC and length together are plenty to tell
+# one shipped entry from the next. Missing file: a fixed word, so the cache
+# still works (and infocmp has nothing to send anyway).
+terminfo="${0%/*}/../../terminfo/78/xterm-ghostty"
+version=$(cksum < "$terminfo" 2>/dev/null | awk '{ print $1 "-" $2 }')
+[ -n "$version" ] || version=none
+
 case $mode in
   host)
     [ -f "$cache" ] || exit 1
-    awk -F '\t' -v h="$host" -v now="$now" -v max="$max_age" \
-      '$1 == h && now - $2 < max { found = 1 } END { exit !found }' "$cache"
+    awk -F '\t' -v h="$host" -v now="$now" -v max="$max_age" -v v="$version" \
+      '$1 == h && now - $2 < max && $3 == v { found = 1 } END { exit !found }' "$cache"
     ;;
   add)
     mkdir -p "$dir" || exit 1
     tmp="$cache.$$"
     {
       [ -f "$cache" ] && awk -F '\t' -v h="$host" '$1 != h' "$cache"
-      printf '%s\t%s\n' "$host" "$now"
+      printf '%s\t%s\t%s\n' "$host" "$now" "$version"
     } > "$tmp" && mv "$tmp" "$cache"
     ;;
   *)

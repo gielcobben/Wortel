@@ -107,16 +107,18 @@ extension SurfaceView {
 /// `ghostty_surface_read_selection`). Every read goes through this.
 ///
 /// **Not `ghosttyFreeText(&text)`**, though that is what
-/// ghostty.h declares. In the libghostty this app links (Ghostty 1.2) the
-/// function takes one argument, the text, and reads the first one as it:
+/// ghostty.h declared. In the libghostty this app linked until 2026.47.4
+/// (Ghostty 1.2) the function took one argument, the text, and read the
+/// first one as it:
 /// handed the surface, it read the surface's own memory as the text and
 /// freed nothing. Every read leaked its text, and the agent screen tier (gone
 /// since) read every agent session's screen once a second: 564 MB of screens after four
 /// and a half hours with 13 sessions (measured 2026-11-17, `heap` and
 /// `malloc_history`). It also meant freeing whatever pointer the surface
 /// happened to hold at that offset. Ghostty fixed the declaration upstream
-/// (4803d58, the surface became a first, ignored argument), so the text goes
-/// in both places: right for the library linked now and for the fixed one.
+/// (4803d58, the surface became a first, ignored argument), and the Ghostty
+/// linked since 2026.47.4 has that fix. The text still goes in both places,
+/// which is right for either.
 func ghosttyFreeText(_ text: inout ghostty_text_s) {
     withUnsafeMutablePointer(to: &text) { pointer in
         ghostty_surface_free_text(UnsafeMutableRawPointer(pointer), pointer)

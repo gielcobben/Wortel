@@ -140,7 +140,9 @@ Skills are in `../.agents/skills/` (Claude Code reads them through
   command the integration runs). Without it the "terminfo already installed on
   this host?" check always failed, so every `ssh` reinstalled it, printed a
   setup line and left a `/tmp/ghostty-ssh-*` directory. The cache is
-  `ssh-terminfo-hosts` in the data folder, 30-day entries. Keeper-spawned
+  `ssh-terminfo-hosts` in the data folder, 30-day entries, each with a
+  checksum of the bundled terminfo, so a new entry reaches hosts already set
+  up (the integration's remote step always runs `tic`). Keeper-spawned
   shells only: the exec fallback gets whatever libghostty sets.
 - `GhosttyRuntime` init pins config loading to the bundle only — never
   `ghostty_config_load_default_files` (leaks the user's real config) or

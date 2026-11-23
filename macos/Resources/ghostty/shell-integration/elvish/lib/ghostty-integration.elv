@@ -1,5 +1,6 @@
 {
   use platform
+  use re
   use str
 
   # Clean up XDG_DATA_DIRS by removing GHOSTTY_SHELL_INTEGRATION_XDG_DIR
@@ -83,8 +84,7 @@
     # Configure environment variables for remote session
     if (has-value $features ssh-env) {
       set ssh-opts = (conj $ssh-opts ^
-        -o "SetEnv COLORTERM=truecolor" ^
-        -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION")
+        -o "SendEnv COLORTERM TERM_PROGRAM TERM_PROGRAM_VERSION")
     }
 
     if (has-value $features ssh-terminfo) {
@@ -126,9 +126,8 @@
             var ssh-cpath = $ssh-cpath-dir"/socket"
 
             if (bool ?(echo $ssh-terminfo | (external ssh) $@ssh-opts -o ControlMaster=yes -o ControlPath=$ssh-cpath -o ControlPersist=60s $@args '
+                  command -v tic >/dev/null 2>&1 && mkdir -p ~/.terminfo 2>/dev/null && tic -x -o ~/.terminfo - 2>/dev/null && exit 0
                   infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-                  command -v tic >/dev/null 2>&1 || exit 1
-                  mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
                   exit 1
                 ' 2>/dev/null)) {
               set ssh-term = "xterm-ghostty"
@@ -148,7 +147,7 @@
       }
     }
 
-    with [E:TERM = $ssh-term] {
+    with [E:TERM = $ssh-term] [E:COLORTERM = truecolor] {
       (external ssh) $@ssh-opts $@args
     }
   }
@@ -187,7 +186,16 @@
   }
 
   # Report changes to the current directory.
-  fn report-pwd { printf "\e]7;kitty-shell-cwd://%s%s\a" (platform:hostname) $pwd }
+  #
+  # WORTEL: control bytes are taken out of the host and the directory first. A
+  # raw ESC or BEL in a directory name ended this OSC 7 early and started a
+  # sequence of its own, such as an OSC 52 clipboard write. Upstream fixed the
+  # same hole in zsh and bash (6eb24a0f0) but not here.
+  fn report-pwd {
+    printf "\e]7;kitty-shell-cwd://%s%s\a" ^
+      (re:replace '[[:cntrl:]]' '' (platform:hostname)) ^
+      (re:replace '[[:cntrl:]]' '' $pwd)
+  }
   set after-chdir = (conj $after-chdir {|_| report-pwd })
   report-pwd
 }

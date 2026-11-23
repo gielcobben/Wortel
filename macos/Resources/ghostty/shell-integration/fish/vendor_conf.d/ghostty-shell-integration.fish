@@ -133,8 +133,8 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
 
             # Configure environment variables for remote session
             if contains ssh-env $features
-                set -a ssh_opts -o "SetEnv COLORTERM=truecolor"
-                set -a ssh_opts -o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"
+                # SendEnv, not SetEnv: see the zsh copy. (Ghostty 69554f414.)
+                set -a ssh_opts -o "SendEnv COLORTERM TERM_PROGRAM TERM_PROGRAM_VERSION"
             end
 
             # Install terminfo on remote host if needed
@@ -176,10 +176,12 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                             set ssh_cpath_dir (mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null; or echo "/tmp/ghostty-ssh-$ssh_user."(random))
                             set ssh_cpath "$ssh_cpath_dir/socket"
 
+                            # Wortel: install first, and accept an entry
+                            # already there only when the host has no tic.
+                            # See the zsh copy.
                             if echo "$ssh_terminfo" | command ssh $ssh_opts -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s $argv '
+                                command -v tic >/dev/null 2>&1 && mkdir -p ~/.terminfo 2>/dev/null && tic -x -o ~/.terminfo - 2>/dev/null && exit 0
                                 infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-                                command -v tic >/dev/null 2>&1 || exit 1
-                                mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
                                 exit 1
                             ' 2>/dev/null
                                 set ssh_term xterm-ghostty
@@ -202,7 +204,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
             end
 
             # Execute SSH with TERM environment variable
-            TERM="$ssh_term" command ssh $ssh_opts $argv
+            TERM="$ssh_term" COLORTERM=truecolor command ssh $ssh_opts $argv
         end
     end
 
@@ -639,7 +641,7 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
                 begin
                     echo "agent=$found[1]"
                     echo "model=$found[2]"
-                    echo "cwd=$found[3]"
+                    echo "cwd="(string replace -ra '[[:cntrl:]]' '' -- $found[3])
                     echo "argv=$found[4]"
                     # The shell's own pid — see the zsh integration: it lets the
                     # app verify from the process table that the agent is really

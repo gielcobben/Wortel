@@ -1627,6 +1627,7 @@ final class SessionManager {
     /// its shells on the way out can end them before the app hears that it
     /// has gone itself.
     private func shellEnded(_ view: SurfaceView, in session: Session, tab: UUID?) {
+        let endedAt = Date()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak session, weak view] in
             guard let self, let session, let view else { return }
             // Closed, or already given a new shell, in that second.
@@ -1637,7 +1638,7 @@ final class SessionManager {
                       lostAt: loss.at, endedAt: Date().addingTimeInterval(-1),
                       isSessionTerminal: tab == nil, agentRunning: session.runningAgent != nil)
             else {
-                view.finishProcess()
+                view.finishProcess(endedAt: endedAt)
                 return
             }
             self.replaceKeeper(lost: keeper)
@@ -5963,15 +5964,46 @@ final class SessionManager {
     /// goes to the app layer as it is. A path is tried relative to that
     /// terminal's own folder first, then the session's, then where it was
     /// born, then the repository each is in. A path that resolves nowhere is
-    /// dropped: there is nothing to open and nothing worth a dialog.
+    /// dropped: there is nothing to open and nothing worth a dialog. Any
+    /// other link is `TerminalLink.external`'s: a web or mail link opens in
+    /// its app, another scheme asks first, a malformed one does nothing.
+    /// libghostty opens none of them itself any more (GhosttyRuntime).
     private func openLink(_ link: String, from view: SurfaceView, in session: Session) {
         if let server = TerminalLink.localServer(link) {
             onOpenLocalServer?(server)
             return
         }
-        let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
-        guard let target = TerminalLink.resolve(link, bases: bases) else { return }
-        onOpenTerminalLink?(target)
+        if TerminalLink.isPath(link) {
+            let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
+            guard let target = TerminalLink.resolve(link, bases: bases) else { return }
+            onOpenTerminalLink?(target)
+            return
+        }
+        switch TerminalLink.external(link) {
+        case .open(let url):
+            NSWorkspace.shared.open(url)
+        case .ask(let url):
+            askToOpen(url, over: view.window)
+        case .refuse:
+            break
+        }
+    }
+
+    /// A link to another app (`vscode:`, `tel:`) says which app, and waits
+    /// for a yes: the program printing it chose the scheme, not you.
+    private func askToOpen(_ url: URL, over window: NSWindow?) {
+        guard let window, let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return }
+        let name = FileManager.default.displayName(atPath: app.path)
+        let alert = NSAlert()
+        alert.messageText = "Open \u{201c}\(name)\u{201d}?"
+        alert.informativeText = "This link opens in \(name):\n\(url.absoluteString)"
+        // Cancel is the default: a program's output chose this link, so
+        // Return out of habit doesn't open it (as Ghostty.app does).
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Open")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertSecondButtonReturn { NSWorkspace.shared.open(url) }
+        }
     }
 
     // MARK: - Wiring

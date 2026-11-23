@@ -3,8 +3,9 @@ import Foundation
 /// Where a ⌘-clicked link in a terminal goes, when it is a path.
 ///
 /// libghostty finds the link (its URL regex, or an OSC 8 hyperlink) and hands
-/// the text to `GhosttyRuntime`'s OPEN_URL handler. A web link is libghostty's
-/// to open. A path is ours, because only the app knows what it is relative to.
+/// the text to `GhosttyRuntime`'s OPEN_URL handler, which takes every one. A
+/// path is resolved here, because only the app knows what it is relative to;
+/// any other link is decided by `external(_:)`.
 ///
 /// The case that made this a type: an agent writes `docs/decisions.md`, relative
 /// to the folder it was started in. libghostty's own open runs `open` from the
@@ -74,7 +75,7 @@ enum TerminalLink {
     /// `127.0.0.1`, `[::1]`, `0.0.0.0`, `app.localhost`), or nil. A dev
     /// server's address belongs beside the terminal that started it, like a
     /// server picked from the running-jobs popover, and goes where those go.
-    /// Any other web address stays libghostty's (the system browser).
+    /// Any other web address is `external(_:)`'s (the system browser).
     static func localServer(_ link: String) -> URL? {
         let link = link.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: link),
@@ -87,6 +88,61 @@ enum TerminalLink {
         let isLoopback = host == "localhost" || host.hasSuffix(".localhost")
             || isLoopbackV4 || host == "::1" || host == "0.0.0.0"
         return isLoopback ? url : nil
+    }
+
+    /// What a link that is neither a path nor a server on this Mac does.
+    enum External: Equatable {
+        /// A web page or a mail address: straight to its app.
+        case open(URL)
+        /// Another scheme (`vscode:`, `tel:`, `ssh:`): its app is asked for
+        /// by name first, because a program's output chose it.
+        case ask(URL)
+        /// Malformed, or hiding something: nothing happens.
+        case refuse
+    }
+
+    /// The decision for a link that is not ours to resolve.
+    ///
+    /// These were libghostty's to open until its Oct 2026 change ("treat
+    /// links from unknown sources as untrusted", `f9e8ef02d`): on macOS its
+    /// fallback opener now refuses a matched URL and an OSC 8 hyperlink
+    /// outright, and leaves the checks to the app. Wortel took the update
+    /// with the keeper terminal (2026.47.4) and every web link went dead,
+    /// first seen in Pi, which writes its links as OSC 8. The rules follow
+    /// Ghostty.app's `UntrustedURL`: invisible and line-breaking characters
+    /// refuse, a web link needs a host, a mail link an address.
+    static func external(_ link: String) -> External {
+        let link = link.trimmingCharacters(in: .whitespaces)
+        guard !link.unicodeScalars.contains(where: isUnsafe),
+              let url = URL(string: link),
+              let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return .refuse }
+        switch scheme {
+        case "http", "https":
+            guard let host = url.host, !host.isEmpty else { return .refuse }
+            return .open(url)
+        case "mailto":
+            guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  !parts.path.isEmpty else { return .refuse }
+            return .open(url)
+        case "file":
+            // Paths are resolved by the app and open in the preview; one that
+            // got here was not found, and goes nowhere else.
+            return .refuse
+        default:
+            return .ask(url)
+        }
+    }
+
+    /// Controls, bidirectional overrides, zero-width and line-separating
+    /// characters: what can make the link shown differ from the link opened.
+    private static func isUnsafe(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x00...0x1F, 0x7F...0x9F, 0x061C, 0x200B...0x200F, 0x202A...0x202E,
+             0x2028...0x2029, 0x2060, 0x2066...0x2069, 0xFEFF:
+            return true
+        default:
+            return false
+        }
     }
 
     /// The first spelling of `link` that exists, tried against `bases` in

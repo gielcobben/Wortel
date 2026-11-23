@@ -64,9 +64,12 @@ tree there hides the tree until the preview is closed or the Files segment
 reclaims it, the same rule as clicking a `.md` path in the terminal.
 
 **A ⌘-clicked link in a terminal** (`Wortel/Ghostty/TerminalLink.swift`).
-libghostty finds the link and calls OPEN_URL. Two kinds are taken and handled
-on the main actor; everything else (web links, `mailto:`) is left to
-libghostty, which hands it to the system.
+libghostty finds the link and calls OPEN_URL. Every link is taken and handled
+on the main actor (`SessionManager.openLink`). None is left to libghostty:
+since Ghostty's `f9e8ef02d` (Oct 2026) its macOS fallback opener refuses the
+two kinds a click produces, a matched URL (`unknown`) and an OSC 8 hyperlink
+(`osc8`), and opens nothing. In 2026.47.4, the first release on that Ghostty,
+no web link opened at all.
 
 - **A path or `file:` URL.** libghostty's own open ran `open` from the app's
   working directory, `/`, so a relative path an agent printed
@@ -88,6 +91,12 @@ there, in a shell of its own that never reports a cwd). The regex keeps a senten
   `*.localhost`) opens beside the terminal as the running-jobs popover's
   servers do (`GitPanelModel.showInBrowser`: a tab on that server comes
   forward), or in the browser when Settings says servers go there.
+- **Anything else** (`TerminalLink.external`), after the rules of Ghostty.app's
+  `UntrustedURL`. An `http(s)` link with a host and a `mailto:` with an address
+  open in their default app. Another scheme (`vscode:`, `tel:`, `ssh:`) asks
+  first, naming the app, the same sheet a browser tab shows. A link with
+  control, zero-width, bidirectional or line-separating characters, or with
+  no scheme or host, does nothing.
 
 **Open in the file's app** (`Wortel/Preview/ExternalEditor.swift`), the
 header button of a preview tab and window. No setting: the

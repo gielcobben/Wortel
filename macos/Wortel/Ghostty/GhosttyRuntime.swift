@@ -85,45 +85,79 @@ final class GhosttyRuntime {
             // Text is all Wortel hands a program, whatever else it asks for:
             // the paste of an image or a file is its path, as with drag and
             // drop, so agents receive pasted screenshots.
-            guard location == GHOSTTY_CLIPBOARD_STANDARD,
+            guard let pasteboard = GhosttyRuntime.pasteboard(for: location),
                   let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
                   let surface = view.surface
             else { return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
             let wantsText = (0..<mimeCount).contains { String(cString: mimes[$0]).hasPrefix("text/") }
-            let pasteboard = NSPasteboard.general
-            let payload: String?
-            if !wantsText {
-                payload = nil
-            } else if let string = pasteboard.string(forType: .string) {
-                payload = string
+            let text: String?
+            if let string = pasteboard.string(forType: .string) {
+                text = string
             } else {
                 let paths = DropPasteboard.insertablePaths(from: pasteboard)
-                payload = paths.isEmpty ? nil : paths.joined(separator: " ")
+                text = paths.isEmpty ? nil : paths.joined(separator: " ")
             }
+            let payload = wantsText ? text : nil
             guard payload != nil || list else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+            // The listing says what a read would get: text, or nothing. A
+            // program that turned on paste events (kitty's mode 5522) asks
+            // for the listing at ⌘V, then for what it lists.
             GhosttyRuntime.completeClipboardRequest(
-                surface, text: payload, available: list ? ["text/plain"] : [], state: state)
+                surface, text: payload, available: list && text != nil ? ["text/plain"] : [], state: state)
             return GHOSTTY_CLIPBOARD_READ_STARTED
         }
-        let confirmReadClipboard: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, _ in
-            // Auto-approved, deliberately. libghostty raises this for a paste
-            // that looks unsafe — most often one carrying a newline, i.e. text
-            // that could execute on arrival. The prompt is the right default for
-            // a general terminal and the wrong one here: Wortel exists to sit
+        let confirmReadClipboard: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, request in
+            // libghostty asks here before it lets a clipboard read through.
+            // Two kinds of request arrive, and they get opposite answers.
+            //
+            // **A program reading the clipboard is refused.** OSC 52 `?` (and
+            // the kitty protocol's read, OSC 5522) is a request from whatever
+            // is writing to the terminal: a file being `cat`ed, a remote host
+            // over ssh, a log being tailed. `clipboard-read` is left at
+            // Ghostty's `ask`, and this is where the ask lands: approving it
+            // wrote the clipboard, base64'd, into the pty, where the program
+            // that asked could read it. Nobody is asked instead, because the
+            // answer would be no every time and the prompt would arrive from
+            // output nobody is watching. Refused through
+            // `deny_clipboard_request`, not completed unconfirmed (that only
+            // comes back here): an OSC 52 read is answered with an empty
+            // clipboard and a kitty read with EPERM, so a program waiting for
+            // a reply gets one. A write that needs confirmation (only under
+            // `clipboard-write = ask`, which wortel.conf doesn't set) is
+            // refused the same way.
+            //
+            // **The user's own paste is approved**, deliberately. libghostty
+            // asks for a paste that looks unsafe: one carrying a newline into
+            // a program that hasn't turned on bracketed paste, so it could
+            // execute on arrival. The prompt is the right default for a
+            // general terminal and the wrong one here: Wortel exists to sit
             // beside an agent, pasting multi-line output into a prompt is the
             // central gesture, and a confirmation on every one of them trains
             // the reflex that makes the warning useless anyway.
             //
-            // What makes that affordable is that the clipboard is only ever
-            // filled by something the user already ran. If Wortel ever grows a
-            // path that writes the clipboard from remote content, this decision
-            // has to be revisited rather than inherited.
+            // The clipboard is not only filled by the user. OSC 52 *writes*
+            // stay on (Ghostty's `clipboard-write = allow`: it is how a copy
+            // in vim or tmux over ssh reaches the Mac), so a remote program can
+            // put text there. What keeps the approval affordable: a paste is
+            // still the user's keystroke; zsh, fish, bash 5.1 and the agents
+            // turn bracketed paste on, where a newline runs nothing and no
+            // prompt is raised; and libghostty replaces ESC and the other
+            // control bytes in every paste, so a planted `ESC[201~` can't end
+            // the bracket early. What is left is planted text pasted into a
+            // program that reads raw lines (a shell without bracketed paste,
+            // such as macOS's own bash 3.2), which would run it. That is
+            // accepted here knowingly (docs/decisions.md). Revisit it before
+            // approving anything more than the paste.
             //
-            // Completed with exactly what was asked about: the clipboard is
-            // not read again.
+            // A paste is completed with exactly what was asked about: the
+            // clipboard is not read again.
             guard let view = GhosttyRuntime.surfaceView(fromUserdata: userdata),
                   let surface = view.surface
             else { return }
+            guard request == GHOSTTY_CLIPBOARD_REQUEST_PASTE else {
+                ghostty_surface_deny_clipboard_request(surface, state)
+                return
+            }
             var complete = ghostty_clipboard_complete_s(
                 contents: confirm.pointee.contents, contents_len: confirm.pointee.contents_len,
                 available: confirm.pointee.available, available_len: confirm.pointee.available_len,
@@ -131,7 +165,7 @@ final class GhosttyRuntime {
             ghostty_surface_complete_clipboard_request(surface, &complete, state)
         }
         let writeClipboard: ghostty_runtime_write_clipboard_cb = { userdata, location, content, len, _ in
-            guard location == GHOSTTY_CLIPBOARD_STANDARD, len > 0 else { return }
+            guard let pasteboard = GhosttyRuntime.pasteboard(for: location), len > 0 else { return }
             // Find the text/plain entry and copy it out before returning. The
             // data is binary-safe, with a length, and not NUL-terminated.
             for i in 0..<len {
@@ -139,7 +173,6 @@ final class GhosttyRuntime {
                 guard String(cString: item.mime) == "text/plain" else { continue }
                 let string = String(decoding: UnsafeRawBufferPointer(start: item.data, count: item.len),
                                     as: UTF8.self)
-                let pasteboard = NSPasteboard.general
                 pasteboard.declareTypes([.string], owner: nil)
                 pasteboard.setString(string, forType: .string)
                 return
@@ -152,7 +185,7 @@ final class GhosttyRuntime {
 
         var runtimeConfig = ghostty_runtime_config_s(
             userdata: Unmanaged.passUnretained(self).toOpaque(),
-            supports_selection_clipboard: false,
+            supports_selection_clipboard: true,
             wakeup_cb: wakeup, action_cb: action,
             read_clipboard_cb: readClipboard, confirm_read_clipboard_cb: confirmReadClipboard,
             write_clipboard_cb: writeClipboard, close_surface_cb: closeSurface)
@@ -702,6 +735,27 @@ final class GhosttyRuntime {
         return Unmanaged<SurfaceView>.fromOpaque(userdata).takeUnretainedValue()
     }
 
+    /// Where each of libghostty's clipboards lives on a Mac. `STANDARD` is
+    /// the system clipboard. `SELECTION` is a pasteboard of Wortel's own,
+    /// as Ghostty.app has one of its own: what you select with the mouse
+    /// goes there (Ghostty's `copy-on-select = primary`, its macOS default
+    /// since 2026.47.4's Ghostty) and a middle click pastes it, without
+    /// replacing what ⌘C put on the clipboard. Until this existed Wortel
+    /// said it had no selection clipboard, and on that Ghostty a selection
+    /// was copied nowhere and a middle click pasted nothing. Named after the
+    /// bundle, so a test copy keeps its own. `PRIMARY` has no Mac
+    /// counterpart.
+    static func pasteboard(for location: ghostty_clipboard_e) -> NSPasteboard? {
+        switch location {
+        case GHOSTTY_CLIPBOARD_STANDARD: return .general
+        case GHOSTTY_CLIPBOARD_SELECTION: return selectionPasteboard
+        default: return nil
+        }
+    }
+
+    private static let selectionPasteboard = NSPasteboard(
+        name: .init((Bundle.main.bundleIdentifier ?? "com.gielcobben.Wortel") + ".selection"))
+
     /// Answer a clipboard read with `text` as its one `text/plain`
     /// representation (or none), and `available` as the listing of what the
     /// clipboard holds. Everything is copied into C memory for the call only.
@@ -930,21 +984,17 @@ final class GhosttyRuntime {
 
         case GHOSTTY_ACTION_OPEN_URL:
             // A ⌘-clicked link: a URL, an OSC 8 hyperlink, or a matched path.
-            // Two kinds are ours. A path (or a `file:` URL): only the app knows
-            // what a relative one is relative to, and libghostty's own open
-            // runs from the app's working directory, `/`, where `docs/x.md` is
-            // nothing. And a server on this Mac, which opens beside the
-            // terminal unless servers go to the browser. Both are taken here
-            // and handled on the main actor (`TerminalLink`). Other web links,
-            // mailto: and other schemes return false, and libghostty opens
-            // them itself (web links land in the system browser). The test is
-            // pure string work because its answer is this return value.
+            // Every one is taken and handled on the main actor
+            // (`SessionManager.openLink`, `TerminalLink`). Returning false is
+            // no longer a way to have libghostty open it: since its
+            // `f9e8ef02d` its macOS fallback refuses both kinds a click
+            // produces (`unknown`, `osc8`) and opens nothing, which is how
+            // every web link went dead in 2026.47.4.
             guard let view = surfaceView(fromTarget: target) else { return false }
             let open = action.action.open_url
             let ptr = open.url
             // The bytes aren't guaranteed NUL-terminated; `len` is authoritative.
             let link = String(decoding: Data(bytes: ptr, count: Int(open.len)), as: UTF8.self)
-            guard TerminalLink.isPath(link) || TerminalLink.localServer(link) != nil else { return false }
             DispatchQueue.main.async { view.onOpenLink?(link) }
             return true
 

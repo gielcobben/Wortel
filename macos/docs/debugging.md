@@ -10,9 +10,10 @@ a minute.
 
 ## First, which build is running
 
-A Debug build in DerivedData and `/Applications/Wortel.app` are different apps
-that share one data folder and one keeper. The Dock and Spotlight open the
-installed one.
+A Debug build in DerivedData and `/Applications/Wortel.app` are different apps.
+On a Mac that shares its data folder with Debug builds (`building.md`) they
+share one data folder and one keeper; anywhere else the Debug build keeps to
+`Wortel Dev`. The Dock and Spotlight open the installed one.
 
 ```sh
 ps -axo pid=,comm= | grep Wortel          # which bundle the running app is
@@ -109,6 +110,29 @@ every machine this is built on. A syntax error there breaks every fish user at
 shell startup, which is worse than any bug it fixes. So keep a fish change
 small, mirror the zsh version line for line, run it in fish when you can, and
 say in the commit when you could not.
+
+**They are Ghostty v1.3.1's copies, plus Wortel's hunks, plus fixes ported by
+hand** from later Ghostty, never a wholesale re-vendor: upstream moved its ssh
+wrapper into a `ghostty +ssh` binary that Wortel does not ship (the
+`Resources/ghostty/bin/ghostty` stub answers only `+ssh-cache`). Wortel's own
+hunks are marked `Wortel:` or `WORTEL:`. Ported on 2026-11-23, against the
+5ebe501 pin: escape-sequence injection through a directory name (6eb24a0f0,
+also applied to elvish, and to bash's title, which Wortel now prints with
+control bytes removed instead of putting `\w` in PS1, because `\w` passes them
+through), ssh `SendEnv COLORTERM` instead of `SetEnv` (69554f414), bash's
+PROMPT_COMMAND fixes (1f3a3b41f, 2a952b4df, 4b9324f48, ed7f046ee, a4031c8e3,
+591ccacbd; 4dfa44ecd was already a Wortel hunk), bash's ble.sh mark
+(b1ad24e24) and zsh's trailing `%` in PS1 (43f3dc5f1). Not ported: bash-preexec
+0.7.0 (5d6615fc4), zsh's `133;P` secondary prompt (3e0d434e8), and the `+ssh`
+rewrite. The ssh wrappers' remote step now always runs `tic` into
+`~/.terminfo`, and falls back to an entry already on the host only when it has
+no `tic`, so a newer terminfo replaces an older one.
+
+To test a change to the escape sequences, drive the real script under
+`script -q /dev/null` (the integration writes to the tty, not stdout), `cd`
+into a directory whose name holds a raw ESC and BEL (`$'x\e]52;c;SGk=\a'`) and
+one with them as backslash text (`'y\a\e]52;c;SGk=\a'`), and look at the bytes:
+nothing between `ESC ]7;` and its BEL may be a control byte.
 
 ## A permission that is on and still refused
 

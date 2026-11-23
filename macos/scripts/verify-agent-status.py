@@ -9,7 +9,7 @@ has shipped was of that kind.
 
     ./scripts/verify-agent-status.py                # everything, about 4 minutes
     ./scripts/verify-agent-status.py approval       # scenarios by substring
-    ./scripts/verify-agent-status.py --real         # plus real Claude Code: put to sleep, woken
+    ./scripts/verify-agent-status.py --real         # plus real Claude Code: put to sleep, woken, and a dev server
     ./scripts/verify-agent-status.py --soak         # only the soak: twenty agents, random turns
     ./scripts/verify-agent-status.py --soak=7       # the same, from seed 7 (a failure prints its seed)
     ./scripts/verify-agent-status.py --keep         # leave the copy open afterwards
@@ -403,28 +403,49 @@ scenario("opencode: one of its sessions waits on you", "opencode",
           "clearid:ses_1", "s:2", "r:idle", "hold:3"], 11,
          lambda ev, st: kinds(ev) == ["needsInput", "turnDone"] and order(ev, ("R", "needsInput"), ("C",), ("R", "turnDone")),
          "needs-input, cleared when answered, then turn-done")
+# Claude Code's records are its tasks, ids as it makes them: `b` and eight of
+# [0-9a-z] a background command (a server among them), `a` a background agent.
 scenario("claude: a background agent asks after the turn finished", "claude",
-         ["tui", "r:working", "s:3", "r:done", "s:2", "child:agent-7:blocked:question:Migration:Which database?", "s:3",
-          "clearid:agent-7", "hold:3"], 13,
+         ["tui", "r:working", "s:3", "r:done", "s:2", "child:a7k2m9x1q:blocked:question:Migration:Which database?", "s:3",
+          "clearid:a7k2m9x1q", "hold:3"], 13,
          lambda ev, st: kinds(ev) == ["turnDone", "needsInput"] and order(ev, ("R", "needsInput"), ("C",)),
          "turn-done, then needs-input, cleared when answered, and no second turn-done")
-scenario("claude: background commands listed", "claude",
-         ["tui", "r:working", "child:bash_1:working:-:npm run build:", "child:bash_2:working:-:tests:", "s:3",
-          "clearid:bash_1", "r:done", "s:1", "clearid:bash_2", "hold:5"], 11,
+scenario("claude: background agents listed", "claude",
+         ["tui", "r:working", "child:a1b2c3d4e:working:-:Explore:", "child:a2b2c3d4e:working:-:Review:", "s:3",
+          "clearid:a1b2c3d4e", "r:done", "s:1", "clearid:a2b2c3d4e", "hold:5"], 11,
          lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("S", "done"), ("S", "clearRecord"), ("R", "turnDone")),
-         "one turn-done, once the last command has ended")
-scenario("claude: a turn ends while a background command runs", "claude",
-         ["tui", "r:working", "s:2", "child:bash_1:working:-:release.sh:", "s:1", "r:done", "s:4",
-          "clearid:bash_1", "hold:5"], 15,
+         "one turn-done, once the last agent has ended")
+scenario("claude: a turn ends while a background agent runs", "claude",
+         ["tui", "r:working", "s:2", "child:a1b2c3d4e:working:-:Explore:", "s:1", "r:done", "s:4",
+          "clearid:a1b2c3d4e", "hold:5"], 15,
          lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("S", "clearRecord"), ("R", "turnDone"))
              and st == "finished",
-         "no turn-done while the command runs; one when it ends; state finished")
-scenario("claude: background command ends, and it carries on", "claude",
-         ["tui", "r:working", "s:2", "child:bash_1:working:-:release.sh:", "s:1", "r:done", "s:3",
-          "clearid:bash_1", "s:1.5", "r:working", "s:3", "r:done", "hold:3"], 17,
-         lambda ev, st: kinds(ev) == ["turnDone"], "one turn-done, at the real end; none when the command ended")
+         "no turn-done while the agent runs; one when it ends; state finished")
+scenario("claude: background agent ends, and it carries on", "claude",
+         ["tui", "r:working", "s:2", "child:a1b2c3d4e:working:-:Explore:", "s:1", "r:done", "s:3",
+          "clearid:a1b2c3d4e", "s:1.5", "r:working", "s:3", "r:done", "hold:3"], 17,
+         lambda ev, st: kinds(ev) == ["turnDone"], "one turn-done, at the real end; none when the agent ended")
+scenario("claude: a server it started does not hold the turn", "claude",
+         ["tui", "r:working", "s:2", "child:b7f3k2p9z:working:-:npm run dev:", "s:1", "r:done", "s:4",
+          "clearid:b7f3k2p9z", "hold:3"], 13,
+         lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("R", "turnDone"), ("S", "clearRecord"))
+             and st == "finished",
+         "turn-done while the server still runs; nothing when it stops; state finished")
+scenario("claude: a server does not hide the next question", "claude",
+         ["tui", "r:working", "child:b7f3k2p9z:working:-:npm run dev:", "s:3", "r:done", "s:3",
+          "r:working", "s:2", "rm:blocked:permission:Allow curl?", "hold:4"], 15,
+         lambda ev, st: kinds(ev) == ["turnDone", "needsInput"]
+             and order(ev, ("R", "turnDone"), ("S", "working"), ("S", "blocked"), ("R", "needsInput")),
+         "turn-done, then needs-input, both with the server running")
+scenario("claude: a command it waits on keeps the turn", "claude",
+         # What Claude Code sends for a command it waits on (not a server): its
+         # own root says working, with what is still running, until it ends.
+         ["tui", "r:working", "s:2", "child:b1c2d3e4f:working:-:release.sh:", "s:1",
+          "rm:working:-:1 shell still running", "s:4", "clearid:b1c2d3e4f", "s:1", "r:working", "s:2", "r:done", "hold:3"], 17,
+         lambda ev, st: kinds(ev) == ["turnDone"] and order(ev, ("S", "clearRecord"), ("R", "turnDone")),
+         "no turn-done while the command runs; one at the real end")
 scenario("claude: work listed after the turn", "claude",
-         ["tui", "r:working", "s:3", "r:done", "s:2", "child:bash_9:working:-:late:", "s:2", "clearid:bash_9", "hold:5"], 15,
+         ["tui", "r:working", "s:3", "r:done", "s:2", "child:a9k2m9x1q:working:-:late:", "s:2", "clearid:a9k2m9x1q", "hold:5"], 15,
          lambda ev, st: kinds(ev) == ["turnDone"], "one turn-done; the late work neither takes it back nor repeats it")
 scenario("unknown program learns to say done", None,
          ["r:working", "s:3", "r:idle", "s:3", "r:working", "s:3", "r:done", "s:3", "r:working", "s:3", "r:idle", "hold:2"], 21,
@@ -538,6 +559,68 @@ def sleeping():
     report("sleep: woken and working again", "resumed, reported again, and its next turn announced",
            kinds(after)[-1:] == ["turnDone"] and has(after, "S", "working"), after)
 
+def real_server():
+    """The real Claude Code waits on a command it started, then starts a dev server and is finished beside it."""
+    if not REAL or not wanted("real server"): return
+    # Under a folder Claude Code is already trusted in, if there is one: in
+    # any other its trust question comes first, says nothing, and is not
+    # this test's to answer.
+    # The shallowest, so the scratch folder lands in no one project.
+    trusted = min((p for p, v in json.load(open(HOME + "/.claude.json")).get("projects", {}).items()
+                   if v.get("hasTrustDialogAccepted") and p.startswith(HOME + "/") and os.path.isdir(p)),
+                  key=lambda p: (p.count("/"), p != HOME + "/Developer"), default=None)
+    folder = (trusted + f"/.wortel-verify-{os.getpid()}") if trusted else WORK + "/server"
+    os.makedirs(folder, exist_ok=True)
+    # A package script named `dev`, which Claude Code reads as a server. The
+    # folder is in the command, so what is left of it can be found and ended.
+    server = f"http.server 0 --bind 127.0.0.1 --directory {folder}"
+    json.dump({"name": "server-test", "private": True, "scripts": {"dev": "python3 -m " + server}},
+              open(folder + "/package.json", "w"))
+    # Only these two commands are allowed, so no permission prompt stands in the way.
+    real = wortel("new", "--cwd", folder, "--name", "real server: Claude", "--", "claude", "--model", "haiku",
+                  "--allowedTools", "Bash(npm run dev),Bash(sleep 20)").splitlines()[-1]
+    unselect()
+    screen = lambda: wortel("read", real)
+    def turn(prompt, finished, seconds):
+        begun = len(events_for(real))
+        for attempt in range(3):
+            wortel("send", real, prompt, "--enter")
+            if wait_for(lambda: has(events_for(real)[begun:], "S", "working"), 8): break
+            print("   the prompt did not start a turn; sending it again", flush=True)
+        wait_for(lambda: finished(events_for(real)[begun:]), seconds)
+        return begun
+    try:
+        # A folder Claude Code has not been trusted in asks first, and says
+        # nothing while it does: Return takes the answer it offers, yes.
+        wait_for(lambda: has(events_for(real), "S", "idle") or "trust" in screen().lower(), 40)
+        if not has(events_for(real), "S", "idle"):
+            wortel("send", real, "--enter")
+            wait_for(lambda: has(events_for(real), "S", "idle"), 30)
+
+        begun = turn("Use the Bash tool with run_in_background set to true to run exactly: sleep 20. "
+                     "Do not wait for it. Reply with only the word waiting. When it has finished, reply with only the word over.",
+                     lambda ev: "turnDone" in kinds(ev) and has(ev, "S", "clearRecord"), 90)
+        time.sleep(5)       # a second announcement, if one were coming
+        ev = events_for(real)[begun:]
+        report("real server: a command it waits on", "working until the command ended, then one turn-done",
+               has(ev, "S", "child-working") and kinds(ev) == ["turnDone"]
+                   and order(ev, ("S", "clearRecord"), ("R", "turnDone")), ev,
+               "\n      screen: " + " | ".join(screen().splitlines()[-10:]))
+
+        begun = turn("Use the Bash tool with run_in_background set to true to run exactly: npm run dev. "
+                     "Do not wait for it, read its output or check on it. Then reply with only the word started.",
+                     lambda ev: "turnDone" in kinds(ev), 90)
+        ev = events_for(real)[begun:]
+        running = subprocess.run(["pgrep", "-f", server], capture_output=True).returncode == 0
+        report("real server: a dev server beside the turn", "a background command listed, turn-done, the server still running",
+               has(ev, "S", "child-working") and kinds(ev) == ["turnDone"] and running, ev,
+               f"server running: {running}\n      screen: " + " | ".join(screen().splitlines()[-10:]))
+    finally:
+        wortel("send", real, "/exit", "--enter")
+        time.sleep(3)
+        subprocess.run(["pkill", "-f", server])
+        shutil.rmtree(folder, ignore_errors=True)
+
 def relaunch():
     """The app closed and reopened around five sessions, whose shells the keeper keeps."""
     if not wanted("relaunch"): return
@@ -641,6 +724,7 @@ def main():
             scenarios()
             hibernation()
             sleeping()
+            real_server()
             relaunch()      # last: it reopens the copy without the shortened clocks
     finally:
         put_away(stream)

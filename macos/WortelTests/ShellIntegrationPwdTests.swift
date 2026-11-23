@@ -117,7 +117,7 @@ final class ShellIntegrationPwdTests: XCTestCase {
     ///
     /// Runs under `script(1)` for its pty. That isn't ceremony: the integration
     /// opens its own write fd on `$TTY`/`/dev/tty` and only falls back to stdout
-    /// when neither is writable (ghostty-integration:79-85). Spawned bare, its
+    /// when neither is writable (ghostty-integration:86-92). Spawned bare, its
     /// reports would go to whatever terminal the *test runner* is attached to and
     /// never reach this pipe — passing or failing depending on whether the run
     /// has a tty, which is exactly the flakiness worth designing out.

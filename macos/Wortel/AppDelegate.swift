@@ -440,13 +440,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Asked of macOS directly rather than read off `Permissions`, which
             // may not have heard back yet this early and would say "unknown"
             // on every launch. The answer arrives off the main thread, which is
-            // also where the crash report, a few hundred KB of JSON, is read.
+            // also where the crash report, a few hundred KB of JSON, is read,
+            // and failing that the head of a hang report.
             UNUserNotificationCenter.current().getNotificationSettings { settings in
                 let crash = uncleanSince.flatMap { CrashReport.latest(after: $0) }
+                let hang = crash == nil ? uncleanSince.flatMap { HangReport.latest(after: $0) } : nil
                 let previousExit = ExitMarker.previousExit(
                     firstLaunch: first, markerFound: ExitMarker.lastRunEndedUncleanly,
-                    crashReported: crash != nil)
+                    crashReported: crash != nil, hangReported: hang != nil)
                 if let crash { Telemetry.capture(crash.event) }
+                if let hang { Telemetry.capture(hang.event) }
                 let notifications: NotificationState
                 switch settings.authorizationStatus {
                 case .notDetermined: notifications = .notAsked

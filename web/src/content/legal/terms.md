@@ -1,16 +1,19 @@
 ---
 title: Terms
-description: 'The terms for downloading and using Wortel: free, as-is, no account, and no warranty.'
-updated: 2026-08-10
+description: 'The terms for downloading and using Wortel: free, open source under the GPL, as-is, no account, and no warranty.'
+updated: 2026-11-21
 nav: Terms
 order: 20
 ---
 
 Wortel is a free macOS terminal, given away with no account and no payment.
-These terms cover downloading it, using it, and this website. They are short
-because the relationship is short.
+Its source code is published under the GNU General Public License. These terms
+cover downloading the builds from this website, using them, and the website
+itself. They are short because the relationship is short.
 
-By downloading or using Wortel you accept them. If you do not, do not use it.
+By downloading Wortel from this website, or using the website, you accept them.
+Your rights to the program itself come from its licence, below, and these terms
+do not narrow them.
 
 ## Who you are agreeing with
 
@@ -19,22 +22,33 @@ Giel Cobben, in the Netherlands. Contact:
 
 ## What you may do with it
 
-You may download Wortel and use it, for anything, including at work and on
-commercial projects, on as many Macs as you like, for free. No licence key, no
-seat count, no registration.
+You may download the official builds of Wortel from this website and use them,
+for anything, including at work and on commercial projects, on as many Macs as
+you like, for free. No licence key, no seat count, no registration.
 
-You may not sell it, or pass off a modified build as the original.
+## The source code
 
-Wortel is not open source. The application is provided as a compiled program,
-and its source is not published. It does include open-source components, which
-keep their own licences.
+Wortel is open source. Its source is published at
+[github.com/gielcobben/wortel](https://github.com/gielcobben/wortel) under the
+GNU General Public License, version 3 or (at your option) any later version.
+That licence, not these terms, says what you may do with the code: use it,
+study it, change it, and share or sell it, as long as what you pass on comes
+with the same freedoms and its source. Nothing here takes any of that away.
+
+The name Wortel and its icon are not licensed by the GPL. A modified build that
+you publish has to use its own name and icon, and must not use Wortel's update
+feed. [TRADEMARKS.md](https://github.com/gielcobben/wortel/blob/main/TRADEMARKS.md)
+says what that means in practice.
 
 ## What it is built from
 
 Wortel embeds libghostty (Ghostty's terminal engine), Sparkle for updates, and
 tree-sitter grammars for syntax highlighting, among others. These are the work
 of other people, distributed under their own open-source licences, and nothing
-here overrides those licences or claims their work.
+here overrides those licences or claims their work. Each one, with its licence
+and notices, is listed in
+[THIRD-PARTY-NOTICES.md](https://github.com/gielcobben/wortel/blob/main/THIRD-PARTY-NOTICES.md),
+and a copy is inside the app.
 
 ## Updates
 

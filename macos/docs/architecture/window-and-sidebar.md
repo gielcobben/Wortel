@@ -125,7 +125,10 @@ written back, so saving and `normalizeOrder` never see it. ⌘1-9 do: they
 count the rows as drawn (`shortcutIDs`, from the outline's `publishRows`), so
 the number shown while ⌘ is held is the one that selects it. ⌥⌘↑/↓ and the
 row picked after a close follow the drawn rows too (`sidebarRowOrder`,
-`SidebarStep`). The selected row sorts by the key it had when it was last drawn until selection leaves it
+`SidebarStep`). Closing the selected session goes back to the one you were in
+before it (`SessionWindow.trail`: visits of 3 seconds or more, or that you
+typed in, and the session ⌘N was pressed in), else the row below, else the
+row above. The selected row sorts by the key it had when it was last drawn until selection leaves it
 (it was read the moment you selected it), and nothing re-sorts while the
 pointer is on a row or a button is down; rows slide with `moveItem`, not a
 reload. A drop is placed *before the row drawn below it* (`moveSessions(before:)`),

@@ -265,7 +265,7 @@ enum ProcessTable {
     /// This is the whole of orphan attribution. A dev server that outlived its
     /// session reparents to `launchd` and loses every link back to the terminal
     /// that started it — except this, which still reads
-    /// `…/gielcobben-2026/workers/images` four days later. It means no marker
+    /// `…/site/workers/images` four days later. It means no marker
     /// has to be written at spawn time, and so the shell integration (three
     /// copies, one of them untestable here) is left alone entirely.
     static func workingDirectory(of pid: pid_t) -> String? {

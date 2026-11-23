@@ -266,11 +266,14 @@ enum AgentResumeStore {
     /// format (agent name only) and is still accepted so an in-flight agent from
     /// a pre-upgrade launch still resumes.
     static func parse(_ text: String) -> AgentMarker? {
-        let lines = text.split(whereSeparator: \.isNewline)
+        // Lines end in "\n" and nothing else. Any Unicode line break
+        // (U+2028, NEL) split it too, and those can be in a folder's name, in
+        // the cwd line, where the shells strip only control characters.
+        let lines = text.split(separator: "\n").map { $0.hasSuffix("\r") ? $0.dropLast() : $0 }
         // Legacy marker: one bare token, no key=value structure.
         if lines.count == 1, !lines[0].contains("=") {
             let agent = lines[0].trimmingCharacters(in: .whitespaces)
-            return agent.isEmpty ? nil : AgentMarker(agent: agent, model: nil, cwd: nil,
+            return agent.isEmpty || !AgentCommandLine.isSafeID(agent) ? nil : AgentMarker(agent: agent, model: nil, cwd: nil,
                                                      argv: nil, shellPID: nil, startedAt: nil)
         }
         var kv: [String: String] = [:]
@@ -279,7 +282,13 @@ enum AgentResumeStore {
             let key = line[..<eq].trimmingCharacters(in: .whitespaces)
             kv[key] = String(line[line.index(after: eq)...])
         }
-        guard let agent = kv["agent"], !agent.isEmpty else { return nil }
+        // The agent is a name, never a command: on a fresh start an agent
+        // Wortel has no launcher for is typed as it is. The marker is lines
+        // of `key=value`, and the shell writes the cwd into it, so a folder
+        // whose name holds a newline could add an `agent=` line of its own.
+        // The shells strip control characters from the cwd now; this is
+        // the check that doesn't depend on them.
+        guard let agent = kv["agent"], !agent.isEmpty, AgentCommandLine.isSafeID(agent) else { return nil }
         func nonEmpty(_ k: String) -> String? { kv[k].flatMap { $0.isEmpty ? nil : $0 } }
         return AgentMarker(agent: agent, model: nonEmpty("model"),
                            cwd: nonEmpty("cwd"), argv: nonEmpty("argv"),

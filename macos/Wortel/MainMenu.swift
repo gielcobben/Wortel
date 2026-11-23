@@ -193,9 +193,9 @@ enum MainMenu {
             restart?.title = version.map { "Restart to Update to \($0)" } ?? "Restart to Update"
         }
         // The few things that differ per person (`AppSettings`): ⌘, where
-        // every Mac app has it. Automatic updates and anonymous usage data
-        // were checkmarks here until 2026-11-18; they are rows in that window
-        // now, and the usage-data switch is also in the sidebar's ⓘ.
+        // every Mac app has it. Automatic updates and anonymous usage data are
+        // rows in that window, and the usage-data switch is also in the
+        // sidebar's ⓘ.
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Settings\u{2026}", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         // What macOS lets Wortel do. The sidebar's icon for it only shows
@@ -274,11 +274,10 @@ enum MainMenu {
         newHome.keyEquivalentModifierMask = [.command, .option]
         // ⌘N's isolated sibling: the same repository, in a worktree and on a
         // branch of its own. A sheet with a placeholder name selected, so
-        // Return is as quick as the no-dialog version was, and From and
-        // Location are there when they aren't the defaults. ⌥⇧⌘N since
-        // 2026-11-19: ⇧⌘N is New Window, as in VS Code, Zed and cmux, whose
-        // ⌘N also makes something smaller than a window. Still in the N
-        // family, and free of a wortel.conf keybind.
+        // Return alone starts it, and From and Location are there when they
+        // aren't the defaults. ⌥⇧⌘N because ⇧⌘N is New Window, as in VS Code,
+        // Zed and cmux, whose ⌘N also makes something smaller than a window.
+        // Still in the N family, and free of a wortel.conf keybind.
         let newWorktree = sessionMenu.addItem(withTitle: "New Worktree Session\u{2026}", action: #selector(AppDelegate.newWorktreeSession(_:)), keyEquivalent: "n")
         newWorktree.keyEquivalentModifierMask = [.command, .option, .shift]
         // ⌘O is every Mac app's "open", and a directory is the only thing
@@ -702,13 +701,6 @@ enum MainMenu {
 
         return main
     }
-}
-
-/// A menu delegate that fills its menu from a closure just before it opens.
-final class MenuFiller: NSObject, NSMenuDelegate {
-    private let fill: (NSMenu) -> Void
-    init(_ fill: @escaping (NSMenu) -> Void) { self.fill = fill }
-    func menuNeedsUpdate(_ menu: NSMenu) { fill(menu) }
 }
 
 private extension NSEvent {

@@ -466,6 +466,9 @@ struct SidebarSectionLabel: View {
     let title: String
     let collapsed: Bool
     let attention: AttentionKind?
+    /// A session it hides is at work. Shown only when nothing it hides is
+    /// louder (`attention`), as on a session's own row.
+    var working = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -501,6 +504,10 @@ struct SidebarSectionLabel: View {
             if let kind = attention {
                 AttentionDot(color: SessionStatusIndicator.attentionColor(kind),
                              motion: kind.pulses ? .pulse : .still)
+            } else if working {
+                // And that something in it is under way: the row's three
+                // dots, for the same reason.
+                WorkingIndicator()
             }
             Spacer(minLength: 4)
         }
@@ -512,13 +519,17 @@ struct SidebarSectionLabel: View {
 /// right-click are its Sort By (`SectionSortMenu`).
 struct SidebarSectionHeaderContent: View {
     let manager: SessionManager
+    /// The window whose sidebar this is: a folded section speaks for its
+    /// sessions only.
+    let window: SessionWindow
     /// Pinned, or the folderless "Sessions".
     let isPinned: Bool
 
     var body: some View {
         SidebarSectionLabel(title: isPinned ? "Pinned" : "Sessions",
                             collapsed: isPinned ? manager.pinnedCollapsed : manager.looseCollapsed,
-                            attention: manager.attention(inPinned: isPinned))
+                            attention: manager.attention(inPinned: isPinned, of: window),
+                            working: manager.isWorking(inPinned: isPinned, of: window))
         // Placed exactly as a folder's title is.
         .padding(.leading, 20)
         .padding(.trailing, 36)
@@ -823,6 +834,9 @@ func newWorktreeSessionFromSheet(_ manager: SessionManager, inFolder folder: Str
 /// NSOutlineView layer (SidebarOutlineView) — this is presentation only.
 struct SidebarHeaderContent: View {
     let manager: SessionManager
+    /// The window whose sidebar this is: a folded folder speaks for its
+    /// sessions only.
+    let window: SessionWindow
     let folder: String
 
     /// Tilde-abbreviated, like a session row's path: `~/Developer/wortel` is
@@ -835,7 +849,8 @@ struct SidebarHeaderContent: View {
     var body: some View {
         SidebarSectionLabel(title: folder,
                             collapsed: manager.isFolderCollapsed(folder),
-                            attention: manager.attention(inFolder: folder))
+                            attention: manager.attention(inFolder: folder, of: window),
+                            working: manager.isWorking(inFolder: folder, of: window))
             // The directory the folder stands for (where a new session in it
             // starts) is on hover, not on the header: a path on every header
             // was grey noise for something you rarely need to see. The "+" says
@@ -1007,7 +1022,7 @@ struct SessionRow: View {
                         .padding(.leading, -2)
                 } else {
                     // The folder prefix lives in the section header, so the row
-                    // shows just the leaf ("giel/hello" -> "hello"). The rename
+                    // shows just the leaf ("team/hello" -> "hello"). The rename
                     // field still edits the full name (SidebarRenameField), so
                     // retyping the prefix is how you move between folders — but
                     // it opens with only the leaf selected.
@@ -1855,7 +1870,7 @@ private struct TerminalPages: View {
 /// the keyboard left AppKit's field editor dangling, and the sidebar stopped
 /// taking clicks.
 ///
-/// It opens with the leaf selected ("Worker" in "Wakker/Worker"): the name it
+/// It opens with the leaf selected ("Worker" in "Acme/Worker"): the name it
 /// edits is the full one, and a first keystroke taking the folder with it
 /// moved the session out of its folder without saying so. Retyping the prefix
 /// is still how you move one between folders.

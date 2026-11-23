@@ -102,6 +102,8 @@ final class SessionManager {
             let above = rows[..<min(index, rows.count)].last { !movingIDs.contains($0) }
             let pick = above ?? staying.first ?? sessions(in: source).first { !movingIDs.contains($0.id) }?.id
             select(pick, in: source)
+            // Not a way back from here any more: it is in another window.
+            source.trail.removeAll { movingIDs.contains($0) }
         }
         for session in moving { session.windowID = destination.id }
         normalizeOrder()
@@ -186,7 +188,15 @@ final class SessionManager {
     func select(_ id: Session.ID?, in window: SessionWindow) {
         let oldValue = window.selectedID
         guard id != oldValue else { return }
+        let now = Date()
+        // The session you leave goes on the way back if the visit counted.
+        if let oldValue, sessions.contains(where: { $0.id == oldValue }),
+           SidebarStep.visitCounts(arrived: window.arrivedAt, left: now,
+                                   lastInput: lastTypedAt[oldValue]) {
+            noteTrail(oldValue, in: window)
+        }
         window.selectedID = id
+        window.arrivedAt = id == nil ? nil : now
         // The lead moved from somewhere that isn't a ⌘-click inside the
         // selection (a plain click, ⌘2, a notification): one row again.
         if window === activeWindow, !(id.map(sidebarSelection.ids.contains) ?? false) {
@@ -208,9 +218,6 @@ final class SessionManager {
         if currentTabs[session.id] == nil {
             currentTabs[session.id] = session.workspace.front(of: .main) ?? .session
         }
-        // Gone to another session: the one just made is one among the
-        // rest now, and closing it later is not a way back.
-        if justMade?.session != session.id { justMade = nil }
         arrive(at: session, in: window)
         // Left the previous session before it could count as read; start the
         // caught-up clock on the one you just landed on.
@@ -246,10 +253,12 @@ final class SessionManager {
     /// Sessions in the order they were last selected, most recent first: what
     /// ⌘P lists before you type (SessionSwitcherMatch).
     @ObservationIgnored private(set) var recentSessionIDs: [Session.ID] = []
-    /// The session just made and the one it was made from, for as long as the
-    /// selection has not left the new one: closing it then goes back there
-    /// (`SidebarStep.afterClosing`), wherever in the sidebar the new row went.
-    @ObservationIgnored private var justMade: (session: Session.ID, from: Session.ID)?
+
+    /// Put `id` at the front of `window`'s way back (`SessionWindow.trail`).
+    private func noteTrail(_ id: Session.ID, in window: SessionWindow) {
+        window.trail.removeAll { $0 == id }
+        window.trail.insert(id, at: 0)
+    }
 
     // MARK: Back and Forward
 
@@ -650,15 +659,26 @@ final class SessionManager {
 
     /// What a folded Pinned or Sessions header shows for the sessions it
     /// hides, as `attention(inFolder:)` does for a folder.
-    func attention(inPinned pinned: Bool) -> AttentionKind? {
+    func attention(inPinned pinned: Bool, of window: SessionWindow) -> AttentionKind? {
         guard pinned ? pinnedCollapsed : looseCollapsed else { return nil }
-        return AttentionKind.loudest(of: sessions.lazy.filter {
+        return AttentionKind.loudest(of: sessionsHidden(inPinned: pinned, of: window).map(\.attention))
+    }
+
+    /// Whether a folded Pinned or Sessions header is hiding a session at
+    /// work, as `isWorking(inFolder:)` does for a folder.
+    func isWorking(inPinned pinned: Bool, of window: SessionWindow) -> Bool {
+        guard pinned ? pinnedCollapsed : looseCollapsed else { return false }
+        return sessionsHidden(inPinned: pinned, of: window).contains(where: Self.showsWorking)
+    }
+
+    private func sessionsHidden(inPinned pinned: Bool, of window: SessionWindow) -> some Sequence<Session> {
+        sessions(in: window).lazy.filter {
             pinned ? self.isPinned($0) : (!self.isPinned($0) && $0.folderPath == nil)
-        }.map(\.attention))
+        }
     }
 
     /// Folders made on purpose (⌘O, or a worktree of a repository with no
-    /// folder yet). Unlike folders that emerge from a "giel/…" name, these
+    /// folder yet). Unlike folders that emerge from a "team/…" name, these
     /// persist as sections even when empty. Ordered; persisted to UserDefaults.
     private(set) var declaredFolders: [String] = [] {
         didSet { UserDefaults.standard.set(declaredFolders, forKey: Self.declaredFoldersKey) }
@@ -678,9 +698,9 @@ final class SessionManager {
     /// The directory each folder stands for, keyed by folder name. A folder
     /// without one is what every folder used to be: a label.
     ///
-    /// This is what makes "New Session in “GFPC”" mean GFPC. Before it, a
+    /// This is what makes "New Session in “Acme”" mean Acme. Before it, a
     /// folder was purely the part of a session's name before the last slash, so
-    /// that command filed a session under GFPC and started it wherever the
+    /// that command filed a session under Acme and started it wherever the
     /// *selected* session happened to be standing — which looked like it had
     /// worked. Same shelf as the other three: view state about the sidebar, not
     /// session data, so UserDefaults rather than `sessions.json`.
@@ -849,7 +869,7 @@ final class SessionManager {
     ///
     /// Without this, the feature ships switched off for everyone who already has
     /// folders: each one would be a label until pointed at a directory by hand,
-    /// and "New Session in “GFPC”" would go on doing the wrong thing until then.
+    /// and "New Session in “Acme”" would go on doing the wrong thing until then.
     /// The rules that keep the guess quiet live in `FolderRoot.derived`.
     private func adoptFolderRoots() {
         let home = NSHomeDirectory()
@@ -1109,6 +1129,9 @@ final class SessionManager {
         if let pick = mine.first(where: { $0.id == wanted }) ?? mine.first {
             select(pick.id, in: active)
         }
+        // Restored, not arrived at: where you were last time counts as a
+        // visit however soon you leave it (`SidebarStep.visitCounts`).
+        for window in windows { window.arrivedAt = nil }
         onActivateWindow?(active)
     }
 
@@ -1616,6 +1639,7 @@ final class SessionManager {
     /// its shells on the way out can end them before the app hears that it
     /// has gone itself.
     private func shellEnded(_ view: SurfaceView, in session: Session, tab: UUID?) {
+        let endedAt = Date()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak session, weak view] in
             guard let self, let session, let view else { return }
             // Closed, or already given a new shell, in that second.
@@ -1626,7 +1650,7 @@ final class SessionManager {
                       lostAt: loss.at, endedAt: Date().addingTimeInterval(-1),
                       isSessionTerminal: tab == nil, agentRunning: session.runningAgent != nil)
             else {
-                view.finishProcess()
+                view.finishProcess(endedAt: endedAt)
                 return
             }
             self.replaceKeeper(lost: keeper)
@@ -1790,9 +1814,9 @@ final class SessionManager {
     /// 1. **An explicit `cwd`.** The CLI's `--cwd`, a worktree checkout, the
     ///    directory ⌘O just picked. Somebody named a path; nothing outranks that.
     /// 2. **The named folder's directory.** `folder` is only ever passed when
-    ///    the request was *about* that folder ("New Session in “GFPC”"), and
-    ///    what it means is GFPC. This is the case that used to be silently
-    ///    wrong: the session was filed under GFPC and started wherever the
+    ///    the request was *about* that folder ("New Session in “Acme”"), and
+    ///    what it means is Acme. This is the case that used to be silently
+    ///    wrong: the session was filed under Acme and started wherever the
     ///    selection was standing, which looked exactly like it had worked.
     /// 3. **The selected session's folder's directory.** This is the "same
     ///    folder as the one I'm in" case, which is why a plain ⌘N stays next to
@@ -1929,13 +1953,15 @@ final class SessionManager {
             inFolder: dir, rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
             selected: (placingWindow ?? activeWindow)?.selectedID, pinned: pinnedIDs)
         sessions.insert(session, at: index)
-        let madeFrom = (placingWindow ?? activeWindow)?.selectedID
+        let madeIn = placingWindow ?? activeWindow
+        let madeFrom = madeIn?.selectedID
         normalizeOrder() // slot the new row into its folder's contiguous block
         // Never select into a hidden row.
         if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }
         selectedID = session.id
-        // After the selection moved, which forgot the last one.
-        justMade = madeFrom.map { (session: session.id, from: $0) }
+        // Making a session from one is using it, however short the visit:
+        // ⌘N, do the thing, ⌘W lands back where ⌘N was pressed.
+        if let madeFrom, let madeIn { noteTrail(madeFrom, in: madeIn) }
         scheduleSave()
         if reported { Telemetry.capture(.sessionCreated(via: origin, command: usesCommand)) }
         return session
@@ -2685,13 +2711,12 @@ final class SessionManager {
             """)
         let home = window(of: session)
         let wasSelected = session.id == home.selectedID
-        // Over the rows as drawn, so it is the row above on screen, sorted
-        // or not, and never one inside a folded section. Or the session this
-        // one was made from, when you never left it.
+        // The session you were in before this one, else the row below on
+        // screen. Over the rows as drawn, sorted or not, so never one inside
+        // a folded section.
         let drawnNeighbour = SidebarStep.afterClosing(
-            session.id, in: drawnRows(in: home),
-            madeFrom: justMade?.session == session.id ? justMade?.from : nil)
-        if justMade?.session == session.id || justMade?.from == session.id { justMade = nil }
+            session.id, in: drawnRows(in: home), trail: home.trail)
+        for window in windows { window.trail.removeAll { $0 == session.id } }
         let hadAttention = session.needsAttention
         sleepTimers.removeValue(forKey: session.id)?.cancel()
         hiddenSince.removeValue(forKey: session.id)
@@ -2777,15 +2802,14 @@ final class SessionManager {
             return
         }
 
-        // The round trip (⌘N, do the thing, ⌘W) lands back where it started:
-        // on the session the closed one was made from, if you never left it.
-        // Otherwise the row *above*, not the one that slid into the closed
-        // row's slot. Only the topmost row has nothing above it, and there
-        // the row below is the only answer. Within the window it was in.
+        // Back to the session you were in before (⌘N, do the thing, ⌘W lands
+        // where it started), else the row that slid into the closed one's
+        // place, else the row above. Within the window it was in. The stored
+        // order is the answer only when nothing was drawn to go by.
         if wasSelected {
             let neighbour = drawnNeighbour.flatMap { id in left.contains { $0.id == id } ? id : nil }
-            let above = sessions[..<min(index, sessions.count)].last { window(of: $0) === home }
-            select(neighbour ?? above?.id ?? left[0].id, in: home)
+            let below = sessions[min(index, sessions.count)...].first { window(of: $0) === home }
+            select(neighbour ?? below?.id ?? left.last?.id, in: home)
         }
         scheduleSave()
     }
@@ -2845,9 +2869,11 @@ final class SessionManager {
     /// session archived), but the selection moves once, and the archive and
     /// the session list are each written once.
     ///
-    /// The selection moves *first*. Closing the selected session picks the row
-    /// above it, which in a batch is often the next to go: it would start that
-    /// session's shell and mark it read only to close it a moment later.
+    /// The selection moves *first*, by the rule a single close follows
+    /// (`SidebarStep.afterClosing`) with every session in the batch stepped
+    /// over: chosen one at a time, the answer is often the next to go, which
+    /// would start that session's shell and mark it read only to close it a
+    /// moment later.
     func end(_ batch: [Session]) {
         let closing = batch.filter { session in sessions.contains { $0.id == session.id } }
         guard closing.count > 1 else {
@@ -2861,10 +2887,14 @@ final class SessionManager {
             guard let index = mine.firstIndex(where: { $0.id == current }) else { continue }
             // None left in it (the window is closing with all of them):
             // nothing in front, rather than each next one's shell started
-            // only to be closed.
-            let survivor = mine[..<index].last(where: { !closingIDs.contains($0.id) })
-                ?? mine[index...].first(where: { !closingIDs.contains($0.id) })
-            select(survivor?.id, in: window)
+            // only to be closed. The stored order only when nothing drawn
+            // answers.
+            let drawn = SidebarStep.afterClosing(
+                current, in: drawnRows(in: window), trail: window.trail, closingToo: Array(closingIDs))
+            let survivor = drawn
+                ?? mine[index...].first(where: { !closingIDs.contains($0.id) })?.id
+                ?? mine[..<index].last(where: { !closingIDs.contains($0.id) })?.id
+            select(survivor, in: window)
         }
         let items = closing.compactMap(archivedEntry(for:))
         if !items.isEmpty {
@@ -3304,7 +3334,7 @@ final class SessionManager {
         // the model may touch this session again.
         session.nameSource = .user
         nameBranchForWork(session)
-        // A rename can re-folder the session ("hello" -> "giel/hello"): keep the
+        // A rename can re-folder the session ("hello" -> "team/hello"): keep the
         // flat order matching the render order, and make sure the row it moved
         // to is actually visible.
         normalizeOrder()
@@ -5442,10 +5472,34 @@ final class SessionManager {
     /// *hidden* — a blocked agent behind a collapsed folder is otherwise
     /// completely silent in the sidebar, which is the one thing the attention
     /// system exists to prevent.
-    func attention(inFolder folder: String) -> AttentionKind? {
+    func attention(inFolder folder: String, of window: SessionWindow) -> AttentionKind? {
         guard collapsedFolders.contains(folder) else { return nil }
-        return AttentionKind.loudest(
-            of: sessions.lazy.filter { $0.folderPath == folder }.map(\.attention))
+        return AttentionKind.loudest(of: sessionsHidden(inFolder: folder, of: window).map(\.attention))
+    }
+
+    /// Whether a collapsed folder is hiding a session at work: the three dots
+    /// its header shows when nothing in it is louder (`attention(inFolder:)`).
+    /// Without it a folded folder of working agents looked exactly like one
+    /// of idle shells, and the only way to see that something was under way
+    /// was to open it.
+    func isWorking(inFolder folder: String, of window: SessionWindow) -> Bool {
+        guard collapsedFolders.contains(folder) else { return false }
+        return sessionsHidden(inFolder: folder, of: window).contains(where: Self.showsWorking)
+    }
+
+    /// The sessions a folder's header speaks for: those drawn under it, in
+    /// that window's sidebar. A pinned one is drawn in Pinned, whose header
+    /// speaks for it. Folding is shared by every window, but each lists only
+    /// its own sessions, so a folder folded in two windows speaks for
+    /// different ones in each.
+    private func sessionsHidden(inFolder folder: String, of window: SessionWindow) -> some Sequence<Session> {
+        sessions(in: window).lazy.filter { $0.folderPath == folder && !self.isPinned($0) }
+    }
+
+    /// Whether a session's row shows the three dots: at work, or a worktree on
+    /// its way (`SessionStatusIndicator`).
+    static func showsWorking(_ session: Session) -> Bool {
+        session.isBusy || (session.preparation.map { $0.failure == nil } ?? false)
     }
 
     /// Dock badge = number of background sessions waiting on the user.
@@ -5900,7 +5954,7 @@ final class SessionManager {
     /// what it looks like it should be. A session's birth directory reads like
     /// the better answer, but in practice almost every session is opened from
     /// home and then `cd`s into the project: on this machine every persisted
-    /// `originCwd` was `/Users/giel`, which `ProjectRoots` rightly refuses as
+    /// `originCwd` was the home directory, which `ProjectRoots` rightly refuses as
     /// too broad, so nothing was ever remembered and no orphan could ever be
     /// attributed. Where the shell actually is *is* the project.
     private func rememberProjectRoots() {
@@ -5928,15 +5982,46 @@ final class SessionManager {
     /// goes to the app layer as it is. A path is tried relative to that
     /// terminal's own folder first, then the session's, then where it was
     /// born, then the repository each is in. A path that resolves nowhere is
-    /// dropped: there is nothing to open and nothing worth a dialog.
+    /// dropped: there is nothing to open and nothing worth a dialog. Any
+    /// other link is `TerminalLink.external`'s: a web or mail link opens in
+    /// its app, another scheme asks first, a malformed one does nothing.
+    /// libghostty opens none of them itself any more (GhosttyRuntime).
     private func openLink(_ link: String, from view: SurfaceView, in session: Session) {
         if let server = TerminalLink.localServer(link) {
             onOpenLocalServer?(server)
             return
         }
-        let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
-        guard let target = TerminalLink.resolve(link, bases: bases) else { return }
-        onOpenTerminalLink?(target)
+        if TerminalLink.isPath(link) {
+            let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
+            guard let target = TerminalLink.resolve(link, bases: bases) else { return }
+            onOpenTerminalLink?(target)
+            return
+        }
+        switch TerminalLink.external(link) {
+        case .open(let url):
+            NSWorkspace.shared.open(url)
+        case .ask(let url):
+            askToOpen(url, over: view.window)
+        case .refuse:
+            break
+        }
+    }
+
+    /// A link to another app (`vscode:`, `tel:`) says which app, and waits
+    /// for a yes: the program printing it chose the scheme, not you.
+    private func askToOpen(_ url: URL, over window: NSWindow?) {
+        guard let window, let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return }
+        let name = FileManager.default.displayName(atPath: app.path)
+        let alert = NSAlert()
+        alert.messageText = "Open \u{201c}\(name)\u{201d}?"
+        alert.informativeText = "This link opens in \(name):\n\(url.absoluteString)"
+        // Cancel is the default: a program's output chose this link, so
+        // Return out of habit doesn't open it (as Ghostty.app does).
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Open")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertSecondButtonReturn { NSWorkspace.shared.open(url) }
+        }
     }
 
     // MARK: - Wiring

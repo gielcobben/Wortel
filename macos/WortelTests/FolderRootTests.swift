@@ -10,10 +10,10 @@ final class FolderRootTests: XCTestCase {
     // MARK: - normalize
 
     func testNormalizeStripsTrailingSlashAndRelativeSteps() {
-        XCTAssertEqual(FolderRoot.normalize("/Users/giel/Developer/"), "/Users/giel/Developer")
-        XCTAssertEqual(FolderRoot.normalize("/Users/giel/Developer/wortel/.."),
-                       "/Users/giel/Developer")
-        XCTAssertEqual(FolderRoot.normalize("/Users//giel"), "/Users/giel")
+        XCTAssertEqual(FolderRoot.normalize("/Users/me/Developer/"), "/Users/me/Developer")
+        XCTAssertEqual(FolderRoot.normalize("/Users/me/Developer/wortel/.."),
+                       "/Users/me/Developer")
+        XCTAssertEqual(FolderRoot.normalize("/Users//me"), "/Users/me")
     }
 
     /// A session that has never reported a working directory has no path, and
@@ -29,54 +29,54 @@ final class FolderRootTests: XCTestCase {
     // MARK: - containment
 
     func testRootContainsItselfAndDescendants() {
-        XCTAssertTrue(FolderRoot.root("/Users/giel/wortel", contains: "/Users/giel/wortel"))
-        XCTAssertTrue(FolderRoot.root("/Users/giel/wortel", contains: "/Users/giel/wortel/macos"))
-        XCTAssertTrue(FolderRoot.root("/Users/giel/wortel/", contains: "/Users/giel/wortel/web/"))
+        XCTAssertTrue(FolderRoot.root("/Users/me/wortel", contains: "/Users/me/wortel"))
+        XCTAssertTrue(FolderRoot.root("/Users/me/wortel", contains: "/Users/me/wortel/macos"))
+        XCTAssertTrue(FolderRoot.root("/Users/me/wortel/", contains: "/Users/me/wortel/web/"))
     }
 
     /// The bug a plain `hasPrefix` ships: a sibling project whose name starts
     /// with another's would inherit the wrong folder's directory, and nothing
     /// about the symptom would point back here.
     func testSiblingSharingANamePrefixIsNotContained() {
-        XCTAssertFalse(FolderRoot.root("/Users/giel/wortel", contains: "/Users/giel/wortel-web"))
-        XCTAssertFalse(FolderRoot.root("/Users/giel/dev", contains: "/Users/giel/development"))
+        XCTAssertFalse(FolderRoot.root("/Users/me/wortel", contains: "/Users/me/wortel-web"))
+        XCTAssertFalse(FolderRoot.root("/Users/me/dev", contains: "/Users/me/development"))
     }
 
     func testUnrelatedPathIsNotContained() {
-        XCTAssertFalse(FolderRoot.root("/Users/giel/wortel", contains: "/Users/giel/gfpc"))
-        XCTAssertFalse(FolderRoot.root("/Users/giel/wortel/macos", contains: "/Users/giel/wortel"))
+        XCTAssertFalse(FolderRoot.root("/Users/me/wortel", contains: "/Users/me/acme"))
+        XCTAssertFalse(FolderRoot.root("/Users/me/wortel/macos", contains: "/Users/me/wortel"))
     }
 
     // MARK: - folder(containing:)
 
     func testFolderContainingPicksTheDeepestRoot() {
         let roots = [
-            "Wortel": "/Users/giel/Developer/wortel",
-            "Web": "/Users/giel/Developer/wortel/web",
-            "GFPC": "/Users/giel/Developer/gfpc",
+            "Wortel": "/Users/me/Developer/wortel",
+            "Web": "/Users/me/Developer/wortel/web",
+            "Acme": "/Users/me/Developer/acme",
         ]
         // Both Wortel and Web contain it; the folder that *is* the directory wins.
         XCTAssertEqual(
-            FolderRoot.folder(containing: "/Users/giel/Developer/wortel/web", in: roots), "Web")
+            FolderRoot.folder(containing: "/Users/me/Developer/wortel/web", in: roots), "Web")
         XCTAssertEqual(
-            FolderRoot.folder(containing: "/Users/giel/Developer/wortel/web/src", in: roots), "Web")
+            FolderRoot.folder(containing: "/Users/me/Developer/wortel/web/src", in: roots), "Web")
         XCTAssertEqual(
-            FolderRoot.folder(containing: "/Users/giel/Developer/wortel/macos", in: roots),
+            FolderRoot.folder(containing: "/Users/me/Developer/wortel/macos", in: roots),
             "Wortel")
         XCTAssertEqual(
-            FolderRoot.folder(containing: "/Users/giel/Developer/gfpc", in: roots), "GFPC")
+            FolderRoot.folder(containing: "/Users/me/Developer/acme", in: roots), "Acme")
     }
 
     /// Nil is what makes ⌘O create a folder instead of filing into one, so it
     /// has to mean "genuinely nowhere" and not "no exact match".
     func testFolderContainingIsNilWhenNothingHoldsThePath() {
-        let roots = ["Wortel": "/Users/giel/Developer/wortel"]
-        XCTAssertNil(FolderRoot.folder(containing: "/Users/giel/Documents", in: roots))
-        XCTAssertNil(FolderRoot.folder(containing: "/Users/giel/Developer", in: roots))
+        let roots = ["Wortel": "/Users/me/Developer/wortel"]
+        XCTAssertNil(FolderRoot.folder(containing: "/Users/me/Documents", in: roots))
+        XCTAssertNil(FolderRoot.folder(containing: "/Users/me/Developer", in: roots))
     }
 
     func testFolderContainingIgnoresFoldersWithoutARoot() {
-        XCTAssertNil(FolderRoot.folder(containing: "/Users/giel/Developer/wortel", in: [:]))
+        XCTAssertNil(FolderRoot.folder(containing: "/Users/me/Developer/wortel", in: [:]))
     }
 
     // MARK: - commonAncestor
@@ -84,47 +84,47 @@ final class FolderRootTests: XCTestCase {
     func testCommonAncestorOfSiblings() {
         XCTAssertEqual(
             FolderRoot.commonAncestor(of: [
-                "/Users/giel/Developer/wortel/macos",
-                "/Users/giel/Developer/wortel/web",
+                "/Users/me/Developer/wortel/macos",
+                "/Users/me/Developer/wortel/web",
             ]),
-            "/Users/giel/Developer/wortel")
+            "/Users/me/Developer/wortel")
     }
 
     func testCommonAncestorOfOnePathIsThatPath() {
-        XCTAssertEqual(FolderRoot.commonAncestor(of: ["/Users/giel/Developer/wortel"]),
-                       "/Users/giel/Developer/wortel")
+        XCTAssertEqual(FolderRoot.commonAncestor(of: ["/Users/me/Developer/wortel"]),
+                       "/Users/me/Developer/wortel")
     }
 
     /// Component-wise, never character-wise: `/a/wortel` and `/a/wortel-web`
     /// share ten characters and only one directory.
     func testCommonAncestorStopsAtComponentBoundaries() {
         XCTAssertEqual(
-            FolderRoot.commonAncestor(of: ["/Users/giel/wortel", "/Users/giel/wortel-web"]),
-            "/Users/giel")
+            FolderRoot.commonAncestor(of: ["/Users/me/wortel", "/Users/me/wortel-web"]),
+            "/Users/me")
     }
 
     func testCommonAncestorOfNothingInCommonIsNil() {
-        XCTAssertNil(FolderRoot.commonAncestor(of: ["/Users/giel", "/opt/homebrew"]))
+        XCTAssertNil(FolderRoot.commonAncestor(of: ["/Users/me", "/opt/homebrew"]))
         XCTAssertNil(FolderRoot.commonAncestor(of: []))
     }
 
     func testCommonAncestorSkipsPathsWithoutOne() {
         XCTAssertEqual(
-            FolderRoot.commonAncestor(of: ["", "/Users/giel/Developer/wortel"]),
-            "/Users/giel/Developer/wortel")
+            FolderRoot.commonAncestor(of: ["", "/Users/me/Developer/wortel"]),
+            "/Users/me/Developer/wortel")
     }
 
     // MARK: - derived
 
-    private let home = "/Users/giel"
-    private let worktrees = ["/Users/giel/.wortel/worktrees"]
+    private let home = "/Users/me"
+    private let worktrees = ["/Users/me/.wortel/worktrees"]
 
     func testDerivedTakesTheProjectDirectory() {
         XCTAssertEqual(
             FolderRoot.derived(
-                from: ["/Users/giel/Developer/wortel", "/Users/giel/Developer/wortel/macos"],
+                from: ["/Users/me/Developer/wortel", "/Users/me/Developer/wortel/macos"],
                 excludingUnder: worktrees, home: home),
-            "/Users/giel/Developer/wortel")
+            "/Users/me/Developer/wortel")
     }
 
     /// A folder holding two unrelated projects still derives the directory that
@@ -133,24 +133,24 @@ final class FolderRootTests: XCTestCase {
     func testDerivedAcceptsAContainerOfProjects() {
         XCTAssertEqual(
             FolderRoot.derived(
-                from: ["/Users/giel/Developer/gfpc", "/Users/giel/Developer/pontueel"],
+                from: ["/Users/me/Developer/acme", "/Users/me/Developer/blog"],
                 excludingUnder: worktrees, home: home),
-            "/Users/giel/Developer")
+            "/Users/me/Developer")
     }
 
     /// Home is what unrelated sessions have in common, not a project. Adopting
     /// it would put a directory on a folder that means nothing by it.
     func testDerivedRejectsHome() {
         XCTAssertNil(FolderRoot.derived(
-            from: ["/Users/giel/Developer/wortel", "/Users/giel/Documents/notes"],
+            from: ["/Users/me/Developer/wortel", "/Users/me/Documents/notes"],
             excludingUnder: worktrees, home: home))
         XCTAssertNil(FolderRoot.derived(
-            from: ["/Users/giel"], excludingUnder: worktrees, home: home))
+            from: ["/Users/me"], excludingUnder: worktrees, home: home))
     }
 
     func testDerivedRejectsFilesystemRoot() {
         XCTAssertNil(FolderRoot.derived(
-            from: ["/Users/giel/Developer/wortel", "/opt/homebrew"],
+            from: ["/Users/me/Developer/wortel", "/opt/homebrew"],
             excludingUnder: worktrees, home: home))
     }
 
@@ -160,11 +160,11 @@ final class FolderRootTests: XCTestCase {
         XCTAssertEqual(
             FolderRoot.derived(
                 from: [
-                    "/Users/giel/Developer/wortel",
-                    "/Users/giel/.wortel/worktrees/wortel/feature-x",
+                    "/Users/me/Developer/wortel",
+                    "/Users/me/.wortel/worktrees/wortel/feature-x",
                 ],
                 excludingUnder: worktrees, home: home),
-            "/Users/giel/Developer/wortel")
+            "/Users/me/Developer/wortel")
     }
 
     /// And a folder of nothing *but* branch checkouts derives nothing: their
@@ -174,8 +174,8 @@ final class FolderRootTests: XCTestCase {
     func testDerivedIsNilForAFolderOfOnlyWorktrees() {
         XCTAssertNil(FolderRoot.derived(
             from: [
-                "/Users/giel/.wortel/worktrees/wortel/feature-x",
-                "/Users/giel/.wortel/worktrees/wortel/feature-y",
+                "/Users/me/.wortel/worktrees/wortel/feature-x",
+                "/Users/me/.wortel/worktrees/wortel/feature-y",
             ],
             excludingUnder: worktrees, home: home))
     }

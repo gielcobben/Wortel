@@ -12,22 +12,22 @@
 #                             don't have (↑4 ↓1: Pull and Push both refuse,
 #                             in a sentence), clean, so the Changes pane points
 #                             at the work in another folder
-#   shop-toolbar-clean/       giel/toolbar-clean, clean and pushed: Bring Here
-#   shop-toolbar-proposal/    giel/toolbar-proposal, 19 new files: Show only
-#   shop-agent-running/       giel/agent-running, something running in it:
+#   shop-toolbar-clean/       me/toolbar-clean, clean and pushed: Bring Here
+#   shop-toolbar-proposal/    me/toolbar-proposal, 19 new files: Show only
+#   shop-agent-running/       me/agent-running, something running in it:
 #                             Bring Here says why not
 #   ~/.wortel/worktrees/...   worktree/calm-test, made "by Wortel": Bring Here
 #                             moves it to the Trash; worktree/squashed and
 #                             worktree/picked, whose work main has without
 #                             their commits: Clean Up says Merged
-#   shop-fork-me/             giel/fork-me, every kind of uncommitted change,
+#   shop-fork-me/             me/fork-me, every kind of uncommitted change,
 #                             a .env, a .worktreeinclude, a nested repo: what
 #                             Fork Session and the file copy have to carry
 #   origin pull requests      refs/pull/7/head (a commit on no branch) and
-#                             refs/pull/8/head (giel/shape-lab's tip)
-#   branches                  giel/shape-lab (2d), giel/old-idea (3w),
-#                             giel/conflict (switching with README.md edited
-#                             says which file is in the way), origin/giel/remote-only
+#                             refs/pull/8/head (me/shape-lab's tip)
+#   branches                  me/shape-lab (2d), me/old-idea (3w),
+#                             me/conflict (switching with README.md edited
+#                             says which file is in the way), origin/me/remote-only
 set -euo pipefail
 
 BASE=/tmp/wortel-try-git
@@ -67,11 +67,11 @@ git remote add origin ../origin.git && git push -q -u origin main
 
 # Branches of different ages, one that only the remote has, one that touches
 # README.md so a local edit to it is in the way of switching.
-git branch giel/old-idea && git checkout -q giel/old-idea && at "$(ago 21d)" "An old idea"
-git checkout -q -b giel/shape-lab main && at "$(ago 2d)" "Shapes" && git push -q -u origin giel/shape-lab
-git checkout -q -b giel/remote-only main && at "$(ago 5d)" "Only on the remote" \
-  && git push -q origin giel/remote-only && git checkout -q main && git branch -q -D giel/remote-only
-git checkout -q -b giel/conflict main && echo "# Shop, renamed" > README.md && git commit -q -am "Rename the shop"
+git branch me/old-idea && git checkout -q me/old-idea && at "$(ago 21d)" "An old idea"
+git checkout -q -b me/shape-lab main && at "$(ago 2d)" "Shapes" && git push -q -u origin me/shape-lab
+git checkout -q -b me/remote-only main && at "$(ago 5d)" "Only on the remote" \
+  && git push -q origin me/remote-only && git checkout -q main && git branch -q -D me/remote-only
+git checkout -q -b me/conflict main && echo "# Shop, renamed" > README.md && git commit -q -am "Rename the shop"
 git checkout -q main
 
 # The remote moves on without us, and we move on without it: ↑2 ↓1.
@@ -82,12 +82,12 @@ git fetch -q
 at "$(ago 3H)" "Local work 1" && at "$(ago 1H)" "Local work 2"
 
 # Agent folders.
-git worktree add -q -b giel/toolbar-clean ../shop-toolbar-clean
+git worktree add -q -b me/toolbar-clean ../shop-toolbar-clean
 (cd ../shop-toolbar-clean && echo toolbar > toolbar.txt && git add . && git commit -q -m "Toolbar" \
-  && git push -q -u origin giel/toolbar-clean)
-git worktree add -q -b giel/toolbar-proposal ../shop-toolbar-proposal
+  && git push -q -u origin me/toolbar-clean)
+git worktree add -q -b me/toolbar-proposal ../shop-toolbar-proposal
 (cd ../shop-toolbar-proposal && for i in $(seq 1 19); do echo "draft $i" > "draft-$i.txt"; done)
-git worktree add -q -b giel/agent-running ../shop-agent-running
+git worktree add -q -b me/agent-running ../shop-agent-running
 # `exec`, so the pid saved is the sleep itself, which is what --clean stops.
 (cd ../shop-agent-running && exec nohup sleep 86400 >/dev/null 2>&1) & echo $! > "$PIDFILE"
 mkdir -p "$WORTEL_TREE"
@@ -108,11 +108,11 @@ git cherry-pick worktree/picked >/dev/null
 # here) and one pushed from a branch of this repository.
 git checkout -q -b pr-seven main && echo seven > seven.txt && git add . && git commit -q -m "Pull request seven" \
   && git push -q origin pr-seven:refs/pull/7/head && git checkout -q main && git branch -q -D pr-seven
-git push -q origin giel/shape-lab:refs/pull/8/head
+git push -q origin me/shape-lab:refs/pull/8/head
 
 # Something to fork: every kind of uncommitted change, ignored files to copy
 # and one not to, and a nested repository the fork must skip.
-git worktree add -q -b giel/fork-me ../shop-fork-me
+git worktree add -q -b me/fork-me ../shop-fork-me
 (cd ../shop-fork-me \
   && printf '.env*\nconfig/local.json\nnode_modules/\n' > .gitignore \
   && printf '.env*\nconfig/local.json\n' > .worktreeinclude \
@@ -137,12 +137,12 @@ cat <<'EOF'
 Look over, with the git panel open (⌃⌘1):
   [ ] Changes says "No changes here" with a link to shop-toolbar-proposal
   [ ] Branch list: This folder (main ↑4 ↓1), In other folders, Switch to, Remote
-  [ ] giel/toolbar-proposal: Show, and "19 changes there"
-  [ ] giel/agent-running: Bring Here says something is running there
-  [ ] giel/toolbar-clean and worktree/calm-test: Bring Here works
-  [ ] origin/giel/remote-only: checks out as a new local branch
+  [ ] me/toolbar-proposal: Show, and "19 changes there"
+  [ ] me/agent-running: Bring Here says something is running there
+  [ ] me/toolbar-clean and worktree/calm-test: Bring Here works
+  [ ] origin/me/remote-only: checks out as a new local branch
   [ ] … › Pull and … › Push: each refuses in one sentence
-  [ ] Edit README.md, then switch to giel/conflict: names README.md
+  [ ] Edit README.md, then switch to me/conflict: names README.md
   [ ] Run two servers in the session, open the running list: Stop All
       python3 -m http.server 8801 & python3 -m http.server 8802 &
   [ ] Session › Worktree › Clean Up Worktrees: squashed and picked say

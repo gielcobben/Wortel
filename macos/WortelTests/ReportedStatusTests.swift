@@ -230,6 +230,35 @@ final class ReportedStatusTests: XCTestCase {
                        [.resting, .announceAfterWork(.turnDone)])
     }
 
+    /// A turn Claude Code finished beside a server it started is announced
+    /// as finished: the server is not work the turn waits on, and before
+    /// 2026-11-21 it held the spinner, and the "finished" dot, for as long as
+    /// it ran.
+    func testAClaudeCodeTurnBesideAServerIsAnnounced() {
+        func claude(_ state: ProgramStatus.State, id: String? = nil) -> ProgramStatus {
+            ProgramStatus(state: state, app: "claude-code", id: id)
+        }
+        let working = records(claude(.working), claude(.working, id: "b7f3k2p9z"))
+        var finished = working
+        finished.apply(.status(claude(.done)))
+        XCTAssertEqual(ReportedStatus.effects(from: working, to: finished),
+                       [.resting, .announce(.turnDone, words: nil)])
+        // The server ending later is no news.
+        var stopped = finished
+        stopped.apply(.clearRecord("b7f3k2p9z"))
+        XCTAssertEqual(ReportedStatus.effects(from: finished, to: stopped), [])
+        // A subagent still running does hold it, and is announced when it ends.
+        let delegating = records(claude(.working), claude(.working, id: "b7f3k2p9z"),
+                                 claude(.working, id: "a3k9x2m1q"))
+        var held = delegating
+        held.apply(.status(claude(.done)))
+        XCTAssertEqual(ReportedStatus.effects(from: delegating, to: held), [])
+        var agentDone = held
+        agentDone.apply(.clearRecord("a3k9x2m1q"))
+        XCTAssertEqual(ReportedStatus.effects(from: held, to: agentDone),
+                       [.resting, .announceAfterWork(.turnDone)])
+    }
+
     /// A failed turn and a question are news even with work still going.
     func testErrorAndBlockStandOverBackgroundWork() {
         var running = records(status(.working, id: "bash_1"), status(.working))

@@ -254,7 +254,10 @@ text as typed by a program. Both were considered and turned down:
 
 **The trust boundary is your own sessions.** The binary is on the `PATH` only
 inside Wortel's shells, and the socket is a file only your user can open
-(`0600`), so everything that can `send` is already something you started in a
+(`0600` from the moment it is bound, by the umask, not by a chmod after), and
+a connection from a process of any other user is closed unread (`getpeereid`;
+the keeper's socket the same), so everything that can `send` is already
+something you started in a
 terminal of yours, with your keyboard's authority over every other terminal
 of yours. And it shows: the text is on the receiving screen and in its
 agent's transcript, and the session is in the sidebar for you to watch.

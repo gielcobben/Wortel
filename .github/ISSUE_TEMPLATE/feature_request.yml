@@ -1,0 +1,25 @@
+name: Feature request
+description: Something Wortel could do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Wortel is small on purpose. Before you write this, read [docs/product.md](https://github.com/gielcobben/wortel/blob/main/docs/product.md): it lists what Wortel will not do and the questions a new feature is held to. [docs/decisions.md](https://github.com/gielcobben/wortel/blob/main/docs/decisions.md) may say it was tried already, and why it went.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were doing, and what got in the way. The problem matters more than the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: How it could work, if you have an idea. A preference in Settings is rarely the answer.
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do now
+      description: How you work around it today, if you do.

@@ -9,9 +9,9 @@ final class OpenTargetTests: XCTestCase {
         var inputs = OpenTarget.Inputs()
         inputs.archived = [.init(id: oldSession, name: "Old idea", branch: "worktree/old-idea"),
                            .init(id: otherSession, name: "Blog/Draft post", branch: nil)]
-        inputs.notOpen = [.init(path: "/w/shop-toolbar", branch: "giel/toolbar", repository: "~/work/shop"),
+        inputs.notOpen = [.init(path: "/w/shop-toolbar", branch: "me/toolbar", repository: "~/work/shop"),
                           .init(path: "/w/detached-head", branch: nil),
-                          .init(path: "/w/blog-toolbar", branch: "giel/toolbar", repository: "~/blog")]
+                          .init(path: "/w/blog-toolbar", branch: "me/toolbar", repository: "~/blog")]
         return inputs
     }
 
@@ -39,8 +39,8 @@ final class OpenTargetTests: XCTestCase {
     /// Two repositories with a worktree on the same branch: told apart by
     /// the repository beside the name, which can be typed too.
     func testNotOpenSaysWhichRepository() {
-        let both = OpenTarget.choices(for: "giel/toolbar", in: inputs)
-        XCTAssertEqual(both.map(\.title), ["giel/toolbar", "giel/toolbar"])
+        let both = OpenTarget.choices(for: "me/toolbar", in: inputs)
+        XCTAssertEqual(both.map(\.title), ["me/toolbar", "me/toolbar"])
         XCTAssertEqual(both.map(\.detail), ["~/work/shop", "~/blog"])
         XCTAssertEqual(OpenTarget.choices(for: "blog toolbar", in: inputs).map(\.action),
                        [.openWorktree(path: "/w/blog-toolbar")])

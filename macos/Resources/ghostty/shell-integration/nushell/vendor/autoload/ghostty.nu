@@ -12,9 +12,9 @@ export module ghostty {
     # `ssh-env`: use xterm-256color and propagate COLORTERM/TERM_PROGRAM vars
     if (has_feature "ssh-env") {
       $ssh_env.TERM = "xterm-256color"
+      $ssh_env.COLORTERM = "truecolor"
       $ssh_opts = [
-        "-o" "SetEnv COLORTERM=truecolor"
-        "-o" "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION"
+        "-o" "SendEnv COLORTERM TERM_PROGRAM TERM_PROGRAM_VERSION"
       ]
     }
 
@@ -57,9 +57,8 @@ export module ghostty {
           ] ++ $args
 
           $terminfo | ^ssh ...$remote_args '
+            command -v tic >/dev/null 2>&1 && mkdir -p ~/.terminfo 2>/dev/null && tic -x -o ~/.terminfo - 2>/dev/null && exit 0
             infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-            command -v tic >/dev/null 2>&1 || exit 1
-            mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
             exit 1'
           | complete
           | if $in.exit_code == 0 {

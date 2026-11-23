@@ -25,7 +25,7 @@ close) back to session state.
 piece of session handling with a rule worth stating. A sidebar **folder carries a
 directory** (`folderRoots`, UserDefaults beside the other three folder keys) —
 before that it was purely the part of a name before the last slash, so "New
-Session in “GFPC”" filed a session under GFPC and started it wherever the
+Session in “Acme”" filed a session under Acme and started it wherever the
 *selected* session was standing, which looked exactly like it had worked. The
 resolution order is: an explicit `cwd` (the CLI, a worktree, ⌘O), then the named
 folder's directory, then the selected session's **`originCwd`**, then that
@@ -52,7 +52,9 @@ where their sessions already are.
 
 **`SessionStore`** (`Wortel/Sessions/SessionStore.swift`) — debounced JSON
 persistence of the session list (order, names, cwds and origin cwds, selection,
-git-panel visibility) to `~/Library/Application Support/Wortel/sessions.json`.
+git-panel visibility) to `sessions.json` in the data folder (`DataDirectory`:
+`~/Library/Application Support/Wortel`, or `Wortel Dev` for a Debug build
+on a Mac that has not opted in, or `WORTEL_DATA_DIR`).
 This is *app state*, not user config — Wortel stays zero-config. Decoder
 tolerates older files missing fields. `saveNow` runs synchronously on
 termination.

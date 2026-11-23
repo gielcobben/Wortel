@@ -742,7 +742,7 @@ enum RunningJobs {
     /// looking.
     ///
     /// And it fired immediately. Claude Code's shell tool runs
-    /// `zsh -c 'source /Users/giel/.claude/shell-snapshots/snapshot-zsh-….sh …'`,
+    /// `zsh -c 'source /Users/me/.claude/shell-snapshots/snapshot-zsh-….sh …'`,
     /// so every job an agent starts carries a mention of `.claude` in its
     /// command string. Both of a session's dev servers were classified as the
     /// agent and vanished from the list they existed for.
@@ -1009,7 +1009,7 @@ enum RunningJobs {
     ///
     /// Paths are stripped from every token, because argv is full of them and
     /// none of it fits a row: the real thing here was
-    /// `node /Users/giel/Developer/…/node_modules/.bin/vite dev`.
+    /// `node /Users/me/Developer/…/node_modules/.bin/vite dev`.
     static func label(forArguments arguments: [String]) -> String? {
         // `arguments` is [executable path, argv0, argv1, …]; argv0 is the more
         // honest name (it is what the user typed), so prefer it and fall back.

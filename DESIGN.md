@@ -300,7 +300,8 @@ footer with the keys. The selected row is the accent with white text.
 | Number in place of the status | ⌘ is held: ⌘1 to ⌘9 |
 
 A louder state is never replaced by a quieter one, and a collapsed folder shows
-the loudest thing inside it. Sound only when a state gets louder.
+the loudest thing inside it after its chevron: a dot, or the three dots when
+nothing in it is louder than working. Sound only when a state gets louder.
 
 **A control**
 

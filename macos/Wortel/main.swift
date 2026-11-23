@@ -42,7 +42,8 @@ InheritedEnvironment.apply()
 
 // …and the data folder handed back, because what the scrub just removed is
 // what the keeper, every shell and the `wortel` command find their sockets
-// and files by. Only a custom one: the usual folder needs no variable.
+// and files by. Only a custom one (a Debug build's own folder is one): the
+// usual folder needs no variable.
 if let custom = DataDirectory.custom { setenv(DataDirectory.variable, custom, 1) }
 
 // Programmatic entry point (no storyboard). The shell is SwiftUI hosted in an

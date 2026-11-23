@@ -40,9 +40,40 @@ enum GitService {
     /// never write the index (below), and the git that does write it is
     /// usually the shell's, a different binary with its own daemon. So for us
     /// it's a process left behind per repo for a scan we run anyway.
+    ///
+    /// `log.showSignature=false`: a repository's own config can turn it on
+    /// and name a `gpg.program`, and then every `log` and `show` we run, the
+    /// History pane's included, starts that program to check each signed
+    /// commit (verified with git 2.54; GitServiceTests keeps it so). We never
+    /// show a signature. `gpg.program` itself is left alone: the Commit
+    /// button signs with it when the user's config says to (an ssh signer
+    /// such as 1Password's is common), and nothing else we run verifies.
+    ///
+    /// Not covered, and not coverable with a flag: a filter driver
+    /// (`filter.<name>.clean`, `.process`) that the repository's attributes
+    /// assign runs on `status` and `diff`, as Git LFS's does in the repos that
+    /// use it, and a custom merge driver can run in `merge-tree`. That is the
+    /// same exposure as any git-aware shell prompt in that folder
+    /// (`docs/architecture/git-panel.md`).
     private static func gitArguments(_ args: [String]) -> [String] {
-        ["git", "-c", "core.fsmonitor=false"] + args
+        ["git", "-c", "core.fsmonitor=false", "-c", "log.showSignature=false"] + args
     }
+
+    /// What every diff Wortel asks git for is told: print your own diff.
+    ///
+    /// Wortel runs git in whatever folder a terminal reports, and that report
+    /// (OSC 7) is a sequence any program's output can send, not only the
+    /// shell. A repository's own `.git/config` can name a program for git to
+    /// run on a diff: `diff.external`, or a `diff.<driver>.command` or
+    /// `.textconv` that its `.gitattributes` assigns to a path. Without these
+    /// flags, opening the Changes or History pane on such a folder runs it
+    /// (verified with git 2.54: `diff`, `diff --no-index` and `show` all did,
+    /// and none did with the flags; GitServiceTests keeps it so). Neither has
+    /// a `-c` spelling that covers every driver name, so they go on each diff
+    /// command instead of in `gitArguments`. Reading one blob (`show
+    /// <rev>:<path>`) never converts it unless `--textconv` is given, so the
+    /// image reads don't carry them.
+    static let diffSafetyFlags = ["--no-ext-diff", "--no-textconv"]
 
     /// Never let git block on a credential/terminal prompt, and don't let it
     /// take the index.lock just to read status.
@@ -76,7 +107,7 @@ enum GitService {
 
     /// `path` with the install folders it lacks added **after** its own, so a
     /// `git` already on it stays the one that runs and only what's missing is
-    /// found further along. (A Nix git on the work laptop is a different binary
+    /// found further along. (A git from Nix, say, is a different binary
     /// with its own speed; swapping it in by accident is not this change.)
     static func toolPath(_ path: String?, adding extra: [String] = installDirectories) -> String {
         var entries = (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
@@ -903,7 +934,8 @@ enum GitService {
     /// diff a reader actually means when they click a merge.
     static func commitDiff(root: String, sha: String) async -> String {
         let result = await run(
-            ["show", "--format=", "--patch", "-m", "--first-parent", sha], in: root)
+            ["show"] + diffSafetyFlags + ["--format=", "--patch", "-m", "--first-parent", sha],
+            in: root)
         return result.ok ? result.stdout : ""
     }
 
@@ -927,11 +959,11 @@ enum GitService {
         // wraps `café.txt` as `"caf\303\251.txt"`), which would otherwise become
         // the row's path and make every downstream `git show -- <path>` miss.
         async let statusRun = run(
-            ["-c", "core.quotePath=false", "show", "--format=", "-m", "--first-parent",
-             "-M", "--name-status", sha], in: root)
+            ["-c", "core.quotePath=false", "show"] + diffSafetyFlags
+                + ["--format=", "-m", "--first-parent", "-M", "--name-status", sha], in: root)
         async let numstatRun = run(
-            ["-c", "core.quotePath=false", "show", "--format=", "-m", "--first-parent",
-             "-M", "--numstat", sha], in: root)
+            ["-c", "core.quotePath=false", "show"] + diffSafetyFlags
+                + ["--format=", "-m", "--first-parent", "-M", "--numstat", sha], in: root)
         let status = await statusRun
         let numstat = await numstatRun
         guard status.ok else { return [] }
@@ -976,8 +1008,8 @@ enum GitService {
     static func commitFileDiff(
         root: String, sha: String, path: String, originalPath: String?
     ) async -> String {
-        var args = ["-c", "core.quotePath=false", "show", "--format=", "-m",
-                    "--first-parent", "-M", sha, "--", path]
+        var args = ["-c", "core.quotePath=false", "show"] + diffSafetyFlags
+            + ["--format=", "-m", "--first-parent", "-M", sha, "--", path]
         if let originalPath { args.append(originalPath) }
         let result = await run(args, in: root)
         return result.ok ? result.stdout : ""
@@ -1077,7 +1109,8 @@ enum GitService {
     static func untrackedDiff(root: String, path: String) async -> String {
         // --no-index exits 1 when the files differ (always, here); the diff is on
         // stdout regardless of exit status.
-        await run(["diff", "--no-index", "--", "/dev/null", path], in: root).stdout
+        await run(["diff"] + diffSafetyFlags + ["--no-index", "--", "/dev/null", path],
+                  in: root).stdout
     }
 
     /// What the working tree has done to one path. Three states rather than a
@@ -1093,7 +1126,8 @@ enum GitService {
     /// meaning: you pointed at a file, not at one side of its change.
     static func diffAgainstHead(root: String, path: String) async -> String {
         let result = await run(
-            ["-c", "core.quotePath=false", "diff", "HEAD", "--", path], in: root)
+            ["-c", "core.quotePath=false", "diff"] + diffSafetyFlags + ["HEAD", "--", path],
+            in: root)
         return result.ok ? result.stdout : ""
     }
 
@@ -1103,7 +1137,7 @@ enum GitService {
         if change.untracked {
             return await untrackedDiff(root: root, path: change.path)
         }
-        var args = ["diff"]
+        var args = ["diff"] + diffSafetyFlags
         if change.staged { args.append("--cached") }
         args += ["--", change.path]
         return await run(args, in: root).stdout
@@ -1318,8 +1352,8 @@ enum GitService {
     /// drafter can keep the (cheap, whole-picture) stat while budgeting the
     /// patch per file. Nil when nothing is staged.
     static func stagedDiff(root: String) async -> (stat: String, patch: String)? {
-        let stat = await run(["diff", "--cached", "--stat"], in: root).stdout
-        let patch = await run(["diff", "--cached"], in: root).stdout
+        let stat = await run(["diff"] + diffSafetyFlags + ["--cached", "--stat"], in: root).stdout
+        let patch = await run(["diff"] + diffSafetyFlags + ["--cached"], in: root).stdout
         guard !patch.isEmpty else { return nil }
         return (stat, patch)
     }

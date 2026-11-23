@@ -73,8 +73,13 @@ final class ProgramStatusWatch: @unchecked Sendable {
             }
         }
         var standing: [ProgramSignal] = cleared ? [.status(.clear)] : []
-        if let root = records.root { standing.append(.status(.status(root))) }
-        standing += records.childrenInOrder.map { .status(.status($0)) }
+        let root = records.root.map { ProgramSignal.status(.status($0)) }
+        let children = records.childrenInOrder.map { ProgramSignal.status(.status($0)) }
+        // A turn held open by its work (`ProgramRecords.finishHeld`) is only
+        // held where the work is already there when its `done` arrives, so
+        // the work goes first. Otherwise the root does, so work listed after
+        // a finished turn still changes nothing.
+        standing += records.finishHeld ? children + [root].compactMap { $0 } : [root].compactMap { $0 } + children
         if let notification { standing.append(.notification(notification)) }
         deliver(standing, replayed: true)
     }

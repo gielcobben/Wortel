@@ -645,7 +645,7 @@ private struct SwitcherRow: View {
             .fill(isHighlighted ? Color.accentColor : .clear))
     }
 
-    /// "Wortel · ~/Developer/wortel", "networth · worktree/pre-post".
+    /// "Wortel · ~/Developer/wortel", "ledger · worktree/pre-post".
     private var location: String {
         [candidate.folder, candidate.branch ?? candidate.path].compactMap { $0 }.joined(separator: " · ")
     }

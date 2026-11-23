@@ -1,3 +1,12 @@
+// Portions of this file are ported from Ghostty.app (SurfaceView_AppKit.swift,
+// Ghostty v1.3.1, https://github.com/ghostty-org/ghostty):
+//
+//     Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+//     MIT License. The full notice is in THIRD-PARTY-NOTICES.md.
+//
+// Wortel's changes and additions are GPL-3.0-or-later, like the rest of
+// Wortel (LICENSE).
+
 import AppKit
 import GhosttyKit
 import IOSurface
@@ -152,6 +161,9 @@ final class SurfaceView: NSView {
     // IME / preedit state (see keyDown for the dance).
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]? = nil
+    /// The first half of a character an input method sends in two
+    /// (`insertText`, `SurrogatePairing`).
+    private var surrogates = SurrogatePairing()
     private var lastPerformKeyEvent: TimeInterval?
 
     // Mouse state
@@ -587,12 +599,21 @@ final class SurfaceView: NSView {
     /// Tell libghostty this terminal's process has exited, so it behaves as it
     /// does when an exec-backend shell exits: it says so on screen, stops
     /// asking for confirmation to close, and asks to close the surface unless
-    /// configured to wait. Exit code 0 and no runtime, because the keeper
-    /// reaped the shell and only the pty hanging up reached this side; a
-    /// non-zero code would read as a crash at startup.
+    /// configured to wait. Exit code 0, because the keeper reaped the shell
+    /// and only the pty hanging up reached this side.
+    ///
+    /// The runtime is how long the shell had: from `shellStartedAt` to
+    /// `endedAt`, when its pty hung up (the caller may tell libghostty later).
+    /// It was 0, and libghostty takes any exit within its
+    /// `abnormal-command-exit-runtime` (250 ms) as a launch that failed, and
+    /// on macOS ignores the exit code: it printed a red "failed to launch"
+    /// banner and didn't ask to close, so `exit` left the session open until
+    /// the next key. A shell that really does die at once (a broken
+    /// `.zshrc`) still gets the banner and keeps its session, as with the
+    /// exec backend, rather than the session closing with no word.
     ///
     /// Once per surface, and nothing at all once the surface is gone.
-    func finishProcess() {
+    func finishProcess(endedAt: Date = Date()) {
         guard !processFinished else { return }
         guard let surface else {
             // Hibernated: the terminal is told when it wakes (`wake`).
@@ -600,7 +621,8 @@ final class SurfaceView: NSView {
             return
         }
         processFinished = true
-        ghostty_surface_process_exit(surface, 0, 0)
+        let ran = UInt64(max(endedAt.timeIntervalSince(shellStartedAt), 0) * 1000)
+        ghostty_surface_process_exit(surface, 0, ran)
     }
 
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
@@ -1847,25 +1869,58 @@ final class SurfaceView: NSView {
 
         syncPreedit(clearIfNeeded: markedTextBefore)
 
+        // Composing also when preedit was just cleared: that input canceled
+        // composition and must not be encoded (e.g. backspace or ⌃H during
+        // Japanese composition must not delete what was typed before it).
+        let composing = markedText.length > 0 || markedTextBefore
+
+        // Every return below is taken only while composing, where no Return
+        // counts, but a defer keeps that from being something to re-check.
+        defer {
+            if Self.isSubmit(keyCode: event.keyCode, modifiers: event.modifierFlags,
+                             isRepeat: event.isARepeat, composing: composing) {
+                onSubmit?()
+            }
+        }
+
+        // The input method committed all or part of what it was composing,
+        // with this key (Return, ⌃J or a space in Japanese input, the next
+        // jamo or an arrow in Korean). The text goes as text alone, and the
+        // key itself only when it still means something after the commit
+        // (`KeyInputText.replaysKeyAfterCommit`). Sent with the key, as
+        // before, a control key that committed could still be encoded as
+        // itself after the text: ⌃J committing a Japanese word also sent the
+        // program a line feed (Ghostty fa141a726, d60a16c14).
+        if markedTextBefore, let list = keyTextAccumulator, !list.isEmpty {
+            for text in list where !KeyInputText.isComposingControl(text, composing: composing) {
+                _ = committedTextAction(action, text: text)
+            }
+            if KeyInputText.replaysKeyAfterCommit(keyCode: translationEvent.keyCode,
+                                                  modifiers: translationEvent.modifierFlags) {
+                _ = keyAction(action, event: event, translationEvent: translationEvent)
+            }
+            return
+        }
+
         if let list = keyTextAccumulator, !list.isEmpty {
             // Composition produced text; composing is never true for these.
-            for text in list {
+            // A bare control character the input method passed on while
+            // composing is its own and is dropped (Ghostty a43cc02eb).
+            for text in list where !KeyInputText.isComposingControl(text, composing: composing) {
                 _ = keyAction(action, event: event, translationEvent: translationEvent, text: text)
             }
         } else {
+            // A control key while composing is the input method's: Japanese
+            // input converts and edits with ⌃H ⌃J ⌃M ⌃N, and each also reached
+            // the program as a backspace, a line feed or a Return (Ghostty
+            // a43cc02eb).
+            if KeyInputText.isComposingControl(event.characters, composing: composing) { return }
             _ = keyAction(
                 action,
                 event: event,
                 translationEvent: translationEvent,
                 text: translationEvent.ghosttyCharacters,
-                // Composing also when preedit was just cleared: that input
-                // canceled composition and must not be encoded (e.g. backspace
-                // during Japanese composition).
-                composing: markedText.length > 0 || markedTextBefore)
-        }
-        if Self.isSubmit(keyCode: event.keyCode, modifiers: event.modifierFlags, isRepeat: event.isARepeat,
-                         composing: markedTextBefore || markedText.length > 0) {
-            onSubmit?()
+                composing: composing)
         }
     }
 
@@ -2032,15 +2087,39 @@ final class SurfaceView: NSView {
         var keyEvent = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
         keyEvent.composing = composing
 
-        // Only encode UTF-8 text when it's not a single control character;
-        // ghostty encodes control characters itself (ctrl+enter etc).
-        if let text, !text.isEmpty, let codepoint = text.utf8.first, codepoint >= 0x20 {
+        // No text that starts with a control character, DEL included:
+        // ghostty encodes those itself (ctrl+enter etc); see `keyEventText`.
+        if let text = KeyInputText.keyEventText(text) {
             return text.withCString { ptr in
                 keyEvent.text = ptr
                 return ghostty_surface_key(surface, keyEvent)
             }
         }
         return ghostty_surface_key(surface, keyEvent)
+    }
+
+    /// Text an input method committed, as a key event carrying only the text:
+    /// no key code, no modifiers. Through the key encoder, as typing goes,
+    /// and not `ghostty_surface_text`, which is a paste: a program that
+    /// switched bracketed paste on (Claude Code and Codex do) got macOS
+    /// Dictation, the emoji picker and an input method's commit as a paste,
+    /// and showed "[Pasted text]" where the words should have been typed
+    /// (Ghostty 751a60df6, ecbeb60ca).
+    private func committedTextAction(_ action: ghostty_input_action_e, text: String) -> Bool {
+        guard let surface, !text.isEmpty else { return false }
+        noteUserInput()
+        var keyEvent = ghostty_input_key_s()
+        keyEvent.action = action
+        keyEvent.keycode = 0
+        keyEvent.text = nil
+        keyEvent.composing = false
+        keyEvent.mods = GHOSTTY_MODS_NONE
+        keyEvent.consumed_mods = GHOSTTY_MODS_NONE
+        keyEvent.unshifted_codepoint = 0
+        return text.withCString { ptr in
+            keyEvent.text = ptr
+            return ghostty_surface_key(surface, keyEvent)
+        }
     }
 }
 
@@ -2129,12 +2208,12 @@ extension SurfaceView: NSTextInputClient {
 
     func insertText(_ string: Any, replacementRange: NSRange) {
         guard NSApp.currentEvent != nil else { return }
-        guard let surface else { return }
+        guard surface != nil else { return }
 
         var chars = ""
         switch string {
         case let v as NSAttributedString: chars = v.string
-        case let v as String: chars = v
+        case let v as NSString: chars = surrogates.text(for: v)
         default: return
         }
 
@@ -2148,12 +2227,10 @@ extension SurfaceView: NSTextInputClient {
             return
         }
 
-        let len = chars.utf8CString.count
-        guard len > 1 else { return }
-        noteUserInput()
-        chars.withCString { ptr in
-            ghostty_surface_text(surface, ptr, UInt(len - 1))
-        }
+        // Outside a keyDown it is an input method with nothing to type it
+        // with: Dictation, the emoji picker, a commit made with the mouse.
+        // As typed text, never as a paste; see `committedTextAction`.
+        _ = committedTextAction(GHOSTTY_ACTION_PRESS, text: chars)
     }
 
     override func doCommand(by selector: Selector) {
@@ -2166,16 +2243,14 @@ extension SurfaceView: NSTextInputClient {
             return
         }
 
-        // Native scroll commands (Home/End).
-        switch selector {
-        case #selector(moveToBeginningOfDocument(_:)):
-            performBinding("scroll_to_top")
-        case #selector(moveToEndOfDocument(_:)):
-            performBinding("scroll_to_bottom")
-        default:
-            // Swallow everything else: prevents NSBeep for unhandled actions.
-            break
-        }
+        // Everything else is swallowed, which keeps NSBeep away. This used to
+        // run scroll_to_top for moveToBeginningOfDocument and scroll_to_bottom
+        // for moveToEndOfDocument, taken for Home and End. They are ⌘↑ and
+        // ⌘↓, which libghostty binds to the previous and next prompt: the
+        // key's interpretation scrolled to the very top first, and from there
+        // no prompt was above, so ⌘↑ went to the top of the scrollback.
+        // ⌘Home and ⌘End are libghostty's own bindings and scroll without
+        // this (Ghostty 30fdc8f4c).
     }
 
     /// Push the markedText state to libghostty as preedit text.

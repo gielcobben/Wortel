@@ -7,7 +7,7 @@ design record.
 
 ## The shape of it
 
-Seven files in `Wortel/Telemetry/`:
+Eight files in `Wortel/Telemetry/`:
 
 | File | What it is |
 | --- | --- |
@@ -18,6 +18,7 @@ Seven files in `Wortel/Telemetry/`:
 | `TelemetryNotice.swift` | The disclosure popover, and the switch in it. |
 | `ExitMarker.swift` | How the last run ended, from one empty file. |
 | `CrashReport.swift` | A macOS crash report reduced to closed sets and offsets. |
+| `HangReport.swift` | The same for a hang report: a force quit of an app that stopped answering. |
 
 Call sites are one line and never conditional:
 
@@ -81,7 +82,7 @@ that silently never fires. An opt-out that fails open is the worst kind.
 ## How a run ended
 
 `app_launched` carries `previous_exit`: `none` (first launch), `clean`,
-`unclean` or `crashed`. The mechanism is a file named `running` in the data
+`unclean`, `crashed` or `hung`. The mechanism is a file named `running` in the data
 folder, created by `main.swift` right after `InstanceLock` and removed in
 `applicationWillTerminate`. Finding it at launch means the last run never
 quit. Nothing runs while the app is dying: no signal handler, no reporter.
@@ -107,6 +108,32 @@ To read a site, `release.sh --publish` archives each release's dSYMs in
 ./scripts/symbolicate.sh 2026.47.1 1a2b3c          # arm64 by default
 ```
 
+`hung` instead of `unclean` means there was no crash report but macOS kept a
+hang report from that run: Wortel stopped answering at some point, and the run
+then did not quit. Usually that is one event, a hang that was force quit, but
+the report does not prove the hang is what ended the run (if macOS also keeps
+reports of hangs that pass, a short one followed by a power cut reads the
+same); `lasted` is what tells the two apart. Spindump writes it
+as `Wortel_<date>_<host>.hang`, a text report of every process on the Mac,
+ten megabytes and more. Both `~/Library/Logs/DiagnosticReports` and
+`/Library/Logs/DiagnosticReports` are looked in (which one macOS uses for a
+hang was not seen on the Mac this was written on; the system folder is
+readable by admin users and skipped otherwise). Of the newest few matches (at
+most three, newest first) only the first 512 KB is read: the header and the
+hung process's own section, which spindump puts first. A report whose process
+`UID` is not this user's is skipped, since the system folder is shared by
+everyone on the Mac. It is reduced to `app_hung`: `activity`, which of
+a closed set of kinds of code the main thread's heaviest stack was in
+(`swiftui`, `appkit`, `wortel`, `waiting`, `io`, `other`, decided by the
+frameworks in it); `site` and `signature` from that stack's frames inside
+Wortel's binary, read exactly like a crash's; `hung_version` and `hung_arch`;
+`lasted`, the hang's length as a duration bucket (`unknown` when the report
+does not say); and `memory`, the app's footprint then as one of four ranges
+(where it ended up, when it moved while it was sampled). The host name, paths, symbols and other
+processes are never read into anything sent; `TelemetryTests` feeds it a
+report carrying them. The first hang anyone sent (2026-11-23, by mail) read
+`swiftui`, `7ff4`, `<24h`, `8gb+` this way.
+
 A crash of the keeper is not an app crash; it shows as `keeper_lost`.
 
 Archives are worktree sessions only, so `session_archived` and
@@ -128,9 +155,8 @@ xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release build
 
 If a change here moves it, the change is wrong.
 
-**`measure.sh` kills every running Wortel**, so it cannot be run from a terminal
-inside Wortel, which is how this app is usually developed. Run it from
-Terminal.app, or from a session you are willing to lose.
+`measure.sh` runs a throwaway copy of the build on a data folder of its own and
+stops only that copy, so it can be run from a session inside Wortel.
 
 ## Adding an event
 

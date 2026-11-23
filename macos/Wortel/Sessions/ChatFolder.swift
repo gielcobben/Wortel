@@ -21,8 +21,9 @@ import Foundation
 /// usual disk. Then nothing here touches it, and an agent starts at home as
 /// before.
 enum ChatFolder {
-    /// The parent of every agent's folder. A test copy (`WORTEL_DATA_DIR`)
-    /// keeps its own, inside its data folder.
+    /// The parent of every agent's folder. A copy on a data folder of its own
+    /// (`WORTEL_DATA_DIR`, or a Debug build's `Wortel Dev`) keeps its own,
+    /// inside that folder.
     static let root: String = DataDirectory.custom.map { $0 + "/chats" }
         ?? (NSHomeDirectory() as NSString).appendingPathComponent("Wortel")
 

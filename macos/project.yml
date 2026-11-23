@@ -151,6 +151,14 @@ targets:
       # The Claude Code skill installed at launch (`AgentSkill`).
       - path: Resources/wortel-skill.md
         buildPhase: resources
+      # The licence and the third-party notices, shipped in Contents/Resources:
+      # the GPL and several of the MIT/BSD components ask for their notices to
+      # travel with every copy of the binary. The files at the repository root
+      # are the only copies; keep them there.
+      - path: ../LICENSE
+        buildPhase: resources
+      - path: ../THIRD-PARTY-NOTICES.md
+        buildPhase: resources
     dependencies:
       # The `wortel` command, copied into Contents/Resources/bin. There is no
       # install step: GhosttyRuntime puts that directory on the PATH of every
@@ -219,6 +227,18 @@ targets:
         ENABLE_TESTABILITY: true
         # Lets the vendored scanner .c files resolve #include "tree_sitter/...".
         HEADER_SEARCH_PATHS: $(SRCROOT)/Grammars/include
+      configs:
+        # A Debug build is another app from the installed one, with its own
+        # UserDefaults, until this Mac opts in: see scripts/debug-bundle-id.sh
+        # and DataDirectory.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.gielcobben.Wortel.dev
+    # After everything else and before Xcode signs the bundle: the Debug bundle
+    # id, by whether this Mac shares its data folder with Debug builds.
+    postBuildScripts:
+      - name: Debug bundle id
+        script: '"$SRCROOT/scripts/debug-bundle-id.sh"'
+        basedOnDependencyAnalysis: false
     info:
       path: Wortel/Info.plist
       properties:
@@ -281,7 +301,7 @@ targets:
         SUAutomaticallyUpdate: true
         SUScheduledCheckInterval: 14400
         # EdDSA public key — private half lives in the login Keychain (shared
-        # publisher key, same as Wakker/Opslan).
+        # publisher key, shared with the maintainer's other apps).
         SUPublicEDKey: +IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=
 
   # The `wortel` command line tool. A plain executable — no libghostty, no
@@ -374,6 +394,9 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true
+        # DataDirectory gives the tests a throwaway folder: what they drive
+        # (TerminalModeRecorder.shared, for one) writes there on its own.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) WORTEL_TESTS
     sources:
       - path: WortelTests
       - path: Wortel/Git/GitModels.swift
@@ -643,6 +666,8 @@ targets:
       # A crash report reduced to closed sets and offsets. The test is the
       # proof that nothing from the report but numbers comes out.
       - path: Wortel/Telemetry/CrashReport.swift
+      # The same for a hang report, which is text and describes the whole Mac.
+      - path: Wortel/Telemetry/HangReport.swift
       # Process survival. The keeper is the one part of Wortel that has to
       # outlive the app, so it is tested for real — a server on a temp socket,
       # a client over a socket pair, actual ptys with actual shells on them.
@@ -723,6 +748,10 @@ targets:
       # string an agent printed: relative to the repo, with a full stop or a
       # `:42` stuck to it. Each one opened nothing before it was a type.
       - path: Wortel/Ghostty/TerminalLink.swift
+      # What text goes with a key, and which key an input method's commit
+      # still sends. Pure, and each wrong answer is a key sent twice or a
+      # word arriving as a paste, which no test with a keyboard catches.
+      - path: Wortel/Ghostty/KeyInputText.swift
       # How each editor is told a line: pure string shapes, each one a
       # file opened at the top when it's wrong.
       - path: Wortel/Preview/ExternalEditor.swift

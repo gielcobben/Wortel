@@ -328,9 +328,9 @@ final class WorkspaceTabsTests: XCTestCase {
     }
 
     func testFileTabRawValuesRoundTrip() {
-        let file = SideTab.file("/Users/giel/Developer/wortel/README.md")
+        let file = SideTab.file("/Users/me/Developer/wortel/README.md")
         XCTAssertEqual(SideTab(rawValue: file.rawValue), file)
-        XCTAssertEqual(file.rawValue, "file:/Users/giel/Developer/wortel/README.md")
+        XCTAssertEqual(file.rawValue, "file:/Users/me/Developer/wortel/README.md")
     }
 
     func testBrowserTabRawValuesRoundTrip() {

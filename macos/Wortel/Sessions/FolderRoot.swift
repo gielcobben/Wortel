@@ -3,9 +3,9 @@ import Foundation
 /// A sidebar folder's **directory**: the path a new session in that folder
 /// starts in.
 ///
-/// Folders used to be a name and nothing else — `SessionName` splits "GFPC/api"
+/// Folders used to be a name and nothing else — `SessionName` splits "Acme/api"
 /// into a folder and a leaf, and that split was the whole of the feature. So
-/// "New Session in GFPC" filed a session under GFPC and started it in whatever
+/// "New Session in Acme" filed a session under Acme and started it in whatever
 /// directory the *selected* session had last `cd`'d to, which is the one thing
 /// nobody means by it. Giving a folder a root is what makes it a project rather
 /// than a label.
@@ -32,7 +32,7 @@ enum FolderRoot {
     /// Whether `path` is `root` or sits underneath it.
     ///
     /// The `/` guard is the whole point: a plain `hasPrefix` says
-    /// `/Users/giel/wortel-web` is inside `/Users/giel/wortel`, and the sibling
+    /// `/Users/me/wortel-web` is inside `/Users/me/wortel`, and the sibling
     /// project would silently inherit the wrong folder's directory.
     static func root(_ root: String, contains path: String) -> Bool {
         guard let root = normalize(root), let path = normalize(path) else { return false }

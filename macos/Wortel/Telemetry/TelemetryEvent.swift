@@ -163,6 +163,14 @@ enum TelemetryEvent: Equatable {
     case appCrashed(signal: CrashSignal, exception: CrashException, site: CodeOffset?,
                     signature: CrashSignature?, version: CalVer?, arch: CrashArch)
 
+    /// The run before this launch did not quit, and macOS kept a report of it
+    /// having stopped answering (usually: it hung and was force quit). The same reduction as a crash, plus what
+    /// a hang needs: what kind of code the main thread was stuck in, how long
+    /// it was stuck and how much memory the app held, all as closed sets. See
+    /// `HangReport`.
+    case appHung(activity: HangActivity, site: CodeOffset?, signature: CrashSignature?,
+                 version: CalVer?, arch: CrashArch, lasted: DurationBucket?, memory: MemoryBucket?)
+
     /// The last event this install will ever send: reporting was turned off.
     /// Sent, rather than silently stopping, because the opt-out rate is the one
     /// number that says whether opt-out was the right default. Nothing follows
@@ -196,6 +204,7 @@ enum TelemetryEvent: Equatable {
         case .sessionUnarchived: return "session_unarchived"
         case .reminderSet: return "reminder_set"
         case .appCrashed: return "app_crashed"
+        case .appHung: return "app_hung"
         case .globalHotkeyUsed: return "global_hotkey_used"
         case .windowOpened: return "window_opened"
         case .sessionMovedWindow: return "session_moved_window"
@@ -246,6 +255,11 @@ enum TelemetryEvent: Equatable {
             return ["signal": signal.rawValue, "exception": exception.rawValue,
                     "site": site?.rawValue ?? "none", "signature": signature?.rawValue ?? "none",
                     "crashed_version": version?.rawValue ?? "unknown", "crashed_arch": arch.rawValue]
+        case let .appHung(activity, site, signature, version, arch, lasted, memory):
+            return ["activity": activity.rawValue,
+                    "site": site?.rawValue ?? "none", "signature": signature?.rawValue ?? "none",
+                    "hung_version": version?.rawValue ?? "unknown", "hung_arch": arch.rawValue,
+                    "lasted": lasted?.rawValue ?? "unknown", "memory": memory?.rawValue ?? "unknown"]
         case .agentJumpUsed, .globalHotkeyUsed, .reportingDisabled, .sessionArchived, .sessionUnarchived,
              .reminderSet:
             return [:]
@@ -427,11 +441,14 @@ enum AttentionCause: String {
 /// How the run before this launch ended. `none` is the first launch, when
 /// there was no run before. `unclean` is anything that ended without the app
 /// quitting: a force quit, `kill -9`, a power cut, or a crash nobody reported.
+/// `hung` is such a run during which macOS kept a hang report (`HangReport`),
+/// most often a hang that was force quit.
 enum PreviousExit: String, CaseIterable {
     case none
     case clean
     case unclean
     case crashed
+    case hung
 }
 
 // ---- crashes: every value below is built from numbers or a closed set -----
@@ -490,6 +507,99 @@ enum CrashArch: String, CaseIterable {
         case "ARM-64": self = .arm64
         case "X86-64": self = .x86_64
         default: self = .other
+        }
+    }
+
+    /// A hang report's `Architecture:` line, which names the slice.
+    init(architecture: String?) {
+        switch architecture {
+        case "arm64", "arm64e": self = .arm64
+        case "x86_64", "x86_64h": self = .x86_64
+        default: self = .other
+        }
+    }
+}
+
+/// What kind of code the main thread was in when it stopped answering,
+/// decided by the *framework* of its heaviest stack, innermost first. Symbol
+/// names are looked at only to tell a wait from work, and never leave this
+/// type: what is sent is one of these words.
+///
+/// - `waiting`: blocked in the kernel on a lock, a semaphore or a message.
+/// - `io`: blocked in the kernel on a file.
+/// - `wortel`: busy in our own code (the `site` says where).
+/// - `swiftui`: inside SwiftUI's update or layout, the first hang's case.
+/// - `appkit`: inside AppKit or drawing.
+enum HangActivity: String, CaseIterable {
+    case waiting, io, wortel, swiftui, appkit, other
+
+    /// `stack` is (image, symbol), outermost frame first.
+    init(stack: [(image: String, symbol: String)], executable: String) {
+        guard let leaf = stack.last else { self = .other; return }
+        if leaf.image == "libsystem_kernel.dylib" {
+            // Whole system call names, not substrings: `read` is inside
+            // `thread_switch`. `__psynch_cvwait + 8` and `read$NOCANCEL` are
+            // reduced to `psynch_cvwait` and `read` first.
+            let name = Self.syscall(leaf.symbol)
+            if Self.waits.contains(name) { self = .waiting; return }
+            if Self.fileCalls.contains(name) { self = .io; return }
+        }
+        // Up from the leaf, past the plumbing every stack has, to the first
+        // frame that says whose work it was.
+        let plumbing: Set<String> = [
+            "libsystem_kernel.dylib", "libsystem_pthread.dylib", "libsystem_platform.dylib",
+            "libsystem_malloc.dylib", "libsystem_c.dylib", "libdispatch.dylib", "libobjc.A.dylib",
+            "libswiftCore.dylib", "libc++.1.dylib", "libc++abi.dylib", "CoreFoundation", "Foundation", "dyld",
+        ]
+        for frame in stack.reversed() where !plumbing.contains(frame.image) {
+            switch frame.image {
+            case executable: self = .wortel
+            case "SwiftUI", "SwiftUICore", "AttributeGraph": self = .swiftui
+            case "AppKit", "HIToolbox", "QuartzCore", "CoreGraphics", "CoreText", "Metal": self = .appkit
+            default: self = .other
+            }
+            return
+        }
+        self = .other
+    }
+
+    private static let waits: Set<String> = [
+        "psynch_cvwait", "psynch_mutexwait", "psynch_rw_rdlock", "psynch_rw_wrlock", "ulock_wait", "ulock_wait2",
+        "semaphore_wait_trap", "semaphore_timedwait_trap", "semwait_signal", "mach_msg", "mach_msg2_trap",
+        "mach_msg_trap", "mach_msg_overwrite", "kevent", "kevent64", "kevent_qos", "kevent_id", "workq_kernreturn",
+        "select", "poll", "wait4", "waitid", "thread_switch", "swtch_pri",
+    ]
+    private static let fileCalls: Set<String> = [
+        "read", "pread", "readv", "preadv", "write", "pwrite", "writev", "pwritev", "open", "openat", "close",
+        "fsync", "fcntl", "stat", "stat64", "fstat", "fstat64", "lstat", "lstat64", "fstatat64", "getattrlist",
+        "fgetattrlist", "getattrlistbulk", "getdirentries64", "access", "unlink", "rename", "mkdir", "rmdir",
+    ]
+
+    /// `__read_nocancel + 8` → `read`.
+    static func syscall(_ symbol: String) -> String {
+        var name = Substring(symbol.split(separator: " ").first ?? "")
+        while name.hasPrefix("_") { name = name.dropFirst() }
+        for suffix in ["$NOCANCEL", "_nocancel"] where name.hasSuffix(suffix) {
+            name = name.dropLast(suffix.count)
+        }
+        return String(name)
+    }
+}
+
+/// How much memory the app held, from a report's `Footprint:`. Four ranges:
+/// enough to tell a leak from a normal app, and nothing finer.
+enum MemoryBucket: String, CaseIterable {
+    case under512MB = "<512mb"
+    case under2GB = "<2gb"
+    case under8GB = "<8gb"
+    case eightGBOrMore = "8gb+"
+
+    init(bytes: UInt64) {
+        switch bytes {
+        case ..<(512 << 20): self = .under512MB
+        case ..<(2 << 30): self = .under2GB
+        case ..<(8 << 30): self = .under8GB
+        default: self = .eightGBOrMore
         }
     }
 }

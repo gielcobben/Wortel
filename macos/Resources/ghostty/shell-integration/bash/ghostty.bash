@@ -14,6 +14,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Modified by Giel Cobben for Wortel, July to November 2026, from Ghostty's
+# copy of this file. Most changes are marked "Wortel:" or "WORTEL:" below: the
+# bundled `wortel` command on PATH, the cwd reported as localhost, the
+# agent markers, and the command title cut to 200 characters. Every change
+# and its date is in the history of https://github.com/gielcobben/wortel.
+# This file stays under GPLv3 or later, as above.
 
 # We need to be in interactive mode to proceed.
 if [[ "$-" != *i* ]]; then builtin return; fi
@@ -137,8 +144,10 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
 
     # Configure environment variables for remote session
     if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-env* ]]; then
-      ssh_opts+=(-o "SetEnv COLORTERM=truecolor")
-      ssh_opts+=(-o "SendEnv TERM_PROGRAM TERM_PROGRAM_VERSION")
+      # SendEnv, not `SetEnv COLORTERM=truecolor`: a SetEnv given with -o
+      # replaces every SetEnv in the user's own ~/.ssh/config. COLORTERM is set
+      # on the ssh command at the bottom instead. (Ghostty 69554f414.)
+      ssh_opts+=(-o "SendEnv COLORTERM TERM_PROGRAM TERM_PROGRAM_VERSION")
     fi
 
     # Install terminfo on remote host if needed
@@ -170,10 +179,11 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
             ssh_cpath_dir=$(mktemp -d "/tmp/ghostty-ssh-$ssh_user.XXXXXX" 2>/dev/null) || ssh_cpath_dir="/tmp/ghostty-ssh-$ssh_user.$$"
             ssh_cpath="$ssh_cpath_dir/socket"
 
+            # Wortel: install first, and accept an entry already there only
+            # when the host has no tic. See the zsh copy.
             if builtin echo "$ssh_terminfo" | builtin command ssh -o ControlMaster=yes -o ControlPath="$ssh_cpath" -o ControlPersist=60s "$@" '
+              command -v tic >/dev/null 2>&1 && mkdir -p ~/.terminfo 2>/dev/null && tic -x -o ~/.terminfo - 2>/dev/null && exit 0
               infocmp xterm-ghostty >/dev/null 2>&1 && exit 0
-              command -v tic >/dev/null 2>&1 || exit 1
-              mkdir -p ~/.terminfo 2>/dev/null && tic -x - 2>/dev/null && exit 0
               exit 1
             ' 2>/dev/null; then
               ssh_term="xterm-ghostty"
@@ -194,7 +204,7 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
     fi
 
     # Execute SSH with TERM environment variable
-    TERM="$ssh_term" builtin command ssh "${ssh_opts[@]}" "$@"
+    TERM="$ssh_term" COLORTERM=truecolor builtin command ssh "${ssh_opts[@]}" "$@"
   }
 fi
 
@@ -242,10 +252,7 @@ function __ghostty_precmd() {
       [[ "${PS0-}" != *'\[\e[0 q\]'* ]] && PS0=${PS0-}'\[\e[0 q\]' # reset
     fi
 
-    # Title (working directory)
-    if [[ "${GHOSTTY_SHELL_FEATURES-}" == *"title"* ]]; then
-      PS1=$PS1'\[\e]2;\w\a\]'
-    fi
+    # Title (working directory): printed below, not put in PS1 as `\w`.
   fi
 
   # Wortel: `${BASHPID-}`: bash 3.2 (the macOS /bin/bash) has no BASHPID, and
@@ -256,8 +263,17 @@ function __ghostty_precmd() {
     builtin printf "\e]133;D;%s;aid=%s\a" "$ret" "${BASHPID-}"
   fi
 
-  # Fresh line and start of prompt.
-  builtin printf "\e]133;A;redraw=last;cl=line;aid=%s\a" "${BASHPID-}"
+  # Fresh line and start of prompt. When ble.sh is active, emit 133;P instead
+  # of 133;A because ble.sh maintains its own cursor position tracking. 133;A's
+  # cursor movement (CR+LF when not at column 0) is invisible to ble.sh and
+  # desyncs its position state, causing display artifacts like duplicate
+  # prompts. See: https://github.com/akinomyoga/ble.sh/issues/684 (Ghostty
+  # b1ad24e24.)
+  if [[ -n "${BLE_VERSION-}" ]]; then
+    builtin printf "\e]133;P;k=i\a"
+  else
+    builtin printf "\e]133;A;redraw=last;cl=line;aid=%s\a" "${BASHPID-}"
+  fi
 
   # unfortunately bash provides no hooks to detect cwd changes
   # in particular this means cwd reporting will not happen for a
@@ -268,7 +284,28 @@ function __ghostty_precmd() {
     # _ghostty_report_pwd for why. Same exposure: an unset $HOSTNAME emits a
     # hostless URI that libghostty drops, and a captured one goes stale when
     # the machine is renamed mid-session.
-    builtin printf "\e]7;kitty-shell-cwd://localhost%s\a" "$PWD"
+    #
+    # Control bytes are taken out of the directory first (Ghostty 6eb24a0f0): a
+    # raw ESC or BEL in a directory name ended this OSC 7 early and started a
+    # sequence of its own, such as an OSC 52 clipboard write. Backslashes are
+    # safe, because printf only expands escapes in its format, not in %s.
+    builtin printf "\e]7;kitty-shell-cwd://localhost%s\a" "${PWD//[[:cntrl:]]/}"
+  fi
+
+  # Title (working directory), as `\w` would show it. Wortel prints it here
+  # rather than putting `\[\e]2;\w\a\]` in PS1, upstream's way: bash copies
+  # a raw ESC or BEL in a directory name straight through `\w` (measured on
+  # 3.2), so a directory could inject a sequence of its own, the hole closed
+  # for OSC 7 above. Printed at every prompt, as the PS1 version was.
+  if [[ "${GHOSTTY_SHELL_FEATURES-}" == *"title"* ]]; then
+    builtin local title="$PWD"
+    if [[ -n "${HOME-}" ]]; then
+      case "$title" in
+        "$HOME")   title="~" ;;
+        "$HOME"/*) title="~${title:${#HOME}}" ;;
+      esac
+    fi
+    builtin printf "\e]2;%s\a" "${title//[[:cntrl:]]/}"
   fi
 
   # Wortel: clear this session's agent marker at every prompt. See
@@ -745,7 +782,7 @@ function __ghostty_preexec() {
       __ghostty_wortel_now
       { builtin printf 'agent=%s\n' "${_ghostty_wortel_found[0]}"
         builtin printf 'model=%s\n' "${_ghostty_wortel_found[1]}"
-        builtin printf 'cwd=%s\n' "${_ghostty_wortel_found[2]}"
+        builtin printf 'cwd=%s\n' "${_ghostty_wortel_found[2]//[[:cntrl:]]/}"
         builtin printf 'argv=%s\n' "${_ghostty_wortel_found[3]}"
         # The shell's own pid — see the zsh integration: it lets the app verify
         # from the process table that the agent is really still running.
@@ -790,46 +827,66 @@ if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )
     __ghostty_preexec "$cmd"
   }
 
-  # Use function substitution in 5.3+. Otherwise, use command substitution.
-  # Any output (including escape sequences) goes to the terminal.
-  # Only define if not already set (allows re-sourcing).
-  if [[ -z "${__ghostty_ps0+x}" ]]; then
-    if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3) )); then
-      # shellcheck disable=SC2016
-      builtin readonly __ghostty_ps0='${ __ghostty_preexec_hook; }'
-    else
-      # shellcheck disable=SC2016
-      builtin readonly __ghostty_ps0='$(__ghostty_preexec_hook >/dev/tty)'
-    fi
-  fi
+  # Bash 5.1+ restores the command status for each PROMPT_COMMAND array entry.
+  # Scalar values need to save and restore it before existing commands run.
+  # (Ghostty 591ccacbd.)
+  __ghostty_restore_status() {
+    builtin return "$1"
+  }
 
   __ghostty_hook() {
-    builtin local ret=$?
+    # The status saved ahead of a user's scalar PROMPT_COMMAND, when there is
+    # one: by the time this runs, the commands before it have replaced `$?`.
+    builtin local ret="${__ghostty_status:-$?}"
+    builtin unset __ghostty_status
     # Wortel: the number the next saved history line will get; see
     # __ghostty_preexec_hook.
     _ghostty_wortel_histcmd="${HISTCMD-}"
     __ghostty_precmd "$ret"
+
+    # Append preexec hook to PS0 if not already present.
+    # Use function substitution in 5.3+, otherwise command substitution.
+    # (Ghostty 2a952b4df: no readonly variable to carry it.)
     # Wortel: `${PS0-}`, as everywhere these hooks run: under a user's `set -u`
     # an unset PS0 stopped this line, so PS0 never got the preexec hook.
-    if [[ "${PS0-}" != *"$__ghostty_ps0"* ]]; then
-      PS0=${PS0-}"${__ghostty_ps0}"
+    if [[ "${PS0-}" != *"__ghostty_preexec_hook"* ]]; then
+      if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 3) )); then
+        # shellcheck disable=SC2016
+        PS0=${PS0-}'${ __ghostty_preexec_hook; }'
+      else
+        # shellcheck disable=SC2016
+        PS0=${PS0-}'$(__ghostty_preexec_hook >/dev/tty)'
+      fi
     fi
   }
 
-  # Append our hook to PROMPT_COMMAND, preserving its existing type.
+  # Append our hook to PROMPT_COMMAND, preserving its existing type. Array
+  # entries receive their command's status directly, while scalar values
+  # need a leading status capture before existing commands run.
+  #
+  # The 2>/dev/null suppresses "command not found" in subshells that inherit
+  # PROMPT_COMMAND without the function definitions (Ghostty 4b9324f48). This
+  # also silences any errors from inside our hooks, but those are all terminal
+  # escape sequences and non-actionable.
+  #
+  # The guard matches the hook as a substring, so it also finds it in an array
+  # (Ghostty a4031c8e3); "declare -a" without the space also takes an exported
+  # array, "declare -ax" (ed7f046ee); and a scalar that ends in a newline gets
+  # no ";" after it, which was a syntax error (1f3a3b41f).
   # shellcheck disable=SC2128,SC2178,SC2179
-  if [[ ";${PROMPT_COMMAND[*]:-};" != *";__ghostty_hook;"* ]]; then
-    if [[ -z "${PROMPT_COMMAND[*]}" ]]; then
+  if [[ "${PROMPT_COMMAND[*]:-}" != *"__ghostty_hook 2>/dev/null"* ]]; then
+    if [[ -z "${PROMPT_COMMAND[*]:-}" ]]; then
       if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
-        PROMPT_COMMAND=(__ghostty_hook)
+        PROMPT_COMMAND=("__ghostty_hook 2>/dev/null")
       else
-        PROMPT_COMMAND="__ghostty_hook"
+        PROMPT_COMMAND="__ghostty_hook 2>/dev/null"
       fi
-    elif [[ $(builtin declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a "* ]]; then
-      PROMPT_COMMAND+=(__ghostty_hook)
+    elif [[ $(builtin declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a"* ]]; then
+      PROMPT_COMMAND+=("__ghostty_hook 2>/dev/null")
     else
-      [[ "${PROMPT_COMMAND}" =~ \;[[:space:]]*$ ]] || PROMPT_COMMAND+=";"
-      PROMPT_COMMAND+=" __ghostty_hook"
+      PROMPT_COMMAND='__ghostty_status=$?;if builtin declare -F __ghostty_restore_status >/dev/null;then __ghostty_restore_status "$__ghostty_status";else (exit "$__ghostty_status");fi;'"${PROMPT_COMMAND}"
+      [[ "${PROMPT_COMMAND}" =~ (\;[[:space:]]*|$'\n')$ ]] || PROMPT_COMMAND+=";"
+      PROMPT_COMMAND+="__ghostty_hook 2>/dev/null"
     fi
   fi
 else

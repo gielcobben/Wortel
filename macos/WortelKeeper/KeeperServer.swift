@@ -138,18 +138,29 @@ final class KeeperServer: @unchecked Sendable {
         _ = fcntl(socketFD, F_SETFD, FD_CLOEXEC)
 
         var address = try WortelCLI.address(for: path)
-        if WortelCLI.withSockaddr(&address, { Darwin.bind(socketFD, $0, $1) }) != 0 {
-            let failure = errno
-            guard failure == EADDRINUSE, !isSomeoneListening() else {
-                close(socketFD)
-                throw WortelCLI.SocketError.failed("bind", errno: failure)
-            }
-            // Proved stale — nothing answered a connect. Same rule as the CLI
-            // socket: never delete a name someone might still be using.
-            unlink(path)
-            guard WortelCLI.withSockaddr(&address, { Darwin.bind(socketFD, $0, $1) }) == 0 else {
-                close(socketFD)
-                throw WortelCLI.SocketError.failed("bind", errno: errno)
+        // Owner-only from the moment the name exists, not from the chmod
+        // below: `bind` creates the file with the umask's mode, and a Unix
+        // socket can't be fchmod'ed before it is bound. The umask is
+        // process-wide; in the keeper nothing else is creating files while it
+        // starts, and in the tests a file made meanwhile only comes out
+        // owner-only. Each connection is also checked for its user
+        // (`isOwnUser`). Same rule as the CLI socket (`WortelCLIServer`).
+        do {
+            let mask = umask(0o077)
+            defer { umask(mask) }
+            if WortelCLI.withSockaddr(&address, { Darwin.bind(socketFD, $0, $1) }) != 0 {
+                let failure = errno
+                guard failure == EADDRINUSE, !isSomeoneListening() else {
+                    close(socketFD)
+                    throw WortelCLI.SocketError.failed("bind", errno: failure)
+                }
+                // Proved stale — nothing answered a connect. Same rule as the CLI
+                // socket: never delete a name someone might still be using.
+                unlink(path)
+                guard WortelCLI.withSockaddr(&address, { Darwin.bind(socketFD, $0, $1) }) == 0 else {
+                    close(socketFD)
+                    throw WortelCLI.SocketError.failed("bind", errno: errno)
+                }
             }
         }
         guard listen(socketFD, 8) == 0 else {
@@ -249,6 +260,14 @@ final class KeeperServer: @unchecked Sendable {
     /// Sessions still running, for tests and for `list`.
     var sessionCount: Int { state.sync { sessions.count } }
 
+    /// Whether the process at the other end of `client` runs as this user.
+    /// A peer the kernel can't name counts as someone else.
+    static func isOwnUser(_ client: Int32) -> Bool {
+        var uid: uid_t = 0
+        var gid: gid_t = 0
+        return getpeereid(client, &uid, &gid) == 0 && uid == geteuid()
+    }
+
     private func isSomeoneListening() -> Bool {
         guard let probe = try? WortelCLIClient.connect(to: path) else { return false }
         close(probe)
@@ -261,6 +280,13 @@ final class KeeperServer: @unchecked Sendable {
         let client = accept(socketFD, nil, nil)
         guard client >= 0 else { return }
         _ = fcntl(client, F_SETFD, FD_CLOEXEC)
+        // Only this user's processes. The keeper holds every session's pty,
+        // so a connection from anyone else is a way into all of them: hung up
+        // on unread, whatever the socket file's mode has become.
+        guard Self.isOwnUser(client) else {
+            close(client)
+            return
+        }
         // A reply to an app that has just gone must fail, not raise SIGPIPE:
         // the keeper ignores it, but this server also runs inside the tests.
         var on: Int32 = 1

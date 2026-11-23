@@ -32,10 +32,20 @@ npm run build        # → dist/, with the local pixel tools stripped out
 
 **Layout**
 
-- One container, one left edge. Everything starts at the container's left edge.
-  Nothing is centred and nothing alternates sides.
-- A homepage section is always the same parts: a two-tone heading, then a
-  stage. An inner page is `.phead`, then `.row12` rows.
+- One container. Headings and visuals start at its left edge; what there is
+  to read about a heading starts beside it. Nothing is centred.
+- Every section on every page opens with the same row, `.row12`: a hairline,
+  its name at the left, the text at the right. On the homepage that is
+  `components/Section.astro`: the name in columns 1 to 5, a short paragraph in
+  7 to 12, and the stage or the bento under the row at full width.
+- An inner page is `.phead`, then `.row12.read` rows: the name smaller, in
+  columns 1 to 3, and the text in 4 to 11. A page of text never goes in the
+  homepage's narrow right half. That was tried and read as a sidebar.
+- Headings are light (weight 400, the page's one large line 500) and short: the
+  claim in ink, its other half in grey on the line under it. Never one long
+  line, no full stop, and nothing in a heading changes while a film plays.
+- No mono numerals, bracketed links or margin indexes as decoration. Mono is
+  for code and keys.
 - Every margin, padding, gap and fixed height is a multiple of 8. No 4, 10, 12,
   14 or 20. When text sets a row's height, give it a line-height on the grid.
   Hairlines, radii, font sizes and measured widths are exempt.
@@ -45,8 +55,16 @@ npm run build        # → dist/, with the local pixel tools stripped out
 **Copy**
 
 - All standing copy is in `src/data/site.ts` (and `src/data/compare.ts` for
-  `/compare`). Never in a template. The page, `/docs`, the structured data and
+  `/compare`). Never in a template. The homepage's headings and paragraphs are
+  `HOME` there. The page, `/docs`, the structured data and
   the `llms` files render from it, so they cannot drift.
+- Inside a sentence in `site.ts`, write what is typed, a path or a file name
+  in backticks, and a key or chord the same way (`` `⌘N` ``). The page turns
+  the first into code and the second into a key cap (`src/data/inline.ts`),
+  and the Markdown files pass them through. `**bold**` works too. Anything
+  that must be plain text, like the structured data, goes through `plain()`.
+- A docs section that holds more than one subject gets a small heading
+  between them (`{ h: '…' }`), not one long paragraph.
 - The homepage is the pitch. `/docs` is the manual. A paragraph that explains
   how something works belongs on `/docs`.
 - No em-dashes anywhere that ships, HTML comments included.
@@ -63,6 +81,24 @@ npm run build        # → dist/, with the local pixel tools stripped out
 - Change a window's state through `src/scripts/app.ts`, not by touching markup.
 - It follows the page: light on the light page, dark at night. Check both.
 - Icons are exported from `../macos/Wortel/AppIcon.icon`. Never redrawn.
+
+**Search and language models**
+
+- One `<h1>` a page. A piece of the app that shows a document goes inside
+  `components/AppContent.astro`, which turns the document's headings into
+  plain blocks.
+- The app windows carry `data-nosnippet`: what they show is made-up work, and
+  a search result must not quote it as the page's words.
+- A new page needs a title under about 60 characters, a description of about
+  150, a line in `src/pages/sitemap.xml.ts`, and a mention in
+  `src/pages/llms.txt.ts`. Run the build and read its `<head>`.
+- A claim on the page that is also in the structured data
+  (`src/data/schema.ts`) changes in both.
+- Only what is in the first screen is fetched with the page. A stage below it
+  carries `data-photo` (the `Stage` component does this unless it is `eager`)
+  and gets its photo when it nears; a picture inside an app window below the
+  fold goes in `AppContent.astro`. A new photo needs its phone copy,
+  `<name>-1600.webp` (`README.md`, Photos).
 
 **Motion**
 
@@ -90,3 +126,9 @@ npm run build        # → dist/, with the local pixel tools stripped out
 One Markdown file per release in `src/content/releases/`, named for the
 version. The `release-note` skill covers writing one. Notes that shipped are
 not rewritten.
+
+Each file is rendered as a page of its own at `/updates/<version>`, as a row
+on `/updates` (the newest one in full, at the top), as an entry in
+`/feed.xml`, and as the note in the app's update dialog.
+`/updates#<version>` still works, because the app links that way: the newest
+release is on that page and any other goes to its own.

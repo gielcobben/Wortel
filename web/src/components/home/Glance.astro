@@ -1,26 +1,23 @@
 ---
-// The questions. What Wortel is made of is in the bento above (Bento.astro).
-import { FAQ } from '../../data/site';
+// The questions, in the right column of their section, beside the heading
+// (Section.astro, aside). What Wortel is made of is in the bento above
+// (Bento.astro).
+import Section from '../Section.astro';
+import { FAQ, HOME } from '../../data/site';
+import { inline } from '../../data/inline';
 ---
-<section class="sec" id="faq">
-  <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">Questions. <span class="tone">The short answers. The exact ones are in <a class="link" href="/docs">the docs</a>.</span></h2>
-    </div>
-    <div class="list">
-      {FAQ.map((f) => (
-        <details>
-          <summary><span>{f.q}</span><i aria-hidden="true"></i></summary>
-          <p class="body">{f.a}</p>
-        </details>
-      ))}
-    </div>
+<Section id="faq" aside {...HOME.questions}>
+  <div class="list">
+    {FAQ.map((f) => (
+      <details>
+        <summary><span>{f.q}</span><i aria-hidden="true"></i></summary>
+        <p class="body" set:html={inline(f.a)} />
+      </details>
+    ))}
   </div>
-</section>
+</Section>
 
 <style>
-  .bhead .link { color: inherit; }
-
   .list { display: flex; flex-direction: column; }
   details { border-top: 1px solid var(--line); }
   details:last-child { border-bottom: 1px solid var(--line); }

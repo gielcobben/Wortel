@@ -1,23 +1,20 @@
 ---
-// A scene: its heading, then the stage. The stage is a part of the foggy lake
-// with the controls on top (the chapter tabs, and play/pause beside them) and
-// the window under them. The heading's black half is the scene's claim and
-// stays; its grey half is the current chapter's line and changes with it.
-// scripts/film.ts drives it.
-export interface Chapter { label: string; caption: string }
+// A stage: a part of the foggy lake with the controls on top (the chapter
+// tabs, and play/pause beside them) and the window under them.
+// scripts/film.ts drives it. The words about it are the section's
+// (Section.astro), and stay as they are whatever chapter plays.
 interface Props {
   /** The scene's name: scripts find the scene by [data-film="name"]. */
   film?: string;
-  /** The black half of the heading: what the whole scene says. */
-  title?: string;
-  chapters?: Chapter[];
-  /** The grey half when the reader arranges something no chapter covers. */
-  own?: string;
+  /** The chapters' names, as the tabs show them. */
+  chapters?: string[];
   /** Which photo (a file in public/img, lake by default), which part of it
       (a background-position), and how far in. */
   photo?: string;
   at?: string;
   zoom?: string;
+  /** In the first screen: its photo comes with the page, not when it nears. */
+  eager?: boolean;
   /** The window's size, in the app's own points. */
   w?: number;
   h?: number;
@@ -26,29 +23,16 @@ interface Props {
   reveal?: boolean | 'manual';
   class?: string;
 }
-const { film, title, chapters = [], own, photo = 'lake', at = '50% 62%', zoom = 'cover', w = 1104, h = 704, reveal = true, class: cls } = Astro.props;
-const lines = [...chapters.map((c, i) => ({ key: String(i), text: c.caption })), ...(own ? [{ key: 'own', text: own }] : [])];
+const { film, chapters = [], photo = 'lake', at = '50% 62%', zoom = 'cover', w = 1104, h = 704, reveal = true, eager = false, class: cls } = Astro.props;
 ---
 <div data-film={film}>
-  {title && (
-    <div class="bhead" data-reveal>
-      <!-- Every chapter's heading is laid in the same place, so the tallest
-           sets the height and nothing below moves when the chapter changes.
-           Only the first is a heading; the rest are its alternates. -->
-      <div class="heads">
-        {lines.map((l, i) => i === 0
-          ? <h2 class="h2 on" data-caption={l.key}>{title} <span class="tone">{l.text}</span></h2>
-          : <p class="h2" data-caption={l.key} aria-hidden="true">{title} <span class="tone">{l.text}</span></p>)}
-      </div>
-    </div>
-  )}
-  <div class:list={['stage', cls]} data-reveal={reveal === true ? '' : reveal || undefined} style={`--photo:url(/img/${photo}.jpg);--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
+  <div class:list={['stage', cls]} data-photo={eager ? undefined : ''} data-reveal={reveal === true ? '' : reveal || undefined} style={`--photo:url(/img/${photo}.jpg);--photo-s:url(/img/${photo}-1600.webp);--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
     {chapters.length > 0 && (
       <div class="controls">
         <div class="chapters glass" role="tablist" aria-label="Chapters">
-          <span class="thumb still" aria-hidden="true">{chapters.map((c) => <span>{c.label}</span>)}</span>
+          <span class="thumb still" aria-hidden="true">{chapters.map((c) => <span>{c}</span>)}</span>
           {chapters.map((c, i) => (
-            <button type="button" role="tab" data-chapter={i} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>{c.label}</button>
+            <button type="button" role="tab" data-chapter={i} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>{c}</button>
           ))}
         </div>
         <button type="button" class="play glass" data-play aria-label="Pause" aria-pressed="false">

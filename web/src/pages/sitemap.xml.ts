@@ -116,6 +116,14 @@ export const GET: APIRoute = async () => {
       priority: '0.6',
       lastmod: newestRelease ? iso(newestRelease) : BUILD_DATE,
     },
+    // Each release's own page. It changes when it ships and not again: notes
+    // that shipped are not rewritten.
+    ...releases.map((entry) => ({
+      path: `/updates/${entry.id}`,
+      changefreq: 'yearly',
+      priority: '0.4',
+      lastmod: iso(entry.data.date),
+    })),
     ...legal,
   ];
 

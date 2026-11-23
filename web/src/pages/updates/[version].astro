@@ -1,0 +1,118 @@
+---
+// One release, on a page of its own: /updates/2026.47.4. The same Markdown
+// file as its entry on the changelog (pages/updates.astro) and the note in
+// Sparkle's dialog, so the three cannot say different things.
+import Layout from '../../layouts/Layout.astro';
+import ReleaseStamp from '../../components/ReleaseStamp.astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import { compareVersions } from '../../content.config';
+import { SITE } from '../../data/site';
+
+type Release = CollectionEntry<'releases'>;
+interface Props { entry: Release; newer: Release | null; older: Release | null; count: number }
+
+export async function getStaticPaths() {
+  const entries = (await getCollection('releases')).sort((a, b) => compareVersions(b.id, a.id));
+  return entries.map((entry, i) => ({
+    params: { version: entry.id },
+    props: { entry, newer: entries[i - 1] ?? null, older: entries[i + 1] ?? null, count: entries.length },
+  }));
+}
+
+const { entry, newer, older, count } = Astro.props;
+const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+const { Content } = await render(entry);
+const path = `/updates/${entry.id}`;
+const abs = (p: string) => new URL(p, SITE.url).href;
+// The tab and the search result: the version first, then the whole headline.
+// Some run past the 60 or so characters a result shows and get an ellipsis
+// there. They are left whole on purpose: the words past the cut are still
+// matched by a search, and a headline cut to fit would lose them.
+const title = `${SITE.name} ${entry.id}: ${entry.data.title}`;
+const day = entry.data.date.toISOString().slice(0, 10);
+const longDate = entry.data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+/** A result snippet shows about 155 characters: whole sentences of the
+    summary that fit, never one cut in the middle. */
+const fit = (s: string, max = 158) => {
+  if (s.length <= max) return s;
+  let out = '';
+  for (const sentence of s.match(/[^.!?]+[.!?]+\s*/g) ?? []) {
+    if ((out + sentence).trim().length > max) break;
+    out += sentence;
+  }
+  return out.trim().length >= 60 ? out.trim() : s.slice(0, max - 1).replace(/\s+\S*$/, '') + '…';
+};
+const plainly = `${entry.data.title}. Release notes for ${SITE.name} ${entry.id}, released ${longDate}.`;
+const description = entry.data.summary ? fit(entry.data.summary) : fit(plainly);
+const author = { '@type': 'Person', name: SITE.author, url: SITE.authorUrl };
+const schema = [
+  {
+    '@type': 'TechArticle', '@id': abs(`${path}#article`), url: abs(path), mainEntityOfPage: abs(path),
+    headline: entry.data.title, name: title, description, datePublished: day, dateModified: day,
+    author, publisher: author, image: abs('/og/updates.png'),
+    isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+  },
+  {
+    '@type': 'BreadcrumbList', '@id': abs(`${path}#breadcrumb`),
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: SITE.name, item: abs('/') },
+      { '@type': 'ListItem', position: 2, name: 'Changelog', item: abs('/updates') },
+      { '@type': 'ListItem', position: 3, name: entry.id, item: abs(path) },
+    ],
+  },
+];
+---
+<Layout title={title} description={description} path={path} schema={schema} ogImage="/og/updates.png" published={day}>
+  <header class="page phead" data-reveal-group>
+    <a class="back" href="/updates" data-reveal>
+      <svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M5.5 1.5 1.5 5.5l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Changelog
+    </a>
+    <h1 class="display title" data-reveal>{entry.data.title}</h1>
+  </header>
+
+  <div class="page">
+    <article class="row12 read">
+      <div class="k stick"><ReleaseStamp id={entry.id} date={entry.data.date} latest={!newer} /></div>
+      <div class="v prose"><Content /></div>
+    </article>
+    <nav class="row12 read" aria-label="Other releases">
+      <div class="k">
+        <h2 class="h2">Other releases</h2>
+        <a class="arrow" href="/updates">
+          All {count} releases
+          <svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+      <div class="v pair">
+        {[['Older', older], ['Newer', newer]].map(([label, r]) => r && typeof r !== 'string' && (
+          <a class="other" href={`/updates/${r.id}`} data-ph="changelog_opened" data-ph-version={r.id}>
+            <span class="label">{label}</span>
+            <span class="ot">{r.data.title}</span>
+            <span class="meta">{r.id} · <time datetime={r.data.date.toISOString().slice(0, 10)}>{fmt(r.data.date)}</time></span>
+          </a>
+        ))}
+      </div>
+    </nav>
+  </div>
+</Layout>
+
+<style>
+  /* The way back, over the headline. */
+  .back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 24px; font-size: 15px; line-height: 24px; color: var(--ink-2); transition: color 200ms ease; }
+  .back svg { flex: none; color: var(--ink-3); transition: translate 200ms var(--ease-out); }
+  @media (hover: hover) and (pointer: fine) { .back:hover { color: var(--ink); } .back:hover svg { translate: -2px 0; } }
+  /* A release's headline is a sentence, not a name: a step under the size the
+     other pages open with, so it stays in two or three lines. */
+  .phead .title { font-size: 40px; line-height: 48px; letter-spacing: -0.02em; max-width: 880px; }
+  @media (max-width: 640px) { .phead .title { font-size: 28px; line-height: 36px; } }
+  /* The releases on either side of this one, each a small block of its own:
+     which way it is, its headline, then its version and date. */
+  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px var(--col-gap); }
+  .other { display: flex; flex-direction: column; align-items: flex-start; }
+  .other .label { line-height: 24px; }
+  .other .ot { margin-top: 8px; font: 500 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); text-wrap: balance; }
+  .other .meta { margin-top: 8px; font-size: 14px; line-height: 24px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+  @media (hover: hover) and (pointer: fine) { .other:hover .ot { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; } }
+  @media (max-width: 640px) { .pair { grid-template-columns: 1fr; } }
+</style>

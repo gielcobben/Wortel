@@ -1,21 +1,24 @@
 ---
 // One Block[] from site.ts as HTML. llms-full.txt renders the same arrays as
-// Markdown, which is why the shape stays this narrow.
+// Markdown, which is why the shape stays this narrow. A sentence may carry
+// code, keys and bold (data/inline.ts).
 import type { Block } from '../data/site';
+import { inline } from '../data/inline';
 interface Props { blocks: Block[] }
 const { blocks } = Astro.props;
 ---
 {blocks.map((b) =>
-  'p' in b ? <p>{b.p}</p>
-  : 'list' in b ? <ul>{b.list.map((i) => <li>{i}</li>)}</ul>
+  'p' in b ? <p set:html={inline(b.p)} />
+  : 'h' in b ? <h3>{b.h}</h3>
+  : 'list' in b ? <ul>{b.list.map((i) => <li set:html={inline(i)} />)}</ul>
   : (
     <table>
-      <thead><tr><th>{b.table.head[0]}</th><th>{b.table.head[1]}</th></tr></thead>
+      <thead><tr><th set:html={inline(b.table.head[0])} /><th set:html={inline(b.table.head[1])} /></tr></thead>
       <tbody>
         {b.table.rows.map(([a, c]) => (
           <tr>
-            <td class={b.table.mono === 'first' ? 'mono' : undefined}>{a}</td>
-            <td class={b.table.mono === 'last' ? 'mono' : undefined}>{c}</td>
+            {b.table.mono === 'first' ? <td class="mono">{a}</td> : <td set:html={inline(a)} />}
+            {b.table.mono === 'last' ? <td class="mono">{c}</td> : <td set:html={inline(c)} />}
           </tr>
         ))}
       </tbody>

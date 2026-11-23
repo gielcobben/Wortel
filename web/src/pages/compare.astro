@@ -5,6 +5,7 @@
 // column is in the HTML (so a crawler, a reader without JS, and llms-full.txt
 // all see the whole table); the script only hides the ones not picked.
 import Layout from '../layouts/Layout.astro';
+import Section from '../components/Section.astro';
 import { SITE } from '../data/site';
 import { COMPARE, CATEGORIES, APPS, AXES, GROUPS, type Verdict } from '../data/compare';
 
@@ -25,12 +26,12 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
   </header>
 
   <div class="page">
-    <section class="row12">
-      <div class="k"><h2 class="label">The short version</h2></div>
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">The short version</h2></div>
       <div class="v prose">{COMPARE.intro.map((p) => <p>{p}</p>)}</div>
     </section>
-    <section class="row12">
-      <div class="k"><h2 class="label">Four kinds of tool, and Wortel</h2></div>
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">Four kinds of tool <span class="tone">And Wortel</span></h2></div>
       <ul class="v cats">
         {CATEGORIES.map((c) => (
           <li class:list={['cat', { us: c.key === 'wortel' }]}>
@@ -43,10 +44,8 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
     </section>
   </div>
 
-  <section class="page sec table" data-compare>
-    <div class="bhead">
-      <h2 class="h2">{COMPARE.tableHeading} <span class="tone">{COMPARE.tableLead}</span></h2>
-    </div>
+  <Section title={COMPARE.tableHeading} body={COMPARE.tableLead}>
+   <div data-compare>
     <div class="grid" role="table" aria-label="Wortel compared with other apps">
       <div class="row top" role="row">
         <div class="q" role="columnheader"></div>
@@ -87,7 +86,8 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
       ))}
     </div>
     <p class="small caveat">{COMPARE.caveat}</p>
-  </section>
+   </div>
+  </Section>
 </Layout>
 
 <script>
@@ -118,7 +118,7 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
   .cat { display: grid; grid-template-columns: 1fr; gap: 4px; padding-block: 16px; border-top: 1px solid var(--line); }
   .cat:first-child { border-top: 0; padding-top: 0; }
   .cat p { margin: 0; }
-  .what { font-weight: 600; font-size: 16px; line-height: 24px; color: var(--ink); }
+  .what { font-weight: 500; font-size: 16px; line-height: 24px; color: var(--ink); }
   .cat.us .what { color: var(--accent); }
 
   .grid { display: flex; flex-direction: column; }
@@ -131,14 +131,14 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
   :global(.picking) .cell[hidden] { display: none; }
   .cell.us { background: var(--fog-1); }
   .row.top { position: sticky; top: 64px; z-index: 2; background: var(--fog-0); border-top: 0; }
-  .app b { font: 600 17px/24px var(--font-display); }
+  .app b { font: 500 17px/24px var(--font-display); }
   .app span { font-size: 13px; line-height: 16px; color: var(--ink-3); }
   .app.us { border-radius: 12px 12px 0 0; }
   .slot { display: none; }
   :global(.picking) .slot { display: flex; }
   .slot select {
     appearance: none; -webkit-appearance: none; align-self: flex-start; max-width: 100%;
-    font: 600 17px/24px var(--font-display); color: var(--ink); cursor: pointer;
+    font: 500 17px/24px var(--font-display); color: var(--ink); cursor: pointer;
     background: var(--btn-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'%3E%3Cpath d='M1.5 5 5 1.5 8.5 5M1.5 9 5 12.5 8.5 9' fill='none' stroke='%2377746a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
     border: 0; border-radius: 8px; padding: 4px 28px 4px 8px; margin-left: -8px;
   }

@@ -1,31 +1,32 @@
 ---
-// The landing: what Wortel is, the download, and the app on the foggy lake,
-// where you type a request and an agent does the job (scripts/hero.ts).
+// The landing: the name in two tones, one line under it, the download with
+// the newest release beside it, and then the app on the foggy lake, where you type a request and an agent does
+// the job (scripts/hero.ts). The words are HOME.hero in data/site.ts.
 import Stage from '../Stage.astro';
 import HeroWindow from '../../app/gen/HeroWindow.astro';
-import { SITE } from '../../data/site';
+import { HOME } from '../../data/site';
 import { latestRelease } from '../../data/release';
 const latest = await latestRelease();
 ---
 <section class="hero" id="what-is-wortel" data-hero>
   <div class="page">
-    <div class="bhead">
+    <div class="top">
       <h1 class="display">
         <span class="vh">Wortel: a native macOS terminal for coding agents. </span>
-        <span class="line" data-fade>A terminal for your agents.</span><br /><span class="line tone" data-fade>Any of them, side by side.</span>
+        <span class="line" data-fade>{HOME.hero.title}</span> <span class="line tone" data-fade>{HOME.hero.tone}</span>
       </h1>
-      <p class="lead" data-fade>
-        Claude Code, Codex, Pi or your own: any agent runs in Wortel as it is. Around it are named sessions, a worktree each, your changes and files, and a dot on the one that needs you.
-      </p>
+      <p class="lead" data-fade>{HOME.hero.body}</p>
       <div class="ctas" data-fade>
-        <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="hero" data-ph-version={latest?.version}>Download for macOS</a>
+        <a class="btn" href="/download#hero">
+          Download for macOS
+          <svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
         {latest && <a class="btn ghost" href="/updates" data-ph="changelog_opened" data-ph-location="hero" data-ph-version={latest.version}>What’s new in {latest.version}</a>}
       </div>
-      <p class="label" data-fade>Free · macOS {SITE.minMacOS} {SITE.minMacOSName} or later</p>
     </div>
 
-    <Stage class="first" reveal="manual">
-      <div class="win wapp" data-win data-ph-demo aria-hidden="true" inert>
+    <Stage class="first" reveal="manual" eager>
+      <div class="win wapp" data-win data-ph-demo aria-hidden="true" data-nosnippet inert>
         <HeroWindow />
       </div>
     </Stage>
@@ -39,21 +40,22 @@ const latest = await latestRelease();
 
 <style>
   .hero { padding-top: 144px; }
-  .bhead { margin-bottom: 64px; }
-  .lead { max-width: 544px; margin-top: 24px; }
-  .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
-  .label { margin-top: 16px; }
+  .top { margin-bottom: 64px; }
+  /* Each line of the name comes in by itself (scripts/hero.ts). */
+  .line { display: block; }
+  .lead { max-width: 560px; margin-top: 24px; }
+  .ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 8px; margin-top: 32px; }
+  .ctas .btn:not(.ghost) svg { margin-left: 2px; }
   .hero :global(.stage.first) { padding-top: 48px; }
   /* scripts/hero.ts brings all of this in, in reading order; until it runs,
      nothing shows, so nothing flashes and then vanishes. */
   :global(.js) [data-fade] { opacity: 0; animation: unhide 0s 4s forwards; }
   /* If the script never runs, the words still come back. */
   @keyframes unhide { to { opacity: 1; } }
-  .line { display: inline-block; }
   /* The window rises once the photo has opened a little, not with it. */
   :global(.js) .hero :global(.stage.first > *) { transition-delay: 450ms; }
   /* The column a little narrower than the canvas drew it (it is a divider you
      drag), so the three tabs in the main bar show their names in full. */
   .hero :global([data-name="Side column slot"]) { width: 336px; }
-  @media (max-width: 800px) { .hero { padding-top: 112px; } .bhead { margin-bottom: 48px; } }
+  @media (max-width: 900px) { .hero { padding-top: 104px; } .top { margin-bottom: 48px; } }
 </style>

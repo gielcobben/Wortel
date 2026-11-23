@@ -1,5 +1,6 @@
 ---
 import { SITE } from '../data/site';
+import GitHubMark from './GitHubMark.astro';
 const here = Astro.url.pathname.replace(/\/$/, '') || '/';
 const links = [
   ['Changelog', '/updates'],
@@ -16,14 +17,17 @@ const links = [
     </a>
     <nav class="links" aria-label="Main">
       {links.map(([t, h]) => (
-        <a href={h} aria-current={here === h ? 'page' : undefined}>{t}</a>
+        <a href={h} aria-current={here === h || here.startsWith(h + '/') ? 'page' : undefined}>{t}</a>
       ))}
     </nav>
-    <a class="btn sm" href="/download">Download</a>
+    <div class="acts">
+      <a class="btn sm ghost gh" href={SITE.repo} target="_blank" rel="noopener" aria-label="Wortel on GitHub"><GitHubMark /><span>GitHub</span></a>
+      <a class="btn sm" href="/download#nav">Download</a>
+    </div>
     <details class="menu">
       <summary aria-label="Menu"><span></span><span></span></summary>
       <nav class="sheet" aria-label="Main">
-        {links.map(([t, h]) => <a href={h} aria-current={here === h ? 'page' : undefined}>{t}</a>)}
+        {links.map(([t, h]) => <a href={h} aria-current={here === h || here.startsWith(h + '/') ? 'page' : undefined}>{t}</a>)}
       </nav>
     </details>
   </div>
@@ -39,6 +43,8 @@ const links = [
   .bar { height: 64px; display: flex; align-items: center; gap: 32px; }
   .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 17px/24px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
   .links { display: flex; gap: 24px; margin-left: auto; }
+  .acts { display: flex; gap: 8px; }
+  .gh { padding-left: 12px; }
   .links a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 200ms ease; }
   .links a[aria-current] { color: var(--ink); }
   @media (hover: hover) and (pointer: fine) { .links a:hover { color: var(--ink); } .sheet a:hover { background: var(--btn-2); } }
@@ -61,7 +67,10 @@ const links = [
   .sheet a[aria-current] { background: var(--btn-2); }
   @media (max-width: 700px) {
     .links { display: none; }
-    .btn { margin-left: auto; }
+    .acts { margin-left: auto; }
+    /* On a phone the source is its mark alone, the size of the menu button. */
+    .gh { width: 32px; padding: 0; justify-content: center; }
+    .gh span { display: none; }
     .bar { gap: 8px; }
     .menu { display: block; }
   }

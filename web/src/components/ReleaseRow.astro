@@ -1,0 +1,22 @@
+---
+// One release as a row in a list: its version, its headline and its date, the
+// whole row a link to the release's own page.
+interface Props { id: string; title: string; date: Date }
+const { id, title, date } = Astro.props;
+const fmt = (d: Date) => d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+---
+<a class="rel" href={`/updates/${id}`} data-release={id} data-ph="changelog_opened" data-ph-version={id}>
+  <span class="ver">{id}</span>
+  <span class="ot">{title}</span>
+  <time datetime={date.toISOString().slice(0, 10)}>{fmt(date)}</time>
+</a>
+
+<style>
+  .rel { display: grid; grid-template-columns: 88px 1fr auto; gap: 16px; align-items: baseline; padding-block: 16px; border-bottom: 1px solid var(--line); }
+  /* The list starts on its heading's line, under the row's own hairline. */
+  .rel:first-child { padding-top: 0; }
+  .ver, time { font-size: 14px; line-height: 24px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+  .ot { font-size: 15px; line-height: 24px; color: var(--ink); text-wrap: pretty; }
+  @media (hover: hover) and (pointer: fine) { .rel:hover .ot { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; } }
+  @media (max-width: 900px) { .rel { grid-template-columns: 1fr; gap: 0; } }
+</style>

@@ -23,9 +23,11 @@
 // lifts the named part each tile shows out of them (the diff, the commits,
 // the rendered Markdown, the browser page), so nothing is redrawn here.
 // What macOS draws is drawn as macOS does (the Dock icon). Cursors stand
-// still, as the app's does. The copy is BENTO in data/site.ts; a tile's
-// sentence is there for screen readers and is not shown.
-import { BENTO } from '../../data/site';
+// still, as the app's does. The tiles' copy is BENTO in data/site.ts (a
+// tile's sentence is there for screen readers and is not shown), and the
+// section's own heading and paragraph are HOME.glance.
+import { BENTO, HOME } from '../../data/site';
+import Section from '../Section.astro';
 import Window from '../Window.astro';
 import Lead from '../Lead.astro';
 import Lights from '../Lights.astro';
@@ -34,6 +36,7 @@ import Terminal from '../../app/gen/Terminal.astro';
 import Palette from '../../app/gen/Palette.astro';
 import Changes from '../../app/gen/Changes.astro';
 import FileMain from '../../app/gen/FileMain.astro';
+import AppContent from '../AppContent.astro';
 import Browser from '../../app/gen/Browser.astro';
 
 // The order the tiles arrive in: the terminal first, then outwards from it.
@@ -45,14 +48,12 @@ const delay = (scene: string) => `--d:${ARRIVE.indexOf(scene) * 50}ms`;
 // A tile that shows a part lifted out of a pane: which part, by its name.
 const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
 ---
-<section class="sec" id="more">
-  <span id="worktrees" class="anchor"></span><span id="survival" class="anchor"></span>
-  <span id="zero-config" class="anchor"></span><span id="ghostty-engine" class="anchor"></span><span id="specs" class="anchor"></span>
-  <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">{BENTO.title} <span class="tone">{BENTO.tone}</span></h2>
-    </div>
-    <ul class="bento" data-bento data-reveal>
+<Section id="more" {...HOME.glance}>
+  <Fragment slot="anchors">
+    <span id="worktrees" class="anchor"></span><span id="survival" class="anchor"></span>
+    <span id="zero-config" class="anchor"></span><span id="ghostty-engine" class="anchor"></span><span id="specs" class="anchor"></span>
+  </Fragment>
+    <ul class="bento" data-bento data-photo data-reveal>
       {BENTO.tiles.map((t) => (
         <li class:list={['tile', t.scene]} data-tile={t.scene} style={delay(t.scene)}>
           {!t.big && t.scene !== 'looks' && <p class="cap">{t.label}</p>}
@@ -66,7 +67,7 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
 
           {t.scene === 'browser' && (
             <Window data-win="browser" style="--w:720px;--h:400px">
-              <div class="flex min-h-0 min-w-[80px] flex-1 self-stretch"><Browser /></div>
+              <div class="flex min-h-0 min-w-[80px] flex-1 self-stretch"><AppContent><Browser /></AppContent></div>
               <Lights slot="over" />
             </Window>
           )}
@@ -92,7 +93,7 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
 
           {t.scene === 'palette' && <div class="wapp pal" inert><Palette /></div>}
 
-          {t.scene === 'quit' && <div class="app"><img src="/icon-512.png" width="56" height="56" alt="" /><i></i></div>}
+          {t.scene === 'quit' && <div class="app"><img src="/icon-256.png" width="56" height="56" alt="" loading="lazy" /><i></i></div>}
 
           {t.scene === 'status' && (
             <div class="wapp dots">
@@ -125,10 +126,9 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
     </ul>
     <!-- The panes the tiles take their parts from, and what a window with no
          sidebar gains in its bar. Never shown: scripts/bento.ts clones from them. -->
-    <template data-src><Changes /><FileMain /></template>
+    <template data-src><Changes /><AppContent><FileMain /></AppContent></template>
     <template data-tpl="lead"><Lead /></template>
-  </div>
-</section>
+</Section>
 
 <script>
   import { initBento } from '../../scripts/bento';
@@ -176,6 +176,8 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
     content: ''; position: absolute; inset: 0; z-index: -1;
     background: linear-gradient(rgb(16 22 15 / 0.3), rgb(16 22 15 / 0.3)), var(--lake-veil), url(/img/skye.jpg) var(--at) / var(--zoom) no-repeat;
   }
+  /* Their photo comes when the poster nears, like a stage's (site.css). */
+  :global(.js) .bento:not([data-near]) :is(.worktree, .hero, .quit)::before { background-image: none; }
   .worktree { --at: 18% 62%; --zoom: 300% auto; }
   .hero { --at: 62% 78%; --zoom: 210% auto; }
   .quit { --at: 0% 92%; --zoom: 520% auto; }
@@ -195,7 +197,7 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
   }
 
   /* One label, a few words, the same size on every tile, over its picture. */
-  .cap { position: relative; z-index: 2; margin: 0; flex: none; font: 600 17px/24px var(--font-display); letter-spacing: -0.012em; text-wrap: balance; color: var(--ink); }
+  .cap { position: relative; z-index: 2; margin: 0; flex: none; font: 500 17px/24px var(--font-display); letter-spacing: -0.012em; text-wrap: balance; color: var(--ink); }
   .cap.sub { font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: 0; color: var(--ink-2); }
 
   /* ---- the terminal, in the middle ------------------------------------------ */
@@ -277,7 +279,7 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
   /* A number or a word that is its own picture: only these two. */
   .settings, .free { flex-direction: column; gap: 4px; }
   .big {
-    margin: 0; font: 600 48px/52px var(--font-display); letter-spacing: -0.04em;
+    margin: 0; font: 500 48px/52px var(--font-display); letter-spacing: -0.04em;
     background: linear-gradient(180deg, var(--ink), var(--ink-2)); -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   .settings .big { font-size: 68px; line-height: 60px; }

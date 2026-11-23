@@ -33,6 +33,8 @@ export const SITE = {
   tagline: 'A terminal for your agents. Any of them, side by side.',
   author: 'Giel Cobben',
   authorUrl: 'https://gielcobben.com',
+  /** The source, under the GPL. */
+  repo: 'https://github.com/gielcobben/wortel',
   /** release.sh --publish always mirrors the newest signed zip here. */
   download: 'https://updates.wortel.sh/Wortel-latest.zip',
   appcast: 'https://updates.wortel.sh/appcast.xml',
@@ -57,6 +59,8 @@ export const FEATURES: [string, string][] = [
 // same array without a second copy of the copy.
 export type Block =
   | { p: string }
+  /** A small heading inside a section, where it holds more than one subject. */
+  | { h: string }
   | { list: string[] }
   | {
       table: {
@@ -224,9 +228,7 @@ export type Tile = {
   body: string;
 };
 
-export const BENTO: { title: string; tone: string; tiles: Tile[] } = {
-  title: 'Wortel, at a glance.',
-  tone: 'A real terminal for whichever agent you use, and everything a day of them needs around it.',
+export const BENTO: { tiles: Tile[] } = {
   tiles: [
     { scene: 'worktree', label: 'A worktree per agent', body: 'A session on a branch gets its own directory and files, so several agents share one repository without colliding.' },
     // The commands, as you would type them: a few of the agents Wortel
@@ -245,6 +247,58 @@ export const BENTO: { title: string; tone: string; tiles: Tile[] } = {
     { scene: 'looks', label: 'Follows light and dark', body: 'Every terminal follows the system between light and dark, at once.' },
   ],
 };
+
+// ==========================================================================
+// The homepage's own words: the hero, and the row each section opens with
+// (components/Section.astro). A heading is two short lines, the claim and its
+// other half, with no full stops; the body is one short paragraph. They stay
+// as they are while the section's film plays, so nothing here is written per
+// chapter. The longer version of each section is SECTIONS above, which the
+// Markdown pages render.
+// ==========================================================================
+export type Head = {
+  title: string;
+  tone?: string;
+  body?: string;
+  link?: readonly [text: string, href: string];
+};
+
+export const HOME = {
+  hero: {
+    title: 'Meet Wortel',
+    tone: 'A terminal for your agents.',
+    body: 'Claude Code, Codex, Pi or your own: any agent runs in Wortel as it is, side by side with the rest, and a dot says which one needs you.',
+  },
+  terminal: {
+    title: 'A terminal first',
+    tone: 'An agent is one more command',
+    body: 'Every session is a real shell on Ghostty’s engine. Type claude, codex or pi and the agent has it. Name yours once in Settings and ⌘N opens every new session with it already running.',
+    link: ['How new sessions start', '/docs#new-sessions'],
+  },
+  agents: {
+    title: 'Know which one needs you',
+    tone: 'The agent says so, Wortel shows it',
+    body: 'Claude Code, Codex, Pi, opencode and others report when they are working, waiting on you, done or failed. A dot in the sidebar, a notification for a session out of sight, and ⌥⇧⌘↓ takes you there.',
+    link: ['How the agents report', '/docs#agent-detection'],
+  },
+  window: {
+    title: 'One window, four places',
+    tone: 'Arranged the way you work',
+    body: 'Sessions on the left, the terminal in the middle, your changes, history and files beside it, a second shell underneath. Every place folds away, and nothing in it is a setting.',
+    link: ['Every shortcut', '/docs#shortcuts'],
+  },
+  glance: {
+    title: 'Everything around the terminal',
+    tone: 'Native, made for a day of agents',
+    body: 'Worktrees, a command palette, previews and a browser, sessions that outlive the app, and five settings. Free, and nothing about your work leaves your Mac.',
+  },
+  questions: {
+    title: 'The short answers',
+    tone: 'The exact ones are in the docs',
+    body: 'How it differs from Ghostty, iTerm2 and the agent apps, what it runs on, and what it keeps.',
+    link: ['Read the docs', '/docs'],
+  },
+} as const satisfies { hero: Required<Pick<Head, 'title' | 'tone' | 'body'>> } & Record<string, Head>;
 
 // ==========================================================================
 // /docs: the reference the homepage stopped being.
@@ -269,7 +323,7 @@ export const DOCS_SECTIONS: Section[] = [
     id: 'command',
     title: 'The wortel command',
     lead:
-      'Bundled inside the app and on every session’s PATH, with no installer and no admin prompt. It speaks to the running app over a socket.',
+      'Bundled inside the app and on every session’s `PATH`, with no installer and no admin prompt. It speaks to the running app over a socket.',
     blocks: [
       {
         table: {
@@ -371,13 +425,27 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Starting an agent in every new session',
     blocks: [
       {
-        p: 'In Settings (⌘,), “New sessions start with” takes any command. Type one, like claude or codex, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: ⌘N, ⌥⌘N, ⌥⇧⌘N, ⌘O, a folder’s + and a folder dropped on the sidebar. Session ▸ New Terminal (⌃⌘N) opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. wortel new and the sessions brought back at launch never use it.',
+        p: 'In Settings (`⌘,`), “New sessions start with” takes any command. Type one, like `claude` or `codex`, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: `⌘N`, `⌥⌘N`, `⌥⇧⌘N`, `⌘O`, a folder’s + and a folder dropped on the sidebar.',
       },
       {
-        p: 'An agent session that would start in your home folder gets a folder of its own instead, in ~/Wortel, named for the day: ~/Wortel/2026-11-19/1, then 2. Files the agent makes for you are there. Claude Code asks whether to trust a folder the first time it runs in it, and never remembers the answer for your home folder, so the first one starts in ~/Wortel itself and asks once. Every one after that is covered by that answer. When a conversation there turns to a project somewhere else, Claude offers to move the session to it, and once you agree, the same conversation carries on in that folder, with its git. Claude Code learns what it can ask Wortel for from a skill Wortel puts in ~/.claude/skills/wortel. Edit it and Wortel leaves it alone; delete it and it stays deleted.',
+        p: 'Session ▸ New Terminal (`⌃⌘N`) opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. `wortel new` and the sessions brought back at launch never use it.',
+      },
+      { h: 'A folder of its own' },
+      {
+        p: 'An agent session that would start in your home folder gets a folder of its own instead, in `~/Wortel`, named for the day: `~/Wortel/2026-11-19/1`, then `2`. Files the agent makes for you are there.',
       },
       {
-        p: 'A Claude Code agent that has finished its turn, in a session that has not been on screen for an hour, is ended to give its memory back (130 to 400 MB each), and the shell stays. Select the session and the same conversation is resumed. One waiting on your answer, with something still running under it, with a prompt typed and not sent, or with Remote Control on, gets eight hours instead. A working agent and the session in front of you are never touched, and neither is an agent in your home folder, where Claude Code would ask again whether to trust it.',
+        p: 'Claude Code asks whether to trust a folder the first time it runs in it, and never remembers the answer for your home folder, so the first one starts in `~/Wortel` itself and asks once. Every one after that is covered by that answer.',
+      },
+      {
+        p: 'When a conversation there turns to a project somewhere else, Claude offers to move the session to it, and once you agree, the same conversation carries on in that folder, with its git. Claude Code learns what it can ask Wortel for from a skill Wortel puts in `~/.claude/skills/wortel`. Edit it and Wortel leaves it alone; delete it and it stays deleted.',
+      },
+      { h: 'Memory given back' },
+      {
+        p: 'A Claude Code agent that has finished its turn, in a session that has not been on screen for an hour, is ended to give its memory back (130 to 400 MB each), and the shell stays. Select the session and the same conversation is resumed.',
+      },
+      {
+        p: 'One waiting on your answer, with something still running under it, with a prompt typed and not sent, or with Remote Control on, gets eight hours instead. A working agent and the session in front of you are never touched, and neither is an agent in your home folder, where Claude Code would ask again whether to trust it.',
       },
     ],
   },
@@ -392,8 +460,20 @@ export const DOCS_SECTIONS: Section[] = [
       {
         p: 'When the time comes, the session gets the unread ring and you get a notification, or only a flash of the ring if you are already looking at it. A reminder that came due while Wortel was closed goes off when you open it. A session has one reminder, setting another replaces it, and closing the session ends it.',
       },
+      { h: 'From a terminal' },
       {
-        p: 'From a terminal, wortel remind takes a duration (20m, 1h), a time on the clock (15:00, 3pm), a day (fri, friday 14:00, tomorrow 3pm) or a date (2026-12-03 10:00). wortel remind none cancels it. A day on its own means 09:00.',
+        table: {
+          head: ['`wortel remind` takes', 'For example'],
+          rows: [
+            ['A duration', '`20m`, `1h`'],
+            ['A time on the clock', '`15:00`, `3pm`'],
+            ['A day', '`fri`, `friday 14:00`, `tomorrow 3pm`'],
+            ['A date', '`2026-12-03 10:00`'],
+          ],
+        },
+      },
+      {
+        p: '`wortel remind none` cancels it. A day on its own means 09:00.',
       },
     ],
   },
@@ -403,10 +483,10 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'More than one window',
     blocks: [
       {
-        p: 'Window ▸ New Window (⇧⌘N) opens another window with a sidebar of its own. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all. A session’s menu has Move to New Window and Move to Window, and Window ▸ Merge All Windows puts everything back in one.',
+        p: 'Window ▸ New Window (`⇧⌘N`) opens another window with a sidebar of its own. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all. A session’s menu has Move to New Window and Move to Window, and Window ▸ Merge All Windows puts everything back in one.',
       },
       {
-        p: 'Closing a window closes its sessions, and asks first if something is still running in them. New Worktree Session is ⌥⇧⌘N, since ⇧⌘N opens a window.',
+        p: 'Closing a window closes its sessions, and asks first if something is still running in them. New Worktree Session is `⌥⇧⌘N`, since `⇧⌘N` opens a window.',
       },
     ],
   },
@@ -438,7 +518,7 @@ export const DOCS_SECTIONS: Section[] = [
         p: 'Only the terminals on screen are drawn. One out of sight for a minute gives back its screen’s memory and is copied back from the keeper when you select it, so a session costs what you are looking at, not how many you have open. At launch, the session you had selected comes up first and the rest follow behind it.',
       },
       {
-        p: 'The inspector belongs to the session, because a shell in your home directory never wants it and one inside a repository always does. Cost tracks the window on screen, never the size of the repository: a collapsed node_modules is one row and no work at all.',
+        p: 'The inspector belongs to the session, because a shell in your home directory never wants it and one inside a repository always does. Cost tracks the window on screen, never the size of the repository: a collapsed `node_modules` is one row and no work at all.',
       },
     ],
   },
@@ -455,11 +535,15 @@ export const DOCS_SECTIONS: Section[] = [
 const FAQ_AUTHORED: { q: string; a: string }[] = [
   {
     q: 'What is Wortel?',
-    a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine, made for working next to coding agents. It is a real terminal first: an agent is one more command in a session, and ⌘N can start yours for you. It replaces tabs and splits with a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
+    a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine, made for working next to coding agents. It is a real terminal first: an agent is one more command in a session, and `⌘N` can start yours for you. It replaces tabs and splits with a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
   },
   {
     q: 'Is Wortel free?',
     a: 'Yes. Wortel is a free download for macOS ' + SITE.minMacOS + ' or later, and updates itself through Sparkle.',
+  },
+  {
+    q: 'Is Wortel open source?',
+    a: 'Yes. Wortel is open source under the GNU General Public License, version 3 or later, and the source is on GitHub at github.com/gielcobben/wortel. The name Wortel and its icon are not part of that licence.',
   },
   {
     q: 'What does “Wortel” mean?',
@@ -483,11 +567,11 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel have tabs or split panes?',
-    a: 'Tabs, yes; splits, no. Each session has three rows of tabs: the main area with its terminal, a side column, and a strip under the terminal, and any tab (a terminal, a browser, a file, the git panes) can be dragged between them. A file tab can also be dragged out of the window into a preview window of its own, and back. What Wortel does not do is split a terminal into a grid of panes: the sidebar of named sessions is where you switch work, and ⌘P finds any of them by name.',
+    a: 'Tabs, yes; splits, no. Each session has three rows of tabs: the main area with its terminal, a side column, and a strip under the terminal, and any tab (a terminal, a browser, a file, the git panes) can be dragged between them. A file tab can also be dragged out of the window into a preview window of its own, and back. What Wortel does not do is split a terminal into a grid of panes: the sidebar of named sessions is where you switch work, and `⌘P` finds any of them by name.',
   },
   {
     q: 'Can I configure Wortel’s fonts, colours and keybinds?',
-    a: 'Only font size, which is adjustable per session with ⌘+ and ⌘−. Everything else about how the terminal looks and types is fixed: its whole configuration is a read-only file inside the app bundle, and your ~/.config/ghostty is never read. Settings (⌘,) holds five things that differ per person, such as what a new session starts with, and none of them is about the look. Next to nothing to configure is the design goal, not a missing feature.',
+    a: 'Only font size, which is adjustable per session with `⌘+` and `⌘−`. Everything else about how the terminal looks and types is fixed: its whole configuration is a read-only file inside the app bundle, and your `~/.config/ghostty` is never read. Settings (`⌘,`) holds five things that differ per person, such as what a new session starts with, and none of them is about the look. Next to nothing to configure is the design goal, not a missing feature.',
   },
   {
     q: 'How does Wortel know when a coding agent is waiting for me?',
@@ -503,11 +587,11 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Can I control Wortel from the command line or from an agent?',
-    a: 'Yes. A wortel command ships inside the app bundle and is on the PATH of every session, with no installer and no admin prompt. It speaks to the running app over a socket: wortel open opens a file in a tab, wortel new --branch opens a session in its own worktree, wortel rename renames the session it was run in, and wortel notify raises attention on it. wortel list, read, send and wait let one session drive another. That is how Wortel avoids shipping a separate integration per agent: anything that can run a command can drive it, including your own hooks and scripts.',
+    a: 'Yes. A `wortel` command ships inside the app bundle and is on the `PATH` of every session, with no installer and no admin prompt. It speaks to the running app over a socket: `wortel open` opens a file in a tab, `wortel new --branch` opens a session in its own worktree, `wortel rename` renames the session it was run in, and `wortel notify` raises attention on it. `wortel list`, `read`, `send` and `wait` let one session drive another. That is how Wortel avoids shipping a separate integration per agent: anything that can run a command can drive it, including your own hooks and scripts.',
   },
   {
     q: 'Does Wortel work with Claude Code, Codex and other coding agents?',
-    a: 'Yes. Any agent runs as an ordinary shell command in any session, with no per-agent setup and no changes to its configuration files. Each can have its own worktree so several share a repository, keeps running when the app is closed, and is resumed if it was still running when you last quit. For the agents that report their own state, like Claude Code, Codex, Pi and opencode, Wortel also marks in the sidebar which are working and which are waiting, notifies you when a background agent finishes or needs you, and jumps to the next waiting session with ⌥⇧⌘↓.',
+    a: 'Yes. Any agent runs as an ordinary shell command in any session, with no per-agent setup and no changes to its configuration files. Each can have its own worktree so several share a repository, keeps running when the app is closed, and is resumed if it was still running when you last quit. For the agents that report their own state, like Claude Code, Codex, Pi and opencode, Wortel also marks in the sidebar which are working and which are waiting, notifies you when a background agent finishes or needs you, and jumps to the next waiting session with `⌥⇧⌘↓`.',
   },
   {
     q: 'What are the system requirements?',
@@ -515,7 +599,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel read my existing shell configuration?',
-    a: 'Your shell configuration (.zshrc, .bashrc, fish config) is yours and runs normally. It is only Wortel’s own terminal configuration that is fixed and bundled; the user-level Ghostty config file is deliberately not loaded.',
+    a: 'Your shell configuration (`.zshrc`, `.bashrc`, fish config) is yours and runs normally. It is only Wortel’s own terminal configuration that is fixed and bundled; the user-level Ghostty config file is deliberately not loaded.',
   },
 ];
 
@@ -542,6 +626,7 @@ export const SPECS: [string, string][] = [
   ['Repositories', 'A git worktree per session, on its own branch'],
   ['Scripting', 'A bundled wortel command, no installer'],
   ['Price', 'Free'],
+  ['Source', 'Open, under the GPL (version 3 or later): github.com/gielcobben/wortel'],
   ['Updates', 'Sparkle, signed and notarized'],
   ['Configuration', 'Five settings. The terminal’s own is read-only and bundled'],
 ];

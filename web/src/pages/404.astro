@@ -19,14 +19,14 @@ const links: [string, string][] = [
 ---
 <Layout title={`Not found: ${SITE.name}`} description="There is no page at this address." path="/404" noindex bare>
   <header class="page phead" data-reveal-group>
-    <img class="icon" src="/icon-512.png" width="96" height="96" alt="" data-reveal />
+    <img class="icon" src="/icon-256.png" width="96" height="96" alt="" data-reveal />
     <h1 class="display" data-reveal>Nothing grows here.</h1>
     <p class="lead" data-reveal>
       There is no page at this address. It may have moved, or the link was mistyped.
     </p>
     <div class="ctas" data-reveal>
       <a class="btn" href="/">Go to the homepage</a>
-      <a class="btn ghost" href="/download">Download Wortel</a>
+      <a class="btn ghost" href="/download#404">Download Wortel</a>
     </div>
     <ul class="more" data-reveal>
       {links.map(([href, label]) => <li><a class="link" href={href}>{label}</a></li>)}

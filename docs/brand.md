@@ -71,11 +71,16 @@ The palette, the type scale and every measurement are in `DESIGN.md`. In short:
 - **Colour:** fog whites, ink, and one accent, the cursor's blue.
 - **Type:** the system's own. SF Pro for text and display, SF Mono for code. No
   web fonts.
-- **Layout:** one container, one left edge. Everything on every page starts at
-  that edge. Nothing is centred and nothing alternates sides.
+- **Layout:** one container. Headings and visuals start at the left edge, and
+  what there is to read about a heading starts beside it: at the middle of the
+  page on the homepage, and after a narrow column of names on a page of text.
+  Nothing is centred.
 - **Grid:** every margin, padding, gap and fixed height is a multiple of 8.
   Hairlines, radii, font sizes and measured widths are exempt.
-- **Headings are two-tone:** the claim in ink, its explanation in grey.
+- **Headings are two-tone, light and short:** the claim in ink, its other half
+  in grey on the line under it. Size and tone carry the hierarchy, not weight.
+- **Every section opens the same way:** a hairline, the heading at the left, a
+  short paragraph at the right. Then what it shows.
 - **Photos:** four, all misty water and hills, chosen by colour to sit with the
   lake (`web/README.md`, Photos). Neighbouring sections never share one.
 - **Motion:** arrives softly, answers quickly, never hijacks the scroll. The
@@ -104,7 +109,7 @@ live HTML at the app's own sizes.
 
 ## Before you ship something visible
 
-1. Is it on the grid and on the left edge?
+1. Is it on the grid, and on the left edge or the reading column?
 2. Is the only colour the accent, and does it mean something?
 3. Is every app visual the real one, at 1:1, in both light and dark?
 4. Did you look at it zoomed in?

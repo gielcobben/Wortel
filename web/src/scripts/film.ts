@@ -1,7 +1,6 @@
 // A film with chapters.
 //
-// A stage (components/Stage.astro) has a bar: chapter tabs, a caption per
-// chapter, play/pause. A scene hands film() one function per chapter that puts
+// A stage (components/Stage.astro) has a bar: chapter tabs and play/pause. A scene hands film() one function per chapter that puts
 // the window in that chapter's state. Chapters play by themselves while the
 // stage is on screen, each for its `hold`. Pressing a tab, the arrow keys on
 // the row, or anything in the window itself goes there and pauses, so the
@@ -22,7 +21,7 @@ export interface Film {
   go(i: number, byHand?: boolean): void;
   /** The reader did something in the window: stop playing. */
   pause(): void;
-  /** The window is in a state no chapter describes: say the stage's own line. */
+  /** The window is in a state no chapter describes: no tab is the current one. */
   own(): void;
   /** Mark a chapter as the one on screen without entering it. */
   mark(i: number): void;
@@ -32,7 +31,6 @@ export interface Film {
 
 export function film(root: HTMLElement, make: (f: Film) => Scene[], still = 0): Film {
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-chapter]'));
-  const caps = Array.from(root.querySelectorAll<HTMLElement>('[data-caption]'));
   const row = root.querySelector<HTMLElement>('.chapters');
   const thumb = root.querySelector<HTMLElement>('.thumb');
   const play = root.querySelector<HTMLButtonElement>('[data-play]');
@@ -54,12 +52,10 @@ export function film(root: HTMLElement, make: (f: Film) => Scene[], still = 0): 
     row.style.setProperty('--tx', `${t.offsetLeft}px`);
     row.style.setProperty('--tw', `${t.offsetWidth}px`);
   };
-  const say = (key: string) => caps.forEach((c) => c.classList.toggle('on', c.dataset.caption === key));
   const select = (i: number) => {
     current = i;
     root.classList.remove('own');
     tabs.forEach((t, k) => { t.setAttribute('aria-selected', String(k === i)); t.tabIndex = k === i ? 0 : -1; });
-    say(String(i));
     place();
   };
 
@@ -75,7 +71,6 @@ export function film(root: HTMLElement, make: (f: Film) => Scene[], still = 0): 
       setAuto(false);
       root.classList.add('own');
       tabs.forEach((t) => t.setAttribute('aria-selected', 'false'));
-      say('own');
     },
     mark(i) { select(i); },
     go(i, byHand = false) {

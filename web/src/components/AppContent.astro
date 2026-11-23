@@ -1,0 +1,12 @@
+---
+// A piece of the app that shows a document or a picture, below the first
+// screen. Two things about it are the app's and not this page's:
+//   - its headings (a Markdown preview has a title of its own): a crawler
+//     reading them would find three h1s on the homepage, two of them the name
+//     of a made-up plan. They are drawn by their classes, not by their tag, so
+//     here they become plain blocks and look exactly the same.
+//   - its pictures (the web page in the browser pane is 250 KB): they are
+//     marked lazy, and scripts/reveal.ts fetches them when their stage nears.
+const html = await Astro.slots.render('default');
+---
+<Fragment set:html={html.replace(/<(\/?)h[1-6](?=[\s>])/g, '<$1div').replace(/<img (?![^>]*\bloading=)/g, '<img loading="lazy" ')} />

@@ -2,7 +2,11 @@
 // cross-references (the app is the page's mainEntity, the person publishes
 // both). FAQ answers come from site.ts, the same sentences the page renders.
 import { SITE, FAQ } from './site';
+import { plain } from './inline';
 import type { Release } from './release';
+
+/** GPL-3.0-or-later, by its SPDX address. */
+const LICENSE = 'https://spdx.org/licenses/GPL-3.0-or-later.html';
 
 export function homeSchema(LATEST: Release | null) {
   const abs = (p: string) => new URL(p, SITE.url).href;
@@ -31,7 +35,10 @@ export function homeSchema(LATEST: Release | null) {
     image: abs('/og.png'),
     author: { '@id': person['@id'] },
     publisher: { '@id': person['@id'] },
-    ...(LATEST?.version && { softwareVersion: LATEST.version }),
+    ...(LATEST?.version && { softwareVersion: LATEST.version, releaseNotes: abs(`/updates/${LATEST.version}`) }),
+    isAccessibleForFree: true,
+    license: LICENSE,
+    sameAs: [SITE.repo],
     ...(LATEST?.date && { datePublished: LATEST.date }),
     ...(LATEST?.size && { fileSize: LATEST.size }),
     offers: {
@@ -81,12 +88,26 @@ export function homeSchema(LATEST: Release | null) {
     mainEntity: FAQ.map((item) => ({
       '@type': 'Question',
       name: item.q,
-      acceptedAnswer: { '@type': 'Answer', text: item.a },
+      acceptedAnswer: { '@type': 'Answer', text: plain(item.a) },
     })),
     primaryImageOfPage: { '@type': 'ImageObject', url: abs('/og.png') },
     inLanguage: 'en',
   };
 
 
-  return [website, webpage, person, app];
+  // The source, as its own node: what it is written in, where it is, under
+  // which licence, and which app it builds.
+  const source = {
+    '@type': 'SoftwareSourceCode',
+    '@id': abs('/#source'),
+    name: `${SITE.name} source code`,
+    codeRepository: SITE.repo,
+    programmingLanguage: 'Swift',
+    runtimePlatform: 'macOS',
+    license: LICENSE,
+    author: { '@id': person['@id'] },
+    targetProduct: { '@id': app['@id'] },
+  };
+
+  return [website, webpage, person, app, source];
 }

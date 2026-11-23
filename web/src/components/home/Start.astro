@@ -10,23 +10,19 @@
 // The plain shell's lines are the canvas's own: the prompt and the output
 // line are cloned from the bottom strip's terminal, which is why that pane
 // is here in a template.
+import Section from '../Section.astro';
 import Stage from '../Stage.astro';
+import { HOME } from '../../data/site';
 import Window from '../Window.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
 import Terminal from '../../app/gen/Terminal.astro';
 import BottomStrip from '../../app/gen/BottomStrip.astro';
 import Settings from '../../app/gen/Settings.astro';
 
-const chapters = [
-  { label: 'A shell', caption: 'Every session is a real shell on Ghostty’s engine. Whatever you can type, it runs.' },
-  { label: 'An agent', caption: 'An agent is one more command: codex, claude, pi, whichever you use. Ask it something and it sets to work.' },
-  { label: 'Settings', caption: 'Or name your agent once, in Settings. Any agent, any command, with whatever flags you like.' },
-  { label: '⌘N', caption: 'From then on, every ⌘N is a new session with your agent already running. Ask it something and the session takes its name.' },
-];
+const chapters = ['A shell', 'An agent', 'Settings', '⌘N'];
 ---
-<section class="sec" id="terminal-first">
-  <div class="page">
-    <Stage title="A terminal first." film="start" chapters={chapters} photo="hills" at="0% 12%" zoom="200%">
+<Section id="terminal-first" {...HOME.terminal}>
+    <Stage film="start" chapters={chapters} photo="hills" at="0% 12%" zoom="200%">
       <Window>
         <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
         <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
@@ -36,8 +32,7 @@ const chapters = [
       <div class="keys glass" data-keys="new" aria-hidden="true"><kbd>⌘</kbd><kbd>N</kbd></div>
       <template data-tpl="shell"><BottomStrip /></template>
     </Stage>
-  </div>
-</section>
+</Section>
 
 <style>
   .keys { left: 50%; bottom: 48px; translate: -50% 0; }

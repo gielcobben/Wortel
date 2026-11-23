@@ -372,28 +372,35 @@ built around the real app.
 ### What is there
 
 A fog-white page. A wordmark and four links, and one black pill that says
-Download. Then a two-tone claim, "Many agents." in ink and "One calm terminal."
-in grey, a short paragraph, two pills, and one line of small print.
+Download. Then the name in two tones on two lines, "Meet Wortel" in ink and
+"A terminal for your agents." in grey, one short paragraph, one pill, and a
+few words of small print beside it.
 
 Under it, a stage: a rounded frame holding a photograph of mist over water,
 and standing on it, the app. Not a picture of the app. The window is live
 markup at the app's own sizes, and its sessions select, its tabs switch and
 its sidebar folds.
 
-Every section after that is the same two parts. A heading whose black half is
-the claim and whose grey half is the line for the chapter now playing. Then a
-stage, with a glass pill of chapter names and a round pause button floating
-over the window. The chapters play by themselves until you press something.
-In "Quit the app, keep the work" one chapter is called Away, and in it the
-window is simply gone: the forest, the fog, and nothing else.
+Every section after that opens with the same row, 160px below the last. A
+hairline across the page. Under it, at the left, a light heading in two short
+lines: the claim in ink, its other half in grey. At the right, starting at the
+middle of the page, one short paragraph and a link with a small arrow. The
+words stay as they are while the film below plays.
 
-The page ends on a grid of plain facts under hairlines, a list of questions
-that open in place, and the icon on the lake with "Put down roots." The footer
-says "Wortel is Dutch for root."
+Then a stage at full width, with a glass pill of chapter names and a round
+pause button floating over the window. The chapters play by themselves until
+you press something.
 
-Inner pages open with one large line and one grey sentence, then rows: a small
-grey label on the left, the content in a column to its right, a hairline
-between rows.
+After three stages comes a poster of thirteen tiles, each one piece of the real
+app with a label of a few words. Then the questions, which open in place: they
+sit in the right column, and their heading stays beside them while they scroll.
+The page ends on the icon on the lake with "Put down roots." The footer says
+"Wortel is Dutch for root."
+
+Inner pages open with one large line and one grey sentence, then the same
+rows in a wider measure: a smaller heading in a narrow column on the left (on
+the changelog, the version with its date in grey under it), the text in the
+wide column beside it, a hairline between rows.
 
 At night the page is near-black, the photographs are the same places in the
 dark, and the app is its dark self. On a phone the window is not scaled down.
@@ -413,17 +420,26 @@ It stays at its real size and the stage crops it.
 
 | Style | Size / line | Tracking |
 | --- | --- | --- |
-| Display | 56 / 60, weight 600. 44 / 48 under 1000px, 36 / 40 under 640px | -0.034em |
-| Heading | 32 / 40, weight 600. 28 / 36, then 24 / 32 | -0.024em |
+| Display | 56 / 64, weight 500. 48 / 56 under 1000px, 36 / 44 under 640px | -0.012em |
+| Heading | 28 / 36, weight 400. 24 / 32 under 640px | -0.02em |
 | Lead | 19 / 28 | -0.01em |
+| Copy | 17 / 28. The paragraph beside a section's heading | |
 | Body | 15 / 24 | |
 | Label | 13 / 16 | |
 
 - **Fonts:** the system's. SF Pro for text and display, SF Mono for code.
-- **Container:** 1200px with 32px gutters. One left edge for everything.
+- **Weights:** light. 500 for a page's one large line, 400 for a heading, 500
+  for small headings and labels that need it. 600 only for bold inside prose.
+- **Container:** 1200px with 32px gutters, twelve columns with 32px between.
+  Headings and visuals start at the left edge. Reading starts at column 7 on
+  the homepage and at column 4 on a page of text.
 - **Grid:** every margin, padding, gap and fixed height is a multiple of 8.
   The insides of the pills below are the exception.
-- **Sections:** 144px above each. A heading is at most 784px wide.
+- **Sections:** 160px above each (112 under 900px). Each opens with a hairline,
+  then 48px, then the row: its name in columns 1 to 5, the reading column in
+  7 to 12, on one baseline. What it shows follows 48px under the row. On an
+  inner page the row's name is 20 / 28 in columns 1 to 3 and the text has
+  columns 4 to 11.
 - **Stage:** 20px corners (16 on a phone), a 1px inset line. The window inside
   has 18px corners, one 0.5px hairline as a real border, and one soft shadow.
 - **Buttons:** pills, 40px high, 20px side padding. The primary is ink on fog.
@@ -453,7 +469,9 @@ are in the comments in `SidebarOutlineView.swift` and `Chrome.swift`.
 - A sparkle after an update.
 - On the site: a dark centred page, a drawn icon, scroll snapping, a pinned
   scrolling explainer, a row of steps under the window, a raster screenshot, a
-  window wider than the app really is.
+  window wider than the app really is, a heading whose grey half changed with
+  the chapter, a two-tone heading run on as one long line, numbered sections
+  and a margin index in mono, grey photographs with film grain.
 
 ## Do, and don't
 

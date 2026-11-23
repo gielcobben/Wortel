@@ -468,7 +468,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'What are the system requirements?',
-    a: 'macOS ' + SITE.minMacOS + ' ' + SITE.minMacOSName + ' or later. Wortel is a signed and notarized native application.',
+    a: 'macOS ' + SITE.minMacOS + ' ' + SITE.minMacOSName + ' or later. Wortel is a signed and notarized native application. It does not come with an agent: install Claude Code, Codex, Pi or another one the way its own site says, and it runs in any session. Worktrees and the git panes need git, which comes with Apple’s command line tools. On a Mac without them Wortel says so and opens Apple’s installer for you.',
   },
   {
     q: 'Does Wortel read my existing shell configuration?',

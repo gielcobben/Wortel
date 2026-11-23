@@ -1,5 +1,5 @@
 ---
-// /download: the button and the three steps after it, nothing else. The
+// /download: the button and the four steps after it, nothing else. The
 // nav's Download leads here; the hero and the closing call on every page still
 // start the download straight away, because there the decision is made.
 //
@@ -25,6 +25,7 @@ const steps = [
   ['Open the zip', 'Safari unzips it for you, so Wortel is already waiting in Downloads.'],
   ['Drag it to Applications', 'From there it can replace itself when a new version comes out.'],
   ['Open it', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+  ['Start an agent', 'Wortel does not come with one. Install Claude Code, Codex or Pi, then type its name in a session.'],
 ];
 ---
 <Layout title={title} description={description} path="/download" schema={schema} ogImage="/og/download.png" bare>
@@ -82,7 +83,7 @@ const steps = [
   .phead .label { margin-top: 16px; }
   .phead .label [hidden] { display: none; }
 
-  /* The lake as a desktop: the app where the download leaves it, and the three
+  /* The lake as a desktop: the app where the download leaves it, and the four
      steps from there on glass along the bottom. */
   .install { min-height: 480px; padding: 48px; align-items: stretch; justify-content: space-between; gap: 48px; }
   .file { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 112px; }
@@ -93,12 +94,14 @@ const steps = [
   @media (prefers-color-scheme: dark) { .file figcaption { color: #fff; text-shadow: 0 1px 3px rgb(0 0 0 / 0.6); } }
   /* After the click, the file is selected, as Finder draws a selected icon. */
   :global([data-downloading]) .file figcaption { background: var(--accent); color: #fff; text-shadow: none; }
-  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
   .steps li { border-radius: 18px; padding: 24px; }
   .n { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; background: var(--ink); color: var(--fog-0); font: 600 13px/24px var(--font-display); }
   .steps .t { margin: 16px 0 0; font: 600 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); }
   .steps p { margin: 8px 0 0; font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
 
+  /* Four across needs the full width: two rows of two below it. */
+  @media (max-width: 1200px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 900px) {
     .install { padding: 24px; gap: 32px; }
     .steps { grid-template-columns: 1fr; gap: 8px; }

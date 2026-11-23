@@ -56,7 +56,7 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 
 ## Download
 
-- [Download page](${abs('/download')}): the download for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later (one universal app for Apple silicon and Intel) and the three steps to install it.
+- [Download page](${abs('/download')}): the download for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later (one universal app for Apple silicon and Intel) and the four steps from the download to a running agent.
 - [Latest signed build](${SITE.download}): a zip of Wortel.app; always the newest release.
 - [Sparkle appcast](${SITE.appcast}): the update feed, with version, release date and minimum macOS version.
 

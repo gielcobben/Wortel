@@ -1571,13 +1571,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   only `claude --continue` reprinted it all. Its fullscreen renderer redraws
   the whole conversation at any width and for either appearance, so every
   shell Wortel starts gets `CLAUDE_CODE_NO_FLICKER=1` (`ClaudeRenderer`).
-  Claude reads that variable before its `tui` setting, so it is left out
-  when Claude's user settings name a `tui` (a `/tui classic` stays
-  classic), when the inherited environment sets it or
+  Claude reads that variable before its `tui` setting and before its own
+  safety switch (fullscreen turned off on a Mac where it failed to start
+  several times, which names this variable as the override), so it is left
+  out when Claude's user settings name a `tui` (a `/tui classic` stays
+  classic), when Claude's global config holds `fullscreenAutoDisabled`,
+  when the inherited environment sets it or
   `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN`, and when the settings file is not
-  JSON. Read at each shell's start, so a choice holds from the next new
-  shell. Project settings are not read. Claude itself still turns
-  fullscreen off for a screen reader and inside tmux. Not done: restarting
+  JSON. Looked at at each shell's start (read again only when a file
+  changed), so a choice holds from the next new shell. Project settings are
+  not read. Only a screen reader still turns fullscreen off ahead of the
+  variable; tmux's control mode, which Claude would otherwise leave inline,
+  does not. Not done: restarting
   an inline Claude when its terminal widens, as is done for a change of
   appearance; it would restart the agent at every peek at Changes and leave
   the narrow copy above the reprint. A shell the keeper kept from before

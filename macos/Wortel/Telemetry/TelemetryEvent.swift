@@ -351,9 +351,9 @@ enum SessionOrigin: String {
     /// current directory is the right default, so it has to be countable
     /// separately from the ⌘N it sits next to.
     case home
-    /// ⌃⌘N, New Terminal: a session without the command Settings names. It
-    /// exists only while there is one, so its count says how often the
-    /// command was not what was wanted.
+    /// ⌃⌘N, New Terminal, and New Terminal at Home: a session without the
+    /// command Settings names. They exist only while there is one, so the
+    /// count says how often the command was not what was wanted.
     case terminal
 }
 

@@ -31,6 +31,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | New session | ⌘N | Codex, Claude, cmux |
 | New terminal (only while Settings names a command for new sessions) | ⌃⌘N | |
 | New session at home | ⌥⌘N | |
+| New terminal at home (on the same condition as New terminal) | ⌃⌥⌘N | |
 | New worktree session | ⌥⇧⌘N | |
 | Open folder | ⌘O | Codex, cmux, every Mac app |
 | Close session | ⇧⌘W | iTerm, Ghostty, Warp, VS Code (close window) |

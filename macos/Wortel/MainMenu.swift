@@ -263,15 +263,23 @@ enum MainMenu {
         let plainSession = sessionMenu.addItem(withTitle: "New Terminal", action: #selector(AppDelegate.newTerminalSession(_:)), keyEquivalent: "n")
         plainSession.keyEquivalentModifierMask = [.command, .control]
         plainSession.isHidden = !AppSettings.shared.startsSessionsWithCommand
-        AppSettings.shared.onNewSessionCommandChange = { [weak plainSession] in
-            plainSession?.isHidden = !AppSettings.shared.startsSessionsWithCommand
-        }
         // ⌘N inherits the directory you're in, which is right until the moment
         // you want out of it. This is the way out, and it's a command rather
         // than a preference because both answers are wanted by the same person
         // on the same day. Free of a wortel.conf keybind (alt+n isn't bound).
         let newHome = sessionMenu.addItem(withTitle: "New Session at Home", action: #selector(AppDelegate.newHomeSession(_:)), keyEquivalent: "n")
         newHome.keyEquivalentModifierMask = [.command, .option]
+        // ⌥⌘N without the command, as New Terminal is ⌘N without it, and
+        // there on the same condition. ⌃⌥⌘N is the two of them added up:
+        // ⌃ is "without the command", ⌥ is "at home". Free in `wortel.conf`.
+        let plainHome = sessionMenu.addItem(withTitle: "New Terminal at Home", action: #selector(AppDelegate.newHomeTerminalSession(_:)), keyEquivalent: "n")
+        plainHome.keyEquivalentModifierMask = [.command, .control, .option]
+        plainHome.isHidden = !AppSettings.shared.startsSessionsWithCommand
+        AppSettings.shared.onNewSessionCommandChange = { [weak plainSession, weak plainHome] in
+            let hidden = !AppSettings.shared.startsSessionsWithCommand
+            plainSession?.isHidden = hidden
+            plainHome?.isHidden = hidden
+        }
         // ⌘N's isolated sibling: the same repository, in a worktree and on a
         // branch of its own. A sheet with a placeholder name selected, so
         // Return alone starts it, and From and Location are there when they

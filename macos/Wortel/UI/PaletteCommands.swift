@@ -63,6 +63,7 @@ enum PaletteCommands {
         "newSession:": "plus.square",
         "newTerminalSession:": "terminal",
         "newHomeSession:": "house",
+        "newHomeTerminalSession:": "terminal",
         "newWorktreeSession:": "plus.square.dashed",
         "showPromptHistory:": "clock.arrow.circlepath",
         "openFolder:": "folder",

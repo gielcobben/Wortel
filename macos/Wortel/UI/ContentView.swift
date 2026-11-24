@@ -325,22 +325,36 @@ struct NewSessionButton: NSViewRepresentable {
             let menu = NSMenu()
             // Glyphs as every other menu here has them (`setGlyph`), the
             // palette's for the same commands.
+            // No keys beside them: tried 2026-11-23 and taken out, the
+            // column made a short menu wide and busy. The Session menu has
+            // them.
             func add(_ title: String, _ symbol: String, _ action: @escaping () -> Void) {
                 let item = ClosureMenuItem(title: title, handler: action)
                 item.setGlyph(symbol)
                 menu.addItem(item)
             }
+            // Three groups, by where the session lands: where you are, at
+            // home, somewhere you pick.
+            let plain = AppSettings.shared.startsSessionsWithCommand
             add("New Session", "plus.square") { manager.newSession(starting: .preferred) }
             // Only while Settings names a command for new sessions: the same
             // session without it. Absent otherwise, as in the Session menu.
-            if AppSettings.shared.startsSessionsWithCommand {
+            if plain {
                 add("New Terminal", "terminal") { manager.newSession(via: .terminal, starting: .plain) }
             }
+            // "New Worktree…", as a folder's menu has it: among these,
+            // "Session" only made it the widest item.
+            add("New Worktree\u{2026}", "plus.square.dashed") { newWorktreeSessionFromSheet(manager) }
+            menu.addItem(.separator())
             // "New Session" here looks global but isn't: it lands in whichever
-            // folder the selection is in. This is the way out of that, next to
-            // the thing it's the exception to.
+            // folder the selection is in. This is the way out of that.
             add("New Session at Home", "house") { manager.newHomeSession(starting: .preferred) }
-            add("New Worktree Session\u{2026}", "plus.square.dashed") { newWorktreeSessionFromSheet(manager) }
+            // And the same without the command, on the same condition.
+            if plain {
+                add("New Terminal at Home", "terminal") {
+                    manager.newHomeSession(via: .terminal, starting: .plain)
+                }
+            }
             menu.addItem(.separator())
             // The way to reach a project no session is standing in without
             // typing `cd`, and how a folder gets made, with its directory.

@@ -61,6 +61,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   + and a folder's menu. With the field empty it would be a second New
   Session, so it is absent. This is the answer the "four ways" entry below
   asks for: not a fifth place to start, the same place minus one typed line.
+- **2026-11-23. New Terminal at Home, on the same condition.** With an agent
+  in the field, ⌥⌘N starts it in a folder of its own, and the plain shell at
+  home that ⌥⌘N used to be took a ⌃⌘N and a `cd`. It is ⌥⌘N minus the typed
+  line, as New Terminal is ⌘N minus it: in the Session menu and the
+  sidebar's +, on ⌃⌥⌘N (⌃ for "without the command", ⌥ for "at home"). The
+  + menu is in three groups by where the session lands: where you are
+  (session, terminal, worktree), at home, and Open Folder. Its items show
+  no keys: that was tried the same day, to teach them, and taken out for
+  making a short menu wide and busy. The Session menu has them. Its worktree item is "New Worktree…", as a folder's menu has
+  it; the Session menu keeps the full "New Worktree Session…".
 - **2026-09-29. "Wortel has no tabs" was reversed.** Tabs in three fixed places:
   the main area, a side column, a bottom strip. Still no splits and no free
   grid. The terminal engine's own tab and split actions still return

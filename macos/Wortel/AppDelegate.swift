@@ -1474,6 +1474,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.newHomeSession(starting: .preferred)
     }
 
+    /// ⌃⌥⌘N, New Terminal at Home: ⌥⌘N without the command Settings names, there
+    /// on the same condition as New Terminal.
+    @objc func newHomeTerminalSession(_ sender: Any?) {
+        focusMainWindow()
+        manager.newHomeSession(via: .terminal, starting: .plain)
+    }
+
     @objc func newWorktreeSession(_ sender: Any?) {
         focusMainWindow()
         newWorktreeSessionFromSheet(manager)

@@ -24,8 +24,8 @@ skips it). **Starting a session has four ways and only four** (⌘N, ⌥⌘N at
 home, ⌥⇧⌘N, ⌘O): Open Branch, Fork Session, Change Directory (`wortel cd`) and
 New Folder were all cut on 2026-11-09 for being more ways in than anyone kept
 apart. Don't add a fifth without that argument. (New Terminal, ⌃⌘N, is ⌘N
-without the command Settings names and exists only while it names one:
-`SessionStart.plain`.) One way out: closing (⇧⌘W, ×, `exit`) a session that lives in a
+without the command Settings names, and New Terminal at Home, ⌃⌥⌘N, is ⌥⌘N without
+it; both exist only while it names one: `SessionStart.plain`.) One way out: closing (⇧⌘W, ×, `exit`) a session that lives in a
 worktree **archives** it (`SessionManager.archive`), then, after the row has
 moved, inspects the worktree and Trashes it only when there's nothing to keep
 (`WorktreeCloseDecision`). Archived sessions are in `archived-sessions.json`,

@@ -87,7 +87,8 @@ plain terminal.
 - **New Terminal** (⌃⌘N) is hidden unless the field holds a command, in the
   Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,
   as Restart to Update is by the updater), the sidebar's + menu and a
-  folder's menu.
+  folder's menu. **New Terminal at Home** (⌃⌥⌘N) is the same for ⌥⌘N, in the
+  Session menu and the sidebar's +.
 - **The menu at the field's end** holds the known agents this Mac has, and
   Terminal, which empties the field. It opens under the field at the field's
   width (`MenuAnchor`), and is absent until there is an agent to offer

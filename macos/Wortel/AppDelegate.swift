@@ -147,6 +147,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmCloseSessions = { [weak self] batch, running, completion in
             self?.confirmClose(batch, running: running, completion: completion)
         }
+        manager.confirmTrashChanges = { [weak self] session, changes, completion in
+            guard let self else {
+                completion(false)
+                return nil
+            }
+            return self.confirmTrashChanges(session, changes: changes, completion: completion)
+        }
         manager.onArchiveProblem = { [weak self] title, detail in
             guard let window = self?.window else { return }
             let alert = NSAlert()
@@ -1266,11 +1273,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Close confirmation
 
+    /// `wortel close` on a worktree with uncommitted files: may they go to
+    /// the Trash with it? A sheet on the session's own window, which waits
+    /// there for you: nothing is brought forward, as the CLI never steals
+    /// focus, and the close waits for the answer. With no window to ask on,
+    /// the answer is keep. Returns how to take it down unanswered.
+    ///
+    /// Return keeps. The sheet arrives unasked, on a window you may be
+    /// typing in, so trashing files takes a click: Move to Trash has no key.
+    private func confirmTrashChanges(_ session: Session, changes: [String],
+                                     completion: @escaping (Bool) -> Void) -> (() -> Void)? {
+        guard let window = sessionWindow(session) else {
+            completion(false)
+            return nil
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = TrashChangesQuestion.title(session: session.name)
+        alert.informativeText = TrashChangesQuestion.detail(changes: changes)
+        let trash = alert.addButton(withTitle: TrashChangesQuestion.trash)
+        trash.keyEquivalent = ""
+        trash.hasDestructiveAction = true
+        alert.addButton(withTitle: TrashChangesQuestion.keep).keyEquivalent = "\r"
+        alert.beginSheetModal(for: window) { response in
+            completion(response == .alertFirstButtonReturn)
+        }
+        return { [weak window, weak alert] in
+            guard let window, let sheet = alert?.window, window.sheets.contains(sheet) else { return }
+            window.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+        }
+    }
+
+    /// The main window `session` is in, else the front one: a question about
+    /// a session goes where that session is.
+    private func sessionWindow(_ session: Session) -> NSWindow? {
+        controller(for: manager.window(of: session))?.window ?? window
+    }
+
     /// Sheets a warning when closing a session that still has a running
     /// process. `completion(true)` proceeds with the close. Falls back to
     /// closing immediately if there's no window to sheet onto.
     private func confirmClose(_ session: Session, completion: @escaping (Bool) -> Void) {
-        guard let window else {
+        guard let window = sessionWindow(session) else {
             completion(true)
             return
         }

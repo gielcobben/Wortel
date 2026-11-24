@@ -287,6 +287,23 @@ a `cd` through a quoted path on the same line), and the move is done when the
 shell reports the new directory. No `--session`: it acts on the agent inside,
 and who may ask that is the session itself.
 
+**`close` is answered at once and done later, as `cd` is.** The agent that
+runs it is mid turn, so the close waits for the turn to end
+(`SessionManager.closeFromCommand`, `PendingClose`) and then ends the session
+as its row's × would: archived, and the worktree settled after. One thing
+differs from a click. The worktree was asked to go by name, so it goes by
+`WorktreeCloseDecision.decideAsked`: uncommitted files are put to the person
+the moment the command arrives (inspected then, while the agent finishes, so
+nobody waits on `git status` at the end), and a yes lets exactly those files
+go to the Trash with it. A file that wasn't on the list (new since the
+answer) still keeps it, and the removal re-checks. Files are matched by path,
+so more written into a listed file after the yes goes with it. A branch with commits of its own no longer keeps the
+folder: the branch stays and holds them. Everything else that keeps a worktree
+on a click (not Wortel's, locked, in use, another session in it) still keeps
+it, and is said. The agent itself is no reason for the "something is still
+running" question, since ending it is the point; anything else running is.
+No `--session`: ending a session is for the session itself.
+
 **`read` reads the active screen, not the viewport.** The active area is what
 the program last drew; the viewport is wherever the person at the keyboard has
 scrolled. An agent asking what another session says means the first.

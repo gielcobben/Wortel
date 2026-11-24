@@ -2747,6 +2747,9 @@ final class SessionManager {
         reportedRestSince.removeValue(forKey: session.id)
         repaintInPlace.remove(session.id)
         cancelMove(session)
+        pendingCloses.removeValue(forKey: session.id)
+        closeChecks.removeValue(forKey: session.id)?.cancel()
+        closeQuestions.removeValue(forKey: session.id)?()
         sleptAt.removeValue(forKey: session.id)
         sleepSurvivors.removeValue(forKey: session.id)
         wantsWake.remove(session.id)
@@ -3061,7 +3064,11 @@ final class SessionManager {
     /// when Wortel made it, and the archived row with them. Inspected after
     /// the row has moved, never before: a `git status` on a monorepo can
     /// take seconds, and ⌘W must not.
-    func archive(_ session: Session) {
+    ///
+    /// `asked` is a `wortel close`'s answer: the worktree was asked to go,
+    /// so it goes by `WorktreeCloseDecision.decideAsked` instead, with the
+    /// changes the person said yes to, and is not kept without saying why.
+    func archive(_ session: Session, asked: AskedClose? = nil) {
         guard let item = archivedEntry(for: session) else {
             close(session)
             return
@@ -3079,7 +3086,7 @@ final class SessionManager {
         // them is still running when the inspection looks (a `nohup`ed
         // server) is using the worktree.
         let usage = WorktreeUsage(manager: self)
-        settleArchived(item, usage: usage)
+        settleArchived(item, usage: usage, asked: asked)
         refreshWorktreeListings()
     }
 
@@ -3103,21 +3110,56 @@ final class SessionManager {
 
     /// Inspect an archived worktree, and remove it when there's nothing to
     /// keep. A while after the close, so its processes have gone.
-    private func settleArchived(_ item: ArchivedSession, usage: WorktreeUsage) {
+    private func settleArchived(_ item: ArchivedSession, usage: WorktreeUsage, asked: AskedClose? = nil) {
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
-            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
-            let users = usage.users(of: item.checkout, in: processes)
+            var processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+            var users = usage.users(of: item.checkout, in: processes)
+            // Asked to go: the session's own agent and its servers can take
+            // more than the 400 ms to exit, and would keep it as "in use".
+            // Looked at again for a few seconds before that counts.
+            var tries = asked == nil ? 0 : 10
+            while !users.isEmpty, tries > 0 {
+                tries -= 1
+                try? await Task.sleep(for: .milliseconds(500))
+                processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+                users = usage.users(of: item.checkout, in: processes)
+            }
             let repos = item.repoHome.map { [$0] } ?? []
             let report = await WorktreeCleanup.inspect(path: item.checkout, knownRepos: repos, usedBy: users)
             guard let self, self.archived.contains(where: { $0.id == item.id }) else { return }
-            guard case .remove(let deleteBranch) = WorktreeCloseDecision.decide(report),
-                  !self.isShared(item) else { return }
+            // Asked to go, and not kept by the person's own answer: a keep is
+            // news to them, so it's said, once, with why. One Wortel didn't
+            // make was never going (the command's reply said so).
+            let trashing = asked.flatMap { $0.kept ? nil : $0.accepted }
+            let kept = { (why: String) in
+                guard trashing != nil, report.isOwned, !report.isMissing else { return }
+                self.onArchiveProblem?("Kept the worktree of \u{201c}\(item.leafName)\u{201d}",
+                                       why + " The session is archived, and \u{2318}P brings it back.")
+            }
+            let decision = trashing.map { WorktreeCloseDecision.decideAsked(report, accepting: $0) }
+                ?? WorktreeCloseDecision.decide(report)
+            guard case .remove(let deleteBranch) = decision else {
+                // What still keeps it: the changes said yes to don't.
+                var left = report
+                left.changedFiles.removeAll { trashing?.contains($0) == true }
+                return kept(left.blockers.joined(separator: " "))
+            }
+            guard !self.isShared(item) else { return kept("Another session is in the same worktree.") }
             self.removingArchived.insert(item.id)
             let error = await WorktreeCleanup.remove(path: item.checkout, knownRepos: repos, usedBy: users,
-                                                     deleteBranch: deleteBranch)
+                                                     deleteBranch: deleteBranch, acceptingChanges: trashing ?? [])
             self.removingArchived.remove(item.id)
-            guard error == nil else { return }
+            if let error {
+                // The folder may be in the Trash already, with git's record
+                // or the branch left: that's not "kept".
+                guard FileManager.default.fileExists(atPath: item.checkout) else {
+                    self.onArchiveProblem?("The worktree of \u{201c}\(item.leafName)\u{201d} is in the Trash", error)
+                    return
+                }
+                let why = error.hasPrefix("Kept: ") ? String(error.dropFirst(6)) : error
+                return kept(why)
+            }
             self.forgetArchived(item.id)
         }
     }
@@ -4096,6 +4138,9 @@ final class SessionManager {
         guard SessionMove.cdLine(path) != nil else {
             return .failure("Wortel can't type \(shown) into a shell safely.")
         }
+        if pendingCloses[session.id] != nil {
+            return .failure("This session is closing (wortel close), so it can't be moved.")
+        }
         // Under way: the agent is going or gone, and nothing can change that.
         if let move = pendingMoves[session.id], move.ending {
             return .failure("This session is already being moved to \(SessionMove.display(move.path)).")
@@ -4136,6 +4181,137 @@ final class SessionManager {
         scheduleMoveCheck(session, after: idle ? 0.3 : 1)
         return .success(SessionMove.acceptedMessage(to: path, waitsForTurn: !idle, instead: previous),
                         value: path)
+    }
+
+    // MARK: - Closing from the command line (`wortel close`)
+    //
+    // An agent told "delete this worktree" runs `wortel close` and finishes
+    // its reply; the session then ends as its row's × ends it. Two things
+    // differ from a click. It waits for the turn to end, so the reply isn't
+    // cut off. And the worktree was asked to go, so uncommitted files don't
+    // quietly keep it as they do on a click: they are put to the person at
+    // once, and a yes sends them to the Trash with it (`docs/cli.md`).
+
+    @ObservationIgnored private var pendingCloses: [Session.ID: PendingClose] = [:]
+    @ObservationIgnored private var closeChecks: [Session.ID: DispatchWorkItem] = [:]
+
+    /// Puts a worktree's uncommitted files to the person before a
+    /// `wortel close` trashes them: `completion(true)` to trash them too.
+    /// Set by the app; with none, they are kept.
+    /// Returns how to take the question down unanswered, for a session
+    /// closed some other way while it's up.
+    @ObservationIgnored var confirmTrashChanges: ((Session, [String], @escaping (Bool) -> Void) -> (() -> Void)?)?
+    @ObservationIgnored private var closeQuestions: [Session.ID: () -> Void] = [:]
+
+    /// Close `session` once its agent's turn has ended. Answered at once.
+    func closeFromCommand(_ session: Session) -> WortelResponse {
+        let id = session.id
+        guard pendingCloses[id] == nil else { return .success("This session is already closing.") }
+        guard session.preparation == nil else {
+            return .failure("This session's worktree is still being made. Try again once it's ready.")
+        }
+        // Both would act at the same turn end, on the same agent.
+        if let move = pendingMoves[id] {
+            return .failure("This session is being moved to \(SessionMove.display(move.path)). "
+                + "Run `wortel cd .` first to call that off.")
+        }
+        // Working, or about to show it (`busyShowDelay`): a turn just begun
+        // that runs this first is still a turn to wait for.
+        let waits = session.isBusy || busyTimers[id] != nil
+        pendingCloses[id] = PendingClose(requestedAt: Date(), busyWhenAsked: waits)
+        let home = worktreeHome(of: session)
+        if let home, home.isOwned { askAboutChanges(session, in: home.root) }
+        KeeperLog.log.notice("""
+            session \(id.uuidString, privacy: .public): close asked\
+            \(waits ? ", after this turn" : "", privacy: .public)
+            """)
+        scheduleCloseCheck(session, after: waits ? 1 : 0.3)
+        return .success(PendingClose.acceptedMessage(waitsForTurn: waits, worktreeIsWortels: home?.isOwned))
+    }
+
+    /// Inspect the worktree now, and put any uncommitted files to the
+    /// person while the agent finishes. The close waits for the answer.
+    private func askAboutChanges(_ session: Session, in root: String) {
+        let id = session.id
+        pendingCloses[id]?.inspecting = true
+        let usage = WorktreeUsage(manager: self, excluding: session)
+        Task { [weak self] in
+            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+            let report = await WorktreeCleanup.inspect(path: root, usedBy: usage.users(of: root, in: processes),
+                                                       urgent: true)
+            guard let self, self.pendingCloses[id] != nil,
+                  let session = self.sessions.first(where: { $0.id == id }) else { return }
+            self.pendingCloses[id]?.inspecting = false
+            let changes = WorktreeCloseDecision.changesToAsk(report)
+            guard !changes.isEmpty, let ask = self.confirmTrashChanges else {
+                return self.scheduleCloseCheck(session, after: 0)
+            }
+            self.pendingCloses[id]?.asking = true
+            self.closeQuestions[id] = ask(session, changes) { [weak self] trash in
+                self?.closeQuestions[id] = nil
+                guard let self, self.pendingCloses[id] != nil else { return }
+                self.pendingCloses[id]?.asking = false
+                if trash {
+                    self.pendingCloses[id]?.accepted = Set(changes)
+                } else {
+                    self.pendingCloses[id]?.kept = true
+                }
+                self.scheduleCloseCheck(session, after: 0)
+            }
+        }
+    }
+
+    /// Look again soon. One check pending per session.
+    private func scheduleCloseCheck(_ session: Session, after delay: TimeInterval = 2) {
+        let id = session.id
+        closeChecks.removeValue(forKey: id)?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.closeChecks[id] = nil
+            guard let session = self.sessions.first(where: { $0.id == id }) else {
+                self.pendingCloses[id] = nil
+                return
+            }
+            self.tryClose(session)
+        }
+        closeChecks[id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Close it, if the turn is over and the question (if any) answered.
+    private func tryClose(_ session: Session) {
+        let id = session.id
+        guard let close = pendingCloses[id] else { return }
+        // The answer calls back here, and so does the turn's end (`clearBusy`).
+        // However long the question waits is the person's time, not the turn's.
+        guard !close.inspecting, !close.asking else { return }
+        // A block (a permission prompt) rests the session but is the middle
+        // of the turn: the agent goes on once it's answered.
+        let blocked = programRecords[id]?.effective?.state == .blocked
+        guard !session.isBusy, !blocked, !close.busyWhenAsked || close.turnEnded else {
+            if Date().timeIntervalSince(close.requestedAt) > PendingClose.patience {
+                pendingCloses[id] = nil
+                return raiseAttention(session, kind: .failed, title: session.name,
+                                      body: "Didn\u{2019}t close: the agent\u{2019}s turn didn\u{2019}t end within an hour.",
+                                      source: "close")
+            }
+            return scheduleCloseCheck(session)
+        }
+        pendingCloses[id] = nil
+        let asked = AskedClose(accepted: close.accepted, kept: close.kept)
+        let finish = { [weak self] in
+            guard let self, self.sessions.contains(where: { $0.id == id }) else { return }
+            KeeperLog.log.notice("session \(id.uuidString, privacy: .public): closing as asked")
+            if session.preparation == nil, self.worktreeHome(of: session) != nil {
+                self.archive(session, asked: asked)
+            } else {
+                self.close(session)
+            }
+        }
+        // The agent is no reason to ask: ending it is the point. Something
+        // else still running (a dev server) is, as it is on a click.
+        guard hasBackgroundWork?(session) == true, let confirmClose else { return finish() }
+        confirmClose(session) { proceed in if proceed { finish() } }
     }
 
     /// Look again soon. One check pending per session.
@@ -4413,6 +4589,10 @@ final class SessionManager {
         // At rest, perhaps: the hour starts counting (`AgentSleep`).
         armSleep(session)
         if pendingMoves[session.id] != nil { scheduleMoveCheck(session, after: 0.5) }
+        if pendingCloses[session.id] != nil {
+            pendingCloses[session.id]?.turnEnded = true
+            scheduleCloseCheck(session, after: 0.5)
+        }
     }
 
     /// Look at which conversation the running agent is in: when it starts,

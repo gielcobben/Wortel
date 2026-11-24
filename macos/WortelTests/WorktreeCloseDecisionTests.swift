@@ -49,6 +49,75 @@ final class WorktreeCloseDecisionTests: XCTestCase {
             XCTAssertEqual(WorktreeCloseDecision.decide(report), .keep, name)
         }
     }
+
+    // MARK: - wortel close
+
+    /// Asked for by name, the changes the person said yes to don't keep it.
+    func testAskedGoesWithTheChangesSaidYesTo() {
+        let dirty = report { $0.changedFiles = ["screenshots/", "notes.txt"] }
+        XCTAssertEqual(WorktreeCloseDecision.decideAsked(dirty, accepting: ["screenshots/", "notes.txt"]),
+                       .remove(deleteBranch: true))
+        XCTAssertEqual(WorktreeCloseDecision.decideAsked(dirty, accepting: []), .keep)
+    }
+
+    /// A change made after the question was answered was never shown.
+    func testAskedKeepsForAChangeMadeSince() {
+        let dirty = report { $0.changedFiles = ["screenshots/", "late.txt"] }
+        XCTAssertEqual(WorktreeCloseDecision.decideAsked(dirty, accepting: ["screenshots/"]), .keep)
+    }
+
+    /// Commits of its own stay on the branch, which stays; the folder goes.
+    func testAskedTakesTheFolderAndLeavesABranchWithItsOwnCommits() {
+        XCTAssertEqual(WorktreeCloseDecision.decideAsked(report { $0.uniqueCommits = 2 }, accepting: []),
+                       .remove(deleteBranch: false))
+        XCTAssertEqual(WorktreeCloseDecision.decideAsked(report { $0.uniqueCommits = nil }, accepting: []),
+                       .remove(deleteBranch: false))
+    }
+
+    /// Everything else that keeps on a click keeps when asked, yes or not.
+    func testAskedStillKeepsWhatAYesCantAnswer() {
+        let cases: [(String, WorktreeReport)] = [
+            ("in use", report { $0.usedBy = ["node, running there"] }),
+            ("locked", report { $0.isLocked = true }),
+            ("status failed", report { $0.statusFailed = true }),
+            ("not Wortel's", report { $0.isOwned = false }),
+            ("missing", report { $0.isMissing = true }),
+            ("not a checkout", report { $0.isOrphanedFolder = true }),
+            ("a primary", report { $0.isPrimaryCheckout = true }),
+            ("detached with commits", report { $0.branch = nil; $0.uniqueCommits = 1 }),
+        ]
+        for (name, report) in cases {
+            XCTAssertEqual(WorktreeCloseDecision.decideAsked(report, accepting: Set(report.changedFiles)),
+                           .keep, name)
+        }
+    }
+
+    /// Only a question whose yes would change something is asked.
+    func testChangesAreAskedOnlyWhenTheyAreAllThatKeepsIt() {
+        XCTAssertEqual(WorktreeCloseDecision.changesToAsk(report()), [])
+        XCTAssertEqual(WorktreeCloseDecision.changesToAsk(report { $0.changedFiles = ["a.txt"] }), ["a.txt"])
+        XCTAssertEqual(WorktreeCloseDecision.changesToAsk(report { $0.changedFiles = ["a.txt"]; $0.isOwned = false }),
+                       [])
+        XCTAssertEqual(WorktreeCloseDecision.changesToAsk(report { $0.changedFiles = ["a.txt"]; $0.isLocked = true }),
+                       [])
+    }
+
+    /// What the agent and the person read.
+    func testTheWordsSayWhatHappensAndHaveNoDashes() {
+        let waiting = PendingClose.acceptedMessage(waitsForTurn: true, worktreeIsWortels: true)
+        XCTAssertTrue(waiting.hasPrefix("This session closes when your turn ends."))
+        XCTAssertTrue(waiting.contains("Don't remove the worktree"))
+        XCTAssertTrue(PendingClose.acceptedMessage(waitsForTurn: false, worktreeIsWortels: false)
+            .contains("Wortel didn't make its worktree"))
+        XCTAssertEqual(PendingClose.acceptedMessage(waitsForTurn: false, worktreeIsWortels: nil),
+                       "Closing this session.")
+        let detail = TrashChangesQuestion.detail(changes: ["screenshots/", "a", "b", "c", "d"])
+        XCTAssertTrue(detail.contains("5 files that aren\u{2019}t committed: screenshots/, a, b and 2 more."))
+        XCTAssertTrue(TrashChangesQuestion.detail(changes: ["a"]).contains("1 file that isn\u{2019}t committed: a."))
+        for text in [waiting, detail, TrashChangesQuestion.title(session: "x")] {
+            XCTAssertFalse(text.contains("\u{2014}") || text.contains("\u{2013}"), text)
+        }
+    }
 }
 
 /// `archived-sessions.json`: what Restore brings back. Lenient by entry, so

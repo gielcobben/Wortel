@@ -22,6 +22,7 @@ removes worktrees under them.
 | Continue | ⌘P, type its name, pick it under Archived | The shell starts in the worktree and the agent resumes |
 | Find a worktree another tool made | ⌘P, under Not open | Opening it makes a session there; Wortel never deletes it |
 | Delete an archived one | Clean Up Worktrees… | Its worktree to the Trash, the archived session with it |
+| Have the agent delete it | Ask it to; it runs `wortel close` | When its turn ends, as Stop, but asked about uncommitted files rather than keeping for them |
 
 ## Decisions
 

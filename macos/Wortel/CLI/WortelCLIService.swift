@@ -134,6 +134,11 @@ final class WortelCLIService {
             // turn can't end until it has it.
             reply(withSession(session) { target in manager.changeDirectory(target, to: path) })
 
+        case .close(let session):
+            // Answered at once, as `cd` is: the agent asking is waiting on
+            // this reply, and the close waits for its turn to end.
+            reply(withSession(session) { target in manager.closeFromCommand(target) })
+
         case .notify(let session, let title, let body):
             reply(withSession(session) { session in
                 manager.notify(session, title: title, body: body ?? "")
@@ -242,7 +247,7 @@ final class WortelCLIService {
 
         // Listed rather than `default`, so a fourth kind of `new` is a
         // compile error here instead of this refusal.
-        case .open, .rename, .notify, .mark, .remind, .changeDirectory, .version, .newRunning,
+        case .open, .rename, .notify, .mark, .remind, .changeDirectory, .close, .version, .newRunning,
              .list, .read, .send, .wait:
             reply(.failure("Only a new session can be given a command to run."))
         }

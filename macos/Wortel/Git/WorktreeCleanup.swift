@@ -177,6 +177,33 @@ enum WorktreeCloseDecision: Equatable {
         else { return .keep }
         return .remove(deleteBranch: report.branchIsDeletable)
     }
+
+    /// `wortel close`: the worktree was asked to go, by name, so two things
+    /// `decide` keeps for are let through. A branch with commits of its own
+    /// no longer holds the folder back: the branch stays and keeps them.
+    /// And changes go when they are the ones the person was shown and said
+    /// yes to (`accepted`, as `changedFiles` lists them); one made since is
+    /// kept for. Everything else `decide` keeps for still keeps.
+    static func decideAsked(_ report: WorktreeReport, accepting accepted: Set<String>) -> WorktreeCloseDecision {
+        var report = report
+        report.changedFiles.removeAll { accepted.contains($0) }
+        guard report.isOwned, !report.isMissing, report.changedFiles.isEmpty, report.usedBy.isEmpty,
+              !report.isLocked, report.verdict != .blocked
+        else { return .keep }
+        return .remove(deleteBranch: report.branchIsDeletable)
+    }
+
+    /// The changes to put to the person before a `wortel close`: those that
+    /// are all that stands between the worktree and the Trash. Empty when
+    /// there are none, or when it would be kept whatever they said (another
+    /// tool made it, it's locked, something else is in it), since a question
+    /// whose yes changes nothing shouldn't be asked.
+    static func changesToAsk(_ report: WorktreeReport) -> [String] {
+        guard !report.changedFiles.isEmpty,
+              decideAsked(report, accepting: Set(report.changedFiles)) != .keep
+        else { return [] }
+        return report.changedFiles
+    }
 }
 
 enum WorktreeCleanup {
@@ -360,15 +387,19 @@ enum WorktreeCleanup {
     /// commits (a session and its fork) each count the other as where those
     /// commits also are; inspected and removed at once, both would go. In
     /// turn, the second's re-inspection finds the first gone and keeps it.
+    ///
+    /// `acceptingChanges` is the one way past uncommitted files: the ones
+    /// the person was shown and said to trash (`wortel close`). Any other
+    /// change, made since, still keeps it.
     static func remove(
         path: String, knownRepos: [String] = [], usedBy: [String] = [],
-        deleteBranch: Bool,
+        deleteBranch: Bool, acceptingChanges: Set<String> = [],
         discard: @escaping @Sendable (URL) throws -> Void = {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
         }
     ) async -> String? {
         await removeReporting(path: path, knownRepos: knownRepos, usedBy: usedBy, deleteBranch: deleteBranch,
-                              discard: discard).error
+                              acceptingChanges: acceptingChanges, discard: discard).error
     }
 
     /// How a removal went: why it didn't (or didn't entirely), and whether
@@ -382,14 +413,14 @@ enum WorktreeCleanup {
     /// `remove`, also saying whether the branch was actually deleted.
     static func removeReporting(
         path: String, knownRepos: [String] = [], usedBy: [String] = [],
-        deleteBranch: Bool,
+        deleteBranch: Bool, acceptingChanges: Set<String> = [],
         discard: @escaping @Sendable (URL) throws -> Void = {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
         }
     ) async -> Removal {
         await removals.run {
             await removeNow(path: path, knownRepos: knownRepos, usedBy: usedBy, deleteBranch: deleteBranch,
-                            discard: discard)
+                            acceptingChanges: acceptingChanges, discard: discard)
         }
     }
 
@@ -397,9 +428,10 @@ enum WorktreeCleanup {
 
     private static func removeNow(
         path: String, knownRepos: [String], usedBy: [String], deleteBranch: Bool,
-        discard: (URL) throws -> Void
+        acceptingChanges: Set<String>, discard: (URL) throws -> Void
     ) async -> Removal {
-        let report = await inspect(path: path, knownRepos: knownRepos, usedBy: usedBy)
+        var report = await inspect(path: path, knownRepos: knownRepos, usedBy: usedBy)
+        report.changedFiles.removeAll { acceptingChanges.contains($0) }
         if report.verdict == .blocked {
             return Removal(error: "Kept: " + report.blockers.joined(separator: " "))
         }

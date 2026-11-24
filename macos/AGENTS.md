@@ -121,6 +121,9 @@ Skills are in `../.agents/skills/` (Claude Code reads them through
   libghostty's scrollbar action call it on their own threads, because a hop to
   main per read is what a terminal under `cat` can't afford. It holds two
   values behind a lock and throttles to one main-thread hop a quarter second.
+  The fourth is computation fanned out over the cores for one call: ⌘P's
+  `FileMatch.rank` and `FileListing.walk` share a result box (and the walk a
+  lock) between their workers, and keep nothing once the call returns.
 - **Nothing about the user's work leaves the machine.** Wortel reports anonymous
   feature usage (`Wortel/Telemetry/`, opt-out, `docs/telemetry.md`) and that is
   the whole of it. No case in `TelemetryEvent` takes a `String`, which is what

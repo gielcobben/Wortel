@@ -1097,10 +1097,30 @@ enum GitService {
     /// `check-ignore` exits 1 when *nothing* matched, which is a perfectly
     /// ordinary answer here, so the exit status is deliberately not checked —
     /// only stdout is read. `-z` because a filename may contain a newline.
+    ///
+    /// Without `GIT_LITERAL_PATHSPECS`: `check-ignore` refuses the `literal`
+    /// magic outright ("pathspec magic not supported by this command"),
+    /// printed nothing, and so from 2026-11-09 nothing was ever ignored. It
+    /// takes each line as one path to look up, never as a glob to expand, so
+    /// leaving it out names no other file.
     static func checkIgnore(root: String, paths: [String]) async -> Set<String> {
+        await checkedIgnore(root: root, paths: paths) ?? []
+    }
+
+    /// `checkIgnore`, saying when git couldn't answer (nil) rather than
+    /// reading as "nothing is ignored": one path inside a submodule fails the
+    /// whole call ("Pathspec … is in submodule"), and for ⌘P's file list
+    /// "nothing ignored" would add a build's every file.
+    static func checkedIgnore(root: String, paths: [String]) async -> Set<String>? {
         guard !paths.isEmpty else { return [] }
+        guard DeveloperTools.current.canRun else { return nil }
         let input = Data((paths.joined(separator: "\0") + "\0").utf8)
-        let result = await run(["check-ignore", "-z", "--stdin"], in: root, input: input)
+        var environment = gitEnvironment
+        environment["GIT_LITERAL_PATHSPECS"] = nil
+        let result = await execute(gitArguments(["check-ignore", "-z", "--stdin"]), environment: environment,
+                                   in: root, input: input, timeout: 30)
+        // 0: some are ignored, 1: none are. Anything else is git failing.
+        guard result.status == 0 || result.status == 1 else { return nil }
         return Set(result.stdout.split(separator: "\0").map(String.init))
     }
 
@@ -1157,9 +1177,14 @@ enum GitService {
     /// Raw stdout bytes from a git command (for binary blobs like images).
     /// stderr is routed to /dev/null so a large blob on stdout can't wedge.
     /// Returns empty Data on any nonzero exit.
-    static func runData(_ args: [String], in directory: String) async -> Data {
+    ///
+    /// `timeout`: past it git's group is sent SIGTERM, which ends the read,
+    /// and the answer is empty. For a listing that has to come back
+    /// (`ls-files` on a monorepo), not for a blob.
+    static func runData(_ args: [String], in directory: String, timeout: TimeInterval? = nil,
+                        qos: DispatchQoS.QoSClass = .userInitiated) async -> Data {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: qos).async {
                 guard DeveloperTools.current.canRun, let out = makePipe(),
                       let pid = spawn(gitArguments(args), environment: gitEnvironment,
                                       in: directory, stdin: nil,
@@ -1169,10 +1194,40 @@ enum GitService {
                     return
                 }
                 try? out.write.close()
+                // The read is what would wait forever on a stuck git, so the
+                // limit is kept beside it rather than by `wait`.
+                let finished = OSAllocatedUnfairLock(initialState: false)
+                if let timeout {
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                        if !finished.withLock({ $0 }) { kill(-pid, SIGTERM) }
+                    }
+                }
                 let data = out.read.readDataToEndOfFile()
-                let status = wait(for: pid, timeout: nil)
+                let status = wait(for: pid, timeout: timeout == nil ? nil : 2)
+                finished.withLock { $0 = true }
                 continuation.resume(returning: status == 0 ? data : Data())
             }
+        }
+    }
+
+    /// Every file git tracks in the work tree at `root`, as `ls-files -z`
+    /// prints them: relative, NUL-separated, in git's (byte) order. Read
+    /// from the index, so no walk of the work tree: about 20 ms for 97k
+    /// files. Nil when git couldn't answer.
+    static func trackedFiles(root: String) async -> Data? {
+        let data = await runData(["ls-files", "-z", "--cached"], in: root, timeout: 30)
+        return data.isEmpty ? nil : data
+    }
+
+    /// The files in `root` (or under `paths`, relative to it) that git
+    /// neither tracks nor ignores. This one walks the work tree, which on a
+    /// monorepo is seconds, so it waits its turn behind the other
+    /// background scans (`backgroundScans`), one at a time app-wide.
+    static func untrackedFiles(root: String, under paths: [String] = []) async -> Data {
+        await backgroundScans.run {
+            await runData(["ls-files", "-z", "--others", "--exclude-standard"]
+                          + (paths.isEmpty ? [] : ["--"] + paths),
+                          in: root, timeout: 120, qos: .utility)
         }
     }
 

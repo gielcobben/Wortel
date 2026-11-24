@@ -565,6 +565,17 @@ final class GitPanelModel {
     @ObservationIgnored var onPeek: ((URL, PreviewDiffSource, PeekTrigger) -> Void)?
 
     @ObservationIgnored private var cache: [String: GitRepoModel] = [:]
+
+    /// What this window last read of the status of the work tree at `root`,
+    /// and whether that read is current: ⌘P's file list takes its untracked
+    /// files and its changed ones from here when it can, rather than scan
+    /// again. Nil when this window has no model for it.
+    func knownStatus(ofRoot root: String) -> (status: GitStatus, isCurrent: Bool)? {
+        let real = GitWorktree.realPath(root)
+        guard let model = cache[root] ?? cache.first(where: { GitWorktree.realPath($0.key) == real })?.value
+        else { return nil }
+        return (model.status, !model.isStale)
+    }
     /// Each directory's work-tree root, as `resolve` last found it.
     @ObservationIgnored private var rootByCwd: [String: String] = [:]
     /// The directories `resolve` last found in no repository.

@@ -1383,6 +1383,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (`96d8a5f`, `c5fd8d7`).
 - **2026-09-14. Pull is fast-forward only.** There is no conflict UI
   (`ace5ace`).
+- **2026-11-24. `check-ignore` runs without `GIT_LITERAL_PATHSPECS`.** Every
+  git has had it since `45f5f2a` (2026-11-09: a path with brackets means
+  that file only), and `check-ignore` refuses the `literal` magic outright,
+  so from then nothing was ever reported ignored: the Files pane stopped
+  greying ignored files. It reads each line as one path, never a glob, so
+  leaving it out for this one command names no other file. Pinned by
+  `FileListingTests.testCheckIgnoreAnswers`.
 - **2026-10-06. Only the repository on screen does git work.** Every git gets
   `core.fsmonitor=false`. Other worktrees are read when asked, never on a timer
   (`c20f403`, `9b366bb`).
@@ -1519,6 +1526,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   people already have from their editors, and it never comes up over a
   terminal by itself. Selecting several rows never moves it. After a
   relaunch it is an ordinary tab (`WorkspaceTabs.peek`).
+- **2026-11-24. ⌘P finds files, close to Zed's file finder.** Once something
+  is typed, a Files section sits under the sessions and over the commands;
+  with nothing typed ⌘P is as it was, so ⌘P then Return still goes back. In a
+  repository the list is git's index (`ls-files`: 20 ms for the Linux tree's
+  97k files, no walk), plus the untracked files the git panel's status
+  already has, or one `ls-files --others` the first time, queued behind the
+  other background scans. Zed walks repositories too; with several worktrees
+  of a 500k-file monorepo open, where `git status` takes 7 s, each would pay
+  that walk. Elsewhere it is Zed's walk: five levels, VCS folders and
+  `node_modules` skipped, no symlinks, a repository inside listed by git, and
+  never from `/`, the home folder or a volume's top. Kept live by FSEvents,
+  one changed folder re-read at a time. Matching is fzf's v2 scoring with
+  the file name a tier above the path (VS Code's and Zed's rule): measured
+  optimised at 487k paths, 1 to 12 ms a key. Debug builds are about 40 times
+  slower at this, which only shows on a repository that size.
 
 ## Running processes
 

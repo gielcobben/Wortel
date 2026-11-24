@@ -82,8 +82,8 @@ about the thing it happened to:
   and file panes) and in which area of the window (never what is in it, where
   a browser is pointed, or which file)
 - the command palette was used (⌘P or ⇧⌘P), and whether it ended with a session
-  picked, a command run, or neither (never what was typed or which session or
-  command it was)
+  picked, a command run, a file opened, or neither (never what was typed or
+  which session, command or file it was)
 - a commit was made from the Changes pane, and whether its message was typed,
   drafted on your Mac and kept, or drafted and then edited (never the message,
   the files or the repository)

@@ -22,6 +22,20 @@
 // to the templates, and to any HTML comment that ships in the build.
 // ==========================================================================
 
+// The download is the DMG that release.sh --publish uploads. Until the bucket
+// has one (a site deployed before the first release that uploads it), linking
+// there would put a 404 behind every Download button, so the build keeps the
+// zip until a HEAD finds the DMG. Only a definite 404 falls back: an offline
+// build links the DMG, and a deploy is never offline.
+const DMG = 'https://updates.wortel.sh/Wortel-latest.dmg';
+const ZIP = 'https://updates.wortel.sh/Wortel-latest.zip';
+const DOWNLOAD = await fetch(DMG, { method: 'HEAD' }).then(
+  (r) => (r.status === 404 ? ZIP : DMG),
+  () => DMG,
+);
+/** Whether the download is the disk image, which the steps and llms.txt say. */
+export const DOWNLOAD_IS_DMG = DOWNLOAD === DMG;
+
 export const SITE = {
   name: 'Wortel',
   url: 'https://wortel.sh',
@@ -35,19 +49,27 @@ export const SITE = {
   authorUrl: 'https://gielcobben.com',
   /** The source, under the GPL. */
   repo: 'https://github.com/gielcobben/wortel',
-  /** release.sh --publish always mirrors the newest signed zip here. */
-  download: 'https://updates.wortel.sh/Wortel-latest.zip',
+  /** release.sh --publish always mirrors the newest notarized DMG here. */
+  download: DOWNLOAD,
   appcast: 'https://updates.wortel.sh/appcast.xml',
   /** Sparkle's minimumSystemVersion, minus the ".0" that reads as noise. */
   minMacOS: '14',
   minMacOSName: 'Sonoma',
 } as const;
 
-// ---- /download: from the zip to a running agent ---------------------------
+// ---- /download: from the disk image to a running agent --------------------
 export const INSTALL_STEPS: [string, string][] = [
-  ['Open the zip', 'Safari unzips it for you, so Wortel is already waiting in Downloads.'],
-  ['Drag it to Applications', 'From there it can replace itself when a new version comes out.'],
-  ['Open it', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+  ...(DOWNLOAD_IS_DMG
+    ? ([
+        ['Open Wortel.dmg', 'It is in Downloads. A window opens with Wortel and your Applications folder side by side.'],
+        ['Drag it to Applications', 'From there it can replace itself when a new version comes out. Then eject the disk image.'],
+        ['Open it from Applications', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+      ] as [string, string][])
+    : ([
+        ['Open the zip', 'Safari unzips it for you, so Wortel is already waiting in Downloads.'],
+        ['Drag it to Applications', 'From there it can replace itself when a new version comes out.'],
+        ['Open it', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+      ] as [string, string][])),
   ['Start an agent', 'Wortel does not come with one. Install Claude Code, Codex or Pi, then type its name in a session.'],
 ];
 

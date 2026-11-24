@@ -30,7 +30,9 @@ export function classify(key: string, ua: string): Counted | null {
     return { event: 'update_checked', props: version ? { app_version: version } : {} };
   }
 
-  const match = key.match(/^Wortel-(.+)\.zip$/);
+  // The zip is Sparkle's and the DMG is the website's; either one, at the
+  // same key shape, means the same thing.
+  const match = key.match(/^Wortel-(.+)\.(?:zip|dmg)$/);
   if (!match) return null;
   const version = match[1];
 
@@ -55,10 +57,10 @@ export function classify(key: string, ua: string): Counted | null {
 /// day because a stale appcast is cached is the failure this domain exists to
 /// avoid.
 export function cacheControl(key: string): string {
-  if (key === 'appcast.xml' || key === 'Wortel-latest.zip') {
+  if (key === 'appcast.xml' || /^Wortel-latest\.(?:zip|dmg)$/.test(key)) {
     return 'public, max-age=300, must-revalidate';
   }
-  if (/^Wortel-.+\.zip$/.test(key)) {
+  if (/^Wortel-.+\.(?:zip|dmg)$/.test(key)) {
     return 'public, max-age=31536000, immutable';
   }
   return 'public, max-age=3600';

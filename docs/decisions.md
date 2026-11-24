@@ -1670,6 +1670,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the click no longer depends on that request. The fallback quits from a
   run-loop timer: started from a `Task` it deadlocked against the deferred
   quit.
+- **2026-11-24. The website downloads a DMG; Sparkle keeps the zip.** A
+  plain disk image: the app beside a link to Applications, large icons, no
+  toolbar, no background picture, nothing branded
+  (`macos/scripts/make-dmg.sh`). It is notarized and stapled on its own and
+  goes up as `Wortel-latest.dmg` and `Wortel-<version>.dmg`, never into
+  `macos/releases/`, where `generate_appcast` would sign it into the feed as
+  a second archive. `Wortel-latest.zip` is still uploaded every release,
+  because the old link is pasted in places nobody can edit. The site's build
+  links the zip (and its steps) until a HEAD finds the DMG, so a deploy before
+  the first release that uploads one can't put a 404 behind the button.
 
 ## Telemetry and privacy
 

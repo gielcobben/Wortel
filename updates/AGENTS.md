@@ -4,8 +4,9 @@ For coding agents working on the updates Worker. The repo-wide rules in the
 root `AGENTS.md` still apply. Paths and commands here are relative to
 `updates/`. `README.md` is the full record; read it before changing anything.
 
-The Worker in front of the `wortel-updates` R2 bucket. It serves the appcast
-and the signed zips, and it is the only place downloads are counted. Every
+The Worker in front of the `wortel-updates` R2 bucket. It serves the appcast,
+the signed zips (Sparkle's) and the DMGs (the website's), and it is the only
+place downloads are counted. Every
 installed copy of Wortel asks it for updates, so it changes almost never, and
 carefully.
 

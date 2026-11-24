@@ -1587,6 +1587,32 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   is added. The shell Settings asks which agents this Mac has
   (`AgentDiscovery`) has no integration, so its question adds the folder
   too, or an agent that runs in every session would be missing there. fish and elvish have the same lines and were not run.
+- **2026-11-24. Claude Code opens fullscreen in Wortel, unless the person
+  chose otherwise.** Seen on a small window: the side column open, the
+  terminal at its 320pt minimum (44 columns), Claude made an edit, and after
+  the column closed that diff stayed 44 columns wide, broken mid-word. Claude
+  Code's inline renderer redraws only the visible screen at a new width.
+  Measured with 2.1.331 in a pty harness, 44 to 100 columns: the visible
+  rows came back wide, everything above stayed at 44, Ctrl+L the same, and
+  only `claude --continue` reprinted it all. Its fullscreen renderer redraws
+  the whole conversation at any width and for either appearance, so every
+  shell Wortel starts gets `CLAUDE_CODE_NO_FLICKER=1` (`ClaudeRenderer`).
+  Claude reads that variable before its `tui` setting and before its own
+  safety switch (fullscreen turned off on a Mac where it failed to start
+  several times, which names this variable as the override), so it is left
+  out when Claude's user settings name a `tui` (a `/tui classic` stays
+  classic), when Claude's global config holds `fullscreenAutoDisabled`,
+  when the inherited environment sets it or
+  `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN`, and when the settings file is not
+  JSON. Looked at at each shell's start (read again only when a file
+  changed), so a choice holds from the next new shell. Project settings are
+  not read. Only a screen reader still turns fullscreen off ahead of the
+  variable; tmux's control mode, which Claude would otherwise leave inline,
+  does not. Not done: restarting
+  an inline Claude when its terminal widens, as is done for a change of
+  appearance; it would restart the agent at every peek at Changes and leave
+  the narrow copy above the reprint. A shell the keeper kept from before
+  this has no variable until it is replaced.
 
 ## Release and updates
 

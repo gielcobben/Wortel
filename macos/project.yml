@@ -724,6 +724,9 @@ targets:
       # an agent marker, never reports its cwd. Busy dots and agent resume stop
       # working and nothing says so.
       - path: Wortel/Ghostty/ShellSpawn.swift
+      # Whether a new shell gets Claude Code's fullscreen switch: off when the
+      # person chose a renderer, since the variable beats their setting.
+      - path: Wortel/Ghostty/ClaudeRenderer.swift
       # The CLI's wire protocol and argument parsing. Pure, and the layer where
       # a command-line tool rots: an argument silently ignored, a relative path
       # resolved against the wrong directory, an error a script can't detect.

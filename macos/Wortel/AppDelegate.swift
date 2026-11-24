@@ -2012,11 +2012,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             manager: manager,
             insert: { [weak self] text in self?.insertPrompt(text) },
             openFile: { [weak self] url, line, elsewhere in
-                // A submodule is one entry in git's list, and a folder: the
-                // Finder shows it, as for a ⌘-clicked folder.
+                // A submodule, or a tracked symlink to a folder, is one entry
+                // in git's list and a folder on disk: shown selected in the
+                // Finder, never opened, since opening a bundle (`.app`) runs it.
                 var isFolder: ObjCBool = false
-                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder), isFolder.boolValue {
-                    NSWorkspace.shared.open(url)
+                if FileManager.default.fileExists(atPath: url.resolvingSymlinksInPath().path,
+                                                  isDirectory: &isFolder), isFolder.boolValue {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
                     return
                 }
                 self?.openPreview(url, placement: .home(elsewhere: elsewhere), line: line)

@@ -41,6 +41,14 @@ export const SITE = {
   minMacOSName: 'Sonoma',
 } as const;
 
+// ---- /download: from the zip to a running agent ---------------------------
+export const INSTALL_STEPS: [string, string][] = [
+  ['Open the zip', 'Safari unzips it for you, so Wortel is already waiting in Downloads.'],
+  ['Drag it to Applications', 'From there it can replace itself when a new version comes out.'],
+  ['Open it', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+  ['Start an agent', 'Wortel does not come with one. Install Claude Code, Codex or Pi, then type its name in a session.'],
+];
+
 // ---- the five-line summary in the hero's left column ----------------------
 // Short enough to sit in a 96px/1fr grid; these are the deck, not the article.
 export const FEATURES: [string, string][] = [

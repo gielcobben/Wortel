@@ -7,7 +7,7 @@
 // requirements and file locations live on /updates and /docs; this page
 // only gets the app onto the Mac.
 import Layout from '../layouts/Layout.astro';
-import { SITE } from '../data/site';
+import { SITE, INSTALL_STEPS } from '../data/site';
 import { latestRelease } from '../data/release';
 
 const latest = await latestRelease();
@@ -21,12 +21,6 @@ const schema = [{
   isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
 }];
 
-const steps = [
-  ['Open the zip', 'Safari unzips it for you, so Wortel is already waiting in Downloads.'],
-  ['Drag it to Applications', 'From there it can replace itself when a new version comes out.'],
-  ['Open it', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
-  ['Start an agent', 'Wortel does not come with one. Install Claude Code, Codex or Pi, then type its name in a session.'],
-];
 ---
 <Layout title={title} description={description} path="/download" schema={schema} ogImage="/og/download.png" bare>
   <header class="page phead" data-reveal-group>
@@ -52,7 +46,7 @@ const steps = [
         <figcaption>Wortel</figcaption>
       </figure>
       <ol class="steps">
-        {steps.map(([t, d], i) => (
+        {INSTALL_STEPS.map(([t, d], i) => (
           <li class="glass">
             <span class="n">{i + 1}</span>
             <h2 class="t">{t}</h2>

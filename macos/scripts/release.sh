@@ -7,7 +7,9 @@
 #   ./scripts/release.sh                signed Release -> /Applications -> launch
 #   ./scripts/release.sh --notarize     + hardened runtime, notarize, staple, .dmg
 #   ./scripts/release.sh --publish      full release: derive a CalVer version,
-#                                         notarize, EdDSA-sign a zip, regenerate
+#                                         notarize, EdDSA-sign a zip (Sparkle)
+#                                         and upload the .dmg (the website's
+#                                         download), regenerate
 #                                         the appcast, upload to the
 #                                         wortel-updates R2 bucket (Sparkle
 #                                         feed), and redeploy web/ so wortel.sh
@@ -323,8 +325,8 @@ if [ "$NOTARIZE" = 1 ]; then
   spctl -a -vv --type exec "$APP"
 
   echo "==> Building, signing, and notarizing the DMG…"
-  rm -f build/Wortel.dmg
-  hdiutil create -volname Wortel -srcfolder "$APP" -ov -format UDZO build/Wortel.dmg >/dev/null
+  # Plain drag-to-install window: the app next to a link to /Applications.
+  "$ROOT/scripts/make-dmg.sh" "$APP" build/Wortel.dmg >/dev/null
   # The DMG wrapper needs its OWN Developer ID signature + notarization, or a
   # downloaded .dmg is rejected by Gatekeeper ("no usable signature") even
   # though the app inside is fine. So: sign -> notarize -> staple the dmg too.
@@ -418,8 +420,22 @@ if [ "$PUBLISH" = 1 ]; then
   "$WRANGLER" r2 object put "$BUCKET/Wortel-${VERSION}.zip" --file "$ZIP" --content-type application/zip --remote
   "$WRANGLER" r2 object put "$BUCKET/appcast.xml" --file "$RELEASES_DIR/appcast.xml" --content-type application/xml --remote
 
-  # Stable "latest" download for the website: same bytes as the versioned zip,
-  # overwritten every release, short TTL, saved by browsers as Wortel.zip.
+  # The website's download is the DMG made and notarized above: the app beside
+  # a link to Applications. Sparkle keeps the zip; a DMG never goes in
+  # RELEASES_DIR, because generate_appcast would sign it into the feed as a
+  # second archive for the same version. Versioned (frozen) and latest
+  # (overwritten every release, short TTL, saved by browsers as Wortel.dmg).
+  DMG="$ROOT/build/Wortel.dmg"
+  [ -f "$DMG" ] || { echo "✗ $DMG is missing; the notarize step should have made it." >&2; exit 1; }
+  "$WRANGLER" r2 object put "$BUCKET/Wortel-${VERSION}.dmg" --file "$DMG" \
+    --content-type application/x-apple-diskimage --remote
+  "$WRANGLER" r2 object put "$BUCKET/Wortel-latest.dmg" --file "$DMG" \
+    --content-type application/x-apple-diskimage \
+    --content-disposition 'attachment; filename="Wortel.dmg"' \
+    --cache-control 'public, max-age=300' --remote
+
+  # The old stable link, a zip, from before the website moved to the DMG. Kept
+  # current because it is pasted in places nobody can edit.
   "$WRANGLER" r2 object put "$BUCKET/Wortel-latest.zip" --file "$ZIP" \
     --content-type application/zip \
     --content-disposition 'attachment; filename="Wortel.zip"' \
@@ -484,7 +500,7 @@ if [ "$PUBLISH" = 1 ]; then
 
   echo "==> Published $VERSION"
   echo "    Appcast:         $FEED_BASE/appcast.xml"
-  echo "    Latest download: $FEED_BASE/Wortel-latest.zip"
+  echo "    Latest download: $FEED_BASE/Wortel-latest.dmg"
   echo "    Website:         https://wortel.sh"
 fi
 

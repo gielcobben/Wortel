@@ -42,13 +42,22 @@ All commands run from `macos/`.
    is at the bottom of `scripts/release.sh`). Don't go looking in the Keychain.
    It has gone missing between this check and the upload before (2026-11-03),
    so see "After".
-6. **Checks against a real machine**, for what the release touches:
+6. **Finder can be scripted from here.** `scripts/make-dmg.sh` has Finder lay
+   out the DMG's window, which needs the app running the release to be allowed
+   to control Finder (System Settings > Privacy & Security > Automation). The
+   first time, macOS asks; nobody answering that prompt stalls the release.
+   The script stops after notarizing the app if Finder refuses, so check first:
+
+   ```sh
+   osascript -e 'tell application "Finder" to get name of startup disk' >/dev/null && echo ok
+   ```
+7. **Checks against a real machine**, for what the release touches:
    `scripts/verify-running-jobs.py` for `Wortel/Processes/`,
    `scripts/try-git.sh` for `Wortel/Git/`, `scripts/try-keeper-loss.sh` for
    keeper recovery, `scripts/check-terminals.sh` for anything touching a
    terminal or the keeper. The script itself runs `WortelTests` and the `updates/`
    tests.
-7. **The build has been used.** There are no UI tests. Someone has run this
+8. **The build has been used.** There are no UI tests. Someone has run this
    code as an app and seen its terminals draw.
 
 ## The command
@@ -58,8 +67,10 @@ All commands run from `macos/`.
 ```
 
 It derives the version, builds Release against the pinned packages, signs,
-notarizes, staples, EdDSA-signs the zip, regenerates the appcast, uploads to the
-`wortel-updates` bucket and redeploys wortel.sh.
+notarizes, staples, EdDSA-signs the zip, makes and notarizes the DMG,
+regenerates the appcast, uploads the zip, the DMG and the appcast to the
+`wortel-updates` bucket and redeploys wortel.sh, whose Download button is the
+DMG.
 
 **Always `--no-install` when you are inside Wortel**, which is nearly always.
 The install step removes `/Applications/Wortel.app` and copies the new one in.

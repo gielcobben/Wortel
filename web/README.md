@@ -221,11 +221,16 @@ it was (`/download#hero`, `#nav`, `#footer`, `#404`). Arriving with one
 presses the page's own button, so the download starts at once and
 `download_clicked` carries that place; the mark is then taken out of the
 address, so a reload does not download again. A plain visit to `/download`
-only shows the button. It points at `https://updates.wortel.sh/Wortel-latest.zip`,
-which `release.sh --publish` always mirrors to the newest signed build. The
-version line under it, and `softwareVersion`/`fileSize` in the structured data,
-are read from `updates.wortel.sh/appcast.xml` **at build time**. They refresh
-on redeploy, not on their own.
+only shows the button. It points at `https://updates.wortel.sh/Wortel-latest.dmg`,
+which `release.sh --publish` always mirrors to the newest notarized build: a
+plain disk image with the app beside a link to Applications
+(`macos/scripts/make-dmg.sh`). Sparkle keeps its zips; the DMG is only the
+website's. Until the bucket has a DMG, the build links the zip and its steps
+instead (`src/data/site.ts`), so a deploy can't put a 404 behind the button.
+The version line under the button and `softwareVersion` in the
+structured data are read from `updates.wortel.sh/appcast.xml`, and the size
+(`fileSize`) from a HEAD of the DMG, both **at build time**. They refresh on
+redeploy, not on their own.
 
 ## The app window, in two looks
 

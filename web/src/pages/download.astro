@@ -2,7 +2,7 @@
 // /download: the button and the four steps after it, nothing else. Every
 // Download button on the site leads here and says where it was (/download#hero,
 // #nav, #footer, #404), and arriving that way starts the download at once, so
-// nobody gets a zip without the steps that say what to do with it. A visit
+// nobody gets a disk image without the steps that say what to do with it. A visit
 // with no such mark (a search result, a reload, the back button) only shows
 // the button.
 //
@@ -62,7 +62,7 @@ const schema = [{
 </Layout>
 
 <script>
-  // The download starts in place (the link is the zip), so the page stays and
+  // The download starts in place (the link is the DMG), so the page stays and
   // says so, with a second link in case the browser held it back.
   const get = document.querySelector<HTMLAnchorElement>('[data-get]');
   const idle = document.querySelector<HTMLElement>('[data-idle]');

@@ -19,8 +19,9 @@ macos/    The macOS app. Swift + XcodeGen. Ships to updates.wortel.sh via
           Sparkle (R2). This is the product.
 web/      The landing page → wortel.sh. Astro static site deployed to
           Cloudflare Workers static assets.
-updates/  The Worker serving updates.wortel.sh: the appcast and the signed
-          zips out of R2, and the only place downloads are counted.
+updates/  The Worker serving updates.wortel.sh: the appcast, the signed
+          zips and the DMGs out of R2, and the only place downloads are
+          counted.
 docs/     What is true across all three: product, brand, voice, decisions.
 ```
 
@@ -141,7 +142,8 @@ Procedures live in `.agents/skills/` (Claude Code reads the same files through
 
 Both sites share one Cloudflare account and the `wortel.sh` zone:
 - **updates.wortel.sh**: R2 bucket `wortel-updates`, the Sparkle appcast +
-  signed app zips (published by `macos/scripts/release.sh --publish`).
+  signed app zips, and the DMG the website downloads (`Wortel-latest.dmg`),
+  all published by `macos/scripts/release.sh --publish`.
 - **wortel.sh**: the `wortel-web` Worker serving `web/dist` (deployed by
   `web/` → `npm run deploy`).
 

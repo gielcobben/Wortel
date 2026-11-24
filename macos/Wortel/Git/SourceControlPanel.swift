@@ -64,9 +64,9 @@ struct SourceControlPanel: View {
                 Text(Permissions.shared.gitNeedsReset ? "Git cannot run" : "Git is not installed")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Text(Permissions.shared.gitNeedsReset
-                     ? "macOS is pointed at developer tools that are gone."
-                     : "It comes with Apple\u{2019}s command line tools.")
+                Text(!Permissions.shared.gitNeedsReset ? "It comes with Apple\u{2019}s command line tools."
+                     : Permissions.shared.resetOffered ? "The fix is typed in the terminal. Press Return there."
+                     : "macOS is pointed at developer tools that are gone.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)

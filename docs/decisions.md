@@ -97,10 +97,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (too slow, a shell Wortel can't ask) nothing is said, because the folders
   alone miss a version manager's and every alias, and "no agent" in front
   of someone who has had one for a year is worse than silence. A marker
-  alone is not an agent either: the shell writes it before it knows the
-  command exists, so `claude` typed on a Mac without it would have taken
-  the row away for good. It counts once it is still there five seconds on,
-  or the program has reported. The line is typed only where it will be
+  alone is not an agent either: the shell writes it from the command line,
+  for `claude` typed on a Mac without it and for a whole
+  `npm install -g @anthropic-ai/claude-code`, so it would have taken the
+  row away for good (and waiting five seconds first, tried the same day, is
+  outlasted by an install). A marker has the shell asked again; a status
+  report is an agent. The line is typed only where it will be
   seen, the terminal in front of its session, and otherwise in a new
   session. The missing agent raises the sidebar's icon until the popover has
   been opened once: someone who uses Wortel as a plain terminal is told one
@@ -1366,7 +1368,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   and then deleted: the tools are on the disk, git fails on the selection,
   and the installer only says "already installed". There the button is Fix,
   and it types `sudo xcode-select --reset` on a prompt for the person to
-  run, since it needs an administrator. Not reproduced on a Mac without the tools: the
+  run, since it needs an administrator. That runs inside Wortel, so for a
+  few minutes after it the disk is read every two seconds: nothing else
+  would tell the panes it worked. Not reproduced on a Mac without the tools: the
   detection is tested, the stub's dialog is Apple's documented behaviour.
 
 ## Files, previews, browser

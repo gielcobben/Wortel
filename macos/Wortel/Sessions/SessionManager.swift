@@ -1369,20 +1369,6 @@ final class SessionManager {
         refreshAgentActivity()
     }
 
-    /// A marker on a Mac where no agent has been seen yet: an agent, if it is
-    /// still there in a few seconds. The shell writes the marker from the
-    /// command line, before it knows the command exists, so `claude` typed
-    /// on a Mac without it leaves one for the moment until "command not
-    /// found". Taking that for an agent took the Setup row away for good
-    /// from exactly the person it is for.
-    private func confirmAgent(_ marker: AgentMarker, in id: Session.ID) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            guard let now = AgentResumeStore.currentMarkers()[id],
-                  now.agent == marker.agent, now.startedAt == marker.startedAt else { return }
-            Permissions.shared.noteAgent()
-        }
-    }
-
     /// Re-read all live markers and mirror them onto the sessions. Cheap: the
     /// directory holds at most one tiny file per running agent.
     private func refreshAgentActivity() {
@@ -1413,8 +1399,16 @@ final class SessionManager {
                 session.liveConversationID = nil
             }
             if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
-            if let marker, isNewRun, Permissions.shared.agent != .granted {
-                confirmAgent(marker, in: session.id)
+            // A marker on a Mac where no agent has been seen yet is a
+            // reason to look again, not an agent. The shell writes it from
+            // the command line, before anything has run: for `claude` typed
+            // on a Mac without it, for `sudo claude` at its password prompt,
+            // and for a whole `npm install -g @anthropic-ai/claude-code`.
+            // Taking any of those for an agent took the Setup row away for
+            // good from exactly the person it is for, and so did waiting a
+            // few seconds first, which an install outlasts.
+            if marker != nil, isNewRun, Permissions.shared.agent != .granted {
+                Permissions.shared.lookForAgent()
             }
             if session.runningModel != marker?.model { session.runningModel = marker?.model }
             session.runningArgv = marker?.argv
@@ -5068,6 +5062,11 @@ final class SessionManager {
     /// waiting on the first prompt: a line pasted into whatever is running
     /// there (an editor, a build asking a question) would be typed into that.
     func offerCommand(_ line: String) {
+        // A second press on the heels of the first (a button that stays on
+        // screen, a double click) would type the line onto itself.
+        let now = Date()
+        if let last = lastOffer, last.line == line, now.timeIntervalSince(last.at) < 2 { return }
+        lastOffer = (line, now)
         // And only where it will be seen: with a file or a browser tab in
         // front of the terminal the line would be typed out of sight, and
         // the keyboard handed to a terminal nobody is looking at.
@@ -5081,6 +5080,8 @@ final class SessionManager {
         }
         _ = newSession(starting: .line(line))
     }
+
+    @ObservationIgnored private var lastOffer: (line: String, at: Date)?
 
     /// The shell of `session` has its terminal and nothing under it. The
     /// same reading a resume is typed on (`wake`), asked once and not again:

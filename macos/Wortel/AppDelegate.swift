@@ -975,8 +975,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Run `post` once macOS has an answer about notifications, asking for
     /// one the first time: the system's prompt, at the moment there is
     /// something to say. Once it is decided `post` runs at once, in this
-    /// call, as it did when the question was put at launch: a reminder
-    /// handed over on the way out of the app can't wait for a reply.
+    /// call, as it did when the question was put at launch. (What can't
+    /// wait for a reply at all, the reminders handed over again at launch
+    /// and on the way out, never comes through here:
+    /// `scheduleReminderFallback(asking: false)`.)
     /// `post` runs whatever the answer: what Notification Center is handed
     /// and may not show is its own business.
     ///

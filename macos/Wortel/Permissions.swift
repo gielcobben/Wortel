@@ -168,8 +168,8 @@ final class Permissions {
     }
 
     /// An agent is here: found on disk, answered for by the shell, or
-    /// running in a session (`SessionManager`: one that reports what it is
-    /// doing, or whose marker outlived the moment a mistyped name gets).
+    /// reporting what it is doing in a session (`SessionManager`). A marker
+    /// in a session is not one: it only has the shell asked again.
     func noteAgent() {
         if !agentSeen { agentSeen = true }
         if agent != .granted { agent = .granted }
@@ -218,8 +218,31 @@ final class Permissions {
     func fixDeveloperTools() {
         if gitNeedsReset {
             offerCommand?(DeveloperTools.resetLine)
+            watchForReset()
         } else {
             DeveloperTools.install()
+        }
+    }
+
+    /// The reset was typed on a prompt (`gitNeedsReset`), and the panes now
+    /// say so instead of offering it again.
+    private(set) var resetOffered = false
+
+    /// The reset is run inside Wortel, so Wortel never comes to the front
+    /// again to notice it worked (`refresh` is on activation): the panes
+    /// would go on saying git can't run with git running. So for a few
+    /// minutes after the line was typed the disk is asked every two seconds,
+    /// a few `stat`s, until git is back.
+    private func watchForReset() {
+        guard !resetOffered else { return }
+        resetOffered = true
+        Task { @MainActor in
+            for _ in 0..<150 {
+                try? await Task.sleep(for: .seconds(2))
+                if DeveloperTools.current.canRun { break }
+            }
+            self.resetOffered = false
+            self.refresh()
         }
     }
 

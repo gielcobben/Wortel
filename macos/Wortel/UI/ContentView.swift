@@ -291,9 +291,10 @@ enum SidebarBarButton {
     static let glyph = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
 }
 
-/// The bottom bar's "+": new sessions and folders, grouped like the Session
-/// menu and in the same order, so the two places you reach for this agree:
-/// ways to start a session, then the two folder verbs. A native menu from an
+/// The bottom bar's "+": the Session menu's ways to start a session, under
+/// the same names bar one ("New Worktree…"), in three groups by where the
+/// session lands. Not the Session menu's order, on purpose
+/// (`docs/decisions.md`, 2026-11-23). A native menu from an
 /// AppKit button (as the rows' "…" do), so it lights up under the pointer like
 /// the ⓘ and the update icon beside it.
 struct NewSessionButton: NSViewRepresentable {

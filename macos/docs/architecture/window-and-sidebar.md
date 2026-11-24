@@ -109,7 +109,7 @@ would draw the session you are in.
   agent found and the popover not yet opened once. The popover's Setup
   section holds "An agent" and "Git", each only while missing, above the
   two permissions. An agent is looked for at launch (after the first frame)
-  and when the popover opens, until one was found or ran once
+  and when the popover opens, until one was found or reported once
   (`setup.agentSeen` in the defaults), and never after. "None" is said only
   when the login shell itself answered none; no answer shows nothing.
   Picking one from the row's menu types its installer on a prompt, unsent

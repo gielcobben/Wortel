@@ -27,7 +27,8 @@ import os
 
 /// Something that wants a copy of the bytes the terminal sends the program.
 /// Each `feed` is one whole write: one key press, one reply to a query, one
-/// part of a paste, never a sequence cut in two (see `TypedLineBuilder`).
+/// part of a paste. A sequence is normally whole in its write, though not
+/// always: `TypedLineBuilder` says how it copes with one cut in two.
 protocol PtyInputListener: AnyObject, Sendable {
     func feed(_ bytes: UnsafePointer<UInt8>, count: Int)
 }

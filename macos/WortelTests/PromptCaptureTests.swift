@@ -64,6 +64,49 @@ final class PromptCaptureTests: XCTestCase {
         XCTAssertEqual(writes(["\u{1B}["] + keys("x\r")), ["x"], "alt+[ is the key alone")
     }
 
+    /// A session was named `>|ghostty 1.3.1Gi=31;O…`: Claude's XTVERSION and
+    /// kitty graphics answers, each with its opening in a write of its own.
+    /// However a reply is cut after its opening, none of it is typing.
+    func testAReplyCutAfterItsOpeningIsStillAReply() {
+        let version = ">|ghostty 1.3.1\u{1B}\\", graphics = "Gi=31;OK\u{1B}\\"
+        XCTAssertEqual(writes(["\u{1B}P", version, "\u{1B}_", graphics] + keys("hallo\r")), ["hallo"],
+                       "the opening alone")
+        XCTAssertEqual(writes(["\u{1B}", "P" + version, "\u{1B}", "_" + graphics] + keys("hallo\r")),
+                       ["hallo"], "the ESC alone")
+        XCTAssertEqual(writes(["\u{1B}P", ">|ghostty ", "1.3.1", "\u{1B}", "\\"] + keys("hallo\r")),
+                       ["hallo"], "in pieces")
+        XCTAssertEqual(writes(["\u{1B}]", "11;rgb:0/0/0\u{07}"] + keys("hallo\r")), ["hallo"], "BEL")
+        XCTAssertFalse(draft(writes: ["gone", "\u{1B}", "\u{1B}P", version, "\u{1B}"]),
+                       "and an Esc either side of it is still Esc Esc")
+    }
+
+    /// What a held opening holds is put back when it turns out to be a key:
+    /// Alt+P or Esc, then typing.
+    func testAHeldOpeningThatWasAKeyKeepsTheTyping() {
+        XCTAssertEqual(writes(["\u{1B}P"] + keys("fix the bug\r")), ["fix the bug"], "Alt+P")
+        XCTAssertEqual(writes(["\u{1B}"] + keys("Please fix it\r")), ["Please fix it"], "Esc, then P")
+        XCTAssertEqual(writes(["\u{1B}_"] + keys("fixx") + ["\u{7F}"] + keys(" it\r")), ["fix it"],
+                       "a backspace is a key")
+        XCTAssertEqual(writes(["\u{1B}P"] + keys("fix") + ["\u{1B}[D"] + keys("ed\r")), ["fixed"],
+                       "an arrow is a key")
+        XCTAssertTrue(draft(writes: ["kept", "\u{1B}P", "more", "\u{1B}"]), "a lone Esc is a key")
+        XCTAssertFalse(draft(writes: ["gone", "\u{1B}P", "\u{1B}", "\u{1B}"]), "Esc Esc after Alt+P")
+        XCTAssertTrue(draft(writes: ["\u{1B}P"] + keys("more")), "held typing is a draft")
+    }
+
+    /// What ends a held opening as a reply (BEL, ST) doesn't take the keys
+    /// typed behind it: ctrl-G is BEL, and a key can land inside a reply.
+    func testKeysInsideAHeldStringOutliveItsEnd() {
+        XCTAssertEqual(writes(["\u{1B}"] + keys("Please fix") + ["\u{07}", "\r"]), ["Please fix"],
+                       "ctrl-G after Esc and typing")
+        XCTAssertEqual(writes(["\u{1B}P"] + keys("fix it") + ["\u{07}", "\r"]), ["fix it"],
+                       "ctrl-G after Alt+P and typing")
+        XCTAssertEqual(writes(["\u{1B}P", "h", ">|ghostty 1.3.1\u{1B}\\", "i", "\r"]), ["hi"],
+                       "a key between a reply's opening and its body")
+        XCTAssertEqual(writes(["\u{1B}P"] + keys("fix") + ["\u{1B}", "_Gi=31;OK\u{1B}\\", "\r"]), ["fix"],
+                       "a reply whose lone ESC ends a held string")
+    }
+
     /// Within one write a control byte or an ESC still ends a string or a
     /// CSI, so a paste that only looks like one costs little.
     func testSequencesEndAtAControlByte() {

@@ -6237,13 +6237,51 @@ final class SessionManager {
     /// other link is `TerminalLink.external`'s: a web or mail link opens in
     /// its app, another scheme asks first, a malformed one does nothing.
     /// libghostty opens none of them itself any more (GhosttyRuntime).
-    private func openLink(_ link: String, from view: SurfaceView, in session: Session) {
+    ///
+    /// First, a link an agent broke over several rows is put back together
+    /// from the rows around the click (`TerminalLinkWrap`), unless the
+    /// program tagged it (OSC 8), which makes it whole already. A path is
+    /// only ever opened when the joined one exists. A click libghostty found
+    /// no link under (`request.link` nil) opens nothing but such a join.
+    ///
+    /// When libghostty matched a path, the disk is asked first (the joins,
+    /// then the match) and an address only after: a file named below an
+    /// address that ends its row is that file, not the address with its name
+    /// glued on. Otherwise the address goes first.
+    private func openLink(_ request: TerminalLinkRequest, from view: SurfaceView, in session: Session) {
+        let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
+        guard !request.tagged, let click = request.click else {
+            if let link = request.link { openLink(link, bases: bases, over: view.window) }
+            return
+        }
+        let matchedPath = request.link.map(TerminalLink.isPath) ?? false
+        if !matchedPath, let url = TerminalLink.wrappedURL(click) {
+            openLink(url, bases: bases, over: view.window)
+            return
+        }
+        if matchedPath || request.link == nil {
+            let paths = TerminalLink.wrappedPaths(click) + (request.link.map { [$0] } ?? [])
+            if let target = TerminalLink.resolveFirst(paths, bases: bases) {
+                onOpenTerminalLink?(target)
+                return
+            }
+        }
+        if matchedPath, let url = TerminalLink.wrappedURL(click) {
+            openLink(url, bases: bases, over: view.window)
+            return
+        }
+        // A web link, a server, or a path found nowhere (dropped, as before).
+        guard let link = request.link, !matchedPath else { return }
+        openLink(link, bases: bases, over: view.window)
+    }
+
+    /// One link, whole: a server on this Mac, a path, or anything else.
+    private func openLink(_ link: String, bases: [String], over window: NSWindow?) {
         if let server = TerminalLink.localServer(link) {
             onOpenLocalServer?(server)
             return
         }
         if TerminalLink.isPath(link) {
-            let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
             guard let target = TerminalLink.resolve(link, bases: bases) else { return }
             onOpenTerminalLink?(target)
             return
@@ -6252,7 +6290,7 @@ final class SessionManager {
         case .open(let url):
             NSWorkspace.shared.open(url)
         case .ask(let url):
-            askToOpen(url, over: view.window)
+            askToOpen(url, over: window)
         case .refuse:
             break
         }
@@ -6305,9 +6343,9 @@ final class SessionManager {
                 self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Bell",
                                     source: "bell")
             }
-            view.onOpenLink = { [weak self, weak session, weak view] link in
+            view.onOpenLink = { [weak self, weak session, weak view] request in
                 guard let self, let session, let view else { return }
-                self.openLink(link, from: view, in: session)
+                self.openLink(request, from: view, in: session)
             }
         }
         session.onSurfaceCreated = { [weak self, weak session] view in
@@ -6470,9 +6508,9 @@ final class SessionManager {
                 guard let self, let session, let view else { return }
                 self.shellEnded(view, in: session, tab: nil)
             }
-            view.onOpenLink = { [weak self, weak session, weak view] link in
+            view.onOpenLink = { [weak self, weak session, weak view] request in
                 guard let self, let session, let view else { return }
-                self.openLink(link, from: view, in: session)
+                self.openLink(request, from: view, in: session)
             }
         }
     }

@@ -148,30 +148,44 @@ enum TerminalLink {
     /// The first spelling of `link` that exists, tried against `bases` in
     /// order when it is relative. nil when nothing matches.
     static func resolve(_ link: String, bases: [String]) -> Target? {
-        let spellings = spellings(of: link)
-        for (path, line) in spellings {
-            for candidate in candidates(for: path, bases: bases) {
-                if let target = target(at: candidate, line: line) { return target }
+        resolveFirst([link], bases: bases)
+    }
+
+    /// `resolve` for each of `links` in order, the first that exists. The
+    /// repository's folders are listed once for all of them, not once each:
+    /// a click on a link broken over rows tries every join (`wrappedPaths`).
+    static func resolveFirst(_ links: [String], bases: [String]) -> Target? {
+        var folders: [String]?
+        for link in links {
+            let spellings = spellings(of: link)
+            for (path, line) in spellings {
+                for candidate in candidates(for: path, bases: bases) {
+                    if let target = target(at: candidate, line: line) { return target }
+                }
             }
-        }
-        // An agent that went into `macos/` names `scripts/x.sh` from there,
-        // and the shell never said so: the agent's own `cd` happens in a shell
-        // of its own. So one folder down from each base, when exactly one has
-        // it. Two (`macos/scripts/x.sh`, `web/scripts/x.sh`) is a guess, and a
-        // click that opens the wrong file is worse than one that opens none.
-        // Only below a repository's root: listing `~` or `/` reaches into
-        // Documents (a privacy prompt) and network mounts (a hang).
-        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
-        let roots = bases.filter { $0 != "/" && $0 != home && repositoryRoot(of: $0) == $0 }
-        let folders = roots.flatMap(subfolders(of:))
-        for (path, line) in spellings where !path.hasPrefix("/") && !path.hasPrefix("~") {
-            var found: [URL: Target] = [:]
-            for folder in folders {
-                let candidate = (folder as NSString).appendingPathComponent(path)
-                if let target = target(at: candidate, line: line) { found[target.url] = target }
+            // An agent that went into `macos/` names `scripts/x.sh` from there,
+            // and the shell never said so: the agent's own `cd` happens in a
+            // shell of its own. So one folder down from each base, when exactly
+            // one has it. Two (`macos/scripts/x.sh`, `web/scripts/x.sh`) is a
+            // guess, and a click that opens the wrong file is worse than one
+            // that opens none. Only below a repository's root: listing `~` or
+            // `/` reaches into Documents (a privacy prompt) and network mounts
+            // (a hang).
+            let below = folders ?? {
+                let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+                let roots = bases.filter { $0 != "/" && $0 != home && repositoryRoot(of: $0) == $0 }
+                return roots.flatMap(subfolders(of:))
+            }()
+            folders = below
+            for (path, line) in spellings where !path.hasPrefix("/") && !path.hasPrefix("~") {
+                var found: [URL: Target] = [:]
+                for folder in below {
+                    let candidate = (folder as NSString).appendingPathComponent(path)
+                    if let target = target(at: candidate, line: line) { found[target.url] = target }
+                }
+                if found.count == 1 { return found.values.first }
+                if found.count > 1 { break }
             }
-            if found.count == 1 { return found.values.first }
-            if found.count > 1 { return nil }
         }
         return nil
     }

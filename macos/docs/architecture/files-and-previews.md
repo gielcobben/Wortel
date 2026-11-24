@@ -98,6 +98,48 @@ there, in a shell of its own that never reports a cwd). The regex keeps a senten
   control, zero-width, bidirectional or line-separating characters, or with
   no scheme or host, does nothing.
 
+**A link an agent broke over several rows** (`TerminalLinkWrap.swift`). An
+agent's renderer wraps its own text, so a long path or URL reaches the
+terminal as rows with a real line break and an indent between them, and
+libghostty matches in the clicked row only (it does follow a line it wrapped
+itself). Half a path existed nowhere, and a first half with no dot matched
+nothing at all, so no OPEN_URL came. So a ⌘-click (press and release on one
+cell) reads its row and four either side at the release, before libghostty
+handles it (`SurfaceView.linkClick(at:)`, `pendingLinkClick`). OPEN_URL takes
+the rows with the link (`SurfaceView.openLink`); when it found none, a check
+queued after the release still has them, and asks with no link.
+`SessionManager.openLink` then tries, unless the link is an OSC 8 one (whole
+as the program tagged it):
+
+- **An address put back together** (`wrappedURL`): the run of address
+  characters under the click, followed into the next row's first run and the
+  previous row's last, past an indent or an agent's frame (`│`, `⎿`, `▌`). A
+  row is only followed when it was full, its text within 3 cells of the edge
+  (Claude Code breaks a long address right at its edge; every row recorded
+  ended within two), and not past a comma or into a row starting an address
+  of its own. This is the only guess here: nothing on disk says yes.
+- **A path put back together** (`wrappedPaths`): the same runs, every join of
+  up to four rows each way, longest first, and the first that
+  `TerminalLink.resolveFirst` finds on disk opens (the repository's folders
+  listed once per click, not once per join). A join that exists nowhere falls
+  back to libghostty's match, so a whole path with the sentence going on below
+  it opens as before, and a click libghostty found nothing under opens only a
+  join that exists.
+
+When libghostty matched a path, the path is tried first (its joins, then the
+match), and an address only after nothing on disk answered: a file named
+below an address that ends its row is the file, not the address with its
+name glued on. Otherwise the address is tried first. Only a single click
+counts (a double-click would open it twice), and a ⌘-press that leaves its
+cell is a selection, even when it comes back.
+
+Claude Code and Codex tag their prose links with one OSC 8 hyperlink across
+the rows, and libghostty opens the whole address from either, so those never
+needed this; what does is their paths, and Claude Code's tool-call header,
+approval box and echoed prompt (recorded 2026-11-24, Claude Code 2.1.331,
+Codex 0.172). On ⌘-hover, a half libghostty doesn't match shows no underline
+or hand, though the click opens it: the hover is libghostty's.
+
 **Open in the file's app** (`Wortel/Preview/ExternalEditor.swift`), the
 header button of a preview tab and window. No setting: the
 app is the file's default, and Wortel adds the line (the selected one, else

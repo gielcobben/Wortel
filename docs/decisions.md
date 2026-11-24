@@ -1461,6 +1461,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   refuse matched URLs and OSC 8 links, so in 2026.47.4 no web link opened.
   Web and mail links open directly; another app's scheme asks first, as a
   page's does; a link with hidden characters does nothing.
+- **2026-11-24. A link an agent broke over rows is put back together by the
+  app, from the rows around the click, not by a patch to Ghostty.** Agents
+  wrap their own text, so a long path arrives as two rows with a line break
+  and an indent, and libghostty matches one row: the click opened half a
+  path, or nothing. A path is joined only when the join exists on disk, which
+  is what makes joining safe. cmux patched its Ghostty to join rows that end
+  in certain punctuation instead, and has open bugs for each shape that rule
+  misses (a break inside a `%XX`, an indented row; its #8583, #9866,
+  #24990). Web addresses have no disk to ask, so a row is only followed when
+  it was full, and an OSC 8 link (Claude Code's and Codex's prose) is left
+  as the program tagged it. Cost: on ⌘-hover a half libghostty doesn't match
+  shows no underline, though the click opens it.
 - **2026-11-23. A selection goes to a pasteboard of Wortel's own.** Ghostty's
   1.4 defaults on macOS (`copy-on-select = primary`, `middle-click-action =
   primary-paste`) only work with a selection clipboard, so Wortel has one, as

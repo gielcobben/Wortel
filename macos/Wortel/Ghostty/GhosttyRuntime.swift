@@ -1029,13 +1029,17 @@ final class GhosttyRuntime {
             // no longer a way to have libghostty open it: since its
             // `f9e8ef02d` its macOS fallback refuses both kinds a click
             // produces (`unknown`, `osc8`) and opens nothing, which is how
-            // every web link went dead in 2026.47.4.
+            // every web link went dead in 2026.47.4. An OSC 8 link is whole
+            // as the program tagged it; a matched one is from the clicked row
+            // only, and may be half of what an agent broke over two
+            // (`SurfaceView.openLink`, `TerminalLinkWrap`).
             guard let view = surfaceView(fromTarget: target) else { return false }
             let open = action.action.open_url
             let ptr = open.url
             // The bytes aren't guaranteed NUL-terminated; `len` is authoritative.
             let link = String(decoding: Data(bytes: ptr, count: Int(open.len)), as: UTF8.self)
-            DispatchQueue.main.async { view.onOpenLink?(link) }
+            let tagged = open.kind == GHOSTTY_ACTION_OPEN_URL_KIND_OSC8
+            DispatchQueue.main.async { view.openLink(link, tagged: tagged) }
             return true
 
         default:

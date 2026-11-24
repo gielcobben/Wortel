@@ -278,6 +278,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['New worktree session / open folder', '⌥⇧⌘N / ⌘O'],
             ['New window', '⇧⌘N'],
             ['New terminal, without the command Settings starts', '⌃⌘N'],
+            ['New terminal at home', '⌃⌥⌘N'],
             ['Go to a session, or bring back an archived one', '⌘P'],
             ['Run a command', '⇧⌘P'],
             ['Find a prompt you typed to an agent', '⌘Y'],

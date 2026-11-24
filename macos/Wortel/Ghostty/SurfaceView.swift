@@ -54,11 +54,19 @@ final class SurfaceView: NSView {
     /// `replayed`: read from what it wrote while nobody was attached, so it is
     /// what is true now, not something that just happened.
     var onProgramStatus: ((_ report: ProgramStatusReport, _ replayed: Bool) -> Void)?
-    /// A ⌘-clicked link that is a path, a `file:` URL or a server on this Mac,
-    /// as libghostty matched it (`GhosttyRuntime`'s OPEN_URL handler). The
-    /// owner resolves a path against this terminal's folders (`TerminalLink`)
-    /// and opens it. Other web links never reach here: libghostty opens those.
-    var onOpenLink: ((_ link: String) -> Void)?
+    /// A ⌘-click that may be on a link: what libghostty matched there
+    /// (`GhosttyRuntime`'s OPEN_URL handler), and the rows around it, for a
+    /// link an agent broke over several rows (`TerminalLinkWrap`). The owner
+    /// decides what it is and opens it (`SessionManager.openLink`).
+    var onOpenLink: ((_ request: TerminalLinkRequest) -> Void)?
+
+    /// libghostty found a link under a click (OPEN_URL). The click's rows go
+    /// with it, if this was the ⌘-click just released.
+    func openLink(_ link: String, tagged: Bool) {
+        let click = pendingLinkClick
+        pendingLinkClick = nil
+        onOpenLink?(TerminalLinkRequest(link: link, tagged: tagged, click: click))
+    }
     /// The folder the shell last reported (OSC 7), for resolving a relative
     /// path clicked in this terminal. A side terminal's own: the session's
     /// `cwd` follows its main shell only.
@@ -171,6 +179,13 @@ final class SurfaceView: NSView {
     /// Whether the left press now held down took the ⌘-as-Shift override;
     /// nil while no left button is down. See `pointerMods`.
     private var pressOverride: Bool?
+    /// Where a left press with ⌘ held went down, to tell a ⌘-click from a
+    /// ⌘-drag at the release. nil for any other press.
+    private var commandPressPoint: NSPoint?
+    /// A ⌘-click's rows, read at the release and kept until libghostty has
+    /// said whether it found a link there (`openLink(_:tagged:)`) or, a turn
+    /// of the main queue later, that it didn't (`mouseUp`).
+    private var pendingLinkClick: TerminalLinkClick?
     private var cursor: NSCursor = .iBeam
     private var cursorVisible: Bool = true
 
@@ -1757,6 +1772,8 @@ final class SurfaceView: NSView {
         noteUserInput(text: false)
         let override = overridesShift(event.modifierFlags)
         pressOverride = override
+        commandPressPoint = event.modifierFlags.contains(.command)
+            ? convert(event.locationInWindow, from: nil) : nil
         let mods = pointerMods(event.modifierFlags)
         // The ⌘ press before this click usually refreshed the link already
         // (`flagsChanged`), but not when it reached another view first.
@@ -1767,10 +1784,31 @@ final class SurfaceView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         prevPressureStage = 0
-        defer { pressOverride = nil }
+        defer { pressOverride = nil; commandPressPoint = nil }
         guard let surface else { return }
         let mods = pointerMods(event.modifierFlags)
+        // A ⌘-click (not a drag): its rows are read now, before libghostty
+        // handles the release and the program can draw over them. libghostty
+        // opens a link at the release, inside this call, and its OPEN_URL
+        // queues `openLink` on the main queue, which takes the rows. If it
+        // found none, the check queued after it still has them: the click may
+        // be on half a link an agent broke over rows, which libghostty's
+        // one-row match can't see (`TerminalLinkWrap`).
+        pendingLinkClick = nil
+        let point = convert(event.locationInWindow, from: nil)
+        // One click only: the second of a double-click would open it again.
+        if event.modifierFlags.contains(.command), event.clickCount == 1,
+           let press = commandPressPoint, sameCell(press, point) {
+            pendingLinkClick = linkClick(at: point)
+        }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
+        if let click = pendingLinkClick {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.pendingLinkClick == click else { return }
+                self.pendingLinkClick = nil
+                self.onOpenLink?(TerminalLinkRequest(link: nil, tagged: false, click: click))
+            }
+        }
         ghostty_surface_mouse_pressure(surface, 0, 0)
         accessibilitySelectionMayHaveChanged()
     }
@@ -1815,6 +1853,11 @@ final class SurfaceView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        // Off the pressed cell, a ⌘-press is a drag (a selection), even if it
+        // comes back: not a click on a link.
+        if let press = commandPressPoint, !sameCell(press, convert(event.locationInWindow, from: nil)) {
+            commandPressPoint = nil
+        }
         mouseMoved(with: event)
         accessibilitySelectionMayHaveChanged()
     }

@@ -762,6 +762,10 @@ targets:
       # string an agent printed: relative to the repo, with a full stop or a
       # `:42` stuck to it. Each one opened nothing before it was a type.
       - path: Wortel/Ghostty/TerminalLink.swift
+      # The link a ⌘-click is on, when an agent broke it over several rows.
+      # Each case is rows an agent really drew (Claude Code's indent, its
+      # approval box), and a wrong join opens the wrong page.
+      - path: Wortel/Ghostty/TerminalLinkWrap.swift
       # What text goes with a key, and which key an input method's commit
       # still sends. Pure, and each wrong answer is a key sent twice or a
       # word arriving as a paste, which no test with a keyboard catches.

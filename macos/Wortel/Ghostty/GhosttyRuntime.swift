@@ -554,6 +554,10 @@ final class GhosttyRuntime {
         pty.onHangup = { [weak view, weak pty] in
             DispatchQueue.main.async {
                 guard let view, let pty, view.ptyHost === pty else { return }
+                // A shell that ended under a start's page has said why on
+                // the screen (a broken startup file): shown now, not when
+                // the wait for its first line runs out.
+                view.giveUpStart()
                 if GhosttyRuntime.keeper?.running().contains(where: { $0.session == session.uuidString }) == true {
                     KeeperLog.log.error("session \(session.uuidString, privacy: .public): its channel ended while it runs; attaching again")
                     view.restartShell(workingDirectory: view.pwd, sessionID: session, initialInput: nil,

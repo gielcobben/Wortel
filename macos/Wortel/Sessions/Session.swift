@@ -459,7 +459,10 @@ final class Session: Identifiable {
                                // empty page until that line's program is up
                                // (`StartCover`). Not a resume: it comes back
                                // to a screen that is already there to read.
-                               coversStart: pendingResumeInput == nil && startupInput != nil)
+                               // And not a line left on the prompt unsent
+                               // (`SessionManager.offerCommand`): nothing
+                               // starts until the person presses Return.
+                               coversStart: pendingResumeInput == nil && startupInput?.hasSuffix("\n") == true)
         if startupInput != nil, pendingResumeInput == nil { startupInputDropped = view.initialInputDropped }
         startupInput = nil
         // Typed, not settled: still owed until the agent shows up running,

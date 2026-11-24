@@ -343,6 +343,13 @@ trailing newline, as `$(...)` does. The session is not selected and nothing
 takes focus, so you can keep typing where you are. Sending to the session you're
 in works too. Up to 256 KB at a time.
 
+A `send` to a session that was just made with a command (`wortel new --
+claude`) waits for that command's program to have its interface up, so the
+text arrives as one paste. It gives up after five seconds, typing nothing.
+With `--enter`, the Return lands on whatever the program shows first, which
+for an agent is sometimes a question (trust this folder, install an update)
+rather than its prompt. When that matters, `wait --idle` and `read` first.
+
 A session whose agent has been idle for an hour may have had it put to sleep.
 `list` still names the agent, and selecting the session brings it back. `send`
 to such a session types nothing (the text is for the agent, and would land in

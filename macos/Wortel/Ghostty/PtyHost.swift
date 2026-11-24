@@ -489,7 +489,10 @@ final class PtyHost: @unchecked Sendable {
         let held = typingHold.withLock { hold -> Bool in
             guard hold != nil else { return false }
             let room = Self.heldTypingLimit - hold!.reduce(0) { $0 + $1.count }
-            if count <= room { hold!.append(Array(UnsafeBufferPointer(start: bytes, count: count))) }
+            // Past the limit nothing more is kept, so what is handed over
+            // ends where it stopped fitting instead of having a hole in it:
+            // the same mark a held Return leaves.
+            hold!.append(count <= room ? Array(UnsafeBufferPointer(start: bytes, count: count)) : Self.heldReturn)
             return true
         }
         if held { return }
@@ -503,6 +506,14 @@ final class PtyHost: @unchecked Sendable {
     /// Each write is kept whole, as the prompt tap needs them.
     func holdTyping() {
         typingHold.withLock { if $0 == nil { $0 = [] } }
+    }
+
+    /// Return was pressed while typing is held: nothing from here on is
+    /// handed over (`releaseTyping`). For the key itself, whatever it would
+    /// have been encoded as: a program that has just asked for the kitty
+    /// keyboard protocol is sent `CSI 13 u` for it, not a carriage return.
+    func cutHeldTyping() {
+        typingHold.withLock { $0?.append(Self.heldReturn) }
     }
 
     /// Stop holding. `deliver` types what was held, in order, as if typed

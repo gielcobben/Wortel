@@ -163,6 +163,35 @@ final class StartCoverTests: XCTestCase {
         XCTAssertEqual(typed(), "\r")
     }
 
+    func testReturnAsAKeyCutsWhateverItWouldHaveBeenEncodedAs() {
+        // With the kitty keyboard protocol asked for, the key is `CSI 13 u`:
+        // the view says so itself, before the bytes exist.
+        let (host, typed, close) = typingHost()
+        defer { close() }
+        host.holdTyping()
+        type("go", into: host)
+        host.cutHeldTyping()
+        type("\u{1B}[13u", into: host)
+        type("more", into: host)
+        host.releaseTyping(deliver: true)
+        XCTAssertEqual(typed(), "go")
+        // And it means nothing when nothing is held.
+        host.cutHeldTyping()
+        type("x", into: host)
+        XCTAssertEqual(typed(), "x")
+    }
+
+    func testWhatIsHeldPastTheLimitEndsThereWithoutAHole() {
+        let (host, typed, close) = typingHost()
+        defer { close() }
+        host.holdTyping()
+        type("first", into: host)
+        type(String(repeating: "x", count: 70 * 1024), into: host)
+        type("last", into: host)
+        host.releaseTyping(deliver: true)
+        XCTAssertEqual(typed(), "first")
+    }
+
     func testAPasteWithAReturnInItIsNotAHeldReturn() {
         // Only the key: text that happens to hold one is one write, kept whole.
         let (host, typed, close) = typingHost()
@@ -270,6 +299,31 @@ final class StartCoverTests: XCTestCase {
         // Past the wait the page is off already; the marker changes nothing.
         let result = run([(0.2, .commandStarted), (0.5, .agentKnown)])
         assertEnds(result, .notAnAgent, at: 0.35)
+    }
+
+    func testWhereTypingAndAPasteGo() {
+        // Typing: only to the line's program. A paste: only to an interface.
+        let typing: [StartCover.End: Bool] = [
+            .ready: true, .notAnAgent: true, .tookTooLong: true,
+            .ended: false, .noCommand: false, .gaveUp: false,
+        ]
+        for (end, delivers) in typing {
+            XCTAssertEqual(end.deliversTyping, delivers, "\(end)")
+            XCTAssertEqual(end.takesPaste, end == .ready, "\(end)")
+        }
+    }
+
+    func testTheMarkerWaitIsTheOnlyOneThatWaitsForTheMarker() {
+        var cover = StartCover(now: 0, patience: patience)
+        XCTAssertFalse(cover.waitsForMarker)
+        XCTAssertNil(cover.heard(.commandStarted, at: 0.2))
+        XCTAssertTrue(cover.waitsForMarker)
+        // Found on disk at the moment the wait ran out: still an agent.
+        XCTAssertNil(cover.heard(.agentKnown, at: 0.5))
+        XCTAssertFalse(cover.waitsForMarker)
+        XCTAssertEqual(cover.deadline ?? 0, 4.2, accuracy: 0.0001)
+        XCTAssertNil(cover.heard(.interfaceMode, at: 1))
+        XCTAssertFalse(cover.waitsForMarker)
     }
 
     func testNothingIsSaidTwice() {

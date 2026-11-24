@@ -159,7 +159,8 @@ enum WortelCLI {
     static let answerTimeout: TimeInterval = 10
     /// How long the app holds a `send` for its terminal to take a paste (a
     /// session just warmed, its surface still waiting for the keeper's
-    /// snapshot; `SurfaceView.whenPasteReachesProgram`). Past
+    /// snapshot, or a session just made whose program is still starting
+    /// under its page; `SurfaceView.whenPasteReachesProgram`). Past
     /// it, the app says so and types **nothing**. It has to end well inside
     /// `answerTimeout`, `send --enter`'s Return included: an app that typed
     /// after the CLI had already reported a failure made a script that

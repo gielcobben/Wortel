@@ -523,7 +523,8 @@ final class WortelCLIService {
         view.whenPasteReachesProgram(within: WortelCLI.sendPatience) { ready in
             guard ready else {
                 return reply(.failure("\u{201c}\(name)\u{201d} wasn't ready for input within "
-                    + "\(Int(WortelCLI.sendPatience))s (its terminal is still being restored), so nothing was typed."))
+                    + "\(Int(WortelCLI.sendPatience))s (its terminal is still being restored, or its program "
+                    + "is still starting), so nothing was typed."))
             }
             // A CLI that gave up anyway (killed, ^C) must not have its text
             // typed behind its back either.

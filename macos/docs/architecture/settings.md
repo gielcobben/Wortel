@@ -65,15 +65,20 @@ plain terminal.
   has read a byte; a worktree session gets it once git is done).
 - **The start is kept under an empty page** (`StartCover`, in
   `Sessions/StartCover.swift`, with its clock in `Ghostty/StartWatch.swift`).
-  `Session.ensureSurfaceView` asks for it for any session made with a line;
+  `Session.ensureSurfaceView` asks for it for any session made with a line
+  that will run (one ending in a newline, so not `offerCommand`'s);
   `GhosttyRuntime` grants it when the keeper has just forked the shell and
   typed the line, and the login shell is zsh or bash. Before the first read,
   `SurfaceView.coverStart` holds what is typed (`PtyHost.holdTyping`) and has
   `KeptTerminalFeed` read the output for the start (`StartScanner`, on the
   pty queue, events to the main thread). `SessionManager.refreshAgentActivity`
-  says when the marker shows the line is an agent. When the rule ends,
-  typing is released or dropped, `afterStart`'s waiters run (a paste,
-  `wortel send`), and `TerminalHostViewController` takes its page off. The
+  says when the marker shows the line is an agent, and the watch reads
+  the marker itself once before deciding there is none. Return is caught in
+  `keyDown` (`PtyHost.cutHeldTyping`). When the rule ends, typing is
+  released or dropped, `afterStart`'s waiters run (a paste, `wortel send`),
+  and `TerminalHostViewController` takes its page off. A terminal closed,
+  attached to again or left by its shell gives the start up
+  (`StartWatch.giveUp`). The
   terminal is in the hierarchy and first responder the whole time. To watch
   one: `log stream --level debug --predicate 'subsystem ==
   "com.gielcobben.Wortel" && category == "session-start"'`. The rule, its

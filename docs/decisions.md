@@ -922,7 +922,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   whole for all three agents. The agent's marker lands 3 to 7 ms after the
   mark, so a line with no marker and no mode by 0.15 s is not an agent and
   is shown (`wortel new -- npm run dev`). The line ending first, or the
-  shell never starting it in 3 s, lifts the page on the shell; 2 s without
+  shell never starting it in 2.5 s, lifts the page on the shell; 2 s without
   an interface lifts it anyway. That wait was 4 s for an hour, and a spinner
   on the page was considered for it: both hide a slow start, which is the
   one worth seeing (an update, a login, a shell that is stuck), so the page
@@ -932,11 +932,26 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   command to a shell. **A Return that was held is never typed, nor anything
   after it:** it was pressed at a screen nobody had seen, and Codex put
   "Update now" up a quarter second after its first frame, with Return as
-  yes. The text is left in the program's input to be read and sent. A paste
-  and `wortel send` wait for the start to be over instead, since the program
-  has not asked for bracketed paste before then; that also makes
-  `wortel new -- claude` followed at once by `wortel send --enter` arrive as
-  one prompt. Only zsh and bash, whose marks were seen working; fish joins
+  yes. The text is left in the program's input to be read and sent. Return
+  is caught as the key, before it is encoded: a program that has just asked
+  for the kitty keyboard protocol is sent `CSI 13 u` for it, which no rule
+  about bytes would know. A paste and `wortel send` wait for the start to be
+  over instead, since the program has not asked for bracketed paste before
+  then. The paste goes in only to an interface that came up, after the held
+  keys (the order between them is not kept), and is dropped otherwise.
+  `wortel send` types whatever came of the start, as it was told to, which
+  makes `wortel new -- claude` followed at once by `wortel send --enter`
+  arrive as one prompt; its Return is the script's own, and lands on
+  whatever the program shows first. The waits add up to under `send`'s five
+  seconds of patience. Review, the same day, found five ways it was wrong
+  as first built: a line left on a prompt unsent (the Setup row's install
+  line) was covered for three seconds and its Return thrown away, so only a
+  line that ends in a newline is covered; a paste was typed raw when the
+  page lifted without an interface; a start given up on (closed, attached
+  to again) typed its held keys; a shell that died under the page stayed
+  hidden until the wait ran out; and the marker wait could run out on a
+  busy main thread with the news of the marker still queued, so the marker
+  is read from disk once before that answer is given. Only zsh and bash, whose marks were seen working; fish joins
   when its marks have been checked on a Mac that has it. Left out: a resume
   after a lost keeper, agent sleep's wake and `wortel cd` (each comes back
   to a screen worth reading), a plain terminal, and keeping a spare agent

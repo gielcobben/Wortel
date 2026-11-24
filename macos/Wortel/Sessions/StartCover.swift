@@ -38,8 +38,11 @@ struct StartCover {
     /// How long each wait lasts, in seconds.
     struct Patience: Equatable {
         /// For the shell to start the line. A shell that takes longer is
-        /// asking something, or has no integration to say so.
-        var shell: TimeInterval = 3
+        /// asking something, or has no integration to say so. With the
+        /// waits below it, a start is over within 4.8 s whatever happens,
+        /// which a `wortel send` waiting on it counts on
+        /// (`WortelCLI.sendPatience`, 5 s).
+        var shell: TimeInterval = 2.5
         /// For the program's interface, once the line has started. Short on
         /// purpose: a start this slow is updating, asking to log in or
         /// stuck, and the terminal says which. The slowest ordinary start
@@ -82,15 +85,24 @@ struct StartCover {
         case noCommand
         /// The line is running and nothing came of it in time.
         case tookTooLong
+        /// The terminal went before the start was over: closed, its shell
+        /// gone, or attached to again. Never the rule's own answer; whoever
+        /// watches says it (`StartWatch.giveUp`).
+        case gaveUp
 
         /// Whether what was typed under the cover goes to the terminal: only
         /// while the line is what would read it.
         var deliversTyping: Bool {
             switch self {
             case .ready, .notAnAgent, .tookTooLong: return true
-            case .ended, .noCommand: return false
+            case .ended, .noCommand, .gaveUp: return false
             }
         }
+
+        /// Whether a paste made under the cover goes in: only to a program
+        /// with its interface up, which has asked for a paste to be wrapped
+        /// as one. Anywhere else it would be typed, a Return per line.
+        var takesPaste: Bool { self == .ready }
     }
 
     private enum Phase: Equatable {
@@ -156,6 +168,13 @@ struct StartCover {
 
     /// When `check` next has something to say, if nothing is heard first.
     var deadline: TimeInterval? { next?.time }
+
+    /// Whether the wait now running is the one for the marker: the line has
+    /// started, and nothing has said yet that it is an agent.
+    var waitsForMarker: Bool {
+        if case .command = phase { return !isAgent }
+        return false
+    }
 
     private var next: (time: TimeInterval, end: End)? {
         switch phase {

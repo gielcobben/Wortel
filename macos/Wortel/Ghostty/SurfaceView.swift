@@ -492,14 +492,15 @@ final class SurfaceView: NSView {
     /// output for how the start goes.
     func coverStart(pty: PtyHost, feed: KeptTerminalFeed, session: UUID) {
         pty.holdTyping()
-        let watch = StartWatch(session: session) { [weak self, weak pty, weak feed] end in
+        let agentIsKnown = { AgentResumeStore.currentMarkers()[session] != nil }
+        let watch = StartWatch(session: session, agentIsKnown: agentIsKnown) { [weak self, weak pty, weak feed] end in
             pty?.releaseTyping(deliver: end.deliversTyping)
             if let feed { pty?.enqueue { feed.stopWatchingStart() } }
             guard let self else { return }
             self.startWatch = nil
             let waiting = self.startWaiters
             self.startWaiters = []
-            waiting.forEach { $0(end.deliversTyping) }
+            waiting.forEach { $0(end) }
             self.onStartSettled?()
         }
         startWatch = watch
@@ -511,15 +512,18 @@ final class SurfaceView: NSView {
     /// The session's agent marker appeared: its line is an agent.
     func agentAppeared() { startWatch?.agentKnown() }
 
-    private var startWaiters: [(Bool) -> Void] = []
+    /// The shell is gone, or the terminal is: a start still covered is over,
+    /// and what is under the page (the reason the shell ended, say) is shown.
+    func giveUpStart() { startWatch?.giveUp() }
+
+    private var startWaiters: [(StartCover.End?) -> Void] = []
 
     /// Run `body` once this terminal's start is over: now, unless it is still
-    /// covered. It is told whether what was typed meanwhile went to the
-    /// program (`StartCover.End.deliversTyping`), true when nothing was
-    /// covered. For what is not a key: a paste is only wrapped as one once
-    /// the program has asked for that, which it has not while it starts.
-    func afterStart(_ body: @escaping (_ typingDelivered: Bool) -> Void) {
-        if isStarting { startWaiters.append(body) } else { body(true) }
+    /// covered. It is told how the start ended, nil when nothing was covered.
+    /// For what is not a key: a paste is only wrapped as one once the
+    /// program has asked for that, which it has not while it starts.
+    func afterStart(_ body: @escaping (_ end: StartCover.End?) -> Void) {
+        if isStarting { startWaiters.append(body) } else { body(nil) }
     }
 
     /// The keeper-hosted shell ended: everything on its tty is gone and the pty
@@ -677,7 +681,6 @@ final class SurfaceView: NSView {
         // running and is handled by the connection simply dropping.
         // Closed while its start was still covered: what was typed under
         // the page is for nobody now.
-        ptyHost?.releaseTyping(deliver: false)
         startWatch?.giveUp()
         if let keeperSession {
             GhosttyRuntime.keeper?.close(session: keeperSession)
@@ -1578,10 +1581,11 @@ final class SurfaceView: NSView {
     @objc func paste(_ sender: Any?) {
         // Under a start's cover the program has not asked for bracketed
         // paste yet, so this would go in as typing, a Return per line. It
-        // waits, and goes where the held keys go or nowhere.
+        // waits for the program's interface, and goes in after the keys
+        // held with it; a start that ends any other way drops it.
         guard !isStarting else {
-            return afterStart { [weak self] delivered in
-                if delivered { self?.performBinding("paste_from_clipboard") }
+            return afterStart { [weak self] end in
+                if end?.takesPaste == true { self?.performBinding("paste_from_clipboard") }
             }
         }
         performBinding("paste_from_clipboard")
@@ -1864,6 +1868,15 @@ final class SurfaceView: NSView {
 
     override func keyDown(with event: NSEvent) {
         Self.onKeyboardActivity?(self)
+        // Return under a start's cover was pressed at a screen nobody has
+        // seen: it is not typed, and neither is what follows it
+        // (`PtyHost.releaseTyping`). Caught as the key, before it is encoded.
+        // Not while composing, where Return only settles the text being
+        // composed.
+        if isStarting, !hasMarkedText(), event.keyCode == 0x24 || event.keyCode == 0x4C { // Return, keypad Enter
+            ptyHost?.cutHeldTyping()
+            return
+        }
         // Typing clears a selection, and a keybind can make one.
         accessibilitySelectionMayHaveChanged()
         guard let surface else {

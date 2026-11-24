@@ -454,7 +454,12 @@ final class Session: Identifiable {
         if let surfaceView { return surfaceView }
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
                                sessionID: id, initialInput: pendingResumeInput ?? startupInput,
-                               environment: shellEnvironment, isSessionTerminal: true)
+                               environment: shellEnvironment, isSessionTerminal: true,
+                               // A session made with a line to run opens on an
+                               // empty page until that line's program is up
+                               // (`StartCover`). Not a resume: it comes back
+                               // to a screen that is already there to read.
+                               coversStart: pendingResumeInput == nil && startupInput != nil)
         if startupInput != nil, pendingResumeInput == nil { startupInputDropped = view.initialInputDropped }
         startupInput = nil
         // Typed, not settled: still owed until the agent shows up running,

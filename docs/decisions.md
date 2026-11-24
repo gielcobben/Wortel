@@ -907,6 +907,41 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   icon hidden: an alert that would be taller than about five thirds of its
   width (measured, macOS 26) lays itself out sideways and twice as wide, and
   one 292pt wide to stay under that read as not quite an alert.
+- **2026-11-24. A new session opens on an empty page until its program is
+  up.** A session made with a line to run (Settings' line, `wortel new --`)
+  showed the whole start: the prompt, the line typed on it, the agent's
+  interface popping in. Measured that day on one Mac: the shell 0.1 to 0.3 s,
+  then Claude Code 0.3 to 0.8 s, Codex 0.3 s, Pi 0.8 to 1.2 s. None of it is
+  Wortel's to make faster, so it is kept out of sight: the terminal is under
+  a page of its own colour, at its full size and being drawn into, and the
+  page comes off in one cut (`StartCover`, `TerminalHostViewController`).
+  The rule reads the session's own output. Nothing counts before the shell
+  marks the line started (`OSC 133;C`), because zsh sets bracketed paste at
+  its own prompt. After it, a mode a full-screen program sets, then 50 ms of
+  quiet (at most 0.3 s), is the first frame: at that moment the screen was
+  whole for all three agents. The agent's marker lands 3 to 7 ms after the
+  mark, so a line with no marker and no mode by 0.15 s is not an agent and
+  is shown (`wortel new -- npm run dev`). The line ending first, or the
+  shell never starting it in 3 s, lifts the page on the shell; 2 s without
+  an interface lifts it anyway. That wait was 4 s for an hour, and a spinner
+  on the page was considered for it: both hide a slow start, which is the
+  one worth seeing (an update, a login, a shell that is stuck), so the page
+  comes off sooner and the terminal is its own progress.
+  **What is typed under the page is held, and goes only to the program.**
+  Lifted on the shell, it is dropped: a sentence meant for an agent is a
+  command to a shell. **A Return that was held is never typed, nor anything
+  after it:** it was pressed at a screen nobody had seen, and Codex put
+  "Update now" up a quarter second after its first frame, with Return as
+  yes. The text is left in the program's input to be read and sent. A paste
+  and `wortel send` wait for the start to be over instead, since the program
+  has not asked for bracketed paste before then; that also makes
+  `wortel new -- claude` followed at once by `wortel send --enter` arrive as
+  one prompt. Only zsh and bash, whose marks were seen working; fish joins
+  when its marks have been checked on a Mac that has it. Left out: a resume
+  after a lost keeper, agent sleep's wake and `wortel cd` (each comes back
+  to a screen worth reading), a plain terminal, and keeping a spare agent
+  warm, which would be instant and would cost memory, hooks and MCP servers
+  for a session nobody may open.
 
 ## Attention and agent detection
 

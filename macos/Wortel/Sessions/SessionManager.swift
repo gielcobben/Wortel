@@ -1399,6 +1399,9 @@ final class SessionManager {
                 session.liveConversationID = nil
             }
             if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
+            // A start still under its cover waits for this to know its line
+            // is an agent (`StartCover`).
+            if marker != nil { session.surfaceView?.agentAppeared() }
             // A marker on a Mac where no agent has been seen yet is a
             // reason to look again, not an agent. The shell writes it from
             // the command line, before anything has run: for `claude` typed

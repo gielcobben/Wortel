@@ -693,6 +693,11 @@ targets:
       # marker that ends that. Pure, and wrong in both directions without a
       # sound: an answer let through is typed into an agent's prompt, a window
       # that never closes swallows every key.
+      # When a new session's cover lifts, and whether what was typed under it
+      # is handed over: read off the output of a shell starting an agent.
+      # Lifted early, the startup it hides is back on screen; never lifted
+      # right, typed text goes to a shell or is thrown away.
+      - path: Wortel/Sessions/StartCover.swift
       # The signals read off a hibernated session's output, and taken out of
       # what is written back into its terminal. A signal missed is a dot that
       # never lights; one let through is raised a second time, late.

@@ -479,6 +479,49 @@ final class SurfaceView: NSView {
     /// session goes on owing it.
     var initialInputDropped = false
 
+    /// Set while this terminal's first line is still starting: the host keeps
+    /// it under an empty page and what is typed is held (`StartCover`).
+    private var startWatch: StartWatch?
+    var isStarting: Bool { startWatch != nil }
+    /// The start is over, however it went: the page comes off. Main thread.
+    var onStartSettled: (() -> Void)?
+
+    /// Cover this terminal's start: called by the runtime for a session made
+    /// with a line to run, once the keeper has typed it and before anything
+    /// is read. What is typed from here on waits in `pty`; `feed` reads the
+    /// output for how the start goes.
+    func coverStart(pty: PtyHost, feed: KeptTerminalFeed, session: UUID) {
+        pty.holdTyping()
+        let watch = StartWatch(session: session) { [weak self, weak pty, weak feed] end in
+            pty?.releaseTyping(deliver: end.deliversTyping)
+            if let feed { pty?.enqueue { feed.stopWatchingStart() } }
+            guard let self else { return }
+            self.startWatch = nil
+            let waiting = self.startWaiters
+            self.startWaiters = []
+            waiting.forEach { $0(end.deliversTyping) }
+            self.onStartSettled?()
+        }
+        startWatch = watch
+        feed.watchStart { [weak watch] events, time in
+            DispatchQueue.main.async { watch?.heard(events, at: time) }
+        }
+    }
+
+    /// The session's agent marker appeared: its line is an agent.
+    func agentAppeared() { startWatch?.agentKnown() }
+
+    private var startWaiters: [(Bool) -> Void] = []
+
+    /// Run `body` once this terminal's start is over: now, unless it is still
+    /// covered. It is told whether what was typed meanwhile went to the
+    /// program (`StartCover.End.deliversTyping`), true when nothing was
+    /// covered. For what is not a key: a paste is only wrapped as one once
+    /// the program has asked for that, which it has not while it starts.
+    func afterStart(_ body: @escaping (_ typingDelivered: Bool) -> Void) {
+        if isStarting { startWaiters.append(body) } else { body(true) }
+    }
+
     /// The keeper-hosted shell ended: everything on its tty is gone and the pty
     /// hung up. Called on the main thread, once per shell. When unset the
     /// terminal is simply told (`finishProcess`), which is what the exec
@@ -525,7 +568,7 @@ final class SurfaceView: NSView {
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
          sessionID: UUID? = nil, initialInput: String? = nil,
          environment: [String: String] = [:], fontSize: Float = 0,
-         isSessionTerminal: Bool = false) {
+         isSessionTerminal: Bool = false, coversStart: Bool = false) {
         self.runtime = runtime
         self.environment = environment
         self.isSessionTerminal = isSessionTerminal
@@ -550,7 +593,8 @@ final class SurfaceView: NSView {
             sessionID: sessionID,
             initialInput: initialInput,
             environment: environment,
-            fontSize: fontSize)
+            fontSize: fontSize,
+            coversStart: coversStart)
         // The layer first: the size is what asks it for a frame.
         layerReplaced()
         tellFirstSize()
@@ -631,6 +675,10 @@ final class SurfaceView: NSView {
         // Closing a *session* is the user saying they are done with it, so the
         // shell goes too — unlike quitting the app, which deliberately leaves it
         // running and is handled by the connection simply dropping.
+        // Closed while its start was still covered: what was typed under
+        // the page is for nobody now.
+        ptyHost?.releaseTyping(deliver: false)
+        startWatch?.giveUp()
         if let keeperSession {
             GhosttyRuntime.keeper?.close(session: keeperSession)
             // Its terminal's modes went with it.
@@ -878,6 +926,9 @@ final class SurfaceView: NSView {
     func restartShell(workingDirectory: String?, sessionID: UUID, initialInput: String?,
                       isNewShell: Bool = true) {
         guard let runtime else { return }
+        // A start still covered is over: this is another shell, or another
+        // channel to the same one, and the watch was reading the old.
+        startWatch?.giveUp()
         if let feed = keptFeed, let old = ptyHost { old.enqueue { feed.hide() } }
         keptFeed = nil
         keptDrop = nil
@@ -1525,6 +1576,14 @@ final class SurfaceView: NSView {
     }
 
     @objc func paste(_ sender: Any?) {
+        // Under a start's cover the program has not asked for bracketed
+        // paste yet, so this would go in as typing, a Return per line. It
+        // waits, and goes where the held keys go or nowhere.
+        guard !isStarting else {
+            return afterStart { [weak self] delivered in
+                if delivered { self?.performBinding("paste_from_clipboard") }
+            }
+        }
         performBinding("paste_from_clipboard")
     }
 

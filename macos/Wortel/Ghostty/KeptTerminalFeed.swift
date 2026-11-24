@@ -31,6 +31,12 @@ final class KeptTerminalFeed {
     /// Where the scanner's signals go, on the main thread (`SurfaceView.raise`).
     var onSignals: (([SignalScanner.Signal]) -> Void)?
 
+    /// While the session starts (`StartCover`): reads the output for the
+    /// shell running its first line and the program's interface coming up.
+    /// nil the rest of the session's life, which is nearly all of it.
+    private var startScanner: StartScanner?
+    private var onStartEvents: (([StartCover.Event], TimeInterval) -> Void)?
+
     private let session: UUID
     private let status: ProgramStatusWatch
     private let accessibility: SurfaceAccessibilityWatch
@@ -55,6 +61,20 @@ final class KeptTerminalFeed {
             self.held = nil
             apply(held)
         }
+    }
+
+    /// Read the output for how the session's start goes, from the next read
+    /// on. `heard` is called on this queue with the events of one read and
+    /// when it was read (seconds of system uptime).
+    func watchStart(_ heard: @escaping ([StartCover.Event], TimeInterval) -> Void) {
+        startScanner = StartScanner()
+        onStartEvents = heard
+    }
+
+    /// The start is over: nothing more is read for it.
+    func stopWatchingStart() {
+        startScanner = nil
+        onStartEvents = nil
     }
 
     /// The surface has taken over from the scanner: from its snapshot on, what
@@ -90,6 +110,10 @@ final class KeptTerminalFeed {
                 // the light/dark handling read (`TerminalModes`).
                 TerminalModeRecorder.shared.feed(session: session, bytes: base, count: output.count)
                 status.output(base, count: output.count)
+                if startScanner != nil {
+                    let events = startScanner!.scan(output)
+                    onStartEvents?(events, ProcessInfo.processInfo.systemUptime)
+                }
                 if scanner != nil {
                     var passed: [UInt8] = []
                     let signals = scanner!.scan(output, now: DispatchTime.now().uptimeNanoseconds, output: &passed)

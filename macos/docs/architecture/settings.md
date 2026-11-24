@@ -63,6 +63,22 @@ plain terminal.
   setting once, when the row is made, and uses the mechanism `wortel new --`
   already had (`Session.startupInput`: the keeper types it before the shell
   has read a byte; a worktree session gets it once git is done).
+- **The start is kept under an empty page** (`StartCover`, in
+  `Sessions/StartCover.swift`, with its clock in `Ghostty/StartWatch.swift`).
+  `Session.ensureSurfaceView` asks for it for any session made with a line;
+  `GhosttyRuntime` grants it when the keeper has just forked the shell and
+  typed the line, and the login shell is zsh or bash. Before the first read,
+  `SurfaceView.coverStart` holds what is typed (`PtyHost.holdTyping`) and has
+  `KeptTerminalFeed` read the output for the start (`StartScanner`, on the
+  pty queue, events to the main thread). `SessionManager.refreshAgentActivity`
+  says when the marker shows the line is an agent. When the rule ends,
+  typing is released or dropped, `afterStart`'s waiters run (a paste,
+  `wortel send`), and `TerminalHostViewController` takes its page off. The
+  terminal is in the hierarchy and first responder the whole time. To watch
+  one: `log stream --level debug --predicate 'subsystem ==
+  "com.gielcobben.Wortel" && category == "session-start"'`. The rule, its
+  numbers and what was left out are in `../../../docs/decisions.md`
+  (Sessions, 2026-11-24).
 - **An agent headed for the home folder gets a folder of its own**
   (`ChatFolder`): `~/Wortel/<day>/<n>`, numbered from 1 each day, made when
   the row is made. Only for `.preferred` with a command set, and only when

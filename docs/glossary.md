@@ -17,6 +17,9 @@ not a folder on disk, which is why the menu says "Ungroup Sessions".
 **Main area.** The middle of the window. Holds the session's own terminal, which
 never leaves it and cannot be closed.
 
+**Start cover.** The empty page over a new session's terminal while the line
+it was made with is still starting. What is typed under it is held.
+
 **Side column.** The trailing column: Changes, History, Files, side terminals,
 previews, browsers. Older docs and some code call it the **inspector**.
 

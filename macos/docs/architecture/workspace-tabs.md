@@ -25,6 +25,17 @@ until then the main area for a file, the column for a browser). ⌥-click puts
 it in the other place once (`elsewhere(for:)`: out of the main area, else into
 it) without teaching that.
 
+One file tab per session can be the **preview tab** (`WorkspaceTabs.peek`,
+`Session.peekTab`, not persisted): a file looked at from Changes or Files,
+with an italic title, which the next one replaces in place
+(`showPeek`, through `GitPanelModel.showPeek` and `AppDelegate`'s `.peek`
+placement); a double-click in the list opens it too. A double-click on the
+file it already shows, in the list or on the tab (`keep`), moving it, or
+Open in the row's menu
+makes it an ordinary tab. It never opens in the row of the list it was
+picked in (`peekRegion`), and a click follows only while a file is in
+front there (`showsFile(in:)`).
+
 A tab is in exactly one row; the one in front fills its area. Any tab goes in
 any row, except the session's terminal, which never leaves the
 main row and can't be closed: dragged onto the column it **swaps sides** instead,

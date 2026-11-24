@@ -107,6 +107,8 @@ final class FileTreeModel {
     @ObservationIgnored private weak var git: GitPanelModel?
     /// Open a file in a preview window (a double-click).
     @ObservationIgnored var onOpenPreview: ((URL) -> Void)?
+    /// Show a file in the preview tab: for a click, ↑/↓ or Space.
+    @ObservationIgnored var onPeek: ((URL, PeekTrigger) -> Void)?
 
     @ObservationIgnored private weak var session: Session?
     /// Expanded directory paths for the current root.
@@ -382,6 +384,14 @@ final class FileTreeModel {
     /// screen, and a click cannot. See `revealRequest`.
     func select(_ node: FileNode, reveal: Bool = false) {
         moveSelection(to: node, reveal: reveal)
+    }
+
+    /// The selected file in the preview tab (`PeekTrigger`). A folder has
+    /// nothing to show.
+    func peekSelected(_ trigger: PeekTrigger) {
+        guard let node = rows.first(where: { $0.id == selectedID })?.node,
+              !node.isDirectory else { return }
+        onPeek?(node.url, trigger)
     }
 
     /// Bumped only when the selection moved by *keyboard*. The view scrolls the

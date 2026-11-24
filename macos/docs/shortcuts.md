@@ -100,8 +100,12 @@ Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 | Show Files | ⌃⌘3 (also ⇧⌘E, ⌥⌘E) | VS Code, Cursor, Zed, Codex (⇧⌘E) |
 | Source control, on the pane you used last | ⌃⇧G (also ⌥⌘G) | VS Code, Cursor, Zed, Codex |
 | Focus the list | ⌥⌘L | |
+| The selected file in the preview tab, or close it (in Changes or Files) | Space | Finder (Quick Look) |
 
 Each opens its pane, brings it forward, or closes it when it's already in front.
+While a file is in front, a click or ↑/↓ in Changes or Files shows the picked
+file in the preview tab (italic title). A double-click on a file opens it
+there too, and a double-click on the file it already shows keeps it as a tab.
 
 ## Tabs
 

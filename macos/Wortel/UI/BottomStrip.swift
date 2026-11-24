@@ -251,6 +251,7 @@ final class BottomPaneController: NSViewController {
         strip.onSelect = { [weak self] tab in self?.git.selectBottom(tab) }
         strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
+        strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
         strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
         strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.home.selected) }
         observe()

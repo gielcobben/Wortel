@@ -456,4 +456,218 @@ final class WorkspaceTabsTests: XCTestCase {
         tabs.sideVisible = false
         XCTAssertFalse(tabs.showsSessionTerminal)
     }
+
+    // MARK: - The preview tab
+
+    private let a = SideTab.file("/r/a.swift")
+    private let b = SideTab.file("/r/b.swift")
+    private let c = SideTab.file("/r/c.swift")
+
+    /// The first file looked at opens in front of the main area, and the
+    /// next one takes its place: one tab, however many files.
+    func testTheNextFileReplacesThePreviewInPlace() {
+        var tabs = column()
+        tabs.place(terminal(), in: .main, at: .max)
+        XCTAssertNil(tabs.showPeek(a, in: .main))
+        XCTAssertEqual(tabs.peek, a)
+        XCTAssertEqual(tabs.activeMain, a)
+        let index = tabs.main.firstIndex(of: a)
+
+        XCTAssertEqual(tabs.showPeek(b, in: .main), a, "the file it replaced, to let go of")
+        XCTAssertEqual(tabs.peek, b)
+        XCTAssertEqual(tabs.activeMain, b)
+        XCTAssertFalse(tabs.main.contains(a))
+        XCTAssertEqual(tabs.main.firstIndex(of: b), index, "in its place, not at the end")
+    }
+
+    /// Closing the preview goes back to what was in front before the first
+    /// file, however many files it has shown since.
+    func testClosingThePreviewGoesBackToTheTerminal() {
+        var tabs = column()
+        tabs.showPeek(a, in: .main)
+        tabs.showPeek(b, in: .main)
+        tabs.showPeek(c, in: .main)
+        tabs.close(c)
+        XCTAssertNil(tabs.activeMain, "the session's terminal is in front again")
+        XCTAssertNil(tabs.peek)
+    }
+
+    /// A file that already has a tab comes forward; the preview is left as
+    /// it is.
+    func testAFileAlreadyOpenComesForward() {
+        var tabs = column()
+        tabs.place(a, in: .main, at: .max)
+        tabs.showPeek(b, in: .main)
+        XCTAssertNil(tabs.showPeek(a, in: .main))
+        XCTAssertEqual(tabs.activeMain, a)
+        XCTAssertEqual(tabs.peek, b)
+        XCTAssertTrue(tabs.main.contains(b))
+    }
+
+    /// Kept, the preview is a tab like any other: the next file opens a new
+    /// preview beside it.
+    func testAKeptPreviewStays() {
+        var tabs = column()
+        tabs.showPeek(a, in: .main)
+        tabs.keep(a)
+        XCTAssertNil(tabs.peek)
+        tabs.showPeek(b, in: .main)
+        XCTAssertEqual(tabs.main, [.session, a, b])
+        XCTAssertEqual(tabs.peek, b)
+    }
+
+    /// Dragging the preview somewhere is keeping it.
+    func testMovingThePreviewKeepsIt() {
+        var tabs = column()
+        tabs.showPeek(a, in: .main)
+        tabs.move(a, to: .side, at: .max)
+        XCTAssertNil(tabs.peek)
+    }
+
+    /// The preview never opens in the row of the list it was picked from;
+    /// with files moved to the column, the Changes list in the column sends
+    /// it to the main area.
+    func testThePreviewAvoidsTheListsRow() {
+        var tabs = column()
+        tabs.habits[.file] = .side
+        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: .side), .main)
+        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: .main), .side)
+        XCTAssertEqual(WorkspaceTabs().peekRegion(for: a, avoiding: .side), .main)
+    }
+
+    /// A click follows only while a file is in front: with the terminal in
+    /// front it only selects.
+    func testShowsFileOnlyWithAFileInFront() {
+        var tabs = column()
+        XCTAssertFalse(tabs.showsFile(in: .main))
+        tabs.showPeek(a, in: .main)
+        XCTAssertTrue(tabs.showsFile(in: .main))
+        tabs.bringForward(.session)
+        XCTAssertFalse(tabs.showsFile(in: .main))
+    }
+
+    /// Showing a file while the preview sits behind a kept file brings it
+    /// forward, and closing it then goes back to that kept file.
+    func testAPreviewBehindComesForward() {
+        var tabs = column()
+        tabs.showPeek(a, in: .main)
+        tabs.place(b, in: .main, at: .max)
+        tabs.bringForward(b)
+        tabs.showPeek(c, in: .main)
+        XCTAssertEqual(tabs.activeMain, c)
+        XCTAssertEqual(tabs.main, [.session, c, b])
+        tabs.close(c)
+        XCTAssertEqual(tabs.activeMain, b)
+    }
+
+    // MARK: - What a click, Space or a double-click does
+
+    /// Do in `tabs` what a list does for `trigger` on `tab`, the list in the
+    /// column, the way AppDelegate carries out a `PeekAction`.
+    @discardableResult
+    private func list(_ tabs: inout WorkspaceTabs, _ trigger: PeekTrigger, _ tab: SideTab) -> PeekAction {
+        let action = tabs.peekAction(for: tab, trigger, avoiding: .side)
+        switch action {
+        case .none: break
+        case .show: tabs.showPeek(tab, in: tabs.peekRegion(for: tab, avoiding: .side))
+        case .keep: tabs.keep(tab)
+        case .close: if let peek = tabs.peek { tabs.close(peek) }
+        }
+        return action
+    }
+
+    /// A double-click is its first click, then the double-click.
+    private func doubleClick(_ tabs: inout WorkspaceTabs, _ tab: SideTab) -> PeekAction {
+        list(&tabs, .follow, tab)
+        return list(&tabs, .open, tab)
+    }
+
+    /// With the terminal in front a click only selects: the agent you're
+    /// watching isn't covered.
+    func testAClickWithTheTerminalInFrontOnlySelects() {
+        var tabs = column()
+        XCTAssertEqual(list(&tabs, .follow, a), .none)
+        XCTAssertEqual(tabs.main, [.session])
+        XCTAssertNil(tabs.activeMain)
+    }
+
+    /// From the terminal, a double-click opens the preview; clicks then go
+    /// on in the same tab; a double-click on the file it shows keeps it.
+    func testFromTheTerminalDoubleClickPreviewsThenDoubleClickKeeps() {
+        var tabs = column()
+        XCTAssertEqual(doubleClick(&tabs, a), .show)
+        XCTAssertEqual(tabs.peek, a)
+        XCTAssertEqual(tabs.activeMain, a)
+
+        XCTAssertEqual(list(&tabs, .follow, b), .show)
+        XCTAssertEqual(tabs.main, [.session, b], "the same tab, now on b")
+        XCTAssertEqual(tabs.peek, b)
+
+        XCTAssertEqual(list(&tabs, .open, b), .keep, "the second click of a double-click on b")
+        XCTAssertNil(tabs.peek)
+        XCTAssertEqual(tabs.main, [.session, b])
+    }
+
+    /// With a file in front, a double-click keeps at once, as in VS Code:
+    /// its first click has put the file in the preview.
+    func testWithAFileInFrontADoubleClickKeeps() {
+        var tabs = column()
+        list(&tabs, .toggle, a)
+        XCTAssertEqual(doubleClick(&tabs, b), .keep)
+        XCTAssertEqual(tabs.main, [.session, b])
+        XCTAssertNil(tabs.peek)
+
+        // The next file gets a preview of its own, beside the kept one.
+        XCTAssertEqual(list(&tabs, .follow, c), .show)
+        XCTAssertEqual(tabs.main, [.session, b, c])
+        XCTAssertEqual(tabs.peek, c)
+    }
+
+    /// Space opens the preview from the terminal and closes it again.
+    func testSpaceOpensAndCloses() {
+        var tabs = column()
+        XCTAssertEqual(list(&tabs, .toggle, a), .show)
+        XCTAssertEqual(tabs.activeMain, a)
+        XCTAssertEqual(list(&tabs, .toggle, a), .close)
+        XCTAssertNil(tabs.activeMain, "back to the terminal")
+        XCTAssertEqual(tabs.main, [.session])
+    }
+
+    /// Back on the terminal with the preview behind it, clicks only select
+    /// again; Space brings the preview forward on the selected file.
+    func testThePreviewBehindTheTerminalDoesNotFollow() {
+        var tabs = column()
+        list(&tabs, .toggle, a)
+        tabs.bringForward(.session)
+        XCTAssertEqual(list(&tabs, .follow, b), .none)
+        XCTAssertEqual(tabs.peek, a)
+        XCTAssertEqual(list(&tabs, .toggle, b), .show)
+        XCTAssertEqual(tabs.activeMain, b)
+        XCTAssertEqual(tabs.main, [.session, b])
+    }
+
+    /// A file with a tab in the list's own row isn't brought forward over
+    /// the list by a click.
+    func testAClickNeverCoversTheList() {
+        var tabs = column()
+        tabs.place(b, in: .side, at: .max)
+        tabs.bringForward(changes)
+        list(&tabs, .toggle, a)
+        XCTAssertEqual(list(&tabs, .follow, b), .none)
+        XCTAssertEqual(tabs.activeSide, changes)
+    }
+
+    /// The list moved into the preview's row: the next file opens in the
+    /// other row, and the old preview stays where it was as an ordinary tab.
+    func testAListMovedOntoThePreviewIsNotCovered() {
+        var tabs = column()
+        list(&tabs, .toggle, a)
+        tabs.move(changes, to: .main, at: .max)
+        XCTAssertEqual(tabs.peekRegion(for: b, avoiding: .main), .side)
+        tabs.showPeek(b, in: .side)
+        XCTAssertTrue(tabs.main.contains(a))
+        XCTAssertEqual(tabs.activeMain, changes)
+        XCTAssertEqual(tabs.peek, b)
+        XCTAssertEqual(tabs.activeSide, b)
+    }
 }

@@ -51,6 +51,11 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// that row when it opened. Not persisted; it is about the last few
     /// minutes, not about the layout.
     var openers: [SideTab: SideTab] = [:]
+    /// The preview tab: the one file tab the next file looked at from a list
+    /// replaces, drawn with an italic title so it says it will. Kept (it
+    /// becomes a tab like any other) by a double-click or by moving it. Not
+    /// persisted: after a relaunch it is an ordinary tab.
+    var peek: SideTab?
 
     static let closedLimit = 25
 
@@ -102,6 +107,9 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// Where it was, or nil if it wasn't anywhere.
     @discardableResult
     mutating func detach(_ tab: SideTab) -> (region: TabRegion, index: Int)? {
+        // Moved, closed or handed to another window: whichever, it is no
+        // longer the tab the next file replaces.
+        if peek == tab { peek = nil }
         if let index = side.firstIndex(of: tab) {
             side.remove(at: index)
             if activeSide == tab { activeSide = Self.neighbour(in: side, of: index) }
@@ -216,6 +224,103 @@ struct WorkspaceTabs: Equatable, Sendable {
         return true
     }
 
+    // MARK: - The preview tab
+
+    /// The row a file looked at from a list shows in: where the preview tab
+    /// is, or else where files go, but never `listRegion`, the row of the list
+    /// it was picked in. A preview that took the list's place would leave
+    /// nothing to pick the next one from.
+    func peekRegion(for tab: SideTab, avoiding listRegion: TabRegion?) -> TabRegion {
+        if let peek, let region = region(of: peek), region != listRegion { return region }
+        let home = home(for: tab)
+        guard home == listRegion else { return home }
+        return home == .main ? .side : .main
+    }
+
+    /// Whether a file is what's in front of `region`'s row, and the row is up:
+    /// the one time a click in a list shows what it picked. With a terminal
+    /// or a page in front, a click only selects; you didn't ask to cover it.
+    func showsFile(in region: TabRegion) -> Bool {
+        switch region {
+        case .main: return front(of: .main)?.filePath != nil
+        case .side: return sideVisible && activeSide?.filePath != nil
+        case .bottom: return bottomVisible && activeBottom?.filePath != nil
+        }
+    }
+
+    /// Show `tab` (a file) as the preview tab, in front. A file that already
+    /// has a tab comes forward instead, preview or kept. Otherwise the preview
+    /// tab, if there is one, is swapped for it in its place, and if there
+    /// isn't one it opens at the end of `region`'s row. The file it replaced,
+    /// or nil.
+    @discardableResult
+    mutating func showPeek(_ tab: SideTab, in region: TabRegion) -> SideTab? {
+        if self.region(of: tab) != nil {
+            bringForward(tab)
+            return nil
+        }
+        // A preview in another row than this one (the list was moved into
+        // its row since) stays where it is, as an ordinary tab.
+        guard let old = peek, let oldRegion = self.region(of: old), oldRegion == region else {
+            peek = nil
+            guard place(tab, in: region, at: .max) else { return nil }
+            bringForward(opened: tab)
+            peek = tab
+            return nil
+        }
+        // In its place, taking over where it came from: closing the preview
+        // still goes back to what was in front before the first file.
+        switch oldRegion {
+        case .main: main = main.map { $0 == old ? tab : $0 }
+        case .side: side = side.map { $0 == old ? tab : $0 }
+        case .bottom: bottom = bottom.map { $0 == old ? tab : $0 }
+        }
+        if activeMain == old { activeMain = tab }
+        if activeSide == old { activeSide = tab }
+        if activeBottom == old { activeBottom = tab }
+        if let opener = openers.removeValue(forKey: old) { openers[tab] = opener }
+        openers = openers.mapValues { $0 == old ? tab : $0 }
+        peek = tab
+        if front(of: oldRegion) != tab { bringForward(opened: tab) } else { show(tab) }
+        return old
+    }
+
+    /// The preview tab, when it is what's in front of a row that's up.
+    var peekInFront: SideTab? {
+        guard let peek, let region = region(of: peek), front(of: region) == peek,
+              showsFile(in: region) else { return nil }
+        return peek
+    }
+
+    /// What a list does with `tab` for `trigger`, the list being in
+    /// `listRegion`'s row:
+    /// - a click or ↑/↓ shows it only while a file is in front where it
+    ///   would show; with the terminal in front it only selects;
+    /// - Space shows it, or closes the preview when that is in front;
+    /// - a double-click shows it, and on the file the preview already shows
+    ///   keeps it, as in VS Code. With a file in front, the double-click's
+    ///   first click has already put it there, so it keeps at once.
+    func peekAction(for tab: SideTab, _ trigger: PeekTrigger,
+                    avoiding listRegion: TabRegion?) -> PeekAction {
+        switch trigger {
+        case .follow:
+            // A file with a tab in the list's own row would come forward
+            // over the list: a click there only selects.
+            if let region = region(of: tab), region == listRegion { return .none }
+            return showsFile(in: peekRegion(for: tab, avoiding: listRegion)) ? .show : .none
+        case .toggle:
+            return peekInFront != nil ? .close : .show
+        case .open:
+            return peek == tab ? .keep : .show
+        }
+    }
+
+    /// `tab` stays: it is no longer the preview tab, and the next file looked
+    /// at gets a tab of its own. A double-click on it, here or in the list.
+    mutating func keep(_ tab: SideTab) {
+        if peek == tab { peek = nil }
+    }
+
     // MARK: - Closing and reopening
 
     /// Close a tab and remember where it was. Never the session's terminal.
@@ -289,6 +394,7 @@ struct WorkspaceTabs: Equatable, Sendable {
         if let active = copy.activeBottom, !copy.bottom.contains(active) { copy.activeBottom = copy.bottom.first }
         if copy.activeBottom == nil { copy.activeBottom = copy.bottom.first }
         if copy.bottom.isEmpty { copy.bottomVisible = false }
+        if let peek = copy.peek, copy.region(of: peek) == nil { copy.peek = nil }
         return copy
     }
 

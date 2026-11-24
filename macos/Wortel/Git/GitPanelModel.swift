@@ -100,6 +100,9 @@ final class GitPanelModel {
     /// does (all of them end in `settle`): a stop on Back and Forward's trail.
     /// Set by AppDelegate.
     @ObservationIgnored var onTabBroughtForward: ((SideTab, Session) -> Void)?
+    /// The preview tab, in front, swapped for the next file in its place:
+    /// not a new stop on Back and Forward's trail, only where you are now.
+    @ObservationIgnored var onTabReplaced: ((SideTab, Session) -> Void)?
     /// Ask whether to close a side terminal that is still running something;
     /// calls back only if the answer is yes. Set by AppDelegate.
     @ObservationIgnored var confirmCloseTerminal: ((_ count: Int, _ proceed: @escaping () -> Void) -> Void)?
@@ -557,6 +560,9 @@ final class GitPanelModel {
     /// Open a file in a preview window. Set by the app layer and handed to each
     /// repo model as it's created, so the Changes list and History can reach it.
     @ObservationIgnored var onOpenPreview: ((URL, PreviewDiffSource, Bool) -> Void)?
+    /// Show a changed file in the preview tab, for a click, ↑/↓ or Space in
+    /// the Changes list. Set by the app layer and handed to each repo model.
+    @ObservationIgnored var onPeek: ((URL, PreviewDiffSource, PeekTrigger) -> Void)?
 
     @ObservationIgnored private var cache: [String: GitRepoModel] = [:]
     /// Each directory's work-tree root, as `resolve` last found it.
@@ -729,7 +735,7 @@ final class GitPanelModel {
     /// Every way a tab comes to the front ends here, and that is what makes
     /// it a stop on Back and Forward's trail (`onTabBroughtForward`). A new
     /// one has to as well, or Back will skip what it showed.
-    private func settle(_ tab: SideTab, in session: Session) {
+    private func settle(_ tab: SideTab, in session: Session, isStop: Bool = true) {
         let region = session.workspace.region(of: tab)
         // `pane` is the column's; a pane picked in another row only counts
         // as the one you last chose.
@@ -749,7 +755,7 @@ final class GitPanelModel {
         case nil:
             break
         }
-        onTabBroughtForward?(tab, session)
+        if isStop { onTabBroughtForward?(tab, session) } else { onTabReplaced?(tab, session) }
     }
 
     /// Bring a tab forward wherever it is, or put it at the end of the
@@ -985,6 +991,48 @@ final class GitPanelModel {
         } else {
             open(tab, in: session.workspace.home(for: tab))
         }
+    }
+
+    // MARK: - The preview tab
+
+    /// Where a file looked at from the list in `list` (a pane tab) would show.
+    private func peekRegion(for tab: SideTab, from list: SideTab, in session: Session) -> TabRegion {
+        let workspace = session.workspace
+        return workspace.peekRegion(for: tab, avoiding: workspace.region(of: list))
+    }
+
+    /// What the list in `list` does with `tab` for `trigger`
+    /// (`WorkspaceTabs.peekAction`).
+    func peekAction(for tab: SideTab, _ trigger: PeekTrigger, from list: SideTab) -> PeekAction {
+        guard let session else { return .none }
+        let workspace = session.workspace
+        return workspace.peekAction(for: tab, trigger, avoiding: workspace.region(of: list))
+    }
+
+    /// The preview tab of this session, in front or not.
+    var peekTab: SideTab? { session?.peekTab }
+
+    /// Show a file looked at from the list in `list` in the preview tab
+    /// (`WorkspaceTabs.showPeek`). The file it replaced is let go of as a
+    /// closed one is.
+    func showPeek(_ tab: SideTab, from list: SideTab) {
+        guard let session else { return }
+        let region = peekRegion(for: tab, from: list, in: session)
+        let isNew = session.workspace.region(of: tab) == nil && session.workspace.peek == nil
+        if isNew { reportOpened(tab, in: region) }
+        let wasInFront = session.workspace.peek.map { peek in
+            session.workspace.region(of: peek).map { session.workspace.front(of: $0) == peek } ?? false
+        } ?? false
+        let replaced = change(session) { $0.showPeek(tab, in: region) }
+        if let replaced { onTabClosed?(replaced) }
+        settle(tab, in: session, isStop: !(replaced != nil && wasInFront))
+    }
+
+    /// A file opened for good (a double-click, in a list or on its tab): if
+    /// it is the preview tab, it stays.
+    func keep(_ tab: SideTab) {
+        guard let session, session.workspace.peek == tab else { return }
+        change(session) { $0.keep(tab) }
     }
 
     /// Show what's at `url`: a browser already on that server comes forward
@@ -1329,6 +1377,9 @@ final class GitPanelModel {
             let model = GitRepoModel(root: root, highlighter: DiffHighlighter.shared)
             model.onOpenPreview = { [weak self] url, diff, hasChanges in
                 self?.onOpenPreview?(url, diff, hasChanges)
+            }
+            model.onPeek = { [weak self] url, diff, trigger in
+                self?.onPeek?(url, diff, trigger)
             }
             model.onRootVanished = { [weak self, weak model] in
                 guard let self, let model else { return }

@@ -110,8 +110,9 @@ terminal, Python Launcher, the Installer) is only as good as the apps
 somebody thought of. A deleted row's line is
 taken from the row after it: the editor opens the file as it is now.
 
-**Previews** (`Wortel/Preview/`) — double-click a file (the tree, a Changes
-row, a file in a commit) or ⌘-click a path in the terminal and it opens as a
+**Previews** (`Wortel/Preview/`) — double-click a file (the tree or a Changes
+row open it in the preview tab, see `workspace-tabs.md`; a file in a commit,
+Open in a row's menu) or ⌘-click a path in the terminal and it opens as a
 **tab** (`SideTab.file`, `PreviewTabs`) in the main area (or wherever you
 last dragged one, per session; ⌥ for the other place), or comes forward where
 it already is: Source, Diff or Rendered Markdown, plus Quick Look for anything

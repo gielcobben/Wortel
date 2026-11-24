@@ -125,6 +125,13 @@ private struct RepoView: View {
     private let listHeightStore = StoredHeight.changesList
     private static let listMin: CGFloat = 80
     private static let diffMin: CGFloat = 120
+    /// Whether the diff is there at all (View ▸ Show Diff in Changes).
+    private let showsDiff = StoredFlag.changesDiff
+    /// The list's height while its divider is being dragged. The drag may
+    /// take the diff below its minimum, all the way to nothing; let go there,
+    /// the diff hides, and the list's stored height stays what it was, for
+    /// when the diff comes back.
+    @State private var dragHeight: CGFloat?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -134,19 +141,37 @@ private struct RepoView: View {
             // Draggable split between the files list and the diff. The list gets
             // an explicit, persisted height; the diff takes whatever's left.
             GeometryReader { geo in
+                // All of it but the divider's line: the diff at nothing.
+                let full = max(Self.listMin, geo.size.height - 1)
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
+                let resting = showsDiff.value
+                    ? min(max(CGFloat(listHeightStore.value), Self.listMin), maxList) : full
                 let listHeight = Binding(
-                    get: { min(max(CGFloat(listHeightStore.value), Self.listMin), maxList) },
-                    set: { listHeightStore.value = Double($0) }
+                    get: { dragHeight ?? resting },
+                    set: { height in
+                        dragHeight = height
+                        // Dragged back up out of the bottom: the diff is
+                        // back as soon as there's room for it.
+                        if !showsDiff.value, geo.size.height - height >= Self.diffMin {
+                            showsDiff.value = true
+                        }
+                    }
                 )
                 VStack(spacing: 0) {
                     changesList
                         .frame(height: listHeight.wrappedValue)
-                    DragDivider(axis: .vertical, length: listHeight, range: Self.listMin...maxList)
-                    diffPane
-                        .frame(maxHeight: .infinity)
+                    DragDivider(axis: .vertical, length: listHeight, range: Self.listMin...full,
+                                showsLine: showsDiff.value || dragHeight != nil,
+                                onEnded: { settleDivider(in: geo.size.height) })
+                    if showsDiff.value {
+                        diffPane
+                            .frame(maxHeight: .infinity)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
                 }
             }
+            .onChange(of: showsDiff.value) { _, _ in repo.loadLeadDiff() }
             // The commit box is a row in Settings; with it off the bar is
             // only there while it has an error to show.
             if showsCommitBar {
@@ -208,6 +233,20 @@ private struct RepoView: View {
             let newFiles = new == 1 ? "untracked file" : "untracked files"
             return "Your changes to \(edited) \(files) will be permanently lost, "
                 + "and \(new) \(newFiles) will be deleted."
+        }
+    }
+
+    /// The divider let go: with less than the diff's minimum left under it,
+    /// the diff hides and the list keeps the height it had; otherwise this is
+    /// the list's height now.
+    private func settleDivider(in height: CGFloat) {
+        guard let dragged = dragHeight else { return }
+        dragHeight = nil
+        if height - dragged < Self.diffMin {
+            showsDiff.value = false
+        } else {
+            showsDiff.value = true
+            listHeightStore.value = Double(dragged)
         }
     }
 
@@ -304,9 +343,13 @@ private struct RepoView: View {
         // selection along with them, and ⌘A takes the lot.
         .keyboardNavigableList(
             focused: $listFocused,
-            move: { repo.selectAdjacent($0) },
+            move: {
+                repo.selectAdjacent($0)
+                repo.peekLead(.follow)
+            },
             extendMove: { repo.selectAdjacent($0, extending: true) },
-            selectAll: { repo.selectAllChanges() })
+            selectAll: { repo.selectAllChanges() },
+            space: { repo.peekLead(.toggle) })
     }
 
     @ViewBuilder
@@ -355,15 +398,19 @@ private struct RepoView: View {
                             repo.extendSelection(to: change.id)
                         } else {
                             repo.select(change.id)
+                            // With a file in front, it shows this one now.
+                            repo.peekLead(.follow)
                         }
                         listFocused = true
                     },
-                    // Double-click opens the file in its own window, showing
+                    // Double-click opens the file in the preview tab, showing
                     // *this* row's diff — the staged or unstaged side, as
-                    // clicked, because the pane separates them and a window that
-                    // showed the other one would contradict the list.
+                    // clicked, because the pane separates them and a tab that
+                    // showed the other one would contradict the list. Clicks
+                    // after it go on in the same tab; the row's menu (Open)
+                    // or a double-click on the tab keeps one.
                     open: {
-                        repo.openPreview(for: change)
+                        repo.peek(change, .open)
                     },
                     action: { rowAction(change) },
                     requestDiscard: { discardCandidates = $0 })

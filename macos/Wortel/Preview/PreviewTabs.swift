@@ -9,10 +9,12 @@ import SwiftUI
 /// tab gets from a slim header of its own, and a tab can still become a window.
 ///
 /// One tab per file: opening a file that's already in a tab brings that tab
-/// forward, wherever it is. There is deliberately no "preview tab" that the
-/// next file replaces (Xcode's rule): the preview window tried that once and
-/// took it out, because "why did this change under me" is the one question a
-/// preview must never raise (docs/file-preview.md).
+/// forward, wherever it is. The one tab that changes its file is the preview
+/// tab (`WorkspaceTabs.peek`), drawn with an italic title so it says so: a
+/// file looked at from Changes or Files while a file is in front takes its
+/// place, as in Xcode and VS Code. The preview window once followed the
+/// selection with a pin, and that was taken out (docs/file-preview.md); this
+/// one never follows over a terminal, and a double-click keeps it.
 ///
 /// Documents are made the first time their tab is shown and let go when it
 /// closes (or its session does, and no other session has the file open); a
@@ -33,6 +35,9 @@ final class PreviewTabs {
     /// A line asked for before the file's document was made (its tab is
     /// made when it is first shown), handed to the document then.
     private var pendingLines: [String: Int] = [:]
+    /// Files whose document opens without counting as a preview opened: the
+    /// preview tab moving on to the next file is one look, not thirty.
+    private var quietOpens: Set<String> = []
     /// Files by when their tab was last in front, newest first: which ones a
     /// row keeps built behind the one in front (`keptBuilt(of:)`).
     private var shown: [String] = []
@@ -57,13 +62,27 @@ final class PreviewTabs {
 
     /// The tab for a file, remembering where its diff comes from.
     func tab(for url: URL, diff: PreviewDiffSource, hasChanges: Bool,
-             mode: PreviewMode? = nil) -> SideTab {
+             mode: PreviewMode? = nil, quiet: Bool = false) -> SideTab {
         let path = url.resolvingSymlinksInPath().standardizedFileURL.path
         if documents[path] == nil {
             sources[path] = (diff, hasChanges)
             arrivingModes[path] = mode
+            if quiet { quietOpens.insert(path) } else { quietOpens.remove(path) }
         }
         return .file(path)
+    }
+
+    /// Where an open file's diff comes from, and the view it's on.
+    func diffSource(of path: String) -> PreviewDiffSource? {
+        documents[path]?.document.diffSource ?? sources[path]?.diff
+    }
+
+    func mode(of path: String) -> PreviewMode? { documents[path]?.document.mode }
+
+    /// A file's tab, already open, on another side of its diff (`retarget`).
+    func retarget(_ path: String, diff: PreviewDiffSource, hasChanges: Bool) {
+        sources[path] = (diff, hasChanges)
+        documents[path]?.document.retarget(diff)
     }
 
     /// The document for a file's tab, made on first use.
@@ -76,7 +95,9 @@ final class PreviewTabs {
         let mode = arrivingModes.removeValue(forKey: path).flatMap {
             PreviewMode.available(for: url, hasDiffSource: source.diff.exists).contains($0) ? $0 : nil
         } ?? inferred
-        Telemetry.capture(.previewOpened(mode: PreviewKind(mode), where: .tab))
+        if quietOpens.remove(path) == nil {
+            Telemetry.capture(.previewOpened(mode: PreviewKind(mode), where: .tab))
+        }
         let entry = Entry(
             document: PreviewDocument(url: url, diffSource: source.diff, mode: mode,
                                       highlighter: highlighter),
@@ -121,6 +142,7 @@ final class PreviewTabs {
         sources[path] = nil
         arrivingModes[path] = nil
         pendingLines[path] = nil
+        quietOpens.remove(path)
         shown.removeAll { $0 == path }
     }
 

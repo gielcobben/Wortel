@@ -637,6 +637,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
             self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
         }
+        let files = SideTab.pane(.files), changes = SideTab.pane(.changes)
+        // A list's click, Space or double-click. ⌥-double-click still opens
+        // the file in the other place, as a tab to keep.
+        fileTree.onPeek = { [weak self] url, trigger in
+            guard let self else { return }
+            if trigger == .open, Self.optionClicked { return self.openPreview(url) }
+            guard let generation = self.peeks(url, trigger, from: files) else { return }
+            self.openPreview(url, placement: .peek(from: files, generation: generation))
+        }
+        gitPanel.onPeek = { [weak self] url, diff, trigger in
+            guard let self else { return }
+            if trigger == .open, Self.optionClicked {
+                return self.presentPreview(url, diff: diff, hasChanges: true)
+            }
+            guard let generation = self.peeks(url, trigger, diff: diff, from: changes) else { return }
+            self.presentPreview(url, diff: diff, hasChanges: true,
+                                placement: .peek(from: changes, generation: generation))
+        }
         gitPanel.onTabClosed = { [weak self] tab in
             if let path = tab.filePath { self?.releaseFile(path) }
             if let id = tab.browserID { BrowserTabs.shared.forget(id) }
@@ -647,6 +665,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Every tab brought forward is a stop on Back and Forward's trail.
         gitPanel.onTabBroughtForward = { [weak manager] tab, session in
             manager?.noteTabBroughtForward(tab, in: session)
+        }
+        gitPanel.onTabReplaced = { [weak manager] tab, session in
+            manager?.noteTabReplaced(tab, in: session)
         }
         // Bring Here: an archived session's worktree is in use too, waiting
         // for it to come back.
@@ -1311,6 +1332,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private enum FilePlacement {
         case home(elsewhere: Bool)
         case dropped(TabRegion, index: Int)
+        /// The preview tab, looked at from the list in this pane tab. Only
+        /// while `generation` is the latest: a file outside the panel's repo
+        /// is looked up first, and a lookup finishing after a newer click
+        /// must not put back the file before it.
+        case peek(from: SideTab, generation: Int)
     }
 
     /// Open a file in a preview window, working out what its diff should be.
@@ -1422,7 +1448,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
                                 hasChanges: Bool = false, mode: PreviewMode? = nil,
                                 placement: FilePlacement? = nil, line: Int? = nil) {
-        let tab = previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode)
+        var mode = mode
+        var quiet = false
+        if case .peek(_, let generation)? = placement {
+            guard generation == peekGeneration else { return }
+            if let previous = gitPanel.peekTab?.filePath {
+                let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+                // Going through diffs, the next file opens on its diff too.
+                if mode == nil, previewTabs.mode(of: previous) == .diff { mode = .diff }
+                // The preview moving on is the same look, not a new one.
+                quiet = true
+                // The same file from the list's other side (staged, then
+                // not): the diff that row shows, in the same tab.
+                if previous == path, let shown = previewTabs.diffSource(of: path),
+                   !shown.showsSameSide(as: diff) {
+                    previewTabs.retarget(path, diff: diff, hasChanges: hasChanges)
+                }
+            }
+        }
+        let tab = previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode, quiet: quiet)
         place(tab, placement ?? .home(elsewhere: Self.optionClicked))
         // Only for a tab that is there: a line kept for one that never opened
         // would land on the next, unrelated open of the file.
@@ -1433,8 +1477,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func place(_ tab: SideTab, _ placement: FilePlacement) {
         switch placement {
-        case .home(let elsewhere): gitPanel.openAtHome(tab, elsewhere: elsewhere)
+        case .home(let elsewhere):
+            gitPanel.openAtHome(tab, elsewhere: elsewhere)
+            // Opened on purpose: the preview tab showing it stays.
+            gitPanel.keep(tab)
         case .dropped(let region, let index): gitPanel.openDropped(tab, in: region, at: index)
+        case .peek(let list, let generation):
+            guard generation == peekGeneration else { return }
+            gitPanel.showPeek(tab, from: list)
+        }
+    }
+
+    /// The latest list request for the preview tab (`FilePlacement.peek`).
+    private var peekGeneration = 0
+
+    /// A list asking to show a file in the preview tab; the rules are
+    /// `WorkspaceTabs.peekAction`. The generation to show it with, or nil
+    /// when there is nothing to show. `diff` is the row's, from Changes: a
+    /// double-click on the previewed file's other side shows that side
+    /// rather than keeping the one on screen.
+    private func peeks(_ url: URL, _ trigger: PeekTrigger, diff: PreviewDiffSource? = nil,
+                       from list: SideTab) -> Int? {
+        peekGeneration += 1
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let tab = SideTab.file(path)
+        switch gitPanel.peekAction(for: tab, trigger, from: list) {
+        case .none:
+            return nil
+        case .show:
+            return peekGeneration
+        case .keep:
+            if let diff, let shown = previewTabs.diffSource(of: path), !shown.showsSameSide(as: diff) {
+                return peekGeneration
+            }
+            gitPanel.keep(tab)
+            gitPanel.openAtHome(tab)
+            return nil
+        case .close:
+            if let peek = gitPanel.peekTab { gitPanel.requestClose(peek) }
+            return nil
         }
     }
 
@@ -1617,6 +1698,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// is flipped while working, as a Finder window's sorting is.
     @objc func toggleSortUnreadFirst(_ sender: Any?) {
         manager.sortUnreadFirst.toggle()
+    }
+
+    /// View ▸ Show Diff in Changes: the diff under the Changes list, or the
+    /// list on its own. The same switch as dragging the divider to the bottom.
+    @objc func toggleChangesDiff(_ sender: Any?) {
+        StoredFlag.changesDiff.value.toggle()
     }
 
     /// ⇧⌘L: a new browser in the row you're in.
@@ -2086,6 +2173,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleSortUnreadFirst(_:)) {
             menuItem.state = manager.sortUnreadFirst ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(toggleChangesDiff(_:)) {
+            menuItem.state = StoredFlag.changesDiff.value ? .on : .off
             return true
         }
         if menuItem.action == #selector(toggleSessionSidebar(_:)) {

@@ -380,6 +380,12 @@ final class GhosttyRuntime {
         }
         defer { allocations.forEach { free($0) } }
 
+        // Claude Code in its fullscreen renderer unless the person chose one
+        // (`ClaudeRenderer`). Into `environment`, which both the keeper's
+        // spawn and the exec backend below add to the shell's. The session's
+        // own block wins, though it never sets this.
+        let environment = environment.merging(ClaudeRenderer.forNewShell()) { session, _ in session }
+
         if let workingDirectory { cfg.working_directory = dup(workingDirectory) }
         // Auto-run a resume command (e.g. "claude --continue") in a restored
         // session whose agent was still running at quit. Fed as startup input.

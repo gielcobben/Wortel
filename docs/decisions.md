@@ -1751,3 +1751,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `main` too. The Ghostty build is saved as soon as it exists rather than
   only when every test passes: no run had reused one, so every run spent
   five minutes building it again. A hung run stops at 30 minutes, not 60.
+- **2026-11-24. An agent closes its own session with `wortel close`.** Told
+  "delete this worktree", an agent reached for `git worktree remove` from
+  inside the worktree, lost the path between messages twice, and needed
+  `--force` for the untracked files it had copied in, while closing the row
+  in Wortel would have kept the worktree for those same files. Now it runs
+  `wortel close` and finishes its reply: the session closes when the turn
+  ends (not cut off mid-sentence, as `cd` waits), and the worktree goes as a
+  click's would, except that uncommitted files are asked about at once on
+  the session's window instead of keeping it, and a yes trashes the files
+  shown (by path; a new one keeps it). Return keeps: the sheet arrives
+  unasked, so trashing takes a click. Trash, never `rm`, and the branch only when Wortel made it
+  and nothing on it is unique. One verb, no `--force` and no `--session`: a
+  flag the agent picks would be the agent deciding to throw away files, and
+  the question puts that with the person.

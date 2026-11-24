@@ -600,6 +600,8 @@ targets:
       - path: Wortel/Sessions/ChatFolder.swift
       # What `wortel cd` types and tells the agent that asked.
       - path: Wortel/Sessions/SessionMove.swift
+      # What `wortel close` waits for and tells the agent that asked.
+      - path: Wortel/Sessions/SessionClose.swift
       # When the Claude Code skill is installed, updated, or left alone.
       - path: Wortel/Sessions/AgentSkill.swift
       # Which conversation Claude, Pi or Codex is in, read from each agent's

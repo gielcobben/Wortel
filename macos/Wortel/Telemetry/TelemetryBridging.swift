@@ -81,6 +81,7 @@ extension CommandVerb {
         case .mark: self = .mark
         case .remind: self = .remind
         case .changeDirectory: self = .cd
+        case .close: self = .close
         case .list: self = .list
         case .read: self = .read
         case .send: self = .send

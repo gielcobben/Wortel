@@ -192,6 +192,7 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.mark(session: nil, colour: "red")).rawValue, "mark")
         XCTAssertEqual(CommandVerb(.remind(session: nil, at: 0)).rawValue, "remind")
         XCTAssertEqual(CommandVerb(.changeDirectory(session: nil, path: "/secret/repo")).rawValue, "cd")
+        XCTAssertEqual(CommandVerb(.close(session: nil)).rawValue, "close")
         XCTAssertEqual(CommandVerb(.list(caller: nil)).rawValue, "list")
         XCTAssertEqual(CommandVerb(.read(session: "x", lines: nil)).rawValue, "read")
         XCTAssertEqual(CommandVerb(.send(session: "x", text: "secret prompt", enter: true)).rawValue, "send")

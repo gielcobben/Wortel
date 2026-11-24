@@ -158,6 +158,8 @@ final class GitRepoModel {
     /// Open a file in a preview window. Set by `GitPanelModel`, which forwards
     /// to the app layer — the panes hold a repo, not the window machinery.
     @ObservationIgnored var onOpenPreview: ((URL, PreviewDiffSource, Bool) -> Void)?
+    /// Show a change in the preview tab (`GitPanelModel.onPeek`).
+    @ObservationIgnored var onPeek: ((URL, PreviewDiffSource, PeekTrigger) -> Void)?
 
     /// FSEvents watcher on the work tree; keeps the changes list live when the
     /// repo changes out of band (an external commit, an agent editing files).
@@ -318,6 +320,22 @@ final class GitRepoModel {
     func openPreview(for change: GitFileChange) {
         let url = URL(fileURLWithPath: root).appendingPathComponent(change.path)
         onOpenPreview?(url, .change(root: root, change: change), true)
+    }
+
+    /// The selected change in the preview tab: for a click or ↑/↓ (only
+    /// while a file is in front, and only with one row selected: picking
+    /// several is about staging them, not reading them), or for Space.
+    func peekLead(_ trigger: PeekTrigger) {
+        if trigger == .follow, selection.ids.count > 1 { return }
+        guard let id = selection.lead,
+              let change = status.changes.first(where: { $0.id == id }) else { return }
+        peek(change, trigger)
+    }
+
+    /// A change in the preview tab, on that row's side of the diff.
+    func peek(_ change: GitFileChange, _ trigger: PeekTrigger) {
+        let url = URL(fileURLWithPath: root).appendingPathComponent(change.path)
+        onPeek?(url, .change(root: root, change: change), trigger)
     }
 
     /// A file within a commit, in its own window, showing that commit's diff for
@@ -861,7 +879,7 @@ final class GitRepoModel {
     /// pane follows one row even when many are selected: it's the row you last
     /// touched, and the alternative — blanking it whenever a second row joins —
     /// takes the diff away at exactly the moment you're deciding what to discard.
-    private func loadLeadDiff() {
+    func loadLeadDiff() {
         guard let id = selection.lead,
               let change = status.changes.first(where: { $0.id == id }) else {
             diff = nil
@@ -872,6 +890,13 @@ final class GitRepoModel {
     }
 
     private func loadDiff(for change: GitFileChange) async {
+        // Hidden (View ▸ Show Diff in Changes): nothing to show it in, so no
+        // git for it. Shown again, the panel loads the lead's.
+        guard StoredFlag.changesDiff.value else {
+            diff = nil
+            imageDiff = nil
+            return
+        }
         if change.isImage {
             let (old, new) = await GitService.imageData(root: root, change: change)
             // A newer selection may have won while we were awaiting — drop stale.

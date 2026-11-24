@@ -327,6 +327,13 @@ final class SessionManager {
         currentTabs[session.id] = tab
     }
 
+    /// The preview tab moved on to another file in its place: where you are
+    /// now, but not a stop of its own. Thirty files looked through would
+    /// otherwise be thirty stops for Back, none of them still open.
+    func noteTabReplaced(_ tab: SideTab, in session: Session) {
+        currentTabs[session.id] = tab
+    }
+
     /// Step back, or forward, to the nearest place still open. `bringForward`
     /// puts the place's tab in front of its session once the session is
     /// selected; it is the panel's to do, and the manager doesn't own it.

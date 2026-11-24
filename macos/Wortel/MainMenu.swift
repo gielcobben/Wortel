@@ -526,6 +526,9 @@ enum MainMenu {
         // ↑/↓ navigate it without reaching for the mouse.
         let focusList = viewMenu.addItem(withTitle: "Focus List", action: #selector(AppDelegate.focusSourceControlList(_:)), keyEquivalent: "l")
         focusList.keyEquivalentModifierMask = [.command, .option]
+        // A checkmark, flipped while working: the same as dragging the diff's
+        // divider to the bottom of the Changes pane, and back up.
+        viewMenu.addItem(withTitle: "Show Diff in Changes", action: #selector(AppDelegate.toggleChangesDiff(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
         // ⇧⌘P, VS Code's command palette (which VS Code also keeps in View):

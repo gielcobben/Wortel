@@ -131,6 +131,9 @@ final class Session: Identifiable {
     /// Where each recently opened tab came from: `WorkspaceTabs.openers`. Not
     /// persisted.
     @ObservationIgnored var tabOpeners: [SideTab: SideTab] = [:]
+    /// The preview tab, whose title is italic: `WorkspaceTabs.peek`. Observed
+    /// for that title; not persisted.
+    var peekTab: SideTab?
 
     /// Every terminal tab id the session holds, wherever it sits.
     var terminalTabIDs: [UUID] { workspace.terminalIDs }
@@ -144,7 +147,7 @@ final class Session: Identifiable {
                           side: sideTabs, activeSide: activeSideTab, sideVisible: gitPanelVisible,
                           bottom: bottomTabs, activeBottom: activeBottomTab,
                           bottomVisible: bottomVisible, closed: closedTabs, habits: tabHabits,
-                          openers: tabOpeners)
+                          openers: tabOpeners, peek: peekTab)
         }
         set {
             if mainTabs != newValue.main { mainTabs = newValue.main }
@@ -158,6 +161,7 @@ final class Session: Identifiable {
             closedTabs = newValue.closed
             tabHabits = newValue.habits
             tabOpeners = newValue.openers
+            if peekTab != newValue.peek { peekTab = newValue.peek }
         }
     }
     /// Full title reported by the shell (user@host:cwd, or the running

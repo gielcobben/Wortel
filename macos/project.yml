@@ -502,6 +502,8 @@ targets:
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/DeveloperTools.swift
       - path: Wortel/Git/GitRepoModel.swift
+      # GitRepoModel reads whether the Changes diff is shown (StoredFlag).
+      - path: Wortel/Git/StoredHeight.swift
       - path: Wortel/Git/GitMessage.swift
       - path: Wortel/Git/GitRepoWatcher.swift
       - path: Wortel/Git/CommitMessageGenerator.swift

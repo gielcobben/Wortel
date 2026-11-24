@@ -15,6 +15,12 @@ struct DragDivider: View {
     @Binding var length: CGFloat
     let range: ClosedRange<CGFloat>
     var invert: Bool = false
+    /// Whether the hairline is drawn. A divider pushed to the very edge of
+    /// its pane (the Changes diff, hidden) is still there to drag, but drawn
+    /// it would double the edge's own line.
+    var showsLine: Bool = true
+    /// The drag let go: for a pane that snaps shut past a point.
+    var onEnded: (() -> Void)? = nil
 
     /// Length captured at gesture start, so translation is applied to a stable
     /// base rather than compounding each `onChanged`.
@@ -28,7 +34,7 @@ struct DragDivider: View {
         // A hairline divider with an invisible, wider hit area so it's easy to
         // grab without a visible fat bar.
         Rectangle()
-            .fill(Color(nsColor: .separatorColor))
+            .fill(showsLine ? Color(nsColor: .separatorColor) : .clear)
             .frame(
                 width: axis == .horizontal ? thickness : nil,
                 height: axis == .vertical ? thickness : nil
@@ -62,7 +68,10 @@ struct DragDivider: View {
                 let delta = invert ? -raw : raw
                 length = min(max(base + delta, range.lowerBound), range.upperBound)
             }
-            .onEnded { _ in start = nil }
+            .onEnded { _ in
+                start = nil
+                onEnded?()
+            }
     }
 
     private func updateCursor(_ inside: Bool) {

@@ -38,3 +38,27 @@ final class StoredHeight {
         value = UserDefaults.standard.object(forKey: key) as? Double ?? fallback
     }
 }
+
+/// A switch the person flips while working, kept across launches: plain
+/// defaults, not `@AppStorage`, for the reason on `StoredHeight`.
+@Observable
+final class StoredFlag {
+    /// The diff under the Changes list. Hidden by View ▸ Show Diff in Changes
+    /// or by dragging its divider to the bottom; while it is, a selected row
+    /// costs no `git diff`.
+    static let changesDiff = StoredFlag(key: "git.showsChangesDiff", fallback: true)
+
+    @ObservationIgnored private let key: String
+
+    var value: Bool {
+        didSet {
+            guard value != oldValue else { return }
+            UserDefaults.standard.set(value, forKey: key)
+        }
+    }
+
+    private init(key: String, fallback: Bool) {
+        self.key = key
+        value = UserDefaults.standard.object(forKey: key) as? Bool ?? fallback
+    }
+}

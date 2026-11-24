@@ -38,8 +38,12 @@ final class PreviewDocument {
     /// file reached through an alias is worth saying out loud, since what you
     /// edit is the target and the tree gave no hint of it.
     let requestedURL: URL
-    /// Where this window's diff comes from; `.none` outside a repo.
-    let diffSource: PreviewDiffSource
+    /// Where this window's diff comes from; `.none` outside a repo. Changed
+    /// only by `retarget`: the same file's row on the other side of Changes.
+    private(set) var diffSource: PreviewDiffSource
+    /// Bumped by `retarget`, so a diff still loading for the old side is
+    /// dropped when it lands.
+    @ObservationIgnored private var diffGeneration = 0
 
     /// What the window is showing. Set by its toolbar; loads on demand.
     var mode: PreviewMode {
@@ -284,10 +288,24 @@ final class PreviewDocument {
 
     // MARK: - Diff
 
+    /// Show the diff from `source` instead: the same file, from its row on
+    /// the other side of the Changes list (staged, then not). The file itself
+    /// is unchanged, so only the diff is loaded again.
+    func retarget(_ source: PreviewDiffSource) {
+        guard source != diffSource else { return }
+        diffSource = source
+        diffGeneration += 1
+        diffLoaded = false
+        diffLines = []
+        diffHighlights = [:]
+        loadCurrentMode()
+    }
+
     private func loadDiff() {
         let source = diffSource
         guard source.exists else { return }
         let token = revision
+        let generation = diffGeneration
         Task { [weak self] in
             // Both the git call *and* the parse happen off the main actor. A
             // `Task {}` started here would otherwise inherit this class's
@@ -295,7 +313,7 @@ final class PreviewDocument {
             // the git panel documents: a regenerated lock file's 51MB patch took
             // 1.2s, terminal included.
             let parsed = await Self.parsedPatch(for: source)
-            guard let self, token == self.revision else { return }
+            guard let self, token == self.revision, generation == self.diffGeneration else { return }
             self.diffLines = parsed.lines
             self.diffIsBinary = parsed.isBinary
             self.diffTruncated = parsed.truncated

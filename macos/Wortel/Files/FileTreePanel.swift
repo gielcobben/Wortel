@@ -75,6 +75,7 @@ struct FileTreePanel: View {
                             // session means walking the *shell's* history.
                             select: {
                                 model.select(row.node)
+                                model.peekSelected(.follow)
                                 listFocused = true
                             },
                             toggle: {
@@ -101,7 +102,13 @@ struct FileTreePanel: View {
                 withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
             }
         }
-        .keyboardNavigableList(focused: $listFocused) { model.selectAdjacent($0) }
+        .keyboardNavigableList(
+            focused: $listFocused,
+            move: {
+                model.selectAdjacent($0)
+                model.peekSelected(.follow)
+            },
+            space: { model.peekSelected(.toggle) })
         // ←/→ walk the tree's shape rather than its rows: → opens a directory
         // (or steps into an open one), ← closes it, and ← on a leaf goes to the
         // parent — the standard outline behaviour.
@@ -190,6 +197,7 @@ struct FileTreePanel: View {
             model.expandRecursively(node)
         } else {
             model.selectAdjacent(1)
+            model.peekSelected(.follow)
         }
     }
 
@@ -212,6 +220,7 @@ struct FileTreePanel: View {
         typeAhead = now < typeAheadExpiry ? typeAhead + characters : characters
         typeAheadExpiry = now.addingTimeInterval(1)
         model.selectMatching(prefix: typeAhead)
+        model.peekSelected(.follow)
     }
 
     private func openSelected() {
@@ -221,17 +230,16 @@ struct FileTreePanel: View {
 
     // MARK: - Actions
 
-    /// ⏎ or a double-click. A directory toggles; a Markdown file goes to the
-    /// in-app preview (which takes the column over, exactly as clicking a `.md`
-    /// path in the terminal does); anything else goes to whatever app owns it.
+    /// ⏎ or a double-click. A directory toggles; a file opens in the preview
+    /// tab in the main area.
     private func open(_ node: FileNode) {
         model.select(node)
         if node.isDirectory {
             model.toggleExpansion(node)
         } else {
-            // Every file goes to a preview window now, Markdown included — it
-            // opens rendered rather than taking the inspector's column over.
-            model.onOpenPreview?(node.url)
+            // Into the preview tab, as Changes does: the clicks after it go
+            // on in the same tab. The row's menu (Open) opens one to keep.
+            model.onPeek?(node.url, .open)
         }
     }
 

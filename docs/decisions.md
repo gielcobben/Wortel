@@ -1373,6 +1373,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   would tell the panes it worked. Not reproduced on a Mac without the tools: the
   detection is tested, the stub's dialog is Apple's documented behaviour.
 
+- **2026-11-24. The diff under the Changes list can be put away**: drag its
+  divider to the bottom (less than the diff's 120pt minimum left, it snaps
+  shut) or untick View ▸ Show Diff in Changes; both are the same switch. A
+  checkmark, not a Settings row, because it is flipped while working. While
+  it's hidden a selected row runs no `git diff` (`StoredFlag.changesDiff`,
+  checked in `GitRepoModel.loadDiff`). It was kept rather than removed for
+  reading a diff without the main area changing.
+
 ## Files, previews, browser
 
 `macos/docs/file-preview.md` is the full record.
@@ -1443,6 +1451,24 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+- **2026-11-24. A preview tab: a file looked at from Changes or Files while
+  a file is in front takes the place of the one before it**, in one tab with
+  an italic title, as in Xcode and VS Code. A click or ↑/↓ in the list does
+  it, Space opens it (Finder's key) or closes it when it's in front, and so
+  does a double-click in the list, from anywhere: a double-click that opened
+  a kept tab made the next click open a second tab beside it. A double-click
+  on the file the preview already shows keeps it, as in VS Code (with a
+  file in front that is any double-click, since its first click put the file
+  there); so do a double-click on the italic tab, a drag, or Open in the
+  row's menu. With the
+  terminal (or a page) in front a click only selects: the main area also
+  holds the agent you're watching, and a click to stage a file must not
+  cover it. Why this isn't the follow-the-selection window dropped on
+  2026-08-06: that was a window with a pin, and nothing on screen said which
+  window would change; here the italic title says it, it's the convention
+  people already have from their editors, and it never comes up over a
+  terminal by itself. Selecting several rows never moves it. After a
+  relaunch it is an ordinary tab (`WorkspaceTabs.peek`).
 
 ## Running processes
 

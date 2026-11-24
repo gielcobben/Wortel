@@ -416,7 +416,7 @@ enum TabArea: String, CaseIterable {
     case bottom
 }
 
-/// ⌘P (sessions and commands) or ⇧⌘P (commands only).
+/// ⌘P (sessions, files and commands) or ⇧⌘P (commands only).
 enum PaletteMode: String, CaseIterable {
     case sessions
     case commands
@@ -425,11 +425,12 @@ enum PaletteMode: String, CaseIterable {
 }
 
 /// How the palette closed: a session picked, a command run, a prompt typed
-/// in, or none of them.
+/// in, a file opened (never which), or none of them.
 enum PaletteResult: String, CaseIterable {
     case session
     case command
     case prompt
+    case file
     case dismissed
 }
 

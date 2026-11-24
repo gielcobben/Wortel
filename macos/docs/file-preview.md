@@ -17,6 +17,9 @@ reason — this is the feature most likely to grow teeth:
 > No project search. No splits. No tabs within a document. No file management.
 > One window per file, opened from where you already were.
 
+"No project search" is searching inside files. Going to a file by its name
+is ⌘P (since 2026-11-24): it is how you open one from where you already are.
+
 Editing is deliberately out of scope for now. If it ever arrives it is ⌘S and
 nothing else, gated behind a modification check so it can never clobber an agent
 mid-run.

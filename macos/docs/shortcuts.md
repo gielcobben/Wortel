@@ -39,7 +39,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | Back / forward through the sessions you've been on | ⌃⌘[ / ⌃⌘] | Safari, Chrome (⌘[ / ⌘], with ⌃ added because those are the areas here) |
 | Session 1 to 9 | ⌘1 to ⌘9 | Codex, cmux |
 | Next waiting session | ⌥⇧⌘↓ (also ⌥⌘]) | Slack (⌥⇧↓, the next unread) |
-| Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
+| Go to a session or a file, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
 | Run a command (the palette, commands only) | ⇧⌘P | VS Code (command palette) |
 | Find a prompt you typed to an agent, and type it in again | ⌘Y | Safari, Chrome (History) |
 | Rename session | ⌥⌘R | Codex |
@@ -187,8 +187,8 @@ into the main area otherwise.
   day, which is also how Codex and cmux spend those keys. So the git apps' ⌘1
   and ⌘2 for Changes and History are ⌃⌘1 and ⌃⌘2 here.
 - **⌘, is Settings**, as in every Mac app: a short window of switches. Keys
-  are not among them; `wortel.conf` decides those. ⌘P finds any session or
-  command, ⇧⌘P commands only, and so does the Help menu's search field.
+  are not among them; `wortel.conf` decides those. ⌘P finds any session, file
+  or command, ⇧⌘P commands only, and so does the Help menu's search field.
 
 ## Deliberately not used
 

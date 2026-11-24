@@ -499,6 +499,14 @@ targets:
       - path: Wortel/UI/WindowMovability.swift
       - path: Wortel/Browser/BrowserAddress.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
+      # ⌘P's files: the index, the ranking (pinned against real paths, since
+      # "the one I meant was third" fails nothing else), the walk's limits
+      # (never the disk, never a symlink, never deeper than five) and what
+      # an event in a folder changes.
+      - path: Wortel/Files/FileIndex.swift
+      - path: Wortel/Files/FileMatch.swift
+      - path: Wortel/Files/FileListing.swift
+      - path: Wortel/Files/FileIndexStore.swift
       - path: Wortel/Git/GitService.swift
       - path: Wortel/Git/DeveloperTools.swift
       - path: Wortel/Git/GitRepoModel.swift

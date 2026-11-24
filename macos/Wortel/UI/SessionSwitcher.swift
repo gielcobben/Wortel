@@ -2,7 +2,9 @@ import AppKit
 import SwiftUI
 
 /// ⌘P: go to a session by typing a few letters of its name, its folder, its
-/// branch or its directory, or run any command in the menus. VS Code's,
+/// branch or its directory, open a file in the session's repository or
+/// folder (`FileSearchModel`, under the sessions once something is typed),
+/// or run any command in the menus. VS Code's,
 /// Cursor's and Zed's quick open with cmdk's commands mixed in; ⌘K, the
 /// ChatGPT app's, is "clear screen" in a terminal. ⇧⌘P: commands only, as
 /// VS Code's command palette. ⌘Y: the prompts typed to agents
@@ -21,6 +23,9 @@ final class SessionSwitcher {
     private let manager: SessionManager
     /// Types a prompt from the history into the selected session's terminal.
     private let insert: (String) -> Void
+    /// Opens a file found in ⌘P: its path, the line typed after it, and
+    /// whether ⌥ was held (the other place).
+    private let openFile: (URL, Int?, Bool) -> Void
     private var panel: SwitcherPanel?
     /// Which palette is open, until it closes and is counted
     /// (`Telemetry` palette_used): nil once reported.
@@ -29,9 +34,11 @@ final class SessionSwitcher {
     /// its height changes.
     private var top: CGFloat = 0
 
-    init(manager: SessionManager, insert: @escaping (String) -> Void) {
+    init(manager: SessionManager, insert: @escaping (String) -> Void,
+         openFile: @escaping (URL, Int?, Bool) -> Void) {
         self.manager = manager
         self.insert = insert
+        self.openFile = openFile
     }
 
     var isShown: Bool { panel?.isVisible ?? false }
@@ -59,6 +66,9 @@ final class SessionSwitcher {
         // What's put away, found by typing (`OpenTarget`): read now, from
         // what the manager already knows, no git.
         let targets = commandsOnly || prompts != nil ? OpenTarget.Inputs() : manager.switcherTargets()
+        // The files of the session's folder (its repository, or the folder
+        // outside one): started now, ranked once something is typed.
+        let files = commandsOnly || prompts != nil ? nil : FileSearchModel(directory: manager.branchSource())
         let panel = SwitcherPanel(
             contentRect: NSRect(x: 0, y: 0, width: SwitcherView.width, height: SwitcherView.fieldHeight),
             // Borderless and nothing else: with `.fullSizeContentView` the
@@ -87,6 +97,7 @@ final class SessionSwitcher {
             commandsOnly: commandsOnly,
             targets: targets,
             prompts: prompts,
+            files: files,
             open: { [weak self] action in
                 self?.report(.session)
                 self?.close()
@@ -96,6 +107,13 @@ final class SessionSwitcher {
                 self?.report(.session)
                 self?.close()
                 self?.manager.selectedID = id
+            },
+            openFile: { [weak self] path, line in
+                // ⌥ read now, at the key: the open lands after the close.
+                let elsewhere = NSApp.currentEvent?.modifierFlags.contains(.option) ?? false
+                self?.report(.file)
+                self?.close()
+                self?.openFile(URL(fileURLWithPath: path), line, elsewhere)
             },
             insertPrompt: { [weak self] text in
                 self?.report(.prompt)
@@ -302,9 +320,12 @@ private struct SwitcherView: View {
     let targets: OpenTarget.Inputs
     /// The prompt history: its rows instead of sessions and commands.
     let prompts: PromptHistoryModel?
+    /// The files of the session's folder, under the sessions once typed.
+    let files: FileSearchModel?
     /// An archived session or a free worktree chosen.
     let open: (OpenTarget.Action) -> Void
     let pick: (UUID) -> Void
+    let openFile: (String, Int?) -> Void
     let insertPrompt: (String) -> Void
     let run: (PaletteCommand) -> Void
     let cancel: () -> Void
@@ -316,18 +337,24 @@ private struct SwitcherView: View {
     /// history, read after the panel opens) leave it on the row you chose:
     /// Return does what it said when you looked.
     @State private var highlightedID: String?
+    /// Return was pressed while the files for what's typed were still being
+    /// ranked: it acts when they land (or half a second on), so a quick
+    /// Return never picks a row that was about to move down.
+    @State private var submitWaiting = false
 
     enum Row: Identifiable {
         case session(SessionSwitcherMatch.Candidate)
         case command(PaletteCommand)
         case target(OpenTarget.Choice)
         case prompt(PromptHistory.Match)
+        case file(FileSearchModel.Match)
         var id: String {
             switch self {
             case .session(let c): return c.id.uuidString
             case .command(let c): return c.id.uuidString
             case .target(let c): return c.id
             case .prompt(let m): return "prompt-\(m.id)"
+            case .file(let m): return m.id
             }
         }
     }
@@ -335,6 +362,11 @@ private struct SwitcherView: View {
     private var targetRows: [Row] {
         guard !commandsOnly, prompts == nil else { return [] }
         return OpenTarget.choices(for: query, in: targets).map(Row.target)
+    }
+
+    private var fileRows: [Row] {
+        guard !query.isEmpty else { return [] }
+        return files?.matches.map(Row.file) ?? []
     }
 
     private var promptRows: [Row] {
@@ -368,8 +400,9 @@ private struct SwitcherView: View {
         let prompts = promptRows
         let sessions = sessionRows
         let targets = targetRows
+        let files = fileRows
         let commands = commandRows
-        let rows = prompts + sessions + targets + commands
+        let rows = prompts + sessions + targets + files + commands
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: self.prompts != nil ? "clock.arrow.circlepath"
@@ -378,8 +411,8 @@ private struct SwitcherView: View {
                     .foregroundStyle(.secondary)
                 PaletteField(text: $query,
                              placeholder: self.prompts != nil ? "Find a prompt you typed to an agent"
-                                : commandsOnly ? "Run a command" : "Go to a session or run a command",
-                             submit: { activate(rows) },
+                                : commandsOnly ? "Run a command" : "Go to a session or a file, or run a command",
+                             submit: { submit() },
                              cancel: cancel,
                              move: { move($0, in: rows.count) == .handled })
                     .frame(height: 28)
@@ -400,13 +433,18 @@ private struct SwitcherView: View {
                             ForEach(groups(targets, from: prompts.count + sessions.count), id: \.offset) { group in
                                 section(group.title, rows: group.rows, offset: group.offset)
                             }
+                            section(files.isEmpty ? nil : self.files?.isPartial == true
+                                        ? "Files (part of this folder)" : "Files",
+                                    rows: files, offset: prompts.count + sessions.count + targets.count)
                             section(commands.isEmpty || commandsOnly ? nil : "Commands",
-                                    rows: commands, offset: prompts.count + sessions.count + targets.count)
+                                    rows: commands,
+                                    offset: prompts.count + sessions.count + targets.count + files.count)
                         }
                         .padding(Self.listPadding)
                     }
                     .scrollIndicators(.never)
-                    .frame(height: listHeight(sessions: sessions.count, commands: commands.count,
+                    .frame(height: listHeight(sessions: sessions.count, files: files.count,
+                                              commands: commands.count,
                                               groupHeaders: (groups(prompts, from: 0) + groups(targets, from: 0))
                                                   .filter { $0.title != nil }.count,
                                               grouped: prompts.count + targets.count))
@@ -442,10 +480,15 @@ private struct SwitcherView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resize($0) }
         .frame(maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea()
+        .onChange(of: self.files?.isPending) { _, pending in
+            if pending == false { finishSubmit() }
+        }
         .onChange(of: query) { _, query in
+            submitWaiting = false
             highlighted = 0
             highlightedID = nil
             self.prompts?.search(query)
+            self.files?.search(query)
         }
     }
 
@@ -477,6 +520,8 @@ private struct SwitcherView: View {
                     TargetRow(choice: choice, isHighlighted: position == highlighted)
                 case .prompt(let match):
                     PromptRow(match: match, isHighlighted: position == highlighted)
+                case .file(let match):
+                    FileRow(match: match, isHighlighted: position == highlighted)
                 }
             }
             .id(row.id)
@@ -514,10 +559,30 @@ private struct SwitcherView: View {
     }
 
     /// Room for up to eight rows, and the section titles among them.
-    private func listHeight(sessions: Int, commands: Int, groupHeaders: Int = 0, grouped: Int = 0) -> CGFloat {
-        let headers = (sessions > 0 ? 1 : 0) + (commands > 0 && !commandsOnly ? 1 : 0) + groupHeaders
-        let rows = min(sessions + commands + grouped, Self.visibleRows)
+    private func listHeight(sessions: Int, files: Int = 0, commands: Int, groupHeaders: Int = 0,
+                            grouped: Int = 0) -> CGFloat {
+        let headers = (sessions > 0 ? 1 : 0) + (files > 0 ? 1 : 0) + (commands > 0 && !commandsOnly ? 1 : 0)
+            + groupHeaders
+        let rows = min(sessions + files + commands + grouped, Self.visibleRows)
         return CGFloat(rows) * Self.rowHeight + CGFloat(headers) * (Self.headerHeight + 2) + Self.listPadding * 2
+    }
+
+    /// Every row, in the order the keys walk them.
+    private var allRows: [Row] { promptRows + sessionRows + targetRows + fileRows + commandRows }
+
+    private func submit() {
+        if files?.isPending == true, !query.isEmpty {
+            submitWaiting = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { finishSubmit() }
+            return
+        }
+        activate(allRows)
+    }
+
+    private func finishSubmit() {
+        guard submitWaiting else { return }
+        submitWaiting = false
+        activate(allRows)
     }
 
     private func activate(_ rows: [Row]) {
@@ -531,6 +596,8 @@ private struct SwitcherView: View {
         case .command(let command): run(command)
         case .target(let choice): open(choice.action)
         case .prompt(let match): insertPrompt(match.entry.text)
+        // The line from what's typed now, not from the last ranking.
+        case .file(let match): openFile(match.path, TerminalLink.withoutLocation(query).line)
         }
     }
 
@@ -695,6 +762,54 @@ private struct TargetRow: View {
     }
 }
 
+/// One file in ⌘P: its name, its folder, and the git panel's letter when
+/// it's changed.
+private struct FileRow: View {
+    let match: FileSearchModel.Match
+    let isHighlighted: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? Color.white.opacity(0.22) : Color.primary.opacity(0.07))
+                // The tab strip's glyphs, so the file reads the same in its tab.
+                Image(systemName: ["md", "markdown"].contains((match.name as NSString).pathExtension.lowercased())
+                      ? "doc.richtext" : "doc.text")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(match.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                    .lineLimit(1)
+                if !match.folder.isEmpty {
+                    Text(match.folder)
+                        .font(.system(size: 11))
+                        .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            Spacer(minLength: 8)
+            if let status = match.status {
+                Text(String(status))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.9))
+                                     : AnyShapeStyle(GitStatusStyle.color(for: status)))
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isHighlighted ? Color.accentColor : .clear))
+        .help(match.path)
+    }
+}
+
 /// One prompt from the history: its first line, then the agent, the
 /// project and how many more lines it has, and when it was sent.
 private struct PromptRow: View {
@@ -848,7 +963,9 @@ private struct PaletteField: NSViewRepresentable {
             switch selector {
             case #selector(NSResponder.moveDown(_:)): return parent.move(1)
             case #selector(NSResponder.moveUp(_:)): return parent.move(-1)
-            case #selector(NSResponder.insertNewline(_:)):
+            case #selector(NSResponder.insertNewline(_:)),
+                 // ⌥Return: a file in the other place.
+                 #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
                 parent.submit()
                 return true
             case #selector(NSResponder.cancelOperation(_:)):

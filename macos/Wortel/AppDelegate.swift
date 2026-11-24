@@ -1422,6 +1422,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // file, while the window is opened with the path you actually clicked so
         // it can tell you when that was an alias.
         let url = requested.resolvingSymlinksInPath().standardizedFileURL
+        // Opened on purpose, from anywhere: ⌘P puts it first next time. Not a
+        // look through a list with the arrows (the preview tab).
+        // The real path, as ⌘P's folders are kept (`/private/tmp`, not `/tmp`).
+        if case .peek = placement {} else { RecentFiles.shared.record(GitWorktree.realPath(url.path)) }
         // Already open, in a tab or a window: bring it forward (or, dropped,
         // move it there) and do no git work whatsoever.
         if manager.selected?.workspace.region(of: .file(url.path)) != nil {
@@ -1998,9 +2002,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private lazy var sessionSwitcher = SessionSwitcher(manager: manager) { [weak self] text in
-        self?.insertPrompt(text)
-    }
+    private lazy var sessionSwitcher: SessionSwitcher = {
+        // ⌘P's file list takes what the git panel already read rather than
+        // run git again for it.
+        FileIndexStore.shared.knownStatus = { [weak self] root in
+            self?.gitPanel.knownStatus(ofRoot: root)
+        }
+        return SessionSwitcher(
+            manager: manager,
+            insert: { [weak self] text in self?.insertPrompt(text) },
+            openFile: { [weak self] url, line, elsewhere in
+                // A submodule is one entry in git's list, and a folder: the
+                // Finder shows it, as for a ⌘-clicked folder.
+                var isFolder: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder), isFolder.boolValue {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+                self?.openPreview(url, placement: .home(elsewhere: elsewhere), line: line)
+            })
+    }()
 
     /// ⌘P: go to a session by name, folder, branch or directory.
     @objc func showSessionSwitcher(_ sender: Any?) {

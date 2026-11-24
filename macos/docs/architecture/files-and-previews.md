@@ -169,3 +169,46 @@ its inode; stat before reading; keep the last good content), and that **previews
 are accessories** — they close with the main window and are not restored, so
 quitting stays what it was. They are also why the inspector no longer shares its
 column with anything.
+
+**⌘P's files** (`FileIndex`, `FileMatch`, `FileListing`, `FileIndexStore`,
+`FileSearch`) — go to a file by name, in the session's repository, or its
+folder outside one (`manager.branchSource()`, as ⌘Y). The decision and its
+numbers are in `../docs/decisions.md` (2026-11-24).
+
+- **Where the list comes from.** In a repository, `GitService.trackedFiles`
+  (`ls-files -z`, the index, no walk) plus the untracked files: the git
+  panel's current status when it has one (`GitPanelModel.knownStatus`),
+  else `GitService.untrackedFiles`, once, behind `backgroundScans`. Outside
+  one, `FileListing.walk`: Zed's rules (five levels, VCS folders and
+  `node_modules` skipped, no symlinked folders, one volume, a 200k cap that
+  titles the section "part of this folder"), readdir with `d_type` on every
+  core, repositories inside handed to git. `FileListing.mayWalk` refuses `/`,
+  home and anything above it, and a volume's top.
+- **The index is immutable.** One byte buffer, offsets, file-name starts and
+  a letter mask per path, in byte order so a folder's contents are one range.
+  An update builds a new one off the main thread (`FileIndexStore.rebuild`)
+  and swaps it in; a search on the old one is never disturbed.
+- **Kept current** by a `GitRepoWatcher` with the paths-and-flags callback:
+  `.git` (or a linked worktree's gitdir) re-reads `ls-files` when the index
+  file's size or date moved; a changed folder is re-read by itself
+  (`FileIndexStore.difference`), new files go through `check-ignore`, a new
+  folder through `ls-files --others` on it alone; dropped events rescan the
+  untracked files under them. A walked folder is walked again. Four folders
+  kept at most, each let go (and its watch ended) 30 minutes after its last
+  search, checked every five minutes; nothing is built until ⌘P opens.
+- **What the watch leaves alone.** A folder git ignores is asked about once
+  and its events dropped from then on; events keep coming from a dev
+  server's cache, so an update put off past a second runs anyway. A
+  repository, submodule or worktree inside the checkout is its own (git
+  fails a whole `check-ignore` for one path in a submodule), and a
+  `check-ignore` with no answer adds nothing rather than everything. The
+  re-read folder is compared with git's list skipping only `.git`, with any
+  symlink a file, since git tracks those as entries.
+- **Ranking** (`FileMatch`): fzf v2's dynamic programme over bytes, a word
+  found in the file name a tier above one found only across the path, a
+  shorter name first among names, then small boosts for files changed here
+  (the panel's status) and files opened lately (`RecentFiles`, a ten-day
+  half-life), then the shorter path. One or two letters score file names
+  only. A query that extends the last one searches only its survivors; every
+  key cancels the ranking before it. `FileMatchTests` pins the order on real
+  Linux paths.

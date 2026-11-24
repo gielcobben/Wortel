@@ -2134,9 +2134,18 @@ final class SessionManager {
         inFolder folder: String?, after fetch: Task<Void, Never>?, starting start: SessionStart,
         completion: WorktreeCompletion?
     ) -> Session {
-        let session = makeSession(cwd: nil, inFolder: folder ?? self.folder(forRepositoryAt: from),
+        let dir = folder ?? self.folder(forRepositoryAt: from)
+        // Started with an agent, it's called for the agent ("Claude") with its
+        // branch underneath from the start, as it will be once named: named
+        // for its branch, the row was one line until the agent's title came
+        // and then grew a second one under the pointer. A shell has no title
+        // coming, so it keeps the branch as its name.
+        let name = start.input(preferred: AppSettings.shared.newSessionCommand)
+            .flatMap(AgentCommands.agent(in:))
+            .map { uniqueLeaf(ChatFolder.sessionName(for: $0), in: dir) } ?? leaf
+        let session = makeSession(cwd: nil, inFolder: dir,
                                   via: .worktree, starting: start, reported: false) { session in
-            session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+            session.name = session.folderPath.map { "\($0)/\(name)" } ?? name
             session.worktreeBranch = branch
             session.preparation = WorktreePreparation(request: request, from: from, branch: branch ?? "")
         }
@@ -2978,7 +2987,11 @@ final class SessionManager {
         // The branch of the worktree the session lives in, read off its HEAD:
         // not `worktreeBranch`, which is whichever checkout the shell is
         // standing in, maybe another session's.
-        guard session.preparation == nil, let checkout = session.homeCheckout, checkout.isOwned,
+        // Not for a placeholder: a worktree started with an agent is called
+        // "Claude" until the agent says what it's for, and `claude` is no
+        // name for a branch.
+        guard session.nameSource != .placeholder,
+              session.preparation == nil, let checkout = session.homeCheckout, checkout.isOwned,
               let branch = GitWorktree.checkedOutBranch(at: checkout.root),
               GitWorktree.isGenerated(branch), renamingBranches.insert(session.id).inserted
         else { return }

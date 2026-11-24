@@ -55,7 +55,10 @@ path reconstructs typed lines (`TypedLineBuilder`: backspace, ctrl-U/W,
 bracketed paste, the kitty keyboard protocol, and the terminal's own query
 replies all handled or dropped; it reads one write at a time, since libghostty
 writes each key press and each reply separately, which is what keeps a reply
-like the background colour out of the prompt), and the first line that is a prompt rather
+like the background colour out of the prompt; a reply whose opening `ESC P`
+or `ESC _` arrives alone is held until it ends, after a session was named
+`>|ghostty 1.3.1Gi=31;O…` from Claude's XTVERSION and kitty graphics
+answers), and the first line that is a prompt rather
 than a dialog answer or a slash command (`FirstPrompt.accept`) goes to the
 on-device model with a prompt tuned to Claude's style. A prompt on the
 agent's command line (`codex "add a changelog page"`) is taken as is. Without

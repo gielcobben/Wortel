@@ -19,14 +19,26 @@ import Foundation
 /// **One `feed` is one write**, and that is what keeps the replies out.
 /// libghostty queues every key press as one message and every reply as
 /// another, and its IO thread hands each to `PtyHost.write` whole (a paste is
-/// three: the opening marker, the text, the closing marker). So no sequence
-/// spans two writes: a reply (`ESC ] 11;rgb:…`, which Claude asks for at
-/// launch) is skipped to its end and can't run into the next key, and an ESC
-/// alone in its write is the Esc key, not the start of whatever comes next.
-/// Before this, the colour reply became the first "prompt" the next Enter
+/// three: the opening marker, the text, the closing marker). So a sequence
+/// is normally whole in its write: a reply (`ESC ] 11;rgb:…`, which Claude
+/// asks for at launch) is skipped to its end and can't run into the next key,
+/// and an ESC alone in its write is the Esc key. Before this, the colour reply became the first "prompt" the next Enter
 /// completed, and sessions were named after hex colours. Should a reply ever
 /// arrive cut in two, the part already inside it carries on into the next
-/// write; only a key's worth (`ESC ]` alone, which is Alt+]) is dropped there.
+/// write.
+///
+/// **A reply can still arrive cut right after its opening.** A session on
+/// 2026.47.3 was named `>|ghostty 1.3.1Gi=31;O…`: Claude's XTVERSION and
+/// kitty graphics answers, with `ESC P` and `ESC _` each read as a key of its
+/// own (Alt+P, Alt+_) and the rest as typing. Fed exactly that split, this
+/// builder gave the same line; fed whole, just the prompt. So an opening
+/// alone in its write (`ESC P`, or an Esc followed by a write starting with
+/// `P`) is *held*: what follows is kept aside until it ends. Ended by
+/// anything but BEL or ST (Enter, backspace, an arrow), it was a key and
+/// typing after it, and all of it is put back. Ended by BEL or ST, it was a
+/// reply, and only what came a character to a write, the way keys come, is
+/// put back: so a key pressed in the middle of a reply survives it, and so
+/// does typing after Alt+P that ends in ctrl-G (BEL, Claude's editor key).
 ///
 /// Pure and Foundation-only so `PromptCaptureTests` can pin it: every failure
 /// here is silent, and the worst of them names a session after an escape
@@ -50,30 +62,104 @@ struct TypedLineBuilder {
     /// Esc presses in a row. Two clear an agent's input box (Claude's Esc
     /// Esc), so the line being rebuilt here goes too.
     private var escapes = 0
+    /// Non-nil while the string being read began alone in its write, so may be
+    /// a key and typing rather than a reply: the text it would put back.
+    private var held: [UInt8]?
+    /// The part of `held` that came one character to a write: typing, even
+    /// if the string turns out to be a reply.
+    private var heldTyping: [UInt8] = []
+    /// The write being read is one character and nothing else: a key.
+    private var writeIsKey = false
+    /// The last write ended in an ESC on its own: the Esc key, or a reply's
+    /// first byte.
+    private var endedInEscape = false
 
     init() {}
 
     /// Whether something has been typed that hasn't been sent: the line so
-    /// far isn't empty. The tests read it to pin what clears a line.
-    var hasDraft: Bool { !line.isEmpty }
+    /// far, or typing held behind an opening, isn't empty. The tests read it
+    /// to pin what clears a line.
+    var hasDraft: Bool { !line.isEmpty || !heldTyping.isEmpty }
 
     /// Feed one write to the pty; returns every line completed by it, in order.
     mutating func feed(_ bytes: UnsafeBufferPointer<UInt8>) -> [String] {
         var completed: [String] = []
-        for byte in bytes { step(byte, into: &completed) }
+        var rest = bytes[...]
+        writeIsKey = Self.isOneCharacter(bytes)
+        // A held string whose last write ended in ESC: the first half of its
+        // ST, or the Esc key, which the next byte decides.
+        if state == .stringEscape, held != nil, let first = rest.first, first != 0x5C {
+            putBackHeld()
+            pressedEscape()
+            state = .normal
+            endedInEscape = true
+        }
+        // An Esc, then a write that opens a string: perhaps a reply whose ESC
+        // came alone. Held, with its letter, which is typing if it was a key.
+        if endedInEscape, state == .normal, let first = rest.first, Self.opensString(first) {
+            if escapes > 0 { escapes -= 1 }
+            state = .string
+            stringLength = 1
+            held = [first]
+            heldTyping = writeIsKey ? [first] : []
+            rest = rest.dropFirst()
+        }
+        endedInEscape = false
+        for byte in rest { step(byte, into: &completed) }
         // The write is over, and so is any key in it. An ESC still waiting
-        // for a second byte had none coming: it was the Esc key. An introducer
-        // with nothing after it was Alt and that key, which like any key ends
-        // a run of Escs. Only a reply already under way may continue in the
-        // next write.
+        // for a second byte had none coming: it was the Esc key. A string
+        // introducer with nothing after it is Alt and a key or a reply's
+        // opening, and what follows is held until it says which. A CSI or
+        // SS3 introducer alone was Alt and that key, which like any key ends
+        // a run of Escs. A reply already under way continues in the next write.
         switch state {
-        case .escape: pressedEscape(); state = .normal
-        case .string where stringLength == 0, .csi where csi.isEmpty, .ss3:
+        case .escape:
+            pressedEscape()
+            state = .normal
+            endedInEscape = true
+        case .string where stringLength == 0 && held == nil:
+            // Alt and a key, or a reply's opening: hold what follows.
+            held = []
+        case .csi where csi.isEmpty, .ss3:
             state = .normal
             escapes = 0
         default: break
         }
         return completed
+    }
+
+    /// `]`, `P`, `_`, `^`, `X`: after an ESC, the start of a string.
+    private static func opensString(_ byte: UInt8) -> Bool {
+        [0x5D, 0x50, 0x5F, 0x5E, 0x58].contains(byte)
+    }
+
+    /// One UTF-8 character that isn't a control byte: how a key's text comes.
+    private static func isOneCharacter(_ bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard let first = bytes.first, first >= 0x20, first != 0x7F, bytes.count <= 4 else { return false }
+        let length = first < 0x80 ? 1 : first >= 0xF0 ? 4 : first >= 0xE0 ? 3 : first >= 0xC0 ? 2 : 0
+        return length == bytes.count
+    }
+
+    /// A held string was a key after all: what was typed behind it is typing.
+    private mutating func putBackHeld() {
+        guard let text = held else { return }
+        held = nil
+        heldTyping = []
+        line.append(contentsOf: text)
+        escapes = 0
+    }
+
+    /// A string ended by BEL or ST: a reply, or the end of one. What was held
+    /// of it goes, except what came the way keys do.
+    private mutating func endString() {
+        state = .normal
+        guard held != nil else { return }
+        held = nil
+        if !heldTyping.isEmpty {
+            line.append(contentsOf: heldTyping)
+            heldTyping = []
+            escapes = 0
+        }
     }
 
     private mutating func step(_ byte: UInt8, into completed: inout [String]) {
@@ -90,17 +176,27 @@ struct TypedLineBuilder {
             }
         case .string:
             switch byte {
-            case 0x07: state = .normal                      // BEL ends it
+            case 0x07: endString()                          // BEL ends it
             case 0x1B: state = .stringEscape
             // No reply carries a control byte, so this is a key in a paste
             // that only looked like a string: end it and let the key act.
-            case 0x00..<0x20: state = .normal; step(byte, into: &completed)
-            default: stringLength += 1
+            // A held string was typing, and is put back first.
+            case 0x00..<0x20, 0x7F where held != nil:
+                putBackHeld()
+                state = .normal
+                step(byte, into: &completed)
+            default:
+                stringLength += 1
+                if held != nil {
+                    held!.append(byte)
+                    if writeIsKey { heldTyping.append(byte) }
+                }
             }
         case .stringEscape:
             if byte == 0x5C {                               // ST ends it
-                state = .normal
+                endString()
             } else {                                        // or a new sequence starts
+                putBackHeld()
                 state = .escape
                 step(byte, into: &completed)
             }

@@ -1,7 +1,10 @@
 ---
-// /download: the button and the four steps after it, nothing else. The
-// nav's Download leads here; the hero and the closing call on every page still
-// start the download straight away, because there the decision is made.
+// /download: the button and the four steps after it, nothing else. Every
+// Download button on the site leads here and says where it was (/download#hero,
+// #nav, #footer, #404), and arriving that way starts the download at once, so
+// nobody gets a zip without the steps that say what to do with it. A visit
+// with no such mark (a search result, a reload, the back button) only shows
+// the button.
 //
 // The version line comes from the Sparkle feed (data/release.ts). Notes,
 // requirements and file locations live on /updates and /docs; this page
@@ -24,14 +27,14 @@ const schema = [{
 ---
 <Layout title={title} description={description} path="/download" schema={schema} ogImage="/og/download.png" bare>
   <header class="page phead" data-reveal-group>
-    <img class="icon" src="/icon-512.png" width="96" height="96" alt="" data-reveal />
+    <img class="icon" src="/icon-256.png" width="96" height="96" alt="" data-reveal />
     <h1 class="display" data-reveal>Download Wortel.</h1>
     <p class="lead" data-reveal>
       One app for every Mac on {macOS}, signed and notarized by Apple. It is free, and it keeps itself up to date.
     </p>
     <div class="ctas" data-reveal>
       <a class="btn" href={SITE.download} data-get data-ph="download_clicked" data-ph-location="download" data-ph-version={latest?.version}>Download for macOS</a>
-      {latest && <a class="btn ghost" href={`/updates#${latest.version}`} data-ph="changelog_opened" data-ph-location="download" data-ph-version={latest.version}>What’s new in {latest.version}</a>}
+      {latest && <a class="btn ghost" href="/updates" data-ph="changelog_opened" data-ph-location="download" data-ph-version={latest.version}>What’s new in {latest.version}</a>}
     </div>
     <p class="label" data-reveal aria-live="polite">
       <span data-idle>{latest ? `Version ${latest.version}${latest.size ? ` · ${latest.size}` : ''}` : 'The newest version'} · {macOS}</span>
@@ -40,9 +43,9 @@ const schema = [{
   </header>
 
   <div class="page">
-    <section class="stage install" style="--photo: url(/img/skye.jpg); --at: 50% 50%" aria-label="Installing" data-reveal>
+    <section class="stage install" style="--photo: url(/img/skye.jpg); --photo-s: url(/img/skye-1600.webp); --at: 50% 50%" aria-label="Installing" data-reveal>
       <figure class="file" aria-hidden="true">
-        <img src="/icon-512.png" width="80" height="80" alt="" />
+        <img src="/icon-256.png" width="80" height="80" alt="" />
         <figcaption>Wortel</figcaption>
       </figure>
       <ol class="steps">
@@ -69,6 +72,23 @@ const schema = [{
     if (busy) busy.hidden = false;
     document.documentElement.dataset.downloading = '';
   });
+
+  // Sent here by a Download button: press this page's button for them. The
+  // mark is taken out of the address first, so a reload or coming back does
+  // not download again, and it is passed on as where the click was made.
+  const FROM = ['hero', 'nav', 'footer', '404'];
+  const start = () => {
+    const from = location.hash.slice(1);
+    if (!get || !FROM.includes(from)) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    const here = get.dataset.phLocation;
+    get.dataset.phLocation = from;
+    get.click();
+    get.dataset.phLocation = here;
+  };
+  start();
+  // The nav's Download, pressed on this page itself.
+  addEventListener('hashchange', start);
 </script>
 
 <style>
@@ -90,8 +110,8 @@ const schema = [{
   :global([data-downloading]) .file figcaption { background: var(--accent); color: #fff; text-shadow: none; }
   .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
   .steps li { border-radius: 18px; padding: 24px; }
-  .n { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; background: var(--ink); color: var(--fog-0); font: 600 13px/24px var(--font-display); }
-  .steps .t { margin: 16px 0 0; font: 600 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); }
+  .n { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; background: var(--ink); color: var(--fog-0); font: 500 13px/24px var(--font-display); }
+  .steps .t { margin: 16px 0 0; font: 500 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); }
   .steps p { margin: 8px 0 0; font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
 
   /* Four across needs the full width: two rows of two below it. */

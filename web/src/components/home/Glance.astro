@@ -1,44 +1,23 @@
 ---
-// What it is made of, and the questions. Same parts as every other section:
-// a heading, then facts on the grid.
-import { SPECS, FAQ } from '../../data/site';
+// The questions, in the right column of their section, beside the heading
+// (Section.astro, aside). What Wortel is made of is in the bento above
+// (Bento.astro).
+import Section from '../Section.astro';
+import { FAQ, HOME } from '../../data/site';
+import { inline } from '../../data/inline';
 ---
-<section class="sec" id="zero-config">
-  <span id="ghostty-engine" class="anchor"></span><span id="specs" class="anchor"></span>
-  <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">Native to the core, with almost nothing to configure. <span class="tone">Swift and AppKit around Ghostty’s own engine, unmodified. The font, the theme and the keybinds were chosen once. Settings is five rows long.</span></h2>
-    </div>
-    <dl class="facts specs" data-reveal-group="0.04">
-      {SPECS.map(([k, v]) => (
-        <div class="fact" data-reveal><dt class="label">{k}</dt><dd class="h3">{v}</dd></div>
-      ))}
-    </dl>
+<Section id="faq" aside {...HOME.questions}>
+  <div class="list">
+    {FAQ.map((f) => (
+      <details>
+        <summary><span>{f.q}</span><i aria-hidden="true"></i></summary>
+        <p class="body" set:html={inline(f.a)} />
+      </details>
+    ))}
   </div>
-</section>
-
-<section class="sec" id="faq">
-  <div class="page">
-    <div class="bhead" data-reveal>
-      <h2 class="h2">Questions. <span class="tone">The short answers. The exact ones are in <a class="link" href="/docs">the docs</a>.</span></h2>
-    </div>
-    <div class="list">
-      {FAQ.map((f) => (
-        <details>
-          <summary><span>{f.q}</span><i aria-hidden="true"></i></summary>
-          <p class="body">{f.a}</p>
-        </details>
-      ))}
-    </div>
-  </div>
-</section>
+</Section>
 
 <style>
-  .specs { margin-top: 0; }
-  .specs dt { margin-bottom: 8px; }
-  .specs dd { margin: 0; font-weight: 500; }
-  .bhead .link { color: inherit; }
-
   .list { display: flex; flex-direction: column; }
   details { border-top: 1px solid var(--line); }
   details:last-child { border-bottom: 1px solid var(--line); }
@@ -46,6 +25,7 @@ import { SPECS, FAQ } from '../../data/site';
     list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 24px;
     padding-block: 20px; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--ink);
   }
+  summary span { text-wrap: balance; }
   summary::-webkit-details-marker { display: none; }
   summary i { position: relative; width: 12px; height: 12px; flex: none; }
   summary i::before, summary i::after { content: ''; position: absolute; left: 0; top: 5px; width: 12px; height: 1.5px; background: var(--ink-3); border-radius: 1px; transition: transform 0.3s var(--ease-out); }

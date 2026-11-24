@@ -4,21 +4,17 @@
 // (scripts/scenes.ts): at work, stopped for permission, one shortcut to get
 // there, answered. The window answers to the pointer too: the sessions, the
 // notification, the choices in the prompt.
+import Section from '../Section.astro';
 import Stage from '../Stage.astro';
+import { HOME } from '../../data/site';
 import Window from '../Window.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
 import Terminal from '../../app/gen/Terminal.astro';
 
-const chapters = [
-  { label: 'At work', caption: 'While its output keeps moving, an agent is at work. Nothing is installed into it to tell.' },
-  { label: 'Needs you', caption: 'When its screen goes still, the session gets a dot and a notification finds you.' },
-  { label: 'Go to it', caption: 'One shortcut, ⌥⇧⌘↓, or a click on the notification, takes you to the session that is waiting.' },
-  { label: 'Answered', caption: 'Say yes and it goes back to work. The dot is gone.' },
-];
+const chapters = ['At work', 'Needs you', 'Go to it', 'Answered'];
 ---
-<section class="sec" id="coding-agents">
-  <div class="page">
-    <Stage title="Know which agent needs you." film="agents" chapters={chapters} photo="haze" at="50% 60%" h={616}>
+<Section id="coding-agents" {...HOME.agents}>
+    <Stage film="agents" chapters={chapters} photo="haze" at="50% 60%">
       <Window live>
         <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
         <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
@@ -34,8 +30,7 @@ const chapters = [
       <div class="keys glass" data-keys="jump" aria-hidden="true"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd></div>
       <div class="keys glass" data-keys="enter" aria-hidden="true"><kbd>⏎</kbd></div>
     </Stage>
-  </div>
-</section>
+</Section>
 
 <style>
   /* A notification arrives top right of the screen, over whatever is there. */

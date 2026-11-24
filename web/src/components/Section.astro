@@ -1,0 +1,54 @@
+---
+// A section of a page: the row every section opens with (styles/site.css,
+// .row12), then what the section shows.
+//
+// The row is a hairline, a heading in two lines at the left (the claim in
+// ink, its other half in grey) and one short paragraph with a link at the
+// right. They stay put while a film below plays. What the section shows (a
+// stage, the bento, a table) is the slot, at the full width of the page.
+//
+// With `aside`, what it shows is a column of its own (the questions): the
+// paragraph and link move under the heading, which stays beside the column
+// while it scrolls past, and the slot takes the right.
+//
+// `anchors` is a slot for the ids older links still point at.
+interface Props {
+  id?: string;
+  title: string;
+  tone?: string;
+  body?: string;
+  link?: readonly [text: string, href: string];
+  aside?: boolean;
+}
+const { id, title, tone, body, link, aside = false } = Astro.props;
+---
+<section class="sec" id={id}>
+  <slot name="anchors" />
+  <div class="page">
+    <div class:list={['row12 open', { aside }]} data-reveal>
+      <div class:list={['k', { stick: aside }]}>
+        <h2 class="h2">{title} {tone && <span class="tone">{tone}</span>}</h2>
+        {aside && body && <p class="copy">{body}</p>}
+        {aside && link && <a class="arrow" href={link[1]}>{link[0]}<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>}
+      </div>
+      <div class="v">
+        {aside ? <slot /> : (
+          <>
+            {body && <p class="copy">{body}</p>}
+            {link && <a class="arrow" href={link[1]}>{link[0]}<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>}
+          </>
+        )}
+      </div>
+    </div>
+    {!aside && <div class="show"><slot /></div>}
+  </div>
+</section>
+
+<style>
+  .aside .k .copy { margin-top: 24px; max-width: 400px; }
+  /* The column starts on the heading's line: the section's hairline is
+     already over it, so its first row brings none of its own. */
+  .aside .v :global(details:first-child) { border-top: 0; }
+  .aside .v :global(details:first-child summary) { padding-top: 0; }
+  @media (max-width: 900px) { .aside .v { margin-top: 16px; } }
+</style>

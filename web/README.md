@@ -31,13 +31,16 @@ feed at `updates.wortel.sh`. See the repo root `AGENTS.md`.
 src/
   data/site.ts             landing-page AND /docs copy: the single source
   data/compare.ts          ALL /compare copy: the apps, the questions, every cell
+  data/inline.ts           the marks a sentence in site.ts may carry: `code`, a key like `⌘N`, **bold**
   data/release.ts          the newest release, read from the appcast at build time
   data/schema.ts           the homepage's JSON-LD
   content/releases/*.md    the changelog, one Markdown file per release
   content/legal/*.md       /privacy, /terms (the filename is the route)
   pages/index.astro        the homepage: sections in components/home/
   pages/about.astro        /about   the name, why it exists, a family tree, six beliefs
-  pages/updates.astro      /updates the changelog
+  pages/updates.astro      /updates the changelog: the newest release in full, every earlier one a row under its month
+  pages/updates/[version].astro  /updates/<version>  one release on a page of its own
+  pages/feed.xml.ts        /feed.xml the changelog as an Atom feed, linked from every page's <head>
   pages/compare.astro      /compare Wortel against nine named apps
   pages/docs.astro         /docs    commands, shortcuts, behaviour
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
@@ -45,16 +48,20 @@ src/
   pages/*.md.ts            /index.md, /docs.md, /compare.md, /updates.md: pages as Markdown
   data/markdown.ts         the renderers behind those and llms-full.txt
   pages/404.astro          the not-found page (dist/404.html)
-  components/home/         Hero, Panes, Agents, Worktrees, Survival, Glance (specs + FAQ)
+  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ, in the right column beside its heading)
+  components/AppContent.astro  wraps a piece of the app that shows a document: its headings become plain blocks, so the page keeps one h1
+  components/GitHubMark.astro  GitHub's mark, for the buttons to the source (SITE.repo) in the nav and the closing call; they open in a new tab
+  components/Section.astro a section: the row it opens with (a hairline, a two-line heading at the left,
+                           a paragraph and a link at the right), then what it shows
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
-  components/Stage.astro   a scene: the heading (its grey half changes per chapter), then the lake
-                           with the chapter tabs and play/pause over the window
+  components/Stage.astro   a stage: the lake with the chapter tabs and play/pause over the window
   components/Window.astro  the window's chrome exactly as the canvas draws it: glass, layout, rim
   scripts/app.ts           tools for acting on a generated window: select a row, set a status, print a line
-  scripts/film.ts          a film with chapters: autoplay, tabs, arrow keys, captions
+  scripts/film.ts          a film with chapters: autoplay, tabs, arrow keys
   scripts/hero.ts          the landing sequence (one GSAP timeline)
   scripts/panes.ts         the panes scene: a state per place, a target layout per chapter
-  scripts/scenes.ts        the agents, worktrees and survival scenes
+  scripts/scenes.ts        the agents scene and the terminal-first scene
+  scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/
@@ -94,14 +101,39 @@ follows the page's colour scheme through the tokens in styles/app.css.
 
 ### One layout
 
-Every page sits on one container with one left edge; nothing is centred. A
-homepage scene is `.sec` > a `Stage`: the two-tone heading, whose black half is
-the scene's claim and whose grey half is the current chapter's line, then the
-stage, a part of the foggy lake with the chapter tabs and a round play/pause
-button over the app window at its natural proportions. An inner page is `.phead` and
-then `.row12` rows: a label in columns 1 to 3, content in 4 to 11. Don't name
-a site class after a Tailwind utility (`block`, `grid`, `flex`…): the app's
-generated markup uses those.
+Every page sits on one container; nothing is centred. Headings and visuals
+start at its left edge, and what there is to read about a heading starts
+beside it.
+
+Every section opens with the same row, `.row12` in `site.css`: a hairline,
+what the section is called at the left (`.k`) and what there is to read at the
+right (`.v`), the two on one baseline. The row has two measures. On the
+homepage the name has columns 1 to 5 and the text 7 to 12. On a page that is
+text the row is `.row12.read`: the name is smaller (20 / 28) in columns 1 to
+3, and the text has columns 4 to 11.
+
+- **On the homepage** a section is `components/Section.astro`. The name is a
+  heading in two lines, the claim in ink and its other half in grey; the right
+  column is one short paragraph and a link to the part of `/docs` that goes
+  further. Under the row, at full width, comes what the section shows: a
+  `Stage` (a part of the foggy lake with the chapter tabs and a round
+  play/pause button over the app window at its natural proportions) or the
+  bento. The questions are the exception: they are a column themselves, so
+  they sit in the right one (`aside`), and their heading stays beside them
+  while they scroll.
+- **An inner page** is `.phead` (one large line and one grey sentence, with
+  the hero's own measures) and then `.row12.read` rows. The left of a row is a heading
+  (`/about`, `/docs`, `/compare`), a version with its date in grey under it
+  (`/updates`), or a small label (`/privacy`, `/terms`). Add `.stick` to a
+  `.k` whose right column is long.
+
+Headings are light: weight 400, and 500 for a page's one large line. Size and
+the two tones carry the hierarchy. A heading is two short lines with no full
+stop, and it does not change while a film plays: the grey half used to be the
+current chapter's caption, and the reader had to chase it.
+
+Don't name a site class after a Tailwind utility (`block`, `grid`, `flex`…):
+the app's generated markup uses those.
 
 ### Motion and interaction
 
@@ -114,9 +146,10 @@ on screen; a tab, the arrow keys, the pause button, or anything pressed in the
 window itself stops that, and play picks it up again. Nothing the films do is
 tied to scroll; only the photos drift a little against it (below).
 
-The windows answer to the pointer: sessions select, folders fold, the sidebar
-and column buttons and the tabs work (panes), the notification and the
-prompt's choices work (agents), the Dock icon quits and reopens (survival).
+The windows answer to the pointer: sessions select at once, as in the app,
+folders fold, Back and Forward walk the sessions you were on, the sidebar and
+column buttons and the tabs work (panes), and the notification and the
+prompt's choices work (agents).
 Anything pressable is marked `data-row`, `data-fold` or `data-press` and gets
 the app's own hover from `styles/app.css`.
 
@@ -144,8 +177,8 @@ Rules for motion, so a new piece moves like the rest:
   over the time the stage takes to cross the screen (a scroll-driven
   animation, where the browser has them). It overhangs top and bottom by 40px,
   so no edge shows. The footer's fog rides on it through `--over`.
-- Crossfades of text or icons (the heading's grey line, play/pause) carry a
-  4px blur, so the overlap reads as one thing changing.
+- Crossfades of icons (play/pause) carry a 4px blur, so the overlap reads as
+  one thing changing.
 - The chapter tabs are two copies of the labels: the lit copy (the black pill
   with white words) is clipped to the current tab and the clip slides, so a
   label turns white exactly where the pill is.
@@ -183,7 +216,12 @@ Rules for motion, so a new piece moves like the rest:
 `/?t=<s>` holds the landing sequence at a time, for screenshots. Reduced
 motion starts every film paused, on its most telling chapter.
 
-The download button points at `https://updates.wortel.sh/Wortel-latest.zip`,
+Every Download button on the site leads to `/download` with a mark for where
+it was (`/download#hero`, `#nav`, `#footer`, `#404`). Arriving with one
+presses the page's own button, so the download starts at once and
+`download_clicked` carries that place; the mark is then taken out of the
+address, so a reload does not download again. A plain visit to `/download`
+only shows the button. It points at `https://updates.wortel.sh/Wortel-latest.zip`,
 which `release.sh --publish` always mirrors to the newest signed build. The
 version line under it, and `softwareVersion`/`fileSize` in the structured data,
 are read from `updates.wortel.sh/appcast.xml` **at build time**. They refresh
@@ -318,7 +356,7 @@ moved to a page that is linked, in the sitemap, in `llms.txt`, flattened into
 `llms-full.txt`, and can be landed on directly by a search for "wortel keyboard
 shortcuts", which a `#keyboard` anchor never really allowed.
 
-The FAQ stayed, as `<details>` rows. Sixteen answers written to stand alone are
+The FAQ stayed, as `<details>` rows in the right column of its section. Sixteen answers written to stand alone are
 the most quotable thing here and the source of the `FAQPage` node, so collapsing
 beats cutting: the text is in the HTML whether or not a row is open, so crawlers
 and screen readers still get every word, and it needs no JavaScript. They carry
@@ -389,7 +427,7 @@ magick art/app-shot-dark.png -profile "$SRGB" -resize 1392x912 -strip public/scr
 # exported from the app's own Icon Composer file, so the site never drifts from it
 ictool="/Applications/Icon Composer.app/Contents/Executables/ictool"
 "$ictool" ../macos/Wortel/AppIcon.icon --export-image --output-file /tmp/icon.png --platform macOS --rendition Default --width 512 --height 512 --scale 2
-for n in 512 180 128 96 32; do sips -z $n $n /tmp/icon.png --out public/icon-$n.png; done
+for n in 512 256 180 128 96 32; do sips -z $n $n /tmp/icon.png --out public/icon-$n.png; done
 mv public/icon-180.png public/apple-touch-icon.png; mv public/icon-96.png public/favicon-96.png; mv public/icon-32.png public/favicon-32.png
 ```
 
@@ -465,12 +503,19 @@ the Unsplash License, credit optional). `<Stage photo="…">` picks one, and
 The closing call (components/Footer.astro) picks a photo per page, with a
 crop that keeps fog behind the words.
 
+Each photo also has a phone copy, `<name>-1600.webp`, which a stage uses on a
+screen up to 900px wide (`--photo-s` in `site.css`). Make one with
+`cwebp -q 78 -m 6 -resize 1600 0 <name>.jpg -o <name>-1600.webp`. Only the
+hero's photo is fetched with the page (it is preloaded in `pages/index.astro`);
+every other stage asks for its photo when it comes within a screen and a half
+(`data-photo`, `scripts/reveal.ts`).
+
 | File | Where | Source |
 |---|---|---|
-| `lake.jpg` | Hero, Worktrees, the homepage's closing call | the "Foggy Lake" shot on the Opmaak canvas, found on Unsplash |
-| `skye.jpg` | Panes, /download, the closing call on /updates | https://unsplash.com/photos/LGOX15iP0u0 |
+| `lake.jpg` | Hero, the homepage's closing call | the "Foggy Lake" shot on the Opmaak canvas, found on Unsplash |
+| `skye.jpg` | Panes, three bento tiles (each its own crop), /download, the closing call on /updates | https://unsplash.com/photos/LGOX15iP0u0 |
 | `haze.jpg` | Agents, the closing call on /docs and /about | https://unsplash.com/photos/dDKjrFzijbM |
-| `hills.jpg` | Survival and the closing call on /compare (cropped to the forest and fog; the flower at the bottom stays out) | https://unsplash.com/photos/Mg1AQZnCgJE |
+| `hills.jpg` | Start (a terminal first) and the closing call on /compare (cropped to the forest and fog; the flower at the bottom stays out) | https://unsplash.com/photos/Mg1AQZnCgJE |
 
 The three newer ones were picked for colour: the closest of ~30 misty-lake
 photos to the lake by their Lab distribution. Saved at 2400px, quality 76,

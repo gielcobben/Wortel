@@ -22,6 +22,8 @@ interface Props {
   ogImage?: string;
   /** This page as Markdown, for agents: emitted as rel=alternate. */
   markdown?: string;
+  /** The day a dated page (a release) came out, YYYY-MM-DD: makes the card an article. */
+  published?: string;
 }
 
 const {
@@ -33,6 +35,7 @@ const {
   noindex = false,
   ogImage: ogPath = '/og.png',
   markdown,
+  published,
 } = Astro.props;
 
 // Built off the configured `site` rather than Astro.url, so a preview host or a
@@ -61,7 +64,8 @@ const ogAlt = ogPath === '/og.png' ? `${SITE.name}: ${SITE.tagline}` : title;
       </>
     )}
 
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content={published ? 'article' : 'website'} />
+    {published && <meta property="article:published_time" content={published} />}
     <meta property="og:site_name" content={SITE.name} />
     <meta property="og:locale" content="en_US" />
     <meta property="og:title" content={title} />
@@ -91,6 +95,7 @@ const ogAlt = ogPath === '/og.png' ? `${SITE.name}: ${SITE.tagline}` : title;
     <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt: a site map for language models" />
     <link rel="describedby" type="text/markdown" href="/llms-full.txt" title="Full page content as Markdown" />
     {markdown && <link rel="alternate" type="text/markdown" href={markdown} title="This page as Markdown" />}
+    <link rel="alternate" type="application/atom+xml" href="/feed.xml" title={`${SITE.name} changelog`} />
 
     {schema.length > 0 && (
       <script

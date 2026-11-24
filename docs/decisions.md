@@ -1587,6 +1587,66 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   release skill reports how many drawing commits have landed since, and the
   `sync-visuals` skill does the work. That day the site matched the canvas
   byte for byte and the canvas was 52 such commits behind the app.
+- **2026-11-21. The homepage tells the hybrid: a real terminal first, agents
+  one key away.** A stage of its own shows a shell, an agent typed into it,
+  the field in Settings that names it, and ⌘N starting it. The agents take
+  turns on the page (Claude Code, Codex, Pi), so it never reads as a Claude
+  terminal; Codex was captured from a real run, Pi from its source and theme
+  because it could not run here. Dropped: the worktree and survival stages
+  (every agent app keeps its sessions; they are tiles now), the specs list
+  (merged into the bento), a wordmark in the bento's middle (read as a logo),
+  a photo behind the whole bento (read as wallpaper), and a compact window for
+  the panes film's Terminal chapter. The bento follows Apple's keynote summary
+  slides: one piece of the real product per tile, tiles of uneven size.
+- **2026-11-23. Every release has a page of its own**, at
+  `/updates/<version>`, so one release can be linked, shared and found by a
+  search, and the changelog is also an Atom feed at `/feed.xml`. The
+  changelog shows the newest release in full and every earlier one as a row
+  under its month: twelve in full made a page twelve screens long that
+  nobody could scan, and the same text twice for a search engine. "What's
+  new" in the hero goes to the changelog, not to the release's page, because
+  from there the rest is one scroll away. `/updates#<version>` keeps working,
+  since the app links that way. Every Download button goes to `/download`
+  and the download starts on arrival, so nobody gets a zip without the three
+  steps that say what to do with it; a plain visit to that page only shows
+  the button.
+- **2026-11-23. Only the first screen's pictures come with the page.** The
+  homepage fetched all five photos and the browser pane's screenshot at
+  once, 1.8 MB, and on a phone (4x slower CPU, slow 4G, measured with
+  Playwright against the built site) the hero's photo showed at 6.7 s because
+  it waited behind the other four. Now the hero's photo is preloaded, every
+  other stage asks for its photo when it comes within a screen and a half,
+  screens up to 900px get a 1600-wide WebP copy, and the 80px icons use a
+  256px file, not the 512px one. Measured the same way afterwards: 292 KB and
+  2.1 s on the homepage, 38 KB and 0.6 s on `/docs`, no layout shift on any
+  page. The desktop photos are the same JPEGs as before: WebP was not used
+  there because the fog is where its banding would show.
+- **2026-11-23. What the app windows show is not the page's content.** The
+  file preview in a window has headings of its own, which gave the homepage
+  three `<h1>`s, two of them a made-up plan's title. They are plain blocks
+  now (`AppContent.astro`), and every window carries `data-nosnippet`.
+- **2026-11-23. One row opens every section on every page, and headings are
+  light and short.** A hairline, the heading at the left in two lines (the
+  claim in ink, its other half in grey), one paragraph and a link from the
+  middle of the page; then the stage. Inner pages are made of the same row.
+  The grey half of a homepage heading used to be the caption of the chapter
+  playing: it changed every few seconds and the reader had to chase it, so the
+  words now stay and the chapter tabs are the only thing that names a chapter.
+  The hero's second button stayed (the newest release). A button to the
+  source on GitHub is in the nav and in the closing call, not in the hero,
+  where a third button crowded the two that matter there, and
+  the questions moved into the right
+  column beside their heading. This reverses "one left edge" from 2026-11-11:
+  the text now starts beside its heading, not under it. On the homepage that
+  is the middle of the page. Inner pages were first given the same split, and
+  a whole page of text in the right half read as a sidebar with an empty page
+  next to it, so they went back to the measure they had: the name in three
+  columns, the text in eight.
+  The first pass was modelled on polar.sh and its field guide, and read as
+  theirs. Tried and dropped from it: section numbers and a margin index in
+  mono, links in mono brackets, grey photographs with film grain, 8px corners,
+  a list of the page's sections beside the hero. Also dropped: the two-tone
+  heading set as one long line across the page.
 
 ## Contributing
 

@@ -41,6 +41,7 @@ Code|Pane · Code · Dark|Main pane|Pane · Code · Light
 Browser|Pane · Browser · Dark|Main pane|Pane · Browser · Light
 BottomStrip|Pane · Bottom strip · Dark|Bottom strip|Pane · Bottom strip · Light
 Palette|Pane · Command palette · Dark|Command palette|Pane · Command palette · Light
+Settings|Settings · General · Dark|Window|Settings · General · Light
 HeroWindow|Foggy Lake|Window|-
 '
 

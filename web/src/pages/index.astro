@@ -1,13 +1,14 @@
 ---
 // The homepage tells one story, top to bottom, and every part of it has the
-// same shape (see styles/site.css): what Wortel is, the window, the agents in
-// it, the branches under them, what happens when you quit, what it is made of.
+// same shape (see styles/site.css, and components/Section.astro): what
+// Wortel is, a terminal first, the agents in it, the window around them,
+// everything else at a glance, and the questions.
 import Layout from '../layouts/Layout.astro';
 import Hero from '../components/home/Hero.astro';
-import Panes from '../components/home/Panes.astro';
+import Start from '../components/home/Start.astro';
 import Agents from '../components/home/Agents.astro';
-import Worktrees from '../components/home/Worktrees.astro';
-import Survival from '../components/home/Survival.astro';
+import Panes from '../components/home/Panes.astro';
+import Bento from '../components/home/Bento.astro';
 import Glance from '../components/home/Glance.astro';
 import { homeSchema } from '../data/schema';
 import { latestRelease } from '../data/release';
@@ -16,11 +17,19 @@ const schema = homeSchema(await latestRelease());
 ---
 
 <Layout path="/" schema={schema} markdown="/index.md">
+  <Fragment slot="head">
+    {/* The photo the first window stands on is the largest thing in the first
+        screen, and a background the browser only finds once the stylesheet is
+        read: named here, it is fetched with the page and ahead of the rest.
+        The same two files and the same width as .stage in site.css. */}
+    <link rel="preload" as="image" href="/img/lake.jpg" fetchpriority="high" media="(min-width: 901px)" />
+    <link rel="preload" as="image" href="/img/lake-1600.webp" type="image/webp" fetchpriority="high" media="(max-width: 900px)" />
+  </Fragment>
   <Hero />
-  <Panes />
+  <Start />
   <Agents />
-  <Worktrees />
-  <Survival />
+  <Panes />
+  <Bento />
   <Glance />
 </Layout>
 

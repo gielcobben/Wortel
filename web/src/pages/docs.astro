@@ -3,6 +3,7 @@
 // which llms-full.txt renders too.
 import Layout from '../layouts/Layout.astro';
 import Blocks from '../components/Blocks.astro';
+import { inline } from '../data/inline';
 import { SITE, DOCS, DOCS_SECTIONS } from '../data/site';
 const abs = (p: string) => new URL(p, SITE.url).href;
 const schema = [{
@@ -17,10 +18,10 @@ const schema = [{
   </header>
   <div class="page">
     {DOCS_SECTIONS.map((s) => (
-      <section id={s.id} class="row12">
-        <div class="k"><h2 class="h3 t">{s.title}</h2></div>
+      <section id={s.id} class="row12 read">
+        <div class="k stick"><h2 class="h2">{s.title}</h2></div>
         <div class="v">
-          {s.lead && <p class="lead">{s.lead}</p>}
+          {s.lead && <p class="lead" set:html={inline(s.lead)} />}
           <div class="prose"><Blocks blocks={s.blocks} /></div>
         </div>
       </section>
@@ -28,7 +29,5 @@ const schema = [{
   </div>
 </Layout>
 <style>
-  .t { position: sticky; top: 96px; }
   .v .lead { margin-bottom: 24px; }
-  @media (max-width: 900px) { .t { position: static; font-size: 24px; line-height: 32px; letter-spacing: -0.02em; } }
 </style>

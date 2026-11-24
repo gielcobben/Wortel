@@ -1,0 +1,13 @@
+---
+// The traffic lights of a window that has no sidebar to carry them: the
+// window owns them, as AppKit does. Goes in a Window's "over" slot. The
+// images and their size are the canvas's (styles/app.css).
+---
+<div class="wlights" data-name="Traffic lights" aria-hidden="true">
+  <img data-name="Close" src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="32" height="32" />
+  <img data-name="Minimise" src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="32" height="32" />
+  <img data-name="Zoom" src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="32" height="32" />
+</div>
+<style>
+  .wlights { position: absolute; left: 11px; top: 12px; display: flex; gap: 7px; z-index: 5; }
+</style>

@@ -128,13 +128,23 @@
 }
 
 /* The agent's status glyph turns while it works (see scripts/hero.ts). */
-.wapp .spin { animation: wapp-spin 2.4s linear infinite; transform-origin: 50% 55%; }
-@keyframes wapp-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .wapp .spin { animation: none; } }
+/* Claude Code's status words shimmer: a lighter band runs through them, left
+   to right, while the agent works (scripts/app.ts steps the glyph). */
+.wapp .glimmer {
+  background: linear-gradient(90deg, #d77757 0 35%, #f2b49b 50%, #d77757 65% 100%) 0 0 / 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: glimmer 2.2s linear infinite;
+}
+@keyframes glimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .wapp .glimmer { animation: none; color: #d77757; } }
 
 /* ---- what answers to the pointer ------------------------------------------
    Parts of a window a visitor can press (scripts/app.ts marks them). They
    take the app's own hover: a step under the selection, never a web hover. */
+/* A row's status sits centred in the row's last 34px, the dot and the
+   working wave alike (DESIGN.md, Sidebar). The canvas draws the dot's slot
+   20px wide and 21px in, which puts it 7px left of the wave's centre. */
+.wapp [data-name="Status"]:has(> [data-name="Attention"]) { right: 7px; width: 34px; }
 .wapp [data-row], .wapp [data-fold], .wapp [data-press] { cursor: pointer; }
 .wapp [data-press] { border-radius: 8px; transition: background-color 150ms ease; }
 .wapp [data-press]:active { background: var(--sidebar-ring); }
@@ -171,6 +181,11 @@
    canvas drew the prompt following the last line, which is how Claude Code
    used to draw it; this is how 2.1 does (captured from a real session). */
 .wapp [data-name="Terminal"] > [data-name="Rest"] { display: none; }
+/* Another agent's screen (scripts/app.ts, codexScreen and piScreen) brings its own input
+   box and footer; Claude's box is put away while it is up. */
+.wapp [data-name="Terminal"][data-agent] > :is([data-name="Rule"], [data-name="Prompt"], [data-name="Mode"], [data-name="Status"], [data-name="Header"]) { display: none; }
 .wapp [data-name="Terminal"] > [data-name="Rule"]:has(+ [data-name="Prompt"]) { margin-top: auto; }
-.wapp [data-name="Terminal"] > [data-name="Status"] { margin-top: auto; padding-bottom: 19px; }
+/* Claude Code leaves an empty row above its status line, as below it. */
+.wapp [data-name="Terminal"] > [data-name="Status"] { margin-top: auto; padding-top: 19px; padding-bottom: 19px; }
+.wapp [data-name="Terminal"] > [data-name="Status"] > .claude-spin { top: 19px; }
 .wapp [data-name="Terminal"] > [data-name="Status"] ~ [data-name="Rule"] { margin-top: 0; }

@@ -51,12 +51,15 @@ The homepage is the pitch and `/docs` is the manual. When a paragraph starts
 explaining how something works instead of what it does for you, it moves to
 `/docs`. Copy lives in `web/src/data/site.ts` and nowhere else.
 
-Headings are two-tone: a claim, then its explanation.
+Headings are two-tone: a claim, then its other half on the line under it. Both
+are a few words, neither ends in a full stop, and what takes a sentence goes in
+the paragraph beside the heading.
 
-> **Sessions, not tabs.** A tab is a number you have to remember. A session is
-> a name you chose.
+> **A terminal first**
+> An agent is one more command
 
-> **Quit the app, keep the work.** Your shells are not the app's children.
+> **Know which one needs you**
+> The agent says so, Wortel shows it
 
 Each section makes its point once and stops. FAQ answers are written to stand
 alone, because they get quoted without the page around them.

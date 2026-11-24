@@ -6,29 +6,27 @@
 // than for the panes involved. The window's own controls work too: the
 // sidebar and column buttons, the tabs, the sessions. scripts/panes.ts moves
 // it the way the app does, a place at a time. The window is never scaled.
+import Section from '../Section.astro';
 import Stage from '../Stage.astro';
+import { HOME } from '../../data/site';
 import Window from '../Window.astro';
 import Sidebar from '../../app/gen/Sidebar.astro';
 import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
 import FileMain from '../../app/gen/FileMain.astro';
+import AppContent from '../AppContent.astro';
 import Browser from '../../app/gen/Browser.astro';
 import Changes from '../../app/gen/Changes.astro';
 import History from '../../app/gen/History.astro';
 import Files from '../../app/gen/Files.astro';
 import BottomStrip from '../../app/gen/BottomStrip.astro';
+import Lead from '../Lead.astro';
+import Lights from '../Lights.astro';
 
-const chapters = [
-  { label: 'Everything', caption: 'Sessions on the left, the terminal in the middle, your repository beside it and a second shell underneath.' },
-  { label: 'Reviewing', caption: 'Review what an agent did with its commits beside it, and the strip folded away.' },
-  { label: 'Previewing', caption: 'Preview the site in a browser tab, with the dev server running underneath.' },
-  { label: 'Reading', caption: 'Read the plan in a tab of its own, with the project’s files beside it.' },
-  { label: 'Quiet', caption: 'Or fold it all away with three keys, and keep a very good terminal.' },
-];
+const chapters = ['Changes', 'History', 'Browser', 'Files', 'Terminal'];
 ---
-<section id="panes" class="sec">
-  <span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span>
-  <div class="page">
-    <Stage title="One window, four places." film="panes" chapters={chapters} own="Yours now. Every button, tab and session in the window works, and none of it is a setting." photo="skye" at="50% 50%">
+<Section id="panes" {...HOME.window}>
+  <Fragment slot="anchors"><span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span></Fragment>
+    <Stage film="panes" chapters={chapters} photo="skye" at="50% 50%">
       <Window live data-pwin>
         <div class="slot sb" data-slot="sidebar">
           <div class="pane" data-pane="sidebar"><Sidebar /></div>
@@ -37,8 +35,8 @@ const chapters = [
         <div class="mainarea">
           <div class="slot main" data-slot="main">
             <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
-            <div class="pane" data-pane="file"><FileMain /></div>
-            <div class="pane" data-pane="browser"><Browser /></div>
+            <div class="pane" data-pane="file"><AppContent><FileMain /></AppContent></div>
+            <div class="pane" data-pane="browser"><AppContent><Browser /></AppContent></div>
           </div>
           <div class="slot strip" data-slot="strip">
             <div class="pane" data-pane="strip"><BottomStrip /></div>
@@ -50,28 +48,12 @@ const chapters = [
           <div class="pane" data-pane="history"><History /></div>
           <div class="pane" data-pane="files"><Files /></div>
         </div>
-        <div class="lights" slot="over" data-name="Traffic lights" aria-hidden="true">
-          <img data-name="Close" src="/app/3ef4fc84971102ffed5f4a10ada4399c.png" alt="" width="32" height="32" />
-          <img data-name="Minimise" src="/app/d1dbbe84aaf8f948789bed8b07c2622c.png" alt="" width="32" height="32" />
-          <img data-name="Zoom" src="/app/ebeda5316137eb91580afb0a92bd4f45.png" alt="" width="32" height="32" />
-        </div>
+        <Lights slot="over" />
       </Window>
       <!-- What the main bar gains when a neighbour is hidden, as the canvas
            draws its "No sidebar" and "Terminal" states. Cloned by panes.ts. -->
       <template data-tpl="lead">
-        <div data-lead class="contents">
-          <div data-name="Show Sidebar" class="flex size-7 shrink-0 items-center justify-center">
-            <div class="h-[15px] w-[20px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/c804bc011fff44d7ff3a76bab3d40e38.png)] [mask-size:100%_100%]"></div>
-          </div>
-          <div data-name="Back and Forward" class="flex shrink-0 gap-1">
-            <div class="flex size-7 shrink-0 items-center justify-center">
-              <div class="h-[14px] w-[11px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/acdd01364b7ff6a1ea67ea95134701f8.png)] [mask-size:100%_100%]"></div>
-            </div>
-            <div class="flex size-7 shrink-0 items-center justify-center">
-              <div class="h-[14px] w-[11px] shrink-0 bg-sidebar-ring [mask-image:url(/app/9ec6755acab17a098748e05ef189ea76.png)] [mask-size:100%_100%]"></div>
-            </div>
-          </div>
-        </div>
+        <Lead />
       </template>
       <template data-tpl="trail">
         <div data-name="Toolbar divider" class="h-4 w-px shrink-0 bg-input"></div>
@@ -80,8 +62,7 @@ const chapters = [
         </div>
       </template>
     </Stage>
-  </div>
-</section>
+</Section>
 
 <script>
   import { initPanes } from '../../scripts/panes';
@@ -92,25 +73,28 @@ const chapters = [
   [data-film="panes"] :global([data-pane="browser"] img[data-name="Web page"]) { object-position: 50% 0; }
 
   /* Slots, sized the way the canvas sizes them: the sidebar 234, the column
-     384. A divider stays where it was dragged, so the strip's height is ours. */
+     384, or 234 when it holds the file tree. A divider stays where it was
+     dragged, so the strip's height is ours. */
   .slot { position: relative; display: grid; min-height: 0; min-width: 0; overflow: hidden; }
   .slot > * { grid-area: 1 / 1; min-width: 0; min-height: 0; }
   .sb { width: 234px; flex: none; }
   .mainarea { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; }
   .main { flex: 1; min-height: 80px; }
   .strip { flex: none; height: 200px; min-height: 0; }
-  .side { width: 384px; flex: none; }
+  /* One track as wide as the column, so the file tree's narrower pane is
+     not held at the width of the widest pane stacked with it. */
+  .side { width: 384px; flex: none; grid-template-columns: 100%; }
   .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
   .pane { display: flex; }
   /* A folding slot clips its pane, the way a split view does, instead of
      reflowing it through every width on the way to zero. */
   .sb .pane { min-width: 234px; }
   .side .pane { min-width: 384px; }
+  .side [data-pane="files"] { min-width: 234px; }
   .strip .pane { min-height: 200px; }
   .pane > :global(*) { flex: 1; }
   .pane:not(:first-child) { visibility: hidden; opacity: 0; }
 
-  /* The window owns the traffic lights, as AppKit does; the pane's copy hides. */
-  .lights { position: absolute; left: 11px; top: 12px; display: flex; gap: 7px; z-index: 5; }
+  /* The window owns the traffic lights (Lights.astro); the pane's copy hides. */
   [data-film="panes"] :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
 </style>

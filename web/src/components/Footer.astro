@@ -3,6 +3,7 @@
 // then the links, on the same container and grid as everything above.
 import { SITE } from '../data/site';
 import { latestRelease } from '../data/release';
+import GitHubMark from './GitHubMark.astro';
 interface Props { bare?: boolean }
 const { bare = false } = Astro.props;
 const latest = await latestRelease();
@@ -17,21 +18,23 @@ const closing: Record<string, [string, string, string]> = {
   '/compare': ['hills', '0% 0%', '130%'],
   '/about': ['haze', '0% 45%', '160%'],
 };
-const [photo, at, zoom] = closing[here] ?? closing['/'];
+// A release's page closes like the changelog it belongs to.
+const [photo, at, zoom] = closing[here] ?? closing['/' + here.split('/')[1]] ?? closing['/'];
 const cols: [string, [string, string][]][] = [
   ['Wortel', [['Download', '/download'], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
-  ['More', [['About', '/about'], ['llms.txt', '/llms.txt']]],
+  ['More', [['About', '/about'], ['GitHub', SITE.repo], ['Changelog feed', '/feed.xml'], ['llms.txt', '/llms.txt']]],
   ['Legal', [['Privacy', '/privacy'], ['Terms', '/terms']]],
 ];
 ---
 <footer class="foot">
   {!bare && (
     <section class="sec page">
-      <div class="stage cta" style={`--photo: url(/img/${photo}.jpg); --at: ${at}; --zoom: ${zoom}`} data-reveal>
-        <img src="/icon-512.png" width="80" height="80" alt="" />
+      <div class="stage cta" data-photo style={`--photo: url(/img/${photo}.jpg); --photo-s: url(/img/${photo}-1600.webp); --at: ${at}; --zoom: ${zoom}`} data-reveal>
+        <img src="/icon-256.png" width="80" height="80" alt="" loading="lazy" />
         <h2 class="h2">Put down roots. <span class="tone">Free for macOS {SITE.minMacOS} {SITE.minMacOSName} or later, and it updates itself.</span></h2>
         <div class="go">
-          <a class="btn" href={SITE.download} data-ph="download_clicked" data-ph-location="footer" data-ph-version={latest?.version}>Download for macOS</a>
+          <a class="btn" href="/download#footer">Download for macOS</a>
+          <a class="btn ghost" href={SITE.repo} target="_blank" rel="noopener"><GitHubMark />GitHub</a>
           {latest && <span class="label">Version {latest.version}{latest.size && ` · ${latest.size}`}</span>}
         </div>
       </div>
@@ -46,7 +49,7 @@ const cols: [string, [string, string][]][] = [
       {cols.map(([h, items]) => (
         <div class="col">
           <p class="label">{h}</p>
-          <ul>{items.map(([t, href]) => <li><a href={href}>{t}</a></li>)}</ul>
+          <ul>{items.map(([t, href]) => <li><a href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noopener' : undefined}>{t}</a></li>)}</ul>
         </div>
       ))}
     </div>
@@ -65,7 +68,10 @@ const cols: [string, [string, string][]][] = [
   .cta > * { position: relative; }
   .cta .h2 { max-width: 560px; margin-top: 32px; }
   .cta .tone, .cta .label { color: var(--ink-2); }
-  .cta .go { display: flex; align-items: center; gap: 16px; margin-top: 32px; flex-wrap: wrap; }
+  .cta .go { display: flex; align-items: center; gap: 16px 8px; margin-top: 32px; flex-wrap: wrap; }
+  .cta .go .label { margin-left: 8px; }
+  /* On the photo the second button is the page's fog, so it reads on any crop. */
+  .cta .btn.ghost { background: var(--fog-0); }
   .links { margin-top: 96px; padding-top: 48px; border-top: 1px solid var(--line); row-gap: 40px; }
   .sig { grid-column: span 6; display: flex; flex-direction: column; gap: 16px; }
   .col { grid-column: span 2; }

@@ -1,6 +1,7 @@
 ---
 // /about: the name, why it exists, a short history of the terminal Wortel
-// grows out of, and what it believes. Rows on the grid, like every inner page.
+// grows out of, and what it believes. Rows on the grid, like every inner
+// page: a heading at the left, what there is to read at the right.
 import Layout from '../layouts/Layout.astro';
 import { SITE } from '../data/site';
 
@@ -43,18 +44,17 @@ const beliefs = [
   </header>
 
   <div class="page">
-    <section class="row12">
-      <div class="k"><h2 class="label">Why it exists</h2></div>
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">Why it exists</h2></div>
       <div class="v prose big">
         <p>Working with coding agents changed what a terminal is for. You no longer sit in one shell. You keep five going, in five checkouts, and the hard part stops being the typing. It becomes knowing which one is waiting for you, what each one changed, and not losing any of it when you close the lid.</p>
         <p>The tools that grew up around this tend to be apps with a terminal tucked inside. Wortel goes the other way: it is the terminal, a real one on Ghostty’s engine, and the rest of the window is arranged around it. Native, quiet, and with next to nothing to configure.</p>
       </div>
     </section>
 
-    <section class="row12">
-      <div class="k"><h2 class="label">Family tree</h2></div>
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">Family tree <span class="tone">Sixty years of the same blinking cursor</span></h2></div>
       <div class="v">
-        <p class="h2">Sixty years of the same blinking cursor.</p>
         <ol class="rows" data-reveal-group="0.04">
           {history.map((h) => (
             <li class:list={{ us: h.us }} data-reveal>
@@ -67,14 +67,12 @@ const beliefs = [
       </div>
     </section>
 
-    <section class="row12">
-      <div class="k"><h2 class="label">What it believes</h2></div>
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">What it believes <span class="tone">Six things it will not trade away</span></h2></div>
       <div class="v">
-        <p class="h2">Six things it will not trade away.</p>
-        <ol class="rows" data-reveal-group="0.04">
-          {beliefs.map(([t, d], i) => (
+        <ol class="rows two" data-reveal-group="0.04">
+          {beliefs.map(([t, d]) => (
             <li data-reveal>
-              <span class="y">{String(i + 1).padStart(2, '0')}</span>
               <span class="t">{t}</span>
               <span class="body">{d}</span>
             </li>
@@ -83,8 +81,8 @@ const beliefs = [
       </div>
     </section>
 
-    <section class="row12">
-      <div class="k"><h2 class="label">Who makes it</h2></div>
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">Who makes it</h2></div>
       <div class="v prose big"><p>Wortel is made in the Netherlands by <a href={SITE.authorUrl}>{SITE.author}</a>.</p></div>
     </section>
   </div>
@@ -92,11 +90,18 @@ const beliefs = [
 
 <style>
   .prose.big { font-size: 19px; line-height: 32px; color: var(--ink); }
-  .rows { list-style: none; margin: 32px 0 0; padding: 0; }
-  .rows li { display: grid; grid-template-columns: 64px 176px 1fr; gap: 16px; padding-block: 16px; border-top: 1px solid var(--line); align-items: baseline; }
+  /* The lists start on their heading's line: the row's hairline is already
+     over them, so the first item brings none of its own. */
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { display: grid; grid-template-columns: 48px 144px 1fr; gap: 16px; padding-block: 16px; border-top: 1px solid var(--line); align-items: baseline; }
+  .rows.two li { grid-template-columns: 208px 1fr; }
+  .rows li:first-child { border-top: 0; padding-top: 0; }
   .rows li:last-child { border-bottom: 1px solid var(--line); }
-  .y { font: 500 13px/24px var(--font-mono); color: var(--ink-3); }
-  .t { font-weight: 600; font-size: 15px; line-height: 24px; color: var(--ink); }
+  .y { font-size: 13px; line-height: 24px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+  .t { font-weight: 500; font-size: 15px; line-height: 24px; color: var(--ink); }
   .us .y, .us .t { color: var(--accent); }
-  @media (max-width: 640px) { .rows li { grid-template-columns: 48px 1fr; } .rows .body { grid-column: 2; } }
+  @media (max-width: 640px) {
+    .rows li { grid-template-columns: 48px 1fr; } .rows .body { grid-column: 2; }
+    .rows.two li { grid-template-columns: 1fr; gap: 0; } .rows.two .body { grid-column: 1; }
+  }
 </style>

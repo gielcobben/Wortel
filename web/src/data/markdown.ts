@@ -22,6 +22,7 @@ const abs = (p: string) => new URL(p, SITE.url).href;
 
 export const renderBlock = (b: Block): string => {
   if ('p' in b) return b.p;
+  if ('h' in b) return `**${b.h}**`;
   if ('list' in b) return b.list.map((li) => `- ${li}`).join('\n');
   const { head, rows } = b.table;
   return [
@@ -189,7 +190,7 @@ export const updatesMd = async (): Promise<string> => {
       '',
       `## ${r.id}: ${r.data.title}`,
       '',
-      `Released ${day(r.data.date)}. ${abs(`/updates#${r.id}`)}`,
+      `Released ${day(r.data.date)}. ${abs(`/updates/${r.id}`)}`,
       '',
       (r.body ?? '').trim(),
     ]),

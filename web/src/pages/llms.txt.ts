@@ -21,7 +21,9 @@ export const GET: APIRoute = () => {
 
 ${SITE.name} is a fully native macOS terminal emulator built on Ghostty's engine
 (libghostty: VT parser, Metal renderer, glyph atlas), aimed at running several
-coding agents at once. It replaces tabs and splits with a sidebar of named
+coding agents at once. It is a real terminal first: an agent is one more
+command in a session, and Command-N can open every new session with your
+agent already running. It replaces tabs and splits with a sidebar of named
 sessions that persist across restarts; gives each session
 its own git worktree, so several agents can work one repository without editing
 over each other; runs those shells under a keeper process outside the app, so
@@ -63,6 +65,7 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 ## Changelog
 
 - [Every release, newest first](${abs('/updates')}): the full changelog, one entry per version, with the date it shipped and what changed. Versions are CalVer (year.ISO-week.nth release that week), so 2026.32.2 is the second release of week 32 of 2026.
+- Each release has a page of its own at ${abs('/updates/')}<version>, and the changelog is an Atom feed at [${abs('/feed.xml')}](${abs('/feed.xml')}).
 
 ## Legal
 

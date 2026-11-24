@@ -6,8 +6,9 @@
 // its own frontmatter. macos/scripts/release.sh looks the file up by the
 // version it is about to publish and refuses to publish without it.
 //
-// Two consumers render from these files and nothing else:
+// Three consumers render from these files and nothing else:
 //   pages/updates.astro              the changelog a person reads
+//   pages/updates/[version].astro    one release on a page of its own
 //   pages/release-notes/[version]    the same notes, as the HTML fragment
 //                                    Sparkle embeds in the in-app update dialog
 //

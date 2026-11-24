@@ -1817,3 +1817,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   and nothing on it is unique. One verb, no `--force` and no `--session`: a
   flag the agent picks would be the agent deciding to throw away files, and
   the question puts that with the person.
+- **2026-11-24. A new worktree session is two lines from the start.** Named
+  for its placeholder branch (`brave-river-1a2f`), the row was one line until
+  the agent's title came, then grew its branch line and pushed every row below
+  it down. Started with a known agent it is now called for the agent
+  ("Claude") with the branch underneath while it prepares, so the title
+  replaces words and nothing moves. A plain shell keeps the branch as its
+  name: nothing will title it, and "Terminal" over its branch would say less.

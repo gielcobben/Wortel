@@ -388,6 +388,9 @@ final class Session: Identifiable {
     /// "macos" or "src" under its name said where the prompt was, not which
     /// checkout. nil outside a worktree.
     var worktreeLabel: String? {
+        // Still waiting on git: the branch it asked for, so a row that will
+        // be two lines is two lines while it prepares too.
+        if preparation != nil { return worktreeBranch }
         guard isInWorktree else { return nil }
         if let worktreeBranch { return worktreeBranch }
         return (GitWorktree.checkout(containing: cwd) ?? linkedCheckout?.root)
@@ -405,8 +408,10 @@ final class Session: Identifiable {
     var isInWorktree: Bool { isInOwnWorktree || linkedCheckout != nil }
 
     /// A worktree session shows its branch under the name, unless the name
-    /// *is* the branch, which is what a fresh one is called until an agent or
-    /// the model says what it's for. Drives the row's two-line layout.
+    /// *is* the branch, which is what a fresh shell in one is called until the
+    /// model says what it's for (one started with an agent is called for the
+    /// agent instead, so it is two lines from the start). Drives the row's
+    /// two-line layout.
     var showsBranchLine: Bool {
         guard let label = worktreeLabel else { return false }
         // Against the branch's leaf, because that is what the name is made of.

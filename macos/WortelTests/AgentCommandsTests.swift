@@ -42,4 +42,13 @@ final class AgentCommandsTests: XCTestCase {
         XCTAssertEqual(AgentCommands.offered.count, AgentCommands.detected.count - 2)
         XCTAssertEqual(AgentCommands.offered.first, "claude")
     }
+
+    /// What a worktree session started with it is called until it names itself.
+    func testTheAgentALineStartsIsFoundByName() {
+        XCTAssertEqual(AgentCommands.agent(in: "claude\n"), "claude")
+        XCTAssertEqual(AgentCommands.agent(in: "devx claude --model opus"), "claude")
+        XCTAssertEqual(AgentCommands.agent(in: "FOO=1 /usr/local/bin/codex"), "codex")
+        XCTAssertNil(AgentCommands.agent(in: "npm run dev"))
+        XCTAssertNil(AgentCommands.agent(in: ""))
+    }
 }

@@ -20,4 +20,13 @@ enum AgentCommands {
     /// are left out: typed bare they print their usage and exit, so neither
     /// is something a new session could start with.
     static let offered = detected.filter { !["ollama", "llm"].contains($0) }
+
+    /// The known agent a command line starts (`claude` in `devx claude
+    /// --model opus`), or nil. For what a new session is called before its
+    /// agent names it: an unknown command is no promise a title will come.
+    static func agent(in line: String) -> String? {
+        AgentCommandLine.words(line.trimmingCharacters(in: .whitespacesAndNewlines))
+            .lazy.map { ($0 as NSString).lastPathComponent }
+            .first(where: detected.contains)
+    }
 }

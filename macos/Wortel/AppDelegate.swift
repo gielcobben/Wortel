@@ -168,10 +168,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         processes.roots = { [weak manager] in manager?.processRoots ?? [] }
         processes.projectRoots = { [weak manager] in manager?.projectRoots ?? [] }
         processes.startSampling()
-        // Setup's "An agent" row: its installer's one line, on a prompt, for
-        // the person to read and run (`AgentInstall`). Wortel runs nothing.
-        Permissions.shared.installAgent = { [weak self] agent in
-            self?.manager.offerCommand(agent.line)
+        // Setup's rows: an agent's installer, or the one line that points
+        // macOS back at its developer tools, on a prompt for the person to
+        // read and run (`AgentInstall`, `DeveloperTools`). Wortel runs nothing.
+        Permissions.shared.offerCommand = { [weak self] line in
+            self?.manager.offerCommand(line)
         }
         manager.onNeedsAttention = { [weak self] session, kind, title, body, alert in
             self?.postAttentionNotification(session, kind: kind, title: title, body: body, alert: alert)
@@ -334,8 +335,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             center.removeDeliveredNotifications(withIdentifiers: [id])
             center.removePendingNotificationRequests(withIdentifiers: [id])
         }
-        manager.onReminderChanged = { session, date in
-            Self.scheduleReminderFallback(for: session, at: date)
+        manager.onReminderChanged = { session, date, asking in
+            Self.scheduleReminderFallback(for: session, at: date, asking: asking)
         }
         manager.onReminderDue = { session in
             Self.postReminder(for: session)
@@ -1033,7 +1034,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// running takes it back on time and posts its own (`postReminder`),
     /// with the session's name as it is by then. nil takes it back, shown or
     /// not.
-    private static func scheduleReminderFallback(for session: Session, at date: Date?) {
+    ///
+    /// `asking` is a reminder being set, which is asking to be told and so
+    /// a moment to put macOS's question. Without it (every reminder handed
+    /// over again at launch and on the way out) the request is added as it
+    /// stands: at launch the answer hasn't been read yet, and going through
+    /// the question there put the system's prompt at launch, each launch,
+    /// for anyone who had let it slide away unanswered. And on the way out
+    /// nothing can wait for a reply.
+    private static func scheduleReminderFallback(for session: Session, at date: Date?, asking: Bool) {
         let center = UNUserNotificationCenter.current()
         let id = reminderID(session)
         center.removePendingNotificationRequests(withIdentifiers: [id])
@@ -1047,9 +1056,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let request = UNNotificationRequest(
             identifier: id, content: reminderContent(sessionID: session.id, name: session.name),
             trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: false))
-        // Setting a reminder is asking to be told, so it is also a moment
-        // to ask macOS. Answered after the reminder was taken back or moved
-        // (`remindAt` is no longer this date), nothing is left behind.
+        guard asking else {
+            center.add(request)
+            return
+        }
+        // Answered after the reminder was taken back or moved (`remindAt`
+        // is no longer this date), nothing is left behind.
         whenNotificationsAnswered { [weak session] in
             guard session?.remindAt == date else { return }
             center.add(request)

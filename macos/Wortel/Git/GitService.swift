@@ -249,7 +249,7 @@ enum GitService {
         // Never started on a Mac without it (`DeveloperTools`): the stub in
         // `/usr/bin` would answer with macOS's installer, not with git.
         guard DeveloperTools.current.canRun else {
-            return CommandResult(status: 127, stdout: "", stderr: DeveloperTools.missingMessage)
+            return CommandResult(status: 127, stdout: "", stderr: DeveloperTools.message())
         }
         return await execute(gitArguments(args), environment: gitEnvironment, in: directory,
                       input: input, timeout: timeout)

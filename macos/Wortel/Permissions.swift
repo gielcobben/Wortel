@@ -48,9 +48,15 @@ final class Permissions {
     /// started, `denied` while none has been.
     private(set) var agent: State = .unknown
 
-    /// Type this agent's installer into a terminal, set by the app delegate,
-    /// which is who has the sessions.
-    @ObservationIgnored var installAgent: ((AgentInstall.Agent) -> Void)?
+    /// Apple's tools are on the disk and macOS is pointed at a developer
+    /// directory that is gone (`DeveloperTools.Git.misdirected`): nothing
+    /// to install, one command to run.
+    private(set) var gitNeedsReset = false
+
+    /// Put a command on a prompt for the person to read and run, set by the
+    /// app delegate, which is who has the sessions. An agent's installer
+    /// (`AgentInstall`), and the reset above. Wortel runs neither.
+    @ObservationIgnored var offerCommand: ((String) -> Void)?
 
     /// The sidebar icon is out although nothing needs attention, because its
     /// popover was opened from the Wortel menu and has to hang off something.
@@ -76,8 +82,15 @@ final class Permissions {
     }
 
     func refresh() {
-        fullDiskAccess = Self.readFullDiskAccess()
-        developerTools = DeveloperTools.current.canRun ? .granted : .denied
+        // Only what changed is written: each of these is read by a view (the
+        // git panes read `developerTools`), and this runs every time Wortel
+        // comes to the front.
+        let disk = Self.readFullDiskAccess()
+        if fullDiskAccess != disk { fullDiskAccess = disk }
+        let git = DeveloperTools.current
+        let tools: State = git.canRun ? .granted : .denied
+        if developerTools != tools { developerTools = tools }
+        if gitNeedsReset != (git == .misdirected) { gitNeedsReset = git == .misdirected }
         // The cheap half of the agent question, for the moment after an
         // installer finished: a few folders, never a shell.
         if agent == .denied, !AgentDiscovery.scan(names: AgentCommands.offered).isEmpty { noteAgent() }
@@ -93,7 +106,9 @@ final class Permissions {
                     ? .granted : .denied
             @unknown default: state = .unknown
             }
-            DispatchQueue.main.async { Permissions.shared.notifications = state }
+            DispatchQueue.main.async {
+                if Permissions.shared.notifications != state { Permissions.shared.notifications = state }
+            }
         }
     }
 
@@ -153,7 +168,8 @@ final class Permissions {
     }
 
     /// An agent is here: found on disk, answered for by the shell, or
-    /// started in a session (`SessionManager`, for any agent, known or not).
+    /// running in a session (`SessionManager`: one that reports what it is
+    /// doing, or whose marker outlived the moment a mistyped name gets).
     func noteAgent() {
         if !agentSeen { agentSeen = true }
         if agent != .granted { agent = .granted }
@@ -164,6 +180,13 @@ final class Permissions {
     /// the person's login shell asked (`AgentDiscovery`), which also knows
     /// about an alias, a function and a version manager's folder. Off the
     /// main thread, and never again once the answer was yes.
+    ///
+    /// **Only the shell's own "none" is a no.** When it gave no answer (too
+    /// slow, a shell Wortel can't ask, another question still out) the
+    /// folders are all that was read, and they miss an agent under nvm or
+    /// mise and every alias: saying "no agent" on that would put a dot and
+    /// an Install row in front of someone who has had one for a year. So
+    /// that stays unknown, shown as nothing, and is asked again next time.
     func lookForAgent() {
         guard !agentSeen else {
             if agent != .granted { agent = .granted }
@@ -174,10 +197,11 @@ final class Permissions {
             return
         }
         Task { @MainActor in
-            if await AgentDiscovery.find().isEmpty {
-                if !self.agentSeen, self.agent != .denied { self.agent = .denied }
-            } else {
+            guard let answer = await AgentDiscovery.ask() else { return }
+            if !answer.isEmpty {
                 self.noteAgent()
+            } else if !self.agentSeen, self.agent != .denied {
+                self.agent = .denied
             }
         }
     }
@@ -186,8 +210,17 @@ final class Permissions {
 
     /// Apple's installer. It runs for minutes in an app of its own, so the
     /// answer is read again when Wortel is next in front, as the others are.
+    ///
+    /// Unless the tools are there and macOS is looking elsewhere: then the
+    /// installer only says "already installed", and what helps is a command
+    /// that needs an administrator's password, so it is typed for the
+    /// person to run.
     func fixDeveloperTools() {
-        DeveloperTools.install()
+        if gitNeedsReset {
+            offerCommand?(DeveloperTools.resetLine)
+        } else {
+            DeveloperTools.install()
+        }
     }
 
     // ---- Full Disk Access -----------------------------------------------------

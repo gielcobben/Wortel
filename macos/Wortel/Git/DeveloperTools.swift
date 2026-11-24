@@ -30,10 +30,16 @@ enum DeveloperTools {
         /// No developer tools, but a git of someone's own (Nix, MacPorts) in
         /// this folder, which has to come before `/usr/bin` to be the one run.
         case other(directory: String)
+        /// Apple's tools are on the disk, and macOS was pointed
+        /// (`xcode-select --switch`) at a developer directory that has since
+        /// gone, usually an Xcode that was deleted. `/usr/bin/git` fails on
+        /// the selection and looks no further, and the installer has nothing
+        /// to install. `resetLine` is what puts it right.
+        case misdirected
         /// None. Starting `/usr/bin/git` would raise macOS's installer.
         case missing
 
-        var canRun: Bool { self != .missing }
+        var canRun: Bool { self != .missing && self != .misdirected }
     }
 
     /// The git this Mac has. `selected` is where the selection link points,
@@ -45,12 +51,13 @@ enum DeveloperTools {
     ) -> Git {
         // A selection decides alone: when it points at an Xcode that has
         // since been deleted, the stub fails rather than falling back.
-        let developer = selected.map { [$0] } ?? defaultDirectories
-        if developer.contains(where: { isExecutable("\($0)/usr/bin/git") }) { return .apple }
+        let hasGit = { (developer: String) in isExecutable("\(developer)/usr/bin/git") }
+        if (selected.map { [$0] } ?? defaultDirectories).contains(where: hasGit) { return .apple }
         if let directory = installDirectories.first(where: { isExecutable("\($0)/git") }) {
             return .other(directory: directory)
         }
-        return .missing
+        // Only reached with a selection that holds no git.
+        return defaultDirectories.contains(where: hasGit) ? .misdirected : .missing
     }
 
     /// The answer for this run of the app. A yes is kept: tools that are
@@ -66,7 +73,16 @@ enum DeveloperTools {
     private static let found = OSAllocatedUnfairLock<Git?>(initialState: nil)
 
     /// What a git command that was never started says went wrong.
-    static let missingMessage = "Git is not installed. It comes with Apple's command line developer tools."
+    static func message(for git: Git = current) -> String {
+        git == .misdirected
+            ? "Git cannot run: macOS is pointed at developer tools that are gone. Run \(resetLine) in a terminal."
+            : "Git is not installed. It comes with Apple's command line developer tools."
+    }
+
+    /// Forgets the selection, so macOS finds the tools where they are. It
+    /// needs an administrator, so it is never run from here: it is typed on
+    /// a prompt for the person to run (`Permissions.fixDeveloperTools`).
+    static let resetLine = "sudo xcode-select --reset"
 
     /// Apple's own installer, the same dialog a `git` typed in a shell would
     /// raise, here because someone pressed a button for it.

@@ -147,7 +147,7 @@ private struct PermissionsView: View {
                             PermissionRow.Choice(title: agent.name) {
                                 PermissionsNotice.shared.close()
                                 // After the popover has handed the keyboard back.
-                                DispatchQueue.main.async { permissions.installAgent?(agent) }
+                                DispatchQueue.main.async { permissions.offerCommand?(agent.line) }
                             }
                         },
                         fix: {})
@@ -156,11 +156,18 @@ private struct PermissionsView: View {
                     PermissionRow(
                         symbol: "arrow.triangle.branch",
                         title: "Git",
-                        detail: "For worktrees, Changes and History. Part of Apple\u{2019}s command line tools.",
+                        detail: permissions.gitNeedsReset
+                            ? "macOS points at developer tools that are gone. The fix is typed for you."
+                            : "For worktrees, Changes and History. Part of Apple\u{2019}s command line tools.",
                         optional: false,
                         state: permissions.developerTools,
-                        action: "Install\u{2026}",
-                        fix: { permissions.fixDeveloperTools() })
+                        action: permissions.gitNeedsReset ? "Fix" : "Install\u{2026}",
+                        fix: {
+                            guard permissions.gitNeedsReset else { return permissions.fixDeveloperTools() }
+                            PermissionsNotice.shared.close()
+                            // After the popover has handed the keyboard back.
+                            DispatchQueue.main.async { permissions.fixDeveloperTools() }
+                        })
                 }
                 Divider()
             }

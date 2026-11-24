@@ -61,15 +61,19 @@ struct SourceControlPanel: View {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 26))
                     .foregroundStyle(.tertiary)
-                Text("Git is not installed")
+                Text(Permissions.shared.gitNeedsReset ? "Git cannot run" : "Git is not installed")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Text("It comes with Apple\u{2019}s command line tools.")
+                Text(Permissions.shared.gitNeedsReset
+                     ? "macOS is pointed at developer tools that are gone."
+                     : "It comes with Apple\u{2019}s command line tools.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Install\u{2026}") { Permissions.shared.fixDeveloperTools() }
+                Button(Permissions.shared.gitNeedsReset ? "Fix" : "Install\u{2026}") {
+                    Permissions.shared.fixDeveloperTools()
+                }
                     .controlSize(.small)
                     .padding(.top, 4)
             }

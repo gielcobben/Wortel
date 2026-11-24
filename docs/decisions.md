@@ -82,8 +82,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   a line starting with `npm` or `brew` is two more installs there. Each
   line was read off the agent's own page that day. Whether the Mac has an
   agent is asked (the usual folders, then the login shell) only until the
-  answer has been yes once, or an agent has started in a session, and never
-  after. The missing agent raises the sidebar's icon until the popover has
+  answer has been yes once, or an agent has run in a session, and never
+  after. Only the shell's own "none" counts as a no: when it gave no answer
+  (too slow, a shell Wortel can't ask) nothing is said, because the folders
+  alone miss a version manager's and every alias, and "no agent" in front
+  of someone who has had one for a year is worse than silence. A marker
+  alone is not an agent either: the shell writes it before it knows the
+  command exists, so `claude` typed on a Mac without it would have taken
+  the row away for good. It counts once it is still there five seconds on,
+  or the program has reported. The line is typed only where it will be
+  seen, the terminal in front of its session, and otherwise in a new
+  session. The missing agent raises the sidebar's icon until the popover has
   been opened once: someone who uses Wortel as a plain terminal is told one
   time. Not built: the same for updating an agent that is too old. Which
   installer it came from can be guessed wrong, and how often it happens is
@@ -979,7 +988,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   that includes allowed with every way of showing one turned off). Now the
   prompt comes with the first banner (a session out of sight that finished
   or needs you) or the first reminder set, and that banner is posted once it
-  is answered, if the session still wants anyone. Until then the permissions
+  is answered, if the session still wants anyone. Reminders handed to
+  Notification Center again at launch and at quit never put the question:
+  that had it back at every launch for anyone who let the prompt slide away
+  with a reminder still pending. Until then the permissions
   icon is in the sidebar with its Grant button, as it is for a no. Not
   checked: the Dock badge before the question has been put, which needs a
   signed build on a Mac that was never asked.
@@ -1340,7 +1352,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Install… button and the permissions popover has a Git row. Both open
   Apple's own installer (`xcode-select --install`): Wortel downloads and
   installs nothing itself. A git of the person's own (Nix, MacPorts) is used
-  when Apple's is absent. Not reproduced on a Mac without the tools: the
+  when Apple's is absent. One more state, for an Xcode that was selected
+  and then deleted: the tools are on the disk, git fails on the selection,
+  and the installer only says "already installed". There the button is Fix,
+  and it types `sudo xcode-select --reset` on a prompt for the person to
+  run, since it needs an administrator. Not reproduced on a Mac without the tools: the
   detection is tested, the stub's dialog is Apple's documented behaviour.
 
 ## Files, previews, browser
@@ -1478,7 +1494,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the installer is the one that has to find the result (checked in zsh and
   bash: not found, install, found, same shell). The cost, on purpose:
   `claude` then runs in Wortel and not in another terminal until that line
-  is added. fish and elvish have the same lines and were not run.
+  is added. The shell Settings asks which agents this Mac has
+  (`AgentDiscovery`) has no integration, so its question adds the folder
+  too, or an agent that runs in every session would be missing there. fish and elvish have the same lines and were not run.
 
 ## Release and updates
 

@@ -31,11 +31,26 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertEqual(git(selected: beta, existing: ["\(beta)/usr/bin/git"]), .apple)
     }
 
+    private let gone = "/Applications/Gone.app/Contents/Developer"
+
     func testASelectionThatIsGoneIsNotRescuedByTheDefaults() {
         // An Xcode that was selected and then deleted: the stub fails on the
-        // selection and never looks further, so neither does this.
-        XCTAssertEqual(git(selected: "/Applications/Gone.app/Contents/Developer",
-                           existing: ["\(tools)/usr/bin/git"]), .missing)
+        // selection and never looks further, so git can't run. But the
+        // tools are there, so it is not "not installed" either: the
+        // installer would say "already installed" and change nothing.
+        XCTAssertEqual(git(selected: gone, existing: ["\(tools)/usr/bin/git"]), .misdirected)
+        XCTAssertFalse(DeveloperTools.Git.misdirected.canRun)
+        XCTAssertTrue(DeveloperTools.message(for: .misdirected).contains(DeveloperTools.resetLine))
+        XCTAssertFalse(DeveloperTools.message(for: .missing).contains(DeveloperTools.resetLine))
+    }
+
+    func testASelectionThatIsGoneWithNothingElseIsANewMac() {
+        XCTAssertEqual(git(selected: gone, existing: []), .missing)
+    }
+
+    func testAGitOfTheirOwnRunsWhateverWasSelected() {
+        XCTAssertEqual(git(selected: gone, existing: ["\(tools)/usr/bin/git", "/opt/homebrew/bin/git"]),
+                       .other(directory: "/opt/homebrew/bin"))
     }
 
     func testAGitOfTheirOwnRunsWithoutAppleTools() {

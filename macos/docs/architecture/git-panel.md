@@ -45,7 +45,11 @@ with a sentence and no process, the two panes say "Git is not installed" with
 an Install… button (`xcode-select --install`, Apple's installer), and the
 permissions popover lists it (`Permissions.developerTools`, read again
 whenever Wortel comes to the front, which is also when the pane asks about
-its folder again).
+its folder again). A selection link that points at a developer directory
+which is gone, with Apple's tools still on the disk, is its own answer
+(`Git.misdirected`): the panes say "Git cannot run", and the button is Fix,
+which types `sudo xcode-select --reset` on a prompt
+(`SessionManager.offerCommand`) because the installer has nothing to install.
 
 `refresh()` runs one `git status` at a time (it's a full worktree walk; the
 FSEvents watcher fires on every write, and bursts used to stack scans), and

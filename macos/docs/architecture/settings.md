@@ -94,12 +94,17 @@ plain terminal.
   (`AgentDiscovery`): the login shell is run once when the window opens,
   whichever tab is in front and however often they are switched, off the
   main thread, with `command -v` between two sentinel lines so nothing its
-  startup files print can get in. It has four seconds, counted by the
+  startup files print can get in. The question adds `~/.local/bin` to that
+  shell's PATH first, as the shell integration does for a session, so what
+  runs in a session is what is listed. It has four seconds, counted by the
   discovery itself: the command runner waits for the shell's output to
   close, and a startup file that leaves something running keeps it open. If
   no answer comes, the usual install folders are scanned instead, and while
-  one shell is still out no second one is started. Nothing runs while the
-  window is closed. The names are `AgentCommands`, which a test holds
+  one shell is still out no second one is started. The same question is
+  asked at launch and when the permissions popover opens, only on a Mac
+  where no agent has been seen yet (`Permissions.lookForAgent`); there no
+  answer is left as no answer, and the folders are not taken for one.
+  Otherwise nothing runs while the window is closed. The names are `AgentCommands`, which a test holds
   against the shell integration's six copies of the same list.
 
 ## How it is built

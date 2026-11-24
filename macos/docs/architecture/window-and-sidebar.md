@@ -109,11 +109,13 @@ would draw the session you are in.
   agent found and the popover not yet opened once. The popover's Setup
   section holds "An agent" and "Git", each only while missing, above the
   two permissions. An agent is looked for at launch (after the first frame)
-  and when the popover opens, until one was found or started once
-  (`setup.agentSeen` in the defaults), and never after. Picking one from
-  the row's menu types its installer on a prompt, unsent
-  (`SessionManager.offerCommand`): the session in front when its shell is at
-  a prompt, else a new plain session with the line typed ahead.
+  and when the popover opens, until one was found or ran once
+  (`setup.agentSeen` in the defaults), and never after. "None" is said only
+  when the login shell itself answered none; no answer shows nothing.
+  Picking one from the row's menu types its installer on a prompt, unsent
+  (`SessionManager.offerCommand`): the session in front when its terminal is
+  the tab in front and its shell is at a prompt, else a new plain session
+  with the line typed ahead.
 
 **Sidebar selection and order** (`SidebarOutlineView`, `SessionSelection`,
 `SidebarSort`, both pure and in `WortelTests`). A plain press on a session

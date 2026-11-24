@@ -430,7 +430,7 @@ final class SessionManager {
     /// closed, or gone off and since visited). The app layer keeps a banner
     /// waiting in Notification Center for it, so it still comes with Wortel
     /// quit, and takes it back here.
-    @ObservationIgnored var onReminderChanged: ((Session, Date?) -> Void)?
+    @ObservationIgnored var onReminderChanged: ((_ session: Session, _ date: Date?, _ asking: Bool) -> Void)?
     /// A reminder went off for a session nobody is looking at: the banner,
     /// now, under the session's name as it is now.
     @ObservationIgnored var onReminderDue: ((Session) -> Void)?
@@ -1369,6 +1369,20 @@ final class SessionManager {
         refreshAgentActivity()
     }
 
+    /// A marker on a Mac where no agent has been seen yet: an agent, if it is
+    /// still there in a few seconds. The shell writes the marker from the
+    /// command line, before it knows the command exists, so `claude` typed
+    /// on a Mac without it leaves one for the moment until "command not
+    /// found". Taking that for an agent took the Setup row away for good
+    /// from exactly the person it is for.
+    private func confirmAgent(_ marker: AgentMarker, in id: Session.ID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard let now = AgentResumeStore.currentMarkers()[id],
+                  now.agent == marker.agent, now.startedAt == marker.startedAt else { return }
+            Permissions.shared.noteAgent()
+        }
+    }
+
     /// Re-read all live markers and mirror them onto the sessions. Cheap: the
     /// directory holds at most one tiny file per running agent.
     private func refreshAgentActivity() {
@@ -1399,8 +1413,9 @@ final class SessionManager {
                 session.liveConversationID = nil
             }
             if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
-            // An agent, here: nothing asks whether this Mac has one again.
-            if marker != nil { Permissions.shared.noteAgent() }
+            if let marker, isNewRun, Permissions.shared.agent != .granted {
+                confirmAgent(marker, in: session.id)
+            }
             if session.runningModel != marker?.model { session.runningModel = marker?.model }
             session.runningArgv = marker?.argv
             session.runningShellPID = marker?.shellPID
@@ -2755,7 +2770,7 @@ final class SessionManager {
         let reminded = remindedIDs.remove(session.id) != nil
         if session.remindAt != nil || reminded {
             session.remindAt = nil
-            onReminderChanged?(session, nil)
+            onReminderChanged?(session, nil, false)
             armReminderTimer()
         }
         if sidebarSelection.ids.contains(session.id) || sidebarSelection.anchor == session.id {
@@ -5053,7 +5068,12 @@ final class SessionManager {
     /// waiting on the first prompt: a line pasted into whatever is running
     /// there (an editor, a build asking a question) would be typed into that.
     func offerCommand(_ line: String) {
+        // And only where it will be seen: with a file or a browser tab in
+        // front of the terminal the line would be typed out of sight, and
+        // the keyboard handed to a terminal nobody is looking at.
         if let session = (placingWindow ?? activeWindow)?.selected, let view = session.surfaceView,
+           session.activeMainTab ?? .session == .session,
+           let window = view.window, window.isVisible, !view.isHiddenOrHasHiddenAncestor,
            shellIsAtPrompt(session, view) {
             view.sendText(line, scripted: true)
             view.window?.makeFirstResponder(view)
@@ -5233,7 +5253,7 @@ final class SessionManager {
         // Set again after it went off (a snooze): the one that went off is
         // done with, or the next visit would take the new one's banner back.
         remindedIDs.remove(session.id)
-        onReminderChanged?(session, date)
+        onReminderChanged?(session, date, true)
         scheduleSave()
         armReminderTimer()
         if date != nil { Telemetry.capture(.reminderSet) }
@@ -5291,7 +5311,7 @@ final class SessionManager {
     /// been renamed since its reminder was set.
     func scheduleReminderFallbacks(now: Date = Date()) {
         for session in sessions {
-            if let date = session.remindAt, date > now { onReminderChanged?(session, date) }
+            if let date = session.remindAt, date > now { onReminderChanged?(session, date, false) }
         }
     }
 
@@ -5304,7 +5324,7 @@ final class SessionManager {
     @discardableResult
     private func answerReminder(_ session: Session) -> Bool {
         guard remindedIDs.remove(session.id) != nil else { return false }
-        onReminderChanged?(session, nil)
+        onReminderChanged?(session, nil, false)
         return true
     }
 
@@ -5320,7 +5340,7 @@ final class SessionManager {
             if !launching, isActivelyViewing(session) {
                 // You're already here: the ring flashes, and that's all.
                 window(of: session).attentionFlash = AttentionFlash(kind: .finished)
-                onReminderChanged?(session, nil)
+                onReminderChanged?(session, nil, false)
             } else {
                 markUnread(session)
                 remindedIDs.insert(session.id)

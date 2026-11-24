@@ -1,7 +1,8 @@
 import Foundation
 import os
 
-/// Which known agents this Mac has, for the pull-down in Settings.
+/// Which known agents this Mac has, for the pull-down in Settings and for
+/// the Setup section of the permissions popover (`Permissions.lookForAgent`).
 ///
 /// **Asked of the person's own shell**, because nothing else knows. An app
 /// opened from the Dock has launchd's PATH; an agent installed through nvm,
@@ -10,8 +11,17 @@ import os
 /// typed into that same shell, so "the shell can run it" is exactly the
 /// question.
 ///
-/// Run once when the Settings window opens, off the main thread, and never
-/// otherwise: nothing here costs anything while the window is closed.
+/// **And of that shell as a session has it.** A session's shell has
+/// `~/.local/bin` on its PATH whatever its files say, because the shell
+/// integration puts it there (it is where Claude Code's installer leaves
+/// `claude`, and a new Mac's PATH doesn't have it). The shell asked here
+/// has no integration, so the question adds that folder itself, or Settings
+/// would say an agent that runs in every session isn't installed.
+///
+/// Run when the Settings window opens, and at launch and when the
+/// permissions popover opens on a Mac where no agent has been seen yet
+/// (`Permissions.lookForAgent`: once one has, that asks nothing again).
+/// Always off the main thread, one shell at a time.
 enum AgentDiscovery {
     /// The lines around the answer. Whatever the shell's own files print
     /// (a banner, a version manager's notice) falls outside them.
@@ -25,9 +35,9 @@ enum AgentDiscovery {
         let list = names.joined(separator: " ")
         switch shell {
         case .zsh, .bash:
-            return "echo \(opening); for c in \(list); do command -v \"$c\" >/dev/null 2>&1 && echo \"$c\"; done; echo \(closing)"
+            return "PATH=\"$PATH:$HOME/.local/bin\"; echo \(opening); for c in \(list); do command -v \"$c\" >/dev/null 2>&1 && echo \"$c\"; done; echo \(closing)"
         case .fish:
-            return "echo \(opening); for c in \(list); type -q $c; and echo $c; end; echo \(closing)"
+            return "set PATH $PATH \"$HOME/.local/bin\"; echo \(opening); for c in \(list); type -q $c; and echo $c; end; echo \(closing)"
         case .other:
             return nil
         }
@@ -58,7 +68,16 @@ enum AgentDiscovery {
     }
 
     /// The agents found: the shell's answer, or the folder scan when the
-    /// shell gave none in time.
+    /// shell gave none.
+    @MainActor
+    static func find(names: [String] = AgentCommands.offered) async -> [String] {
+        await ask(names: names) ?? scan(names: names)
+    }
+
+    /// The shell's own answer, and nil when it gave none: it took too long,
+    /// it is a shell Wortel can't ask, or another question is still out.
+    /// An empty answer is the shell saying it can run none of them, which
+    /// is the only "no" worth telling anyone (`Permissions.lookForAgent`).
     ///
     /// The shell gets four seconds, counted here and not left to the command
     /// runner: that waits for the shell's output to close, and a startup
@@ -67,13 +86,13 @@ enum AgentDiscovery {
     /// dropped, and while one is still outstanding no second shell is
     /// started behind it.
     @MainActor
-    static func find(names: [String] = AgentCommands.offered) async -> [String] {
+    static func ask(names: [String] = AgentCommands.offered) async -> [String]? {
         let path = ShellSpawn.loginShell()
         guard !probing, let script = script(for: ShellSpawn.Shell(path: path), names: names) else {
-            return scan(names: names)
+            return nil
         }
         probing = true
-        let answer: [String]? = await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { continuation in
             let once = OSAllocatedUnfairLock<CheckedContinuation<[String]?, Never>?>(initialState: continuation)
             let finish = { @Sendable (found: [String]?) in
                 once.withLock { waiting in
@@ -95,7 +114,6 @@ enum AgentDiscovery {
                 finish(nil)
             }
         }
-        return answer ?? scan(names: names)
     }
 
     /// A shell is out answering. Main thread only.

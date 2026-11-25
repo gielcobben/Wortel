@@ -269,7 +269,9 @@ enum AgentResumeStore {
         // Lines end in "\n" and nothing else. Any Unicode line break
         // (U+2028, NEL) split it too, and those can be in a folder's name, in
         // the cwd line, where the shells strip only control characters.
-        let lines = text.split(separator: "\n").map { $0.hasSuffix("\r") ? $0.dropLast() : $0 }
+        // A CRLF ending is one `Character` in Swift, not "\n" followed by
+        // "\r", so it is named as a separator of its own.
+        let lines = text.split(whereSeparator: { $0 == "\n" || $0 == "\r\n" })
         // Legacy marker: one bare token, no key=value structure.
         if lines.count == 1, !lines[0].contains("=") {
             let agent = lines[0].trimmingCharacters(in: .whitespaces)

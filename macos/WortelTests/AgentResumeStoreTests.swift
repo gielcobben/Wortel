@@ -66,6 +66,12 @@ final class AgentResumeStoreTests: XCTestCase {
         XCTAssertEqual(AgentResumeStore.parse("agent=claude\ncwd=/tmp\n")?.agent, "claude")
     }
 
+    func testParsesCRLFLineEndings() throws {
+        let marker = try XCTUnwrap(AgentResumeStore.parse("agent=claude\r\ncwd=/tmp\r\n"))
+        XCTAssertEqual(marker.agent, "claude")
+        XCTAssertEqual(marker.cwd, "/tmp")
+    }
+
     func testParsesLegacyBareAgentName() throws {
         let marker = try XCTUnwrap(AgentResumeStore.parse("claude\n"))
         XCTAssertEqual(marker.agent, "claude")

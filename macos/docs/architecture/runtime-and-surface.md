@@ -72,7 +72,7 @@ directory, bells, progress, a command ending).
 and `keyTextAccumulator` to make IME (Korean/Japanese) and unclaimed command
 keys work; preserve the upstream comments when touching it. `GhosttyInput.swift`
 holds the NSEvent↔ghostty translation helpers and `KeyboardLayout`, as ported
-from Ghostty v1.3.1. Ghostty.app's input fixes since then (to 5ebe501) are in
+from Ghostty v1.3.1. Ghostty.app's input fixes since then (to 5ebe501; none to vt-1.0.2) are in
 `KeyInputText.swift` (pure, tested) and `keyDown`/`insertText`: text an input
 method commits outside a key (Dictation, the emoji picker) goes through the key
 encoder, never `ghostty_surface_text`, which is a paste and showed up in an

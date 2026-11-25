@@ -222,8 +222,10 @@ enum TerminalLink {
 
     // MARK: - Spellings
 
-    /// Trailing characters a sentence or Markdown puts after a path, which the
-    /// regex keeps (`.`, `!`, `?`, `;`, `*` are all legal in a path).
+    /// Trailing characters a sentence or Markdown puts after a path. Since
+    /// vt-1.0.2 libghostty's own match leaves `.`, `:`, `;`, `!` and `?` off a
+    /// path's end, but not `*`, `)` or quotes, and a path joined from wrapped
+    /// rows or tagged with OSC 8 never went through its pattern at all.
     private static let trailing: Set<Character> = [".", ",", ";", ":", "!", "?", "*", ")", "]", "'", "\"", "`", ">"]
 
     /// The paths `link` might mean, most literal first, each with the line its

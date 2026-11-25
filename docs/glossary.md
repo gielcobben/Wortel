@@ -63,6 +63,19 @@ and how the main area is divided among the splits (`WorkspaceTabs`).
 **Preview.** A file opened to look at: source, diff, rendered Markdown, or
 Quick Look. A tab by default.
 
+**Mark-up.** Pointing at what a preview shows and saying something about it,
+for an agent to read (⇧⌘M). A mode of the preview, not a tool of the browser.
+The menu item is the verb, "Mark Up".
+
+**Mark.** One thing pointed at while marking up: an element that was picked,
+or an area that was drawn around. It has a colour, a number and a picture.
+
+**Note.** The sentence written while marking up, with the marks in it. What
+Return copies. It is never sent anywhere.
+
+**Chip.** A mark as it sits in the note: a small capsule with the mark's
+number and what it points at.
+
 ## Sessions and their life
 
 **Origin cwd.** The directory a session was born in. It never moves. `cwd`

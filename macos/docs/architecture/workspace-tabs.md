@@ -105,6 +105,11 @@ file in the folder did not, a change while the tab was behind another waited
 until it was shown, and the tab was restored and loaded after a relaunch.
 Not checked there: ⌥⌘U and the pill in a live window.
 
+**Mark-up** (⇧⌘M, the last button in the header) is in `mark-up.md`: its
+layer lies over the web view inside `WebViewContainer`, it turns the swipe
+back off and holds the reload-on-change while it is on, and any navigation
+ends it (`BrowserPage.endMarkup`).
+
 **Sign-ins.** Pages use WebKit's default data store, which is kept per
 bundle id (`~/Library/WebKit/<bundle id>`, cookies in
 `~/Library/HTTPStorages/<bundle id>.binarycookies`). Checked in a test copy

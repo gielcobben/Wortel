@@ -359,6 +359,24 @@ Back, forward and zoom need the keyboard in the page. When the page has no
 history in that direction, ⌘[ and ⌘] move between areas as they do everywhere
 else, so the keyboard is never stuck in a page.
 
+## Marking up
+
+| Action | Shortcut | Same as |
+|---|---|---|
+| Mark up the page in front, and stop | ⇧⌘M | |
+| Copy the note, and stop | Return | |
+| A new line in the note | ⇧Return, ⌥Return | every chat field |
+| Drop the stroke being drawn, or stop and keep the note | Esc | |
+| Take back the last mark | ⌘Z | |
+| Remove a mark | ⌫ on its chip | |
+
+⇧⌘M reaches the page in front from anywhere, as ⌘R does: the area you're in
+first. Preview's own key for its Markup toolbar is ⇧⌘A, which is Select All
+in a terminal here.
+
+While marking up, the keyboard is in the note. ⌘R, ⌘L and ⌘+ still reach the
+page, and going anywhere else with them ends mark-up and drops the note.
+
 ## In a file
 
 | Action | Shortcut | Same as |

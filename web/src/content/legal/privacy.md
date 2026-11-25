@@ -81,6 +81,11 @@ about the thing it happened to:
 - a tab was opened, which kind (a terminal, a browser, a file or one of the git
   and file panes) and in which area of the window (never what is in it, where
   a browser is pointed, or which file)
+- mark-up was turned on over a preview, and which kind (a page, source, a
+  diff, Markdown or an image); and a note was copied from it, with roughly how
+  many marks it had (as a range) and a yes or no for whether any of them was a
+  picked element (never what was marked, the address or the file, a word of
+  the note, or anything in the pictures)
 - the command palette was used (⌘P or ⇧⌘P), and whether it ended with a session
   picked, a command run, a file opened, or neither (never what was typed or
   which session, command or file it was)

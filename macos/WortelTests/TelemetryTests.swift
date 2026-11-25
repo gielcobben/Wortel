@@ -45,7 +45,7 @@ final class TelemetryTests: XCTestCase {
             "first", "previous_exit", "notifications", "agent", "cause",
             "signal", "exception", "site", "signature", "crashed_version", "crashed_arch",
             "activity", "hung_version", "hung_arch", "lasted", "memory",
-            "windows",
+            "windows", "marks", "picked",
         ]
         for event in Self.everyEvent {
             for key in event.properties.keys {
@@ -610,6 +610,13 @@ final class TelemetryTests: XCTestCase {
         for mode in previews {
             for place in PreviewPlace.allCases {
                 events.append(.previewOpened(mode: mode, where: place))
+            }
+        }
+        for place in MarkupPlace.allCases {
+            events.append(.markupStarted(where: place))
+            for count in CountBucket.allCases {
+                events.append(.markupCopied(where: place, marks: count, picked: true))
+                events.append(.markupCopied(where: place, marks: count, picked: false))
             }
         }
         for kind in TabOpenedKind.allCases {

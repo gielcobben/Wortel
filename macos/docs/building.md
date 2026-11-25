@@ -94,11 +94,15 @@ every one a glob matches.
   whatever Homebrew has today, which is the pinned version only until Zig
   moves on; otherwise take that exact release from
   <https://ziglang.org/download/>, unpack it, and put its folder first on your
-  `PATH`. `check.sh` and `release.sh` run it first. To move Ghostty:
-  change the two refs, run it, fix what the patches no longer apply to (they
-  fail loudly on a changed anchor), and run `check-terminals.sh`. Then bring
-  the two resource copies along: the shell integration (`docs/debugging.md`,
-  "The shell integration is three copies") and the terminfo, below.
+  `PATH`. `check.sh` and `release.sh` run it first. To move Ghostty, follow
+  the `update-ghostty` skill: change the two refs, run it, fix what the
+  patches no longer apply to (they fail loudly on a changed anchor), read
+  what changed in behaviour, and run `check-terminals.sh`. Then bring the two
+  resource copies along: the shell integration (`docs/debugging.md`, "The
+  shell integration is three copies") and the terminfo, below. What changed
+  upstream since the pin is `scripts/ghostty-news.py`; a weekly workflow
+  keeps it in an issue and opens a draft pull request for the newest Ghostty
+  tag past the pin (`docs/decisions.md`, 2026-11-25).
 - **`Resources/terminfo` is the commit's own entry, compiled here.** Nothing
   builds it automatically. Ghostty's build makes it from
   `src/terminfo/ghostty.zig` (`ghostty +terminfo`, then `tic -x`); without

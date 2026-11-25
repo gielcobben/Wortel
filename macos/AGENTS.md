@@ -104,7 +104,8 @@ of what looks unfinished here was tried, measured and taken out.
 - Releasing is the `release` skill. Publishing is never done unasked.
 
 Skills are in `../.agents/skills/` (Claude Code reads them through
-`../.claude/skills`): `run-build`, `test-copy`, `release`, `release-note`.
+`../.claude/skills`): `run-build`, `test-copy`, `release`, `release-note`,
+`update-ghostty`.
 
 ## Conventions & constraints
 

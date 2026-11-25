@@ -1,0 +1,52 @@
+# Once a week: what Ghostty changed since the commit Wortel builds, kept to
+# what reaches Wortel, in one issue; and for the newest Ghostty tag past the
+# pin a draft pull request that moves it, with the macos workflow started on it.
+#
+# The work is macos/scripts/ghostty-watch.sh (run it with DRY_RUN=1 to see
+# what it would do). It runs on Linux: it reads git history and calls gh, and
+# a macOS minute costs ten of these. The build and tests of a new tag are
+# macos.yml's, started here by workflow_dispatch, because a pull request
+# opened with this workflow's token starts no workflow of its own.
+#
+# Nothing here merges, releases or deploys. Moving Ghostty is finished by a
+# person, with the update-ghostty skill.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" on in the
+# repository's Settings > Actions > General, or the pull request step fails.
+name: ghostty-watch
+
+on:
+  schedule:
+    # Monday 06:17 UTC: a week of Ghostty, read at the start of one.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Say what it would do, change nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: write       # push the ghostty/<tag> branch
+  pull-requests: write  # open the draft pull request
+  issues: write         # the one report issue
+  actions: write        # start macos.yml on the new branch
+
+concurrency:
+  group: ghostty-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ghostty since the pin
+        working-directory: macos
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          WORTEL_GHOSTTY_CACHE: ${{ runner.temp }}/ghostty
+        run: scripts/ghostty-watch.sh

@@ -736,6 +736,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   libghostty's previous and next prompt (Ghostty 30fdc8f4c). Not ported:
   Ghostty.app's split focus clicks and its menu shortcut translation, which
   Wortel has no equivalent of.
+- **2026-11-24. The terminal font is the Mac's own SF Mono, reached by API.**
+  `font-family = SF Mono` found the font only on a Mac with Apple's separate
+  SF Mono download in `/Library/Fonts`; everywhere else the terminal quietly
+  drew Ghostty's embedded JetBrains Mono. macOS ships SF Mono only as a
+  hidden system UI font, and CoreText refuses it by name: a family search
+  for `.SF NS Mono` with a style returns every font of that style, and
+  `CTFontCreateWithName` returns Times New Roman. `wortel.conf` now names
+  `system-mono`, which a Ghostty patch (`GhosttyKit/Patches/0101`) resolves
+  through `NSFont.monospacedSystemFont`, the font the diff view and Markdown
+  code already use. Considered and not chosen: bundling SF Mono (its licence
+  forbids redistribution), Menlo (always there, but not the system's look),
+  and keeping `SF Mono` first with `system-mono` as a fallback (the owner's
+  Mac would then draw the 2022 download while everyone else drew the system
+  copy).
 
 ## Sidebar
 

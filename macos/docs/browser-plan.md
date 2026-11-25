@@ -80,7 +80,7 @@ picture at all.
 | --- | --- |
 | What you point with | Both: pick a thing, and draw freehand. |
 | Switching between them | No tools. Moving the pointer outlines what is under it (an element, a line or block), a click picks it, a drag draws. A stroke becomes a region from its outline, with some room around it. |
-| Where the words go | One note bar over the preview. Each pick or stroke drops a chip in the mark's colour where the cursor is, and one message is written around the chips. Marks can be removed and the note edited. Drawn with the system's materials and controls: it has to look and feel like part of macOS. |
+| Where the words go | One note bar, in the preview's own header (see "Where it lives"). Each pick or stroke drops a chip in the mark's colour where the cursor is, and one message is written around the chips. Marks can be removed and the note edited. Drawn with the system's materials and controls: it has to look and feel like part of macOS. |
 | What Return does | Copies. Nothing is typed into a terminal and nothing is sent: the person pastes it where they want, into this session's agent, another one, or an issue. (The first answer was a paste into the agent's prompt. Copying is simpler, cannot hit a question an agent is asking, and needs no rule for a session without an agent.) |
 | What is copied | Plain text: the sentence, with each chip as a short reference a person can read (`README.md:12-18`, `button "Download for macOS"`) and the path of that mark's picture beside it. Then what was marked up (the file, or the page's address), the path of one picture of the whole with every mark in its colour, and the path of a details file. |
 
@@ -100,12 +100,31 @@ code covers every preview and a page can neither break nor be changed by it;
 a chip reads as what it points at, so the picture is often not needed; and
 there is one picture of the whole, for a sentence that relates two marks.
 
+**Where it lives: in the bar each preview already has.** The owner's idea.
+A browser tab has a header (`BrowserHeader`: the address field) and a file tab
+has one (`PreviewTabHeader`: Diff, Source, Rendered), and a preview window its
+own (`PreviewWindowBar`). A mark-up button sits at the right of each, beside
+the open-in buttons. While mark-up is on, that same bar is the note bar: the
+address field or the mode switch gives way to the note with its chips, and
+Copy takes the place of the open-in buttons. No bar floats over the content.
+
+```
+off   [ Diff | Source | Rendered ]                    [open] [mark up]
+on    [ make (1) the same blue as (2)               ] [Copy] [Done]
+```
+
+Why the bar's own controls can give way: going to another address, or from
+Rendered to Source, would leave the marks pointing at nothing, so they should
+be out of reach while marks exist. One row is little room in the side column:
+a longer note grows downward over the content, it does not push the content
+down. That growth is the thing to look at off screen first.
+
 Smaller choices, open to change in a phase's plan:
 
 - While mark-up is on, clicks don't reach what is under it and scrolling
   does. Marks are tied to the content and scroll with it.
 - A mark's colour is given, from the system's colours, and its chip matches.
-- A header button and a shortcut turn it on, Esc turns it off.
+- The header button and a shortcut turn it on, Esc turns it off.
 - Return copies and ends mark-up. A note is kept while its file or page stays
   where it is, so turning mark-up on again finds it.
 - Pictures and details files go in a folder an agent can read, and are

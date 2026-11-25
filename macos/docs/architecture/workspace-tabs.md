@@ -39,7 +39,11 @@ list. The name is WebKit's suggestion made safe (`BrowserDownloadName`:
 never hidden, never empty) and numbered as the Finder numbers a copy
 (`report 2.zip`), so a download never replaces a file. A `file:` the tab
 can't show is not a download: it is shown in the Finder. From a frame inside
-a page only an attachment is saved. A window a page opened itself
+a page only an attachment from the page's own host is saved
+(`BrowserDownloadName.saves`), so a frame from another site can't put a file
+in Downloads. The page itself can, without a click: Safari asks once per
+site before that, Wortel does not ask (nothing is opened, and the file is
+quarantined). A window a page opened itself
 (`BrowserPopup`) has no navigation delegate and saves nothing.
 
 The header of every browser tab has a downloads button once the list has

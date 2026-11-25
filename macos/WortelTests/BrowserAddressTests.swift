@@ -161,4 +161,19 @@ final class BrowserDownloadNameTests: XCTestCase {
         XCTAssertFalse(BrowserDownloadName.isAttachment(contentDisposition: "inline; filename=\"attachment.pdf\""))
         XCTAssertFalse(BrowserDownloadName.isAttachment(contentDisposition: nil))
     }
+
+    /// A frame from another site (an advertisement) can't put a file in Downloads.
+    func testOnlyThePageAndItsOwnFramesSave() {
+        func saves(main: Bool, canShow: Bool, attachment: Bool, host: String?, page: String?) -> Bool {
+            BrowserDownloadName.saves(isForMainFrame: main, canShow: canShow, isAttachment: attachment,
+                                      host: host, pageHost: page)
+        }
+        XCTAssertTrue(saves(main: true, canShow: false, attachment: false, host: "a.example", page: "b.example"))
+        XCTAssertTrue(saves(main: true, canShow: true, attachment: true, host: "a.example", page: "a.example"))
+        XCTAssertFalse(saves(main: true, canShow: true, attachment: false, host: "a.example", page: "a.example"))
+        XCTAssertTrue(saves(main: false, canShow: true, attachment: true, host: "App.Example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, canShow: true, attachment: true, host: "ads.example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, canShow: false, attachment: false, host: "app.example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, canShow: true, attachment: true, host: nil, page: nil), "a blob in a frame")
+    }
 }

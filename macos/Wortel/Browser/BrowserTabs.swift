@@ -413,17 +413,19 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
     /// unasked. A link to another app (`mailto:`) never gets here: it is
     /// asked about before it loads (`BrowserExternalLink`).
     ///
-    /// From a frame inside the page, only what the server marked as an
-    /// attachment is saved. A frame's response the tab merely can't show is
-    /// left alone, as it was.
+    /// From a frame inside the page, only an attachment from the page's own
+    /// host is saved (`BrowserDownloadName.saves`): a frame from another site
+    /// can't put a file in Downloads. A frame's response the tab merely
+    /// can't show is left alone, as it was.
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
         let disposition = (response.response as? HTTPURLResponse)?
             .value(forHTTPHeaderField: "Content-Disposition")
-        let attachment = BrowserDownloadName.isAttachment(contentDisposition: disposition)
-        guard attachment || (!response.canShowMIMEType && response.isForMainFrame) else {
-            return decisionHandler(.allow)
-        }
+        let saves = BrowserDownloadName.saves(
+            isForMainFrame: response.isForMainFrame, canShow: response.canShowMIMEType,
+            isAttachment: BrowserDownloadName.isAttachment(contentDisposition: disposition),
+            host: response.response.url?.host(), pageHost: webView.url?.host())
+        guard saves else { return decisionHandler(.allow) }
         switch response.response.url?.scheme?.lowercased() {
         case "http", "https", "blob", "data":
             decisionHandler(.download)

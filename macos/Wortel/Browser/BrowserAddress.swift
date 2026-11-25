@@ -159,6 +159,23 @@ enum BrowserDownloadName {
         }
     }
 
+    /// Whether a response is saved to Downloads.
+    ///
+    /// The page itself (`isForMainFrame`): what the tab can't show, or what
+    /// its server marked as an attachment. A frame inside the page: only an
+    /// attachment, and only from the page's own host. A frame from somewhere
+    /// else is usually an advertisement, and one of those answering with an
+    /// attachment would put a file in Downloads that nobody clicked for. A
+    /// site's own hidden frame is how many of them start a download, so that
+    /// still works. The host must match exactly: a frame on `cdn.example.com`
+    /// in a page on `example.com` saves nothing.
+    static func saves(isForMainFrame: Bool, canShow: Bool, isAttachment: Bool,
+                      host: String?, pageHost: String?) -> Bool {
+        if isForMainFrame { return isAttachment || !canShow }
+        guard isAttachment, let host = host?.lowercased(), !host.isEmpty else { return false }
+        return host == pageHost?.lowercased()
+    }
+
     /// Whether a response is one to save, not show: the server said so.
     static func isAttachment(contentDisposition: String?) -> Bool {
         guard let value = contentDisposition?.trimmingCharacters(in: .whitespaces).lowercased() else { return false }

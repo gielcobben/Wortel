@@ -58,7 +58,9 @@ Measured off screen 2026-11-25 (macOS 27.0): WebKit sets
 `com.apple.quarantine` on the saved file itself, and hands over a file name
 that is already one path component. A stopped download leaves its partial
 file, so `BrowserDownloads.stop` removes it. A Debug build saves to
-`WORTEL_DOWNLOADS_DIR` when that is set, for a test copy.
+`WORTEL_DOWNLOADS_DIR` when that is set, for a test copy
+(`BrowserDownloadsFolder`, read in `main.swift` before the launch scrub
+removes every `WORTEL_` variable).
 
 A file or browser opened without saying where goes where you last *moved* one
 of its kind in that session, or dropped one from a list (`WorkspaceTabs.home(for:)`;

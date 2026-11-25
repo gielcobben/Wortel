@@ -123,18 +123,11 @@ final class BrowserDownloads: NSObject {
         NSWorkspace.shared.activateFileViewerSelecting([file])
     }
 
-    /// Where downloads go: the user's Downloads folder.
-    ///
-    /// A Debug build takes another folder from `WORTEL_DOWNLOADS_DIR`, so a
-    /// test copy never writes into the real one or raises the system's
-    /// "access your Downloads folder" question under its own bundle id.
+    /// Where downloads go: the user's Downloads folder, or a test copy's own
+    /// (`BrowserDownloadsFolder`).
     static func folder() -> URL? {
-        var folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        #if DEBUG
-        if let override = ProcessInfo.processInfo.environment["WORTEL_DOWNLOADS_DIR"], !override.isEmpty {
-            folder = URL(fileURLWithPath: override, isDirectory: true)
-        }
-        #endif
+        let folder = BrowserDownloadsFolder.override.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         guard let folder else { return nil }
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -183,6 +176,27 @@ final class BrowserDownloads: NSObject {
         DistributedNotificationCenter.default().post(
             name: Notification.Name("com.apple.DownloadFileFinished"), object: file.path)
     }
+}
+
+/// A Debug build saves downloads to the folder `WORTEL_DOWNLOADS_DIR` names,
+/// so a test copy never writes into the real Downloads folder or raises the
+/// system's "access your Downloads folder" question under its own bundle id.
+///
+/// Read once, by main.swift, **before** the launch scrub: the app removes
+/// every `WORTEL_` variable from its own environment (`InheritedEnvironment`).
+/// The first version read the variable when a download started, found
+/// nothing, and a test copy stood blocked behind exactly that question
+/// (2026-11-25: `sandbox_extension_issue` on the main thread, tccd prompting
+/// for `kTCCServiceSystemPolicyDownloadsFolder`).
+enum BrowserDownloadsFolder {
+    static let override: String? = {
+        #if DEBUG
+        if let folder = ProcessInfo.processInfo.environment["WORTEL_DOWNLOADS_DIR"], !folder.isEmpty {
+            return folder
+        }
+        #endif
+        return nil
+    }()
 }
 
 extension BrowserDownloads: WKDownloadDelegate {

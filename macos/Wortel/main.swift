@@ -34,6 +34,10 @@ if ExitMarker.applies { ExitMarker.arm() }
 // is. See TelemetrySettings.
 TelemetrySettings.readDoNotTrack()
 
+// And a test copy's own downloads folder, for the same reason: the variable
+// is a `WORTEL_` one, which the scrub removes. See BrowserDownloadsFolder.
+_ = BrowserDownloadsFolder.override
+
 // Before anything can spawn a child process — a surface's shell, a `git` read —
 // forget the environment of whatever launched us. See InheritedEnvironment: an
 // app opened from a coding agent's shell otherwise hands that agent's session

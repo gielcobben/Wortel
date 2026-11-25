@@ -40,7 +40,14 @@ open -g -n --env WORTEL_DATA_DIR="$DATA" --env DO_NOT_TRACK=1 "$COPY"
 - **Testing a download in a browser tab:** add
   `--env WORTEL_DOWNLOADS_DIR=<folder>` (Debug builds only). Without it the
   copy saves into the person's real `~/Downloads`, and macOS asks them, on
-  screen, whether "WortelTest" may use that folder.
+  screen, whether "WortelTest" may use that folder. The copy stands still
+  until they answer, and so does its `wortel` command.
+- **A new `WORTEL_` variable is read in `main.swift`, before the scrub.** The
+  app removes every `WORTEL_` variable from its own environment at launch
+  (`InheritedEnvironment`); one read later is never there.
+- **Don't list or read `~/Downloads`, `~/Documents` or `~/Desktop` from your
+  shell to check a result.** That raises the same question for the terminal
+  you are running in. Look in the folder you gave the copy.
 - To start from a known state, write `sessions.json` into the data folder
   before launching (a session with `runningAgent` set gets its resume typed).
 

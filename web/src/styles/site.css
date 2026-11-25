@@ -114,6 +114,10 @@ html {
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
   scroll-padding-top: 80px;
+  /* A phone on its side does not blow the text up, and a tap does not flash
+     grey: what is pressed answers by itself (Touch, below). */
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 body { margin: 0; background: var(--fog-0); overflow-x: clip; }
 ::selection { background: var(--accent-soft); color: var(--ink); }
@@ -175,6 +179,22 @@ kbd {
   .play:hover { background-color: color-mix(in srgb, var(--fog-0) 92%, transparent); }
 }
 .btn.sm { height: 32px; padding: 0 16px; font-size: 14px; }
+
+/* ---- touch ---------------------------------------------------------------
+   A control answers the moment it is tapped (no wait for a second tap), its
+   label is not selected by a long press, and with no hover and no grey flash
+   a pressed link dims instead. A control drawn smaller than a fingertip keeps
+   its size and takes taps from a larger area around it (.tap). */
+a, button, summary, select, [role="tab"] { touch-action: manipulation; }
+.btn, button, summary { -webkit-user-select: none; user-select: none; }
+@media (hover: none) { :is(a, summary):not(.btn):active, .chapters button:active { opacity: 0.6; } }
+@media (pointer: coarse) {
+  .btn.sm, .arrow, .tap { position: relative; }
+  .btn.sm::after, .arrow::after, .tap::after { content: ''; position: absolute; inset: -8px -4px; }
+  .arrow::after { inset: -12px 0; }
+  /* A chapter's tab takes the whole height of its bar. */
+  .chapters button::after { content: ''; position: absolute; inset: -4px 0; }
+}
 .btn svg { flex: none; }
 .link { color: var(--ink); border-bottom: 1px solid var(--line-2); transition: border-color 200ms ease; }
 /* A link that leads on from a paragraph: its words, then a small arrow. */
@@ -208,7 +228,8 @@ kbd {
    tabs and a play/pause button (components/Stage.astro). The words about it
    are in the section's opening row, and do not change with the chapter.
    --photo picks one of the four photos (README lists them), and --at and
-   --zoom the part of it, so neighbouring stages never look alike. */
+   --zoom the part of it, so neighbouring stages never look alike
+   (data/photo.ts writes them). */
 .stage {
   --r: 20px;
   position: relative; overflow: hidden; border-radius: var(--r); isolation: isolate;
@@ -218,10 +239,18 @@ kbd {
 /* The photo is a layer of its own, so it can move apart from the frame: it
    settles in when the stage arrives (Reveal, below) and drifts a little
    against the scroll. It overhangs top and bottom by the drift, so no edge
-   ever shows. --over lays something on top of the photo (the footer's fog). */
+   ever shows. --over lays something on top of the photo (the footer's fog).
+   A closer crop is a wider layer, not a bigger background: the layer is
+   --zoom times the stage's width, set so that --at keeps its meaning (--ax is
+   its x, as a number), and the photo covers the layer. So the photo is that
+   wide or as tall as the stage, whichever is more. As a width alone
+   (background-size: 200%) it stopped short of the bottom of any stage taller
+   than the photo's shape, which on a phone is every one. */
 .stage::before {
-  content: ''; position: absolute; inset: -40px 0; z-index: -1; pointer-events: none;
-  background: var(--over, linear-gradient(transparent, transparent)), var(--lake-veil), var(--shown) var(--at, 50% 62%) / var(--zoom, cover) no-repeat;
+  content: ''; position: absolute; inset: -40px auto; z-index: -1; pointer-events: none;
+  left: calc((1 - var(--zoom, 1)) * var(--ax, 0.5) * 100%); width: calc(var(--zoom, 1) * 100%);
+  transform-origin: calc((0.5 - (1 - var(--zoom, 1)) * var(--ax, 0.5)) / var(--zoom, 1) * 100%) 50%;
+  background: var(--over, linear-gradient(transparent, transparent)), var(--lake-veil), var(--shown) var(--at, 50% 62%) / cover no-repeat;
 }
 /* Each photo comes in two sizes: as it is, and 1600 wide as WebP (--photo-s)
    for a screen up to 900px, at a quarter of the weight or less. */
@@ -230,8 +259,10 @@ kbd {
 /* A stage below the first screen (data-photo) does not fetch its photo with
    the page: it asks for it when it comes within a screen and a half
    (scripts/reveal.ts sets data-near). Five photos at once made the first one
-   wait behind the other four. Without scripts they all load, as before. */
-.js [data-photo]:not([data-near])::before { background-image: none; }
+   wait behind the other four. Without scripts they all load, as before.
+   Only the photo waits: the veil stays, so in dark mode a stage is never a
+   pale box before its picture is there. */
+.js [data-photo]:not([data-near]) { --shown: none; }
 /* The frame's hairline, over the photo. */
 .stage::after {
   content: ''; position: absolute; inset: 0; z-index: 30; pointer-events: none;
@@ -295,6 +326,7 @@ kbd {
 .chapters::-webkit-scrollbar { display: none; }
 .chapters button {
   all: unset; box-sizing: border-box; position: relative; z-index: 1; flex: none; cursor: pointer;
+  touch-action: manipulation; -webkit-user-select: none; user-select: none;
   height: 32px; padding: 0 12px; border-radius: 999px;
   font: 500 13px/32px var(--font-sans); color: var(--ink-2); white-space: nowrap;
   transition: color 200ms ease;
@@ -332,12 +364,32 @@ kbd {
 .play .i-play, .play[aria-pressed="true"] .i-pause { opacity: 0; transform: scale(0.5); filter: blur(4px); }
 .play[aria-pressed="true"] .i-play { opacity: 1; transform: none; filter: none; }
 
+/* What a window gains with its sidebar folded (app.ts, foldable): the
+   traffic lights and the bar's three buttons. Only a phone shows them. */
+.win [data-narrow-only] { display: none; }
 @media (max-width: 760px) {
-  /* The window keeps a real width and the stage crops it: never scaled. */
+  /* On a phone the window is a small one, never a scaled one: as wide as the
+     stage, with its sidebar folded the way the app folds it, so the terminal
+     wraps to the width and reads whole. A film about more than one part of
+     the window gives it a wider window and pans to the part (panes.ts, and
+     the agents in scenes.ts); the stage cuts that one at its own edges.
+     Nothing nearer the window may clip it: a clip on the set cut the
+     window's shadow off in a straight line above it, a pale band across the
+     photo (a dark one at night). */
   .stage { --r: 16px; padding: 16px; gap: 16px; align-items: flex-start; }
-  .stage .set { align-items: flex-start; overflow: hidden; margin: 0 -16px -16px 0; padding: 0 0 16px; width: calc(100% + 16px); }
-  .stage .win { width: var(--w, 1104px); max-width: none; height: min(var(--h, 704px), 560px); }
+  .stage .set { align-items: flex-start; }
+  .stage .win { width: 100%; max-width: none; height: min(var(--h, 704px), 512px); }
   .controls { justify-content: flex-start; width: 100%; }
+  .win[data-narrow] :is([data-name="Sidebar slot"], [data-name="Side column slot"], [data-name="Layout"] > [data-name="Divider"], [data-side]) { display: none; }
+  .win[data-narrow] header[data-name="Main bar"] { padding-left: 78px; }
+  .win[data-narrow] [data-narrow-only] { display: flex; }
+  .win[data-narrow] [data-narrow-only][data-lead] { display: contents; }
+  /* The one liberty: Back and Forward are left out of that bar, and the
+     hero's session shows one tab of its three. At this width they would
+     leave the session's name two letters, and in a window with no sidebar
+     the name in the bar is the only place that says which session it is. */
+  .stage .win [data-lead] [data-name="Back and Forward"],
+  .win[data-narrow] :is([data-name="Build tab"], [data-name="plan.md tab"]) { display: none; }
 }
 
 /* Facts: short points under a shot, three or four across. */
@@ -406,7 +458,7 @@ kbd {
 .prose > * + * { margin-top: 16px; }
 .prose strong { color: var(--ink); font-weight: 600; }
 .prose a { color: var(--ink); border-bottom: 1px solid var(--line-2); }
-.prose a:hover { border-color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .prose a:hover { border-color: var(--ink); } }
 .prose ul, .prose ol { margin: 0; padding-left: 24px; }
 /* A list belongs to the line that leads into it, so it sits closer to that
    line than a paragraph would; under a heading it keeps a paragraph's gap. */
@@ -430,6 +482,18 @@ kbd {
 .prose th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 13px; padding: 8px 16px 8px 0; border-bottom: 1px solid var(--line-2); }
 .prose td { padding: 12px 16px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink); }
 .prose td.mono { font-family: var(--font-mono); font-size: 14px; white-space: nowrap; }
+/* A table of terms (what is typed, then what it does) is a list on a phone:
+   the term on a line of its own and its meaning under it. Side by side, the
+   longest command set the page's width and the whole page scrolled sideways. */
+@media (max-width: 640px) {
+  .prose table.terms, .prose table.terms :is(tbody, tr, td) { display: block; }
+  .prose table.terms thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .prose table.terms td { padding: 0 0 16px; }
+  .prose table.terms td.mono { padding: 16px 0 0; border-bottom: 0; white-space: normal; overflow-wrap: anywhere; }
+  .prose table.terms td + td { color: var(--ink-2); }
+  /* Any other table keeps its two columns and breaks a long word rather than the page. */
+  .prose td { overflow-wrap: anywhere; }
+}
 .prose hr { border: 0; height: 1px; background: var(--line); margin: 48px 0; }
 
 /* ---- inner pages --------------------------------------------------------- */

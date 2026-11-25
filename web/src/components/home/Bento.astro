@@ -173,14 +173,17 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
      wash of each tile's colour) and this one was kept. */
   .worktree, .hero, .quit { background: #2b3328; }
   .worktree::before, .hero::before, .quit::before {
-    content: ''; position: absolute; inset: 0; z-index: -1;
-    background: linear-gradient(rgb(16 22 15 / 0.3), rgb(16 22 15 / 0.3)), var(--lake-veil), url(/img/skye.jpg) var(--at) / var(--zoom) no-repeat;
+    content: ''; position: absolute; inset: 0 auto; z-index: -1;
+    left: calc((1 - var(--zoom)) * var(--ax) * 100%); width: calc(var(--zoom) * 100%);
+    background: linear-gradient(rgb(16 22 15 / 0.3), rgb(16 22 15 / 0.3)), var(--lake-veil), url(/img/skye.jpg) var(--at) / cover no-repeat;
   }
   /* Their photo comes when the poster nears, like a stage's (site.css). */
   :global(.js) .bento:not([data-near]) :is(.worktree, .hero, .quit)::before { background-image: none; }
-  .worktree { --at: 18% 62%; --zoom: 300% auto; }
-  .hero { --at: 62% 78%; --zoom: 210% auto; }
-  .quit { --at: 0% 92%; --zoom: 520% auto; }
+  /* The crop, as a stage's (site.css): --zoom times the tile's width, and
+     never smaller than the tile, however tall a narrow screen makes it. */
+  .worktree { --at: 18% 62%; --ax: 0.18; --zoom: 3; }
+  .hero { --at: 62% 78%; --ax: 0.62; --zoom: 2.1; }
+  .quit { --at: 0% 92%; --ax: 0; --zoom: 5.2; }
   .worktree .cap, .hero .cap, .quit .cap { color: #fff; text-shadow: 0 1px 12px rgb(0 0 0 / 0.3); }
 
 

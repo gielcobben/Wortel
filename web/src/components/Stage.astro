@@ -3,16 +3,19 @@
 // tabs, and play/pause beside them) and the window under them.
 // scripts/film.ts drives it. The words about it are the section's
 // (Section.astro), and stay as they are whatever chapter plays.
+import Lead from './Lead.astro';
+import { photo as crop } from '../data/photo';
 interface Props {
   /** The scene's name: scripts find the scene by [data-film="name"]. */
   film?: string;
   /** The chapters' names, as the tabs show them. */
   chapters?: string[];
   /** Which photo (a file in public/img, lake by default), which part of it
-      (a background-position), and how far in. */
+      (a background-position), and how far in (data/photo.ts: 1 fills the
+      stage, 2 is twice its width). */
   photo?: string;
   at?: string;
-  zoom?: string;
+  zoom?: number;
   /** In the first screen: its photo comes with the page, not when it nears. */
   eager?: boolean;
   /** The window's size, in the app's own points. */
@@ -21,12 +24,15 @@ interface Props {
   /** Come in the first time it is on screen; 'manual' leaves the moment to a
       script, which adds .in itself (the hero, in its own sequence). */
   reveal?: boolean | 'manual';
+  /** On a phone the window's sidebar is folded (app.ts, foldable): the bar's
+      buttons for that state come along in a template. */
+  fold?: boolean;
   class?: string;
 }
-const { film, chapters = [], photo = 'lake', at = '50% 62%', zoom = 'cover', w = 1104, h = 704, reveal = true, eager = false, class: cls } = Astro.props;
+const { film, chapters = [], photo = 'lake', at = '50% 62%', zoom = 1, w = 1104, h = 704, reveal = true, eager = false, fold = false, class: cls } = Astro.props;
 ---
 <div data-film={film}>
-  <div class:list={['stage', cls]} data-photo={eager ? undefined : ''} data-reveal={reveal === true ? '' : reveal || undefined} style={`--photo:url(/img/${photo}.jpg);--photo-s:url(/img/${photo}-1600.webp);--at:${at};--zoom:${zoom};--w:${w}px;--h:${h}px`}>
+  <div class:list={['stage', cls]} data-photo={eager ? undefined : ''} data-reveal={reveal === true ? '' : reveal || undefined} style={`${crop(photo, at, zoom)};--w:${w}px;--h:${h}px`}>
     {chapters.length > 0 && (
       <div class="controls">
         <div class="chapters glass" role="tablist" aria-label="Chapters">
@@ -42,5 +48,6 @@ const { film, chapters = [], photo = 'lake', at = '50% 62%', zoom = 'cover', w =
       </div>
     )}
     <div class="set"><slot /></div>
+    {fold && <template data-tpl="lead"><Lead /></template>}
   </div>
 </div>

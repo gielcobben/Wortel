@@ -80,6 +80,12 @@ npm run build        # → dist/, with the local pixel tools stripped out
   contributor doesn't need it, because `src/app/gen/` is committed.
 - 1:1, never scaled. A shorter window is fine. Never half a row
   (`wholeRows()`).
+- On a phone (760px and under) a window is as wide as the stage with its
+  sidebar folded, and the terminal wraps. Give a new stage `fold`, its window `data-narrow`,
+  and call `foldable()` on it (`src/scripts/app.ts`). A film about more than
+  one part of the window gets a wider window and pans to the part instead,
+  as `panes.ts` and the agents in `scenes.ts` do. A line a script prints
+  must be able to wrap: no fixed height, no `whitespace-pre`.
 - Change a window's state through `src/scripts/app.ts`, not by touching markup.
 - It follows the page: light on the light page, dark at night. Check both.
 - Icons are exported from `../macos/Wortel/AppIcon.icon`. Never redrawn.
@@ -101,6 +107,18 @@ npm run build        # → dist/, with the local pixel tools stripped out
   and gets its photo when it nears; a picture inside an app window below the
   fold goes in `AppContent.astro`. A new photo needs its phone copy,
   `<name>-1600.webp` (`README.md`, Photos).
+
+**On a phone**
+
+- No page scrolls sideways. A table of terms stacks (`table.terms`), a wide
+  grid finds another shape (`/compare` shows two columns there), and anything
+  that must stay wide scrolls inside its own box.
+- Hover styles sit behind `(hover: hover) and (pointer: fine)`. A control
+  under a finger takes taps from 40px or more: give a small one `.tap`
+  (`site.css`, Touch) instead of drawing it larger.
+- A Download button never hands a phone the zip. `/download` offers to send
+  the page to the Mac there.
+- Check at 320, 390 and 430 wide, light and dark, before calling it done.
 
 **Motion**
 

@@ -332,7 +332,7 @@ export const COMPARE = {
 
   tableHeading: 'Compare, app by app',
   tableLead:
-    'Pick any two, or more if your screen has room. Every answer was read off that product’s own site, docs or repository.',
+    'Pick the apps to set beside Wortel. Every answer was read off that product’s own site, docs or repository.',
 
   caveat:
     'These tools ship weekly and this page does not, so check anything that decides it for you. Where a product does not publish an answer the cell says "not published" rather than guessing: that is not a polite way of saying no. Corrections are welcome, and anything wrong here is a mistake rather than a position.',

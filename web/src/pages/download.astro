@@ -6,12 +6,19 @@
 // visit with no such mark (a search result, a reload, the back button) only
 // shows the button.
 //
+// On a phone or a tablet there is nothing to install, and a 27 MB zip in its
+// Downloads is no use to anyone. There the button sends this page on instead
+// (the share sheet, so AirDrop to the Mac is one tap; where there is no
+// sheet it copies the link), nothing starts by itself, and the zip stays one
+// small link away for whoever does want it there.
+//
 // The version line comes from the Sparkle feed (data/release.ts). Notes,
 // requirements and file locations live on /updates and /docs; this page
 // only gets the app onto the Mac.
 import Layout from '../layouts/Layout.astro';
 import { SITE } from '../data/site';
 import { latestRelease } from '../data/release';
+import { photo } from '../data/photo';
 
 const latest = await latestRelease();
 
@@ -39,16 +46,18 @@ const steps = [
     </p>
     <div class="ctas" data-reveal>
       <a class="btn" href={SITE.download} data-get data-ph="download_clicked" data-ph-location="download" data-ph-version={latest?.version}>Download for macOS</a>
+      <button class="btn" type="button" data-send hidden data-ph="download_link_sent" data-ph-location="download" data-ph-version={latest?.version}>Send to your Mac</button>
       {latest && <a class="btn ghost" href="/updates" data-ph="changelog_opened" data-ph-location="download" data-ph-version={latest.version}>What’s new in {latest.version}</a>}
     </div>
     <p class="label" data-reveal aria-live="polite">
       <span data-idle>{latest ? `Version ${latest.version}${latest.size ? ` · ${latest.size}` : ''}` : 'The newest version'} · {macOS}</span>
       <span data-busy hidden>Downloading{latest && ` Wortel ${latest.version}`}. Nothing yet? <a class="link" href={SITE.download}>Try again</a>.</span>
+      <span data-away hidden>Wortel runs on a Mac. Open this page there, or <a class="link" href={SITE.download} data-ph="download_clicked" data-ph-location="download-phone" data-ph-version={latest?.version}>get the zip here anyway</a>.</span>
     </p>
   </header>
 
   <div class="page">
-    <section class="stage install" style="--photo: url(/img/skye.jpg); --photo-s: url(/img/skye-1600.webp); --at: 50% 50%" aria-label="Installing" data-reveal>
+    <section class="stage install" style={photo('skye', '50% 50%')} aria-label="Installing" data-reveal>
       <figure class="file" aria-hidden="true">
         <img src="/icon-256.png" width="80" height="80" alt="" />
         <figcaption>Wortel</figcaption>
@@ -81,11 +90,38 @@ const steps = [
   // Sent here by a Download button: press this page's button for them. The
   // mark is taken out of the address first, so a reload or coming back does
   // not download again, and it is passed on as where the click was made.
+  // A phone or a tablet: an iPad calls itself a Mac, and is told apart by
+  // its touch screen. This asks what the device is, not how wide it is,
+  // because the question is whether a Mac app can be opened on it.
+  const handheld = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const send = document.querySelector<HTMLButtonElement>('[data-send]');
+  const away = document.querySelector<HTMLElement>('[data-away]');
+  if (handheld && get && send && idle && away) {
+    const url = location.origin + location.pathname;
+    get.hidden = true;
+    send.hidden = false;
+    idle.hidden = true;
+    away.hidden = false;
+    if (!navigator.share) send.textContent = 'Copy the link';
+    send.addEventListener('click', async () => {
+      if (navigator.share) {
+        // Closing the sheet without choosing rejects; that is not an error.
+        try { await navigator.share({ title: document.title, url }); } catch {}
+        return;
+      }
+      try { await navigator.clipboard.writeText(url); } catch { return; }
+      // The button says so itself, for a moment, and the zip's link stays.
+      send.textContent = 'Link copied';
+      setTimeout(() => { send.textContent = 'Copy the link'; }, 2000);
+    });
+  }
+
   const FROM = ['hero', 'nav', 'footer', '404'];
   const start = () => {
     const from = location.hash.slice(1);
     if (!get || !FROM.includes(from)) return;
     history.replaceState(null, '', location.pathname + location.search);
+    if (handheld) return;
     const here = get.dataset.phLocation;
     get.dataset.phLocation = from;
     get.click();
@@ -100,7 +136,9 @@ const steps = [
   .icon { display: block; width: 96px; height: 96px; margin-bottom: 32px; }
   .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
   .phead .label { margin-top: 16px; }
-  .phead .label [hidden] { display: none; }
+  .phead .label [hidden], .ctas [hidden] { display: none; }
+  .phead .label { max-width: 560px; }
+  button.btn { appearance: none; border: 0; cursor: pointer; }
 
   /* The lake as a desktop: the app where the download leaves it, and the three
      steps from there on glass along the bottom. */

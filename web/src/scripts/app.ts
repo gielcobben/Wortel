@@ -24,22 +24,70 @@ const unfit = (root: Element) => {
 const drop = (el: HTMLElement) => { el.style.display = 'none'; el.dataset.fit = ''; };
 const shown = (el: Element) => !(el as HTMLElement).hidden && (el as HTMLElement).style.display !== 'none';
 
-/** Hide the oldest rows of a terminal until what is left fits whole. */
+// A terminal makes room by scrolling, not by taking rows out. The rows that
+// no longer fit stay where they are, unseen, and the box (which clips, and so
+// can be scrolled by script) is scrolled past them to a row's edge. To the
+// eye that is the same as removing them. To the browser it is not: rows taken
+// out move every row under them, which Chrome counts as layout shift, and a
+// film that prints a line a second ran the homepage's score on a phone to
+// 0.108, over the 0.1 that counts as good. Scrolled, it counts nothing
+// (measured 2026-11-24, both ways, in the same terminal).
+const TUCKED = ['visibility', 'marginTop', 'marginBottom', 'minHeight'] as const;
+const untuck = (root: HTMLElement) => {
+  root.querySelectorAll<HTMLElement>(':scope > [data-fit]').forEach((el) => {
+    for (const k of TUCKED) el.style[k] = '';
+    el.style.display = '';
+    delete el.dataset.fit;
+  });
+  if ('fitTop' in root.dataset) { root.style.justifyContent = ''; delete root.dataset.fitTop; }
+  root.scrollTop = 0;
+};
+const mark = (el: HTMLElement) => { el.dataset.fit = ''; return el; };
+const drawn = (el: HTMLElement) => shown(el) && el.getClientRects().length > 0;
+
+/** Put the oldest rows of a terminal out of sight until what is left fits whole. */
 export function fitTerminal(root: HTMLElement) {
-  unfit(root);
-  const rows = (Array.from(root.children) as HTMLElement[]).filter(shown);
-  const end = rows.findIndex((r) => r.dataset.name === 'Rule');
-  const body = rows.slice(0, end < 0 ? rows.length : end);
-  // A terminal is filled from the bottom, so what does not fit is cut at the
-  // top, where scrollHeight cannot see it: measure the rows themselves.
+  untuck(root);
+  const all = (Array.from(root.children) as HTMLElement[]).filter(drawn);
+  // The spacer the canvas ends some terminals with: room, not a row.
+  const rest = all.find((r) => r.dataset.name === 'Rest');
+  const rows = all.filter((r) => r !== rest);
+  // What is pinned to the bottom: Claude's prompt box, and the status line
+  // over it while the agent works. Everything above is the transcript.
+  let end = rows.findIndex((r) => r.dataset.name === 'Status');
+  if (end < 0) end = rows.findIndex((r) => r.dataset.name === 'Rule');
+  const body = end < 0 ? rows : rows.slice(0, end);
+  const pinned = end < 0 ? null : rows[end];
   const cs = getComputedStyle(root);
   const room = root.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  let used = rows.reduce((h, r) => h + (r.dataset.name === 'Rest' ? 0 : r.offsetHeight), 0);
-  let i = 0;
-  while (i < body.length && used > room + 0.5) { used -= body[i].offsetHeight; drop(body[i++]); }
+  const used = rows.reduce((h, r) => h + r.offsetHeight, 0);
+  if (used <= room + 0.5) return;
+
+  let i = 0, gone = 0;
+  const tuck = () => { gone += body[i].offsetHeight; mark(body[i++]).style.visibility = 'hidden'; };
+  while (i < body.length && used - gone > room + 0.5) tuck();
   if (!i) return;
   // Having cut, do not open on an empty row, or on a result whose tool line went.
-  while (i < body.length && (!body[i].textContent?.trim() || body[i].dataset.name === 'Result')) drop(body[i++]);
+  while (i < body.length && (!body[i].textContent?.trim() || body[i].dataset.name === 'Result')) tuck();
+
+  // The room left over once whole rows are gone. Where it goes is where the
+  // terminal had it before: over the prompt box, under the last line of a
+  // screen with no box, or at the top of one the canvas fills from the bottom.
+  const spare = Math.max(0, room - (used - gone));
+  const fromBottom = cs.justifyContent === 'flex-end' && !pinned && !rest;
+  // A box filled from the bottom overflows upwards, where nothing can scroll.
+  if (cs.justifyContent === 'flex-end') { root.style.justifyContent = 'flex-start'; root.dataset.fitTop = ''; }
+  let to = gone;
+  if (pinned) mark(pinned).style.marginTop = `${spare}px`;
+  else if (rest) mark(rest).style.minHeight = `${spare}px`;
+  else if (fromBottom) to = gone - spare;
+  else if (body.length) {
+    const last = mark(body[body.length - 1]);
+    last.style.marginBottom = `${spare}px`;
+    // Not every engine counts a last row's margin as something to scroll to.
+    if (root.scrollHeight - root.clientHeight < to - 0.5) { last.style.marginBottom = ''; last.style.minHeight = `${last.offsetHeight + spare}px`; }
+  }
+  root.scrollTop = to;
 }
 
 /**
@@ -99,7 +147,39 @@ export function wholeRows(root: ParentNode) {
   run();
   const ro = new ResizeObserver(run);
   [...terms, ...navs].forEach((el) => ro.observe(el));
+  // A terminal fits itself again whenever what it holds changes, before the
+  // next paint. A scene that shows a line it had hidden, or prints without
+  // asking for a fit, used to get away with it because the box was filled
+  // from the bottom; scrolled, a stale fit would push the prompt box out of
+  // sight. Fitting only writes styles and its own marks, which this does not
+  // watch, so it cannot set itself off.
+  for (const t of terms) {
+    new MutationObserver(() => fitTerminal(t)).observe(t, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+  }
   document.fonts?.ready.then(run);
+}
+
+// ---- a window on a phone ----------------------------------------------------
+/**
+ * On a phone a window is as wide as the stage and its sidebar is folded
+ * (styles/site.css). Folded, the app moves the traffic lights to the window
+ * and gives the main bar Show Sidebar, Back and Forward: this puts both in,
+ * marked so only a phone shows them. The lights are the sidebar's own, and
+ * the buttons the canvas's (components/Lead.astro, in the stage's template).
+ * The window says it folds in its markup (data-narrow), so the sidebar is gone
+ * from the first paint and nothing moves when this runs.
+ */
+export function foldable(win: HTMLElement, lead?: DocumentFragment | null) {
+  const lights = win.querySelector<HTMLElement>('[data-name="Traffic lights"]');
+  const bar = win.querySelector<HTMLElement>('header[data-name="Main bar"]');
+  if (!lights || !bar || !lead) return;
+  const mine = lights.cloneNode(true) as HTMLElement;
+  mine.dataset.narrowOnly = '';
+  mine.style.zIndex = '5';
+  win.append(mine);
+  const buttons = (lead.cloneNode(true) as DocumentFragment).firstElementChild as HTMLElement;
+  buttons.dataset.narrowOnly = '';
+  bar.prepend(buttons);
 }
 
 // ---- the start of a Claude Code session ------------------------------------
@@ -366,6 +446,7 @@ export class Terminal {
   print(kind: Kind, text: string, tool?: string) {
     const p = this.moulds.get(kind)!.cloneNode(true) as HTMLElement;
     p.hidden = false; p.style.display = ''; delete p.dataset.fit;
+    for (const k of TUCKED) p.style[k] = '';
     // Keep the glyph (the first span), replace what follows it.
     const glyph = p.firstElementChild!;
     while (glyph.nextSibling) glyph.nextSibling.remove();

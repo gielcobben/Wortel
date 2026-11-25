@@ -95,6 +95,15 @@ const chapters = ['Changes', 'History', 'Browser', 'Files', 'Terminal'];
   .pane > :global(*) { flex: 1; }
   .pane:not(:first-child) { visibility: hidden; opacity: 0; }
 
+  /* On a phone: the main pane as wide as the stage, and the column beside
+     it just as wide, so each is whole when the film pans to it
+     (scripts/panes.ts). */
+  @media (max-width: 760px) {
+    :global([data-film="panes"] .stage .win) { width: calc(200% + 1px); }
+    .side { width: calc((100% - 1px) / 2); }
+    .side .pane, .side [data-pane="files"] { min-width: 100%; }
+  }
+
   /* The window owns the traffic lights (Lights.astro); the pane's copy hides. */
   [data-film="panes"] :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }
 </style>

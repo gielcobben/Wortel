@@ -4,6 +4,7 @@
 import { SITE } from '../data/site';
 import { latestRelease } from '../data/release';
 import GitHubMark from './GitHubMark.astro';
+import { photo as crop } from '../data/photo';
 interface Props { bare?: boolean }
 const { bare = false } = Astro.props;
 const latest = await latestRelease();
@@ -11,12 +12,12 @@ const latest = await latestRelease();
 // page never ends on the same picture twice: [photo, which part, how far in].
 // The words sit top left, so each crop keeps fog there, never a dark hill.
 const here = Astro.url.pathname.replace(/\/$/, '') || '/';
-const closing: Record<string, [string, string, string]> = {
-  '/': ['lake', '50% 38%', 'cover'],
-  '/updates': ['skye', '50% 60%', 'cover'],
-  '/docs': ['haze', '50% 70%', 'cover'],
-  '/compare': ['hills', '0% 0%', '130%'],
-  '/about': ['haze', '0% 45%', '160%'],
+const closing: Record<string, [string, string, number]> = {
+  '/': ['lake', '50% 38%', 1],
+  '/updates': ['skye', '50% 60%', 1],
+  '/docs': ['haze', '50% 70%', 1],
+  '/compare': ['hills', '0% 0%', 1.3],
+  '/about': ['haze', '0% 45%', 1.6],
 };
 // A release's page closes like the changelog it belongs to.
 const [photo, at, zoom] = closing[here] ?? closing['/' + here.split('/')[1]] ?? closing['/'];
@@ -29,7 +30,7 @@ const cols: [string, [string, string][]][] = [
 <footer class="foot">
   {!bare && (
     <section class="sec page">
-      <div class="stage cta" data-photo style={`--photo: url(/img/${photo}.jpg); --photo-s: url(/img/${photo}-1600.webp); --at: ${at}; --zoom: ${zoom}`} data-reveal>
+      <div class="stage cta" data-photo style={crop(photo, at, zoom)} data-reveal>
         <img src="/icon-256.png" width="80" height="80" alt="" loading="lazy" />
         <h2 class="h2">Put down roots. <span class="tone">Free for macOS {SITE.minMacOS} {SITE.minMacOSName} or later, and it updates itself.</span></h2>
         <div class="go">
@@ -43,7 +44,7 @@ const cols: [string, [string, string][]][] = [
   <div class="page">
     <div class="grid12 links">
       <div class="sig">
-        <a class="brand" href="/"><img src="/icon-128.png" width="24" height="24" alt="" /><span>Wortel</span></a>
+        <a class="brand tap" href="/"><img src="/icon-128.png" width="24" height="24" alt="" /><span>Wortel</span></a>
         <p class="small">Wortel is Dutch for root.</p>
       </div>
       {cols.map(([h, items]) => (
@@ -75,13 +76,22 @@ const cols: [string, [string, string][]][] = [
   .links { margin-top: 96px; padding-top: 48px; border-top: 1px solid var(--line); row-gap: 40px; }
   .sig { grid-column: span 6; display: flex; flex-direction: column; gap: 16px; }
   .col { grid-column: span 2; }
-  .brand { display: inline-flex; align-items: center; gap: 8px; font: 600 17px/24px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
+  .brand { display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; font: 600 17px/24px var(--font-display); letter-spacing: -0.02em; color: var(--ink); }
   .col ul { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; }
   .col a { font-size: 14px; line-height: 24px; color: var(--ink-2); transition: color 200ms ease; }
   @media (hover: hover) and (pointer: fine) { .col a:hover { color: var(--ink); } }
   .base { display: flex; justify-content: space-between; gap: 16px; margin-top: 64px; flex-wrap: wrap; }
+  /* Under a finger each link is a row of its own height. */
+  @media (pointer: coarse) { .col ul { gap: 0; margin-top: 8px; } .col a { display: block; padding-block: 8px; } }
   @media (max-width: 800px) {
     .cta { padding: 32px 24px; min-height: 440px; }
+    /* A stage this narrow is taller than the photo's shape, so the photo
+       fills its height and the part behind the words is whatever lies there
+       (a dark hill, on /compare). The fog holds through the words first. */
+    .cta { --over: linear-gradient(color-mix(in srgb, var(--fog-0) 88%, transparent) 48%, transparent 88%); }
+    /* The version wraps under the buttons here, onto the photo, where it
+       cannot be read. The download page says it. */
+    .cta .go .label { display: none; }
     .sig { grid-column: 1 / -1; }
     .col { grid-column: span 4; }
   }

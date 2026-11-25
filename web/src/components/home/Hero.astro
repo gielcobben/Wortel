@@ -25,8 +25,8 @@ const latest = await latestRelease();
       </div>
     </div>
 
-    <Stage class="first" reveal="manual" eager>
-      <div class="win wapp" data-win data-ph-demo aria-hidden="true" data-nosnippet inert>
+    <Stage class="first" reveal="manual" eager fold>
+      <div class="win wapp" data-win data-narrow data-ph-demo aria-hidden="true" data-nosnippet inert>
         <HeroWindow />
       </div>
     </Stage>
@@ -58,4 +58,6 @@ const latest = await latestRelease();
      drag), so the three tabs in the main bar show their names in full. */
   .hero :global([data-name="Side column slot"]) { width: 336px; }
   @media (max-width: 900px) { .hero { padding-top: 104px; } .top { margin-bottom: 48px; } }
+  /* No controls over this window: on a phone the photo keeps a strip above it. */
+  @media (max-width: 760px) { .hero :global(.stage.first) { padding-top: 32px; } }
 </style>

@@ -55,5 +55,11 @@ const chapters = ['At work', 'Needs you', 'Go to it', 'Answered'];
   @media (prefers-color-scheme: dark) {
     .note { background: #2c2c2c; color: #f5f5f7; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.16), 0 10px 30px rgb(0 0 0 / 0.5); }
   }
-  @media (max-width: 760px) { .note { top: 8px; right: 24px; width: 296px; } .keys { left: calc(50% - 8px); } }
+  @media (max-width: 760px) {
+    .note { top: 8px; right: 8px; width: 296px; }
+    /* The dots are in the sidebar and the question is in the terminal, so on
+       a phone this window keeps both: the sidebar, and a terminal as wide as
+       the stage beside it. The film pans between them (scripts/scenes.ts). */
+    :global([data-film="agents"] .stage .win) { width: calc(100% + 235px); }
+  }
 </style>

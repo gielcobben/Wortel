@@ -11,7 +11,7 @@ const links = [
 ---
 <header class="nav">
   <div class="page bar">
-    <a class="brand" href="/" aria-label="Wortel, home">
+    <a class="brand tap" href="/" aria-label="Wortel, home">
       <img src="/icon-128.png" width="24" height="24" alt="" />
       <span>Wortel</span>
     </a>
@@ -25,7 +25,7 @@ const links = [
       <a class="btn sm" href="/download#nav">Download</a>
     </div>
     <details class="menu">
-      <summary aria-label="Menu"><span></span><span></span></summary>
+      <summary class="tap" aria-label="Menu"><span></span><span></span></summary>
       <nav class="sheet" aria-label="Main">
         {links.map(([t, h]) => <a href={h} aria-current={here === h || here.startsWith(h + '/') ? 'page' : undefined}>{t}</a>)}
       </nav>
@@ -74,4 +74,20 @@ const links = [
     .bar { gap: 8px; }
     .menu { display: block; }
   }
+  /* Under a finger the menu's rows are taller. */
+  @media (pointer: coarse) { .sheet a { height: 48px; } }
 </style>
+
+<script>
+  // The menu closes when a tap lands outside it, on Escape, and when one of
+  // its links is followed (a link to the page you are on would leave it open).
+  const menu = document.querySelector<HTMLDetailsElement>('.nav .menu');
+  if (menu) {
+    document.addEventListener('click', (e) => {
+      if (!menu.open) return;
+      const t = e.target as Node;
+      if (!menu.contains(t) || (t instanceof Element && t.closest('.sheet a'))) menu.open = false;
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menu.open) { menu.open = false; menu.querySelector('summary')?.focus(); } });
+  }
+</script>

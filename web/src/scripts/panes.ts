@@ -8,7 +8,7 @@
 // is a target state for all four plus the session; arrange() walks there a
 // place at a time, so going from any chapter to any other is the same code.
 import { gsap } from 'gsap';
-import { Sidebar, Terminal, named, sessionScreen, wholeRows } from './app';
+import { Sidebar, Terminal, named, reduced, sessionScreen, wholeRows } from './app';
 import { film } from './film';
 
 type Place = 'sidebar' | 'main' | 'side' | 'strip';
@@ -49,7 +49,22 @@ export function initPanes() {
 
   const state: Layout = { ...CHAPTERS[0] };
   const size = { sidebar: 234, side: 384, strip: slot('strip').offsetHeight || 200 };
-  const wide = (place: Place, value: string) => (place === 'side' ? COLUMN[value] ?? size.side : size.sidebar);
+  // On a phone the stage shows one pane of this window at a time. Its sidebar
+  // is folded and its column always open, one width whatever it holds, so the
+  // main pane is exactly as wide as the stage in every chapter and nothing in
+  // it wraps again as the film moves on. The window's width is Panes.astro's.
+  //
+  // Between a phone and a wide screen (a tablet, a narrow browser window) the
+  // window is whole but has no room for all three across: with the sidebar
+  // open the terminal was a strip ten characters wide. There the sidebar is
+  // folded and the rest is as the chapter says.
+  const phone = matchMedia('(max-width: 760px)');
+  const tight = matchMedia('(max-width: 1000px)');
+  const fit = (to: Layout): Layout =>
+    phone.matches ? { ...to, sidebar: 'hidden', side: to.side === 'hidden' ? state.side : to.side }
+    : tight.matches ? { ...to, sidebar: 'hidden' }
+    : to;
+  const wide = (place: Place, value: string) => (place !== 'side' ? size.sidebar : phone.matches ? (win!.offsetWidth - 1) / 2 : COLUMN[value] ?? size.side);
   const FOLD = { duration: 0.5, ease: 'power3.inOut' };
   // The buttons the main bar gains with no sidebar: Show Sidebar, Back, Forward.
   const LEAD = 28 + 8 + 60 + 8;
@@ -125,7 +140,10 @@ export function initPanes() {
 
   // ---- a whole arrangement, a place at a time -------------------------------
   const ORDER: Place[] = ['main', 'side', 'strip', 'sidebar'];
-  function arrange(to: Layout, animate: boolean) {
+  let last = CHAPTERS[0];
+  function arrange(chapter: Layout, animate: boolean) {
+    last = chapter;
+    const to = fit(chapter);
     session(to.session);
     let k = 0;
     for (const place of ORDER) {
@@ -133,23 +151,25 @@ export function initPanes() {
       set(place, to[place], animate ? 1 : 0, animate ? k * 0.14 : 0);
       k++;
     }
-    pan(to);
+    pan(chapter, animate);
   }
 
   // ---- on a phone, the window pans to the place the chapter is about --------
-  const phone = matchMedia('(max-width: 760px)');
-  function pan(to: Layout) {
+  // The column, when the chapter opens one; the main pane when it does not.
+  function pan(chapter: Layout, animate: boolean) {
     if (!phone.matches) { gsap.set(win!, { x: 0 }); return; }
     const box = win!.parentElement!;
-    const focus = to.side !== 'hidden' && to.side !== 'changes' ? 1 : to.main !== 'terminal' ? 0.5 : 0;
-    gsap.to(win!, { x: -Math.max(0, win!.offsetWidth - box.clientWidth + 16) * focus, duration: 0.6, ease: 'power3.inOut', overwrite: 'auto' });
+    const over = Math.max(0, win!.offsetWidth - box.clientWidth);
+    gsap.to(win!, { x: chapter.side !== 'hidden' ? -over : 0, duration: animate && !reduced() ? 0.6 : 0, ease: 'power3.inOut', overwrite: 'auto' });
   }
-
-  // ---- the film ----------------------------------------------------------------
-  const f = film(root, () => CHAPTERS.map((layout, i) => ({
-    hold: i === 0 ? 3.6 : 4.4,
-    enter: (animate) => arrange(layout, animate),
-  })));
+  // Turned on its side, or a window dragged past the width: the same chapter, laid out again.
+  const again = () => {
+    // The column's width is the stylesheet's on a phone and ours beyond it.
+    if (state.side !== 'hidden') gsap.set(slot('side'), phone.matches ? { clearProps: 'width' } : { width: wide('side', state.side) });
+    arrange(last, false);
+  };
+  phone.addEventListener('change', again);
+  tight.addEventListener('change', again);
 
   // ---- your hands on the window ---------------------------------------------
   // What each named control does to the state. The names are the canvas's.
@@ -168,9 +188,17 @@ export function initPanes() {
   function press() {
     for (const name of Object.keys(PRESS)) win!.querySelectorAll<HTMLElement>(`[data-name="${name}"]`).forEach((el) => (el.dataset.press = ''));
   }
+
+  // ---- the film ----------------------------------------------------------------
+  const f = film(root, () => CHAPTERS.map((layout, i) => ({
+    hold: i === 0 ? 3.6 : 4.4,
+    enter: (animate) => arrange(layout, animate),
+  })));
+
+  // Pressing one pauses the film, wherever it has got to.
   const settle = () => {
     f.pause();
-    const i = CHAPTERS.findIndex((c) => (Object.keys(c) as (keyof Layout)[]).every((k) => c[k] === state[k]));
+    const i = CHAPTERS.findIndex((c) => { const to = fit(c); return (Object.keys(to) as (keyof Layout)[]).every((k) => to[k] === state[k]); });
     if (i >= 0) f.mark(i); else f.own();
   };
   win.addEventListener('click', (e) => {

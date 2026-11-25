@@ -22,10 +22,10 @@ import Settings from '../../app/gen/Settings.astro';
 const chapters = ['A shell', 'An agent', 'Settings', '⌘N'];
 ---
 <Section id="terminal-first" {...HOME.terminal}>
-    <Stage film="start" chapters={chapters} photo="hills" at="0% 12%" zoom="200%">
-      <Window>
-        <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
-        <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
+    <Stage film="start" chapters={chapters} photo="hills" at="0% 12%" zoom={2} fold>
+      <Window data-narrow>
+        <div data-side class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
+        <div data-side class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
         <div class="flex min-h-0 self-stretch min-w-[80px] flex-1"><Terminal /></div>
       </Window>
       <div class="wapp prefs" data-settings aria-hidden="true" inert><Settings /></div>
@@ -43,5 +43,12 @@ const chapters = ['A shell', 'An agent', 'Settings', '⌘N'];
   @media (prefers-color-scheme: dark) {
     .prefs :global([data-name="Window"]) { box-shadow: 0 18px 50px 6px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(0 0 0 / 0.85); }
   }
-  @media (max-width: 760px) { .keys { left: calc(50% - 8px); } .prefs { left: 16px; margin-left: 0; top: 112px; } }
+  @media (max-width: 760px) {
+    .prefs { left: 0; right: 0; margin-left: 0; top: 112px; }
+    /* Settings is 380 points wide and the stage is not: it takes the
+       stage's width rather than lose its right edge and half of each
+       switch, and its two tabs move over from under the traffic lights. */
+    .prefs :global([data-name="Window"]) { width: 100%; }
+    .prefs :global([data-name="Settings bar"]) { padding-left: 72px; }
+  }
 </style>

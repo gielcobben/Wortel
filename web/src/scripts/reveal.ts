@@ -31,3 +31,7 @@ const near = new IntersectionObserver(
   { rootMargin: '1500px 0px' },
 );
 document.querySelectorAll('[data-photo]').forEach((el) => near.observe(el));
+
+// Mobile Safari only shows a pressed link as :active when the page listens
+// for touches at all. The pressed states are in site.css (Touch).
+document.addEventListener('touchstart', () => {}, { passive: true });

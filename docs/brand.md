@@ -91,7 +91,9 @@ The palette, the type scale and every measurement are in `DESIGN.md`. In short:
 Every window on the site is the real interface, built from the design canvas as
 live HTML at the app's own sizes.
 
-- **1:1, never scaled.** A shorter window is fine. A zoomed one is not.
+- **1:1, never scaled.** A shorter window is fine. A zoomed one is not. On a
+  phone it is a narrower window with its sidebar folded, which the app can be
+  too, and never a wide one shrunk to fit.
 - **Never a screenshot** where a window can stand, and never half a row.
 - **It follows the page:** a light window on the light page, dark at night.
 - **Details are judged at pixel level.** Traffic lights are true circles. A

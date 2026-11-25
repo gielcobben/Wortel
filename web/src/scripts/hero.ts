@@ -6,7 +6,7 @@
 // time, so the whole sequence can be retimed in one place. ?t=<seconds> seeks
 // it and holds (for screenshots); reduced motion skips straight to the end.
 import { gsap } from 'gsap';
-import { Terminal, fitTerminal, named, reduced, showSidebar, wholeRows } from './app';
+import { Terminal, fitTerminal, foldable, named, reduced, showSidebar, wholeRows } from './app';
 
 const q = (root: ParentNode, sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
@@ -128,6 +128,7 @@ export function playHero() {
     gsap.to(sidebarDots, { opacity: 0.25, duration: 0.5, ease: 'sine.inOut', stagger: { each: 0.18, repeat: -1, yoyo: true } });
   }
 
+  foldable(win, hero.querySelector<HTMLTemplateElement>('template[data-tpl="lead"]')?.content);
   wholeRows(win);
 
   // ---- play, or hold a frame ------------------------------------------------

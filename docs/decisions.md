@@ -1556,6 +1556,57 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   mono, links in mono brackets, grey photographs with film grain, 8px corners,
   a list of the page's sections beside the hero. Also dropped: the two-tone
   heading set as one long line across the page.
+- **2026-11-24. On a phone a window is a small window, not a cropped one.**
+  This reverses "it stays at its real size and the stage crops it". Cropped,
+  three quarters of what a phone showed was the sidebar, the terminal was a
+  strip a few words wide, and in the panes film the column each chapter is
+  about was off screen. Now the window is as wide as the stage with its
+  sidebar folded (a state the app has: the main pane's minimum is 80 points)
+  and the terminal wraps, as a terminal does. It is still never scaled. The
+  panes and agents films, which are about two parts of the window, keep a
+  wider window and pan. Three liberties, taken so the session's name stays
+  readable in the bar: no Back and Forward there, one tab in the hero, and
+  Settings at the stage's width. Tried on the way: the real bar with all
+  three buttons, which left the name two letters ("Qu…"), and Settings at its
+  380 points, which cut every switch in half at the stage's edge.
+- **2026-11-24. A phone is not handed the zip.** Every Download button leads
+  to `/download`, which started the download on arrival, on a phone too: a
+  27 MB Mac app in a phone's Downloads. There the page now offers to send
+  itself to the Mac (the share sheet, so AirDrop is one tap) and keeps the
+  zip a link away.
+- **2026-11-24. No page scrolls sideways on a phone.** `/docs` did: the
+  commands table was as wide as its longest command. A table of terms is a
+  list there, and `/compare` shows Wortel and one other app, each question
+  over its two answers, instead of five columns to scroll through with the
+  question out of sight.
+- **2026-11-24. A terminal on the site scrolls; it does not drop rows.**
+  The films print lines into a full terminal, and the rows that no longer fit
+  were taken out of the page, which moved every row under them. Chrome counts
+  that as layout shift: 0.036 on a phone while the terminal was a strip, and
+  0.108 once it was a whole window there, past the 0.1 that search treats as
+  good. The rows now stay, unseen, and the terminal's box is scrolled past
+  them to a row's edge. It looks the same and measures 0, on a phone and on
+  a wide screen (which was at 0.012).
+- **2026-11-24. A photo always covers its stage.** A closer crop was a
+  background width (`200%`), which says nothing about height: on a phone,
+  where a stage is taller than the photo's shape, the photo ended early and a
+  band of the stage's flat colour showed under it (pale, or near black with
+  the dark veil). That was the Start stage, the closing photo on `/compare`
+  and `/about`, and one bento tile at 360px and under. A crop is now a number
+  (`data/photo.ts`): the photo's layer is that many times the stage's width
+  and the photo covers the layer, so it is that wide or as tall as the stage,
+  whichever is more. Wide screens draw the same crop as before. Since the
+  photo now fills a narrow closing stage, what lies behind its words is no
+  longer always fog, so the fog there holds through the words before it fades.
+  A stage that has not asked for its photo yet keeps its veil, so in dark mode
+  it is not a pale box.
+- **2026-11-24. Nothing but the stage clips a window.** On a phone the box
+  around the window was given its own clip, for the wider windows that pan.
+  It also cut the window's shadow off in a straight line above the window,
+  which read as a pale band across the top of the photo (a dark one at
+  night). The stage clips at its own edges already, so the inner clip is
+  gone, and the pan and the two overlays measured against that box (Settings,
+  the notification) are measured against the plain one.
 
 ## Contributing
 

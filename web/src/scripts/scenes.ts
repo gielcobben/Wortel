@@ -4,7 +4,7 @@
 // order or jumped between. The windows answer to the pointer as well; a click
 // in one pauses its film. Nothing is tied to scroll.
 import { gsap } from 'gsap';
-import { Sidebar, Terminal, codex, codexFresh, codexScreen, named, pressKeys, reduced, sessionScreen, wholeRows, type Status } from './app';
+import { Sidebar, Terminal, codex, codexFresh, codexScreen, foldable, named, pressKeys, reduced, sessionScreen, wholeRows, type Status } from './app';
 import { film } from './film';
 
 const fadeIn = (el: Element) => gsap.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.28, ease: 'power1.out', clearProps: 'opacity' });
@@ -89,11 +89,26 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="agents"]')) 
       .to(ring, { opacity: 0, duration: 0.7, ease: 'power1.in' });
   };
 
+  // On a phone the stage shows one part of this window at a time (its width
+  // is in Agents.astro): the sidebar while the dots are the story, and the
+  // terminal once you have gone to another session. The selection moves
+  // first, then the view follows it.
+  const phone = matchMedia('(max-width: 760px)');
+  const win = v.querySelector<HTMLElement>('.win')!;
+  const side = named(v, 'Sidebar')!;
+  let away = false;
+  const pan = (animate: boolean) => gsap.to(win, {
+    x: phone.matches && away ? -(side.offsetWidth + 1) : 0,
+    duration: animate && !reduced() ? 0.6 : 0, delay: animate && away ? 0.25 : 0, ease: 'power3.inOut', overwrite: 'auto',
+  });
+  phone.addEventListener('change', () => pan(false));
+
   // Where the scene is, so a chapter only changes what differs.
   let at = { session: HOME, screen: home as HTMLElement[], status: '' as Status | '', note: false };
   const show = (session: string, status: Status, withNote: boolean, animate: boolean) => {
     const lines = screen(session);
     settle();
+    if (away !== (session !== HOME)) { away = session !== HOME; pan(animate); }
     // Arriving where you were wanted: the ring, and the dot clears.
     const arriving = session === HERO && at.session !== HERO && at.status === 'attention';
     if (arriving) { status = 'none'; if (animate) flash(); }
@@ -263,11 +278,21 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="start"]')) {
   const HOME = sb.selected;
   // The plainest sidebar on the page: a flat list of sessions, nothing else.
   sb.show(['Section Sessions', HOME, 'Landing page hero', 'Changelog typography', 'Pricing FAQ copy', 'Open Graph image refresh']);
+  foldable(v.querySelector<HTMLElement>('.win')!, v.querySelector<HTMLTemplateElement>('template[data-tpl="lead"]')?.content);
 
   // The plain shell's two kinds of line, as the canvas draws them.
   const strip = v.querySelector<HTMLTemplateElement>('template[data-tpl="shell"]')!.content.querySelector('[data-name="Strip terminal"]')!;
   const [plainMould, promptMould] = Array.from(strip.children) as HTMLElement[];
-  const out = (text: string) => { const p = plainMould.cloneNode(true) as HTMLElement; p.textContent = text; return p; };
+  // A line longer than the window wraps, as a shell's does: the canvas drew
+  // these one row high for a window that is always wide enough, and on a
+  // phone it is not.
+  const out = (text: string) => {
+    const p = plainMould.cloneNode(true) as HTMLElement;
+    p.classList.remove('h-[19px]', 'whitespace-pre');
+    p.classList.add('min-h-[19px]', 'whitespace-pre-wrap', '[overflow-wrap:anywhere]');
+    p.textContent = text;
+    return p;
+  };
   const prompt = (cmd = '') => {
     const p = promptMould.cloneNode(true) as HTMLElement;
     const cursor = p.lastElementChild as HTMLElement;
@@ -311,11 +336,14 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="start"]')) {
     ['a session switches on mouse-down', '3ms'],
     ['sessions come back after a quit', '12ms'],
     ['a worktree opens on its branch', '8ms'],
-    ['the scrollback is kept while closed', '21ms'],
+    ['scrollback is kept while closed', '21ms'],
     ['light and dark follow the system', '2ms'],
     ['a reminder rings once', '4ms'],
   ];
-  const tick = ([name, ms]: [string, string]) => rich([[' ✓ ', GREEN], [name], [`  ${ms}`, DIM]]);
+  // In a phone's window a tick and its time do not fit one row, and a time
+  // alone on the next row reads as noise: there the ticks go without.
+  const small = matchMedia('(max-width: 760px)');
+  const tick = ([name, ms]: [string, string]) => rich(small.matches ? [[' ✓ ', GREEN], [name]] : [[' ✓ ', GREEN], [name], [`  ${ms}`, DIM]]);
   const summary = () => [out(''), rich([[' Tests  ', DIM], ['212 passed', `${GREEN} font-bold`], [' (212)', DIM]]), rich([[' Time   ', DIM], ['4.1s']]), out('')];
   /** The shell after a test run: every tick printed, a prompt waiting. */
   const worked = () => {

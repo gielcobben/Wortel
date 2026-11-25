@@ -405,7 +405,9 @@ wide column beside it, a hairline between rows.
 
 At night the page is near-black, the photographs are the same places in the
 dark, and the app is its dark self. On a phone the window is not scaled down.
-It stays at its real size and the stage crops it.
+It is a small window instead: as wide as the stage, its sidebar folded the way
+the app folds it, the terminal wrapped to that width. A film about two parts
+of the window keeps both in a wider window, and the stage shows one at a time.
 
 ### The numbers
 
@@ -443,6 +445,11 @@ It stays at its real size and the stage crops it.
   columns 4 to 11.
 - **Stage:** 20px corners (16 on a phone), a 1px inset line. The window inside
   has 18px corners, one 0.5px hairline as a real border, and one soft shadow.
+  On a phone (760px and under) the stage's padding is 16px and the window is
+  512px high at most.
+- **Under a finger:** a control takes taps from at least 40px each way. One
+  drawn smaller (a 32px button, a chapter tab, a link with an arrow) keeps its
+  size and has a larger area around it.
 - **Buttons:** pills, 40px high, 20px side padding. The primary is ink on fog.
   A press scales to 0.97. Small ones are 32px.
 - **Chapter tabs:** a pill of 32px pills; the lit one slides. Play is a 40px

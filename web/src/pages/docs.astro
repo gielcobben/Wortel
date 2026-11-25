@@ -15,6 +15,9 @@ const schema = [{
   <header class="page phead" data-reveal-group>
     <h1 class="display" data-reveal>{DOCS.heading}</h1>
     <p class="lead" data-reveal>{DOCS.lead}</p>
+    <nav class="toc" aria-label="On this page" data-reveal>
+      {DOCS_SECTIONS.map((s) => <a href={`#${s.id}`}>{s.title}</a>)}
+    </nav>
   </header>
   <div class="page">
     {DOCS_SECTIONS.map((s) => (
@@ -30,4 +33,12 @@ const schema = [{
 </Layout>
 <style>
   .v .lead { margin-bottom: 24px; }
+  /* Beside the text, each section's name stays in view as you read. Stacked
+     on a narrow screen there is no such column, and the page is ten screens
+     long, so its sections are listed at the top instead. */
+  .toc { display: none; }
+  @media (max-width: 900px) {
+    .toc { display: flex; flex-direction: column; margin-top: 32px; border-bottom: 1px solid var(--line); }
+    .toc a { display: flex; align-items: center; min-height: 48px; padding-block: 8px; border-top: 1px solid var(--line); font-size: 15px; line-height: 24px; font-weight: 500; color: var(--ink); }
+  }
 </style>

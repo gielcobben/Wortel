@@ -127,6 +127,16 @@ text the row is `.row12.read`: the name is smaller (20 / 28) in columns 1 to
   (`/updates`), or a small label (`/privacy`, `/terms`). Add `.stick` to a
   `.k` whose right column is long.
 
+**On a phone** the rows stack: the name, then the text under it. `/docs`,
+whose section names no longer stay in view beside the text, lists its
+sections under the page's opening line (900px and under). A table whose first
+column is something typed (`table.terms`, set by `Blocks.astro` from
+`mono: 'first'`) becomes a list, the term on a line of its own: side by side,
+the longest command set the page's width and the whole page scrolled
+sideways. Controls are sized for a finger in one place, `site.css` under
+Touch: no grey tap flash and a dimmed press instead, no wait for a second
+tap, and `.tap` for a control drawn smaller than 40px.
+
 Headings are light: weight 400, and 500 for a page's one large line. Size and
 the two tones carry the hierarchy. A heading is two short lines with no full
 stop, and it does not change while a film plays: the grey half used to be the
@@ -202,7 +212,13 @@ Rules for motion, so a new piece moves like the rest:
   the older layout, where the box follows the last line.
 - `wholeRows()` hides terminal and sidebar rows that do not fit, so a window
   never shows half a row. Call it on any window whose height is not the
-  canvas's. A sidebar is cut from the end but keeps the selected row and its
+  canvas's. A terminal makes room by scrolling its box to a row's edge, with
+  the rows above left in place and unseen, never by taking them out: rows
+  taken out move every row under them, which Chrome counts as layout shift,
+  and a film printing a line a second put the homepage's score on a phone at
+  0.108 (0.1 is the limit for "good"). Scrolled, it measures 0. A terminal
+  also fits itself again whenever what it holds changes, so a scene need not
+  ask. A sidebar is cut from the end but keeps the selected row and its
   header (the sessions in no folder come last, so the one a window shows is
   often there), and its section gaps are worked out again for what is left.
 - Traffic lights are drawn in CSS as true 14pt circles in the captures'
@@ -216,12 +232,46 @@ Rules for motion, so a new piece moves like the rest:
 `/?t=<s>` holds the landing sequence at a time, for screenshots. Reduced
 motion starts every film paused, on its most telling chapter.
 
+**The windows on a phone** (760px and under). A window there is a small one,
+not a cropped or a scaled one: as wide as the stage, at most 512px high, with
+its sidebar folded, so the terminal wraps to the width and what the agent
+says can be read. `foldable()` in `scripts/app.ts` gives such a window what
+the app gives it in that state (the traffic lights on the window, Show
+Sidebar in the main bar) and `site.css` shows them only at that width; a
+`Stage` asks for it with `fold`, and the window carries `data-narrow` in its
+markup, so the sidebar is folded from the first paint and nothing shifts
+when the script runs. Three liberties are taken, all for the
+session's name, which with no sidebar is the only thing saying which session
+this is: Back and Forward are left out of the bar, the hero's session shows
+one tab of its three, and the Settings window takes the stage's width (it is
+380 points in the app, wider than the stage) with its tabs moved clear of the
+traffic lights.
+
+Two films are about more than one part of the window, and a phone shows one
+part at a time. Their windows are wider than the stage and the film pans:
+the panes film between the main pane and the column, each exactly as wide as
+the stage (the sidebar is folded and the column never closes there, so
+nothing wraps again between chapters); the agents film between the sidebar,
+while the dots are the story, and the terminal, once you have gone to the
+session that asked. The pan is the camera's; nothing in the window moves
+that the app would not move.
+
+Between a phone and a wide screen (1000px and under: a tablet, a narrow
+browser window) the panes window is whole but folds its sidebar, since
+sidebar, terminal and column do not fit across and the terminal was left a
+strip ten characters wide.
+
 Every Download button on the site leads to `/download` with a mark for where
 it was (`/download#hero`, `#nav`, `#footer`, `#404`). Arriving with one
 presses the page's own button, so the download starts at once and
 `download_clicked` carries that place; the mark is then taken out of the
 address, so a reload does not download again. A plain visit to `/download`
-only shows the button. It points at `https://updates.wortel.sh/Wortel-latest.zip`,
+only shows the button. On a phone or a tablet nothing starts by itself: the
+button becomes "Send to your Mac" (the share sheet, or "Copy the link" where
+there is none, `download_link_sent`), and the zip is a small link under it
+(`download_clicked` from `download-phone`). The page tells such a device by
+what it is, not by its width, since the question is whether it can open a Mac
+app. The button points at `https://updates.wortel.sh/Wortel-latest.zip`,
 which `release.sh --publish` always mirrors to the newest signed build. The
 version line under it, and `softwareVersion`/`fileSize` in the structured data,
 are read from `updates.wortel.sh/appcast.xml` **at build time**. They refresh
@@ -299,9 +349,11 @@ cell renders as "?" and reads "not published". It is not a polite "no", and
 rounding it down to one is how you end up wrong in public about someone else's
 software.
 
-The grid shows as many columns as the width allows (two on a phone, three from
-1040px, four from 1280px) and every column is chosen from a menu, because there
-is no width that shows ten columns of sentences. Nothing inside the panels draws
+The grid shows Wortel and three others, each chosen from a menu, because
+there is no width that shows ten columns of sentences. On a phone (760px and
+under) it shows Wortel and one other, with each question on a line of its own
+over the two answers and the two names staying in view under the nav. Without
+scripts every column is there and the grid scrolls sideways in its own box. Nothing inside the panels draws
 a rule: the page is graph paper, and a hairline on graph paper is just another
 grid line at the wrong offset.
 
@@ -502,6 +554,15 @@ the Unsplash License, credit optional). `<Stage photo="…">` picks one, and
 `at`/`zoom` the part of it; neighbouring sections never share a photo.
 The closing call (components/Footer.astro) picks a photo per page, with a
 crop that keeps fog behind the words.
+
+A crop is written in one place, `data/photo.ts`: `at` is a
+background-position and `zoom` a number, where 1 fills the stage and 2 is
+twice the stage's width. The photo always covers its stage. A zoom makes the
+photo's layer wider and the photo covers that layer (`.stage::before` in
+`site.css`), so on a phone, where a stage is taller than it is wide, the photo
+grows to the stage's height. Do not size a photo with a width alone
+(`background-size: 200%`): that left a bare band under the picture on phones.
+The three photo tiles in the bento crop the same way.
 
 Each photo also has a phone copy, `<name>-1600.webp`, which a stage uses on a
 screen up to 900px wide (`--photo-s` in `site.css`). Make one with

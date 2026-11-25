@@ -339,7 +339,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['wortel remind <when>', 'Brings the session back to you later'],
             ['wortel cd <dir>', 'Moves the session, and its agent, to another folder'],
             ['wortel list', 'The open sessions, in sidebar order'],
-            ['wortel read <session>', 'Prints the text on a session\'s screen'],
+            ['wortel read <session>', 'Prints the text on a session’s screen'],
             ['wortel send <session> <text>', 'Types text into a session as a paste'],
             ['wortel wait <session>', 'Waits until something happens in a session'],
           ],

@@ -12,7 +12,7 @@ const { blocks } = Astro.props;
   : 'h' in b ? <h3>{b.h}</h3>
   : 'list' in b ? <ul>{b.list.map((i) => <li set:html={inline(i)} />)}</ul>
   : (
-    <table>
+    <table class={b.table.mono === 'first' ? 'terms' : undefined}>
       <thead><tr><th set:html={inline(b.table.head[0])} /><th set:html={inline(b.table.head[1])} /></tr></thead>
       <tbody>
         {b.table.rows.map(([a, c]) => (

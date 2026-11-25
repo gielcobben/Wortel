@@ -4,6 +4,10 @@
 // The grid shows Wortel and three others, chosen with plain <select>s. Every
 // column is in the HTML (so a crawler, a reader without JS, and llms-full.txt
 // all see the whole table); the script only hides the ones not picked.
+//
+// A phone has room for two: Wortel and one other, each question on a line of
+// its own over the two answers. Five columns side by side meant scrolling
+// sideways with the question out of sight.
 import Layout from '../layouts/Layout.astro';
 import Section from '../components/Section.astro';
 import { SITE } from '../data/site';
@@ -93,8 +97,12 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
 <script>
   const root = document.querySelector<HTMLElement>('[data-compare]');
   if (root) {
-    const picks = Array.from(root.querySelectorAll<HTMLSelectElement>('[data-pick]'));
+    const all = Array.from(root.querySelectorAll<HTMLSelectElement>('[data-pick]'));
+    const phone = matchMedia('(max-width: 760px)');
     const apply = () => {
+      // One other app on a phone, three where there is room.
+      const picks = all.slice(0, phone.matches ? 1 : all.length);
+      all.forEach((p) => { p.parentElement!.hidden = !picks.includes(p); });
       const order = ['wortel', ...picks.map((p) => p.value)];
       root.querySelectorAll<HTMLElement>('.row:not(.top) [data-col]').forEach((c) => {
         const i = order.indexOf(c.dataset.col!);
@@ -108,7 +116,8 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
       });
     };
     root.classList.add('picking');
-    picks.forEach((p) => p.addEventListener('change', apply));
+    all.forEach((p) => p.addEventListener('change', apply));
+    phone.addEventListener('change', apply);
     apply();
   }
 </script>
@@ -142,7 +151,10 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
     background: var(--btn-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'%3E%3Cpath d='M1.5 5 5 1.5 8.5 5M1.5 9 5 12.5 8.5 9' fill='none' stroke='%2377746a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
     border: 0; border-radius: 8px; padding: 4px 28px 4px 8px; margin-left: -8px;
   }
-  .slot select:hover { background-color: var(--line-2); }
+  @media (hover: hover) and (pointer: fine) { .slot select:hover { background-color: var(--line-2); } }
+  .slot[hidden] { display: none !important; }
+  /* Under a finger the picker is a fingertip tall. */
+  @media (pointer: coarse) { .slot select { padding-block: 8px; } }
   .slot span { font-size: 13px; line-height: 16px; color: var(--ink-3); }
   .group { display: grid; grid-template-columns: calc((100% - 352px) / 4 + 96px) 1fr; gap: 0; padding: 48px 0 16px; border-top: 1px solid var(--line-2); min-width: 900px; }
   .top + .group { margin-top: 16px; }
@@ -154,4 +166,18 @@ const label: Record<Verdict, string> = { yes: 'Yes', no: 'No', partial: 'Partly'
   .vd.no, .vd.unknown { color: var(--ink-3); }
   .note { font-size: 13px; line-height: 20px; color: var(--ink-2); }
   .caveat { max-width: 784px; margin-top: 48px; }
+
+  @media (max-width: 760px) {
+    :global(.picking) .grid { overflow-x: visible; }
+    :global(.picking) :is(.row, .group) { min-width: 0; }
+    :global(.picking) .row { flex-wrap: wrap; }
+    :global(.picking) .q { flex: 0 0 100%; padding: 16px 0 0; }
+    :global(.picking) .cell { flex: 1 1 0; padding: 8px 16px 16px 0; }
+    /* The two names stay in view while the answers scroll under them, and
+       say which side is which, so the column needs no tint here. */
+    :global(.picking) .cell.us { background: none; }
+    :global(.picking) .row.top .q { display: none; }
+    :global(.picking) .row.top .cell { padding-block: 16px; justify-content: center; }
+    :global(.picking) .group { grid-template-columns: 1fr; row-gap: 8px; }
+  }
 </style>

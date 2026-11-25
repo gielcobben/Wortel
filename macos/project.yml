@@ -509,6 +509,18 @@ targets:
       # either never reloads (a watch that went deaf after a save) or reloads
       # for every file an agent touches in the folder.
       - path: Wortel/Browser/BrowserPageWatch.swift
+      # Mark-up, the parts with no window in them. What is copied (a chip
+      # run into the word after it reads as a typo in someone's prompt), the
+      # folder and its sweep (which removes files), what a page's script
+      # reports (read as if a page could send anything), and which part of
+      # a very tall page is pictured.
+      - path: Wortel/Markup/Mark.swift
+      - path: Wortel/Markup/MarkStroke.swift
+      - path: Wortel/Markup/MarkupNote.swift
+      - path: Wortel/Markup/MarkupStore.swift
+      - path: Wortel/Markup/WebMarkReport.swift
+      - path: Wortel/Markup/MarkupSurface.swift
+      - path: Wortel/Markup/MarkDrawing.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
       # ⌘P's files: the index, the ranking (pinned against real paths, since
       # "the one I meant was third" fails nothing else), the walk's limits

@@ -96,14 +96,22 @@ final class ImageMarkupSurface: MarkupSurface {
 
     // MARK: - Pictures
 
-    /// The file's own pixels: its largest bitmap, or for a picture with no
-    /// pixels of its own (an SVG, a PDF page) twice its size in points.
+    /// The file's own pixels: its largest bitmap, which the preview has
+    /// decoded already. Or, for a picture with no pixels of its own (an
+    /// SVG, a PDF page), twice its size in points and never more than
+    /// `ViewPicture.mostPixels` a side: an SVG's size is whatever the file
+    /// declares, and one that declares 100,000 points must not be drawn
+    /// into a bitmap of 200,000.
     private static func pixels(of image: NSImage) -> CGImage? {
         let bitmaps = image.representations.compactMap { $0 as? NSBitmapImageRep }
         if let largest = bitmaps.max(by: { $0.pixelsWide < $1.pixelsWide }), let pixels = largest.cgImage {
             return pixels
         }
-        var rect = CGRect(x: 0, y: 0, width: image.size.width * 2, height: image.size.height * 2)
+        let most = CGFloat(ViewPicture.mostPixels)
+        let scale = min(2, most / image.size.width, most / image.size.height)
+        guard scale > 0, scale.isFinite else { return nil }
+        var rect = CGRect(x: 0, y: 0, width: max((image.size.width * scale).rounded(), 1),
+                          height: max((image.size.height * scale).rounded(), 1))
         return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
     }
 

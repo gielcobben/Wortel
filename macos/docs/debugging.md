@@ -127,7 +127,8 @@ control bytes removed instead of putting `\w` in PS1, because `\w` passes them
 through), ssh `SendEnv COLORTERM` instead of `SetEnv` (69554f414), bash's
 PROMPT_COMMAND fixes (1f3a3b41f, 2a952b4df, 4b9324f48, ed7f046ee, a4031c8e3,
 591ccacbd; 4dfa44ecd was already a Wortel hunk), bash's ble.sh mark
-(b1ad24e24) and zsh's trailing `%` in PS1 (43f3dc5f1). Not ported: bash-preexec
+(b1ad24e24) and zsh's trailing `%` in PS1 (43f3dc5f1). Nothing changed in shell integration from
+5ebe501 to vt-1.0.2 (checked 2026-11-25). Not ported: bash-preexec
 0.7.0 (5d6615fc4), zsh's `133;P` secondary prompt (3e0d434e8), and the `+ssh`
 rewrite. The ssh wrappers' remote step now always runs `tic` into
 `~/.terminfo`, and falls back to an entry already on the host only when it has

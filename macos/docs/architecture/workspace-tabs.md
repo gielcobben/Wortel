@@ -73,6 +73,13 @@ so `loadFileURL(_:allowingReadAccessTo:)` is not used; Resource Timing lists
 nothing for `file:` resources, which is why the markup is asked instead;
 `reload` keeps the scroll (900 before, 900 after).
 
+What such a page can reach, measured the same way: nothing on disk but what
+its markup loads. `fetch` and `XMLHttpRequest` of a file beside it and of
+`/etc/hosts` were both refused, and a frame showing a file beside it could
+not be read from the page. Its scripts do run and can use the network, as
+any page's in the tab can. `WKPreferences` is left at its defaults for this
+reason: the private "file access from file URLs" switches stay off.
+
 Checked in a test copy, same day: the page loaded from `wortel open`, a save
 by rename and a stylesheet written in place each reloaded it once, another
 file in the folder did not, a change while the tab was behind another waited

@@ -1566,6 +1566,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Changes and ⌘P still open the file's own tab, because those lists are for
   reading a change and the preview tab only works with file tabs; that tab
   has an "Open as Page" button. `index.html:42` is the file at its line.
+  This is the one place a ⌘-click runs what a file holds: the page's scripts
+  run, in WebKit's sandboxed process, as a page behind a ⌘-clicked
+  `localhost` link's do. It was weighed against the 2026-11-19 rule that a
+  click never launches anything. That rule is about a program started as
+  you (a `.command` in Terminal); a page can't do that. Measured 2026-11-25:
+  a page opened from a file could not read another file, beside it or
+  elsewhere, by `fetch`, `XMLHttpRequest` or a frame. What it can do is
+  what any page can: use the network, and so tell a server it was opened.
+  Not done: a store of its own without the tab's sign-ins, scripts off, or
+  read access cut to the file's folder (a page then loses a stylesheet one
+  folder up). The spike for phase 3 looks at a separate store anyway.
 - **2026-11-25. A page's source shows in the same tab, behind a Page ·
   Source switch**, chosen by the owner over a file tab opened beside it.
   Nothing moves but the content: no second tab, the switch is under the

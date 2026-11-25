@@ -232,6 +232,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         previewTabs.onOpenFile = { [weak self] url in
             self?.openPreview(url)
         }
+        // "Open as Page" on an .html file's tab or window.
+        previewTabs.onOpenPage = { [weak self] url in self?.openPage(url) }
+        previewWindows.onOpenPage = { [weak self] url in
+            self?.focusMainWindow()
+            self?.openPage(url)
+        }
+        // A browser tab on a file shows the file's source through these.
+        BrowserTabs.shared.previews = previewTabs
         // A tab becoming a window: the window opens and the tab goes.
         previewTabs.onOpenInWindow = { [weak self] url, diff, hasChanges, mode, topLeft in
             guard let self else { return }
@@ -428,7 +436,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Last, because everything it can be asked to do has to exist first.
         let cli = WortelCLIService(
             manager: manager,
-            openPreview: { [weak self] url in self?.openPreview(url) },
+            openPreview: { [weak self] url in
+                // `wortel open report.html`: the page it makes, in a browser
+                // tab. Every other file: its preview.
+                if BrowserAddress.isPage(url) { self?.openPage(url) } else { self?.openPreview(url) }
+            },
             orderFront: { [weak self] in self?.window?.makeKeyAndOrderFront(nil) })
         cli.start()
         self.cli = cli
@@ -1405,10 +1417,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// opening an app runs it (`MarkdownLinkTarget.package`).
     private func openTerminalLink(_ target: TerminalLink.Target) {
         switch target.kind {
+        // An .html path is the page it makes. With a line (`index.html:42`)
+        // it is that line of the file somebody pointed at: the source.
+        case .file where target.line == nil && BrowserAddress.isPage(target.url): openPage(target.url)
         case .markdown, .file: openPreview(target.url, line: target.line)
         case .folder: NSWorkspace.shared.open(target.url)
         case .package: NSWorkspace.shared.activateFileViewerSelecting([target.url])
         }
+    }
+
+    /// Show an `.html` file as a page: a browser tab on it, or the one
+    /// already on it brought forward (`GitPanelModel.showInBrowser`), where
+    /// browsers go in this session. Always a tab, whatever Settings says about
+    /// servers: that choice is about a dev server's address, and a file
+    /// handed to the default browser has no Page · Source and no reload.
+    /// With no session to hold a tab, the file's preview.
+    private func openPage(_ requested: URL) {
+        guard gitPanel.session != nil else { return openPreview(requested) }
+        let url = requested.resolvingSymlinksInPath().standardizedFileURL
+        RecentFiles.shared.record(GitWorktree.realPath(url.path))
+        gitPanel.showInBrowser(url, elsewhere: Self.optionClicked)
     }
 
     private func openPreview(_ requested: URL, line: Int? = nil) {
@@ -1796,6 +1824,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         BrowserTabs.shared.page(for: id).reloadFromOrigin()
     }
 
+    /// ⌥⌘U, Safari's and Chrome's View Source: the file behind the page in
+    /// front, in place of the page, and back.
+    @objc func toggleBrowserSource(_ sender: Any?) {
+        guard let page = frontFilePage() else { return }
+        page.showSource(!page.showsSource)
+    }
+
+    /// The browser in front, if it is on a file that is a page.
+    private func frontFilePage() -> BrowserPage? {
+        guard let page = frontBrowser().flatMap({ BrowserTabs.shared.existingPage(for: $0) }),
+              page.pageFile != nil else { return nil }
+        return page
+    }
+
     /// ⌥⌘I: Web Inspector for the browser in front, or away again.
     @objc func showWebInspector(_ sender: Any?) {
         guard let id = frontBrowser() else { return }
@@ -1919,33 +1961,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         previewTabs.forget(path)
     }
 
-    /// ⌘F with a file tab showing: that file's find bar, as a preview window's.
-    /// The tab in front of the area you're in first, then any area's. With no
-    /// searchable file on screen the item is disabled and ⌘F goes on to the
-    /// terminal, as it always has.
+    /// ⌘F with a file or a page showing: its find bar, as a preview window's.
+    /// The tab in front of the area you're in first, then any area's, so it
+    /// reaches a page from the terminal as ⌘R does. With nothing to search on
+    /// screen the item is disabled and ⌘F goes on to the terminal, as it
+    /// always has.
     @objc func showPreviewFind(_ sender: Any?) {
-        guard let path = findableFileTab() else { return }
-        // As ⌘L: the find bar has the keyboard, so its area is the one you're in.
-        if let region = manager.selected?.workspace.region(of: .file(path)) { gitPanel.lastRegion = region }
-        previewTabs.document(for: path).find.isPresented = true
+        switch findTarget() {
+        case .file(let path)?:
+            // As ⌘L: the find bar has the keyboard, so its area is the one you're in.
+            if let region = manager.selected?.workspace.region(of: .file(path)) { gitPanel.lastRegion = region }
+            previewTabs.document(for: path).find.isPresented = true
+        case .page(let id)?:
+            if let region = manager.selected?.workspace.region(of: .browser(id)) { gitPanel.lastRegion = region }
+            let page = BrowserTabs.shared.page(for: id)
+            // On Source, the file's text is what is on screen to search.
+            if let source = page.shownSource { source.find.isPresented = true } else { page.find.present() }
+        case nil:
+            break
+        }
     }
 
-    /// ⌘G / ⇧⌘G: the next and previous match of the find bar that's open.
-    @objc func previewFindNext(_ sender: Any?) { openFind()?.next() }
-    @objc func previewFindPrevious(_ sender: Any?) { openFind()?.previous() }
+    /// ⌘G / ⇧⌘G: the next and previous match. In a file, of the find bar
+    /// that's open; in a page, of what was last looked for there, bar or no
+    /// bar (⌘E, then ⌘G, as in Safari).
+    @objc func previewFindNext(_ sender: Any?) { stepFind(forward: true) }
+    @objc func previewFindPrevious(_ sender: Any?) { stepFind(forward: false) }
+
+    private func stepFind(forward: Bool) {
+        switch findTarget() {
+        case .file?:
+            forward ? openFind()?.next() : openFind()?.previous()
+        case .page(let id)?:
+            let page = BrowserTabs.shared.page(for: id)
+            if let source = page.shownSource {
+                guard source.find.isPresented else { return }
+                forward ? source.find.next() : source.find.previous()
+            } else {
+                forward ? page.find.next() : page.find.previous()
+            }
+        case nil:
+            break
+        }
+    }
+
+    /// ⌘E: look for what is selected in the page that has the keyboard.
+    @objc func useSelectionForFind(_ sender: Any?) {
+        keyboardBrowserPage?.find.useSelection()
+    }
+
+    /// Whether ⌘G has something to step through.
+    private var canStepFind: Bool {
+        switch findTarget() {
+        case .file?: return openFind()?.matches.isEmpty == false
+        case .page(let id)?:
+            guard let page = BrowserTabs.shared.existingPage(for: id) else { return false }
+            if let source = page.shownSource { return source.find.isPresented && !source.find.matches.isEmpty }
+            return page.find.canStep
+        case nil: return false
+        }
+    }
 
     /// The find bar of the file tab ⌘F would pick, if it's up.
     private func openFind() -> PreviewFind? {
-        guard let path = findableFileTab() else { return nil }
+        guard case .file(let path)? = findTarget() else { return nil }
         let find = previewTabs.document(for: path).find
         return find.isPresented ? find : nil
     }
 
-    private func findableFileTab() -> String? {
-        let fronts = [focusedRegion(), .side, .main, .bottom].map { gitPanel.activeTab(in: $0) }
-        for case let path? in fronts.map({ $0?.filePath }) {
-            let document = previewTabs.document(for: path).document
-            if document.mode != .rendered, !document.isBinary { return path }
+    /// What ⌘F searches.
+    private enum FindTarget {
+        case file(String)
+        case page(UUID)
+    }
+
+    /// The first searchable tab in front: of the area you're in, then the
+    /// column, the main area, the strip. A file that is text and not
+    /// rendered, or a browser that is somewhere.
+    private func findTarget() -> FindTarget? {
+        for tab in [focusedRegion(), .side, .main, .bottom].compactMap({ gitPanel.activeTab(in: $0) }) {
+            if let path = tab.filePath {
+                let document = previewTabs.document(for: path).document
+                if document.mode != .rendered, !document.isBinary { return .file(path) }
+            } else if let id = tab.browserID, BrowserTabs.shared.existingPage(for: id)?.location != nil {
+                return .page(id)
+            }
         }
         return nil
     }
@@ -2307,11 +2407,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(showPreviewFind(_:)) {
-            return findableFileTab() != nil
+            return findTarget() != nil
         }
         if menuItem.action == #selector(previewFindNext(_:))
             || menuItem.action == #selector(previewFindPrevious(_:)) {
-            return openFind()?.matches.isEmpty == false
+            return canStepFind
+        }
+        if menuItem.action == #selector(useSelectionForFind(_:)) {
+            return keyboardBrowserPage != nil
+        }
+        if menuItem.action == #selector(toggleBrowserSource(_:)) {
+            let page = frontFilePage()
+            menuItem.title = page?.showsSource == true ? "Show Page" : "Show Page Source"
+            return page != nil
         }
         if menuItem.action == #selector(showWebInspector(_:)) {
             let page = frontBrowser().flatMap { BrowserTabs.shared.existingPage(for: $0) }

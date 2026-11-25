@@ -6,6 +6,14 @@ enum BrowserAddress {
     /// `localhost:5173`, `localhost:5173/docs`, `wortel.sh`: what a tab and
     /// the address field call an address. The scheme is noise.
     static func short(_ url: URL) -> String {
+        // A file by its name and the folder it is in: `proj/report.html`.
+        // The whole path starts with the part every file shares, and in a
+        // narrow field that was all there was room for. The field shows the
+        // whole address when it has the keyboard, as for any page.
+        if url.isFileURL {
+            let parts = url.standardizedFileURL.pathComponents.filter { $0 != "/" }
+            return parts.suffix(2).joined(separator: "/")
+        }
         guard let host = url.host(), !host.isEmpty else { return url.absoluteString }
         var text = host.contains(":") ? "[\(host)]" : host
         if let port = url.port { text += ":\(port)" }
@@ -18,9 +26,18 @@ enum BrowserAddress {
     /// What was typed, as somewhere to go, or nil when it isn't an address.
     /// A port alone is a local server (`3000`, `:3000`); a local name or a
     /// private network address without a scheme is http (dev servers don't
-    /// do TLS), anything else https. Only http and https.
+    /// do TLS), anything else https. Only http and https, and a file on this
+    /// Mac: a `file:` address (what the field shows for a page opened from a
+    /// file) or a path from `/` or `~`.
     static func url(from typed: String) -> URL? {
         var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("/") || text.hasPrefix("~") {
+            return URL(fileURLWithPath: (text as NSString).expandingTildeInPath).standardizedFileURL
+        }
+        if text.lowercased().hasPrefix("file:") {
+            guard let url = URL(string: text), url.isFileURL, !url.path.isEmpty else { return nil }
+            return url
+        }
         guard !text.isEmpty, !text.contains(" ") else { return nil }
         if Int(text.dropFirst(text.hasPrefix(":") ? 1 : 0)) != nil {
             text = "localhost:" + text.drop { $0 == ":" }
@@ -54,6 +71,48 @@ enum BrowserAddress {
             }
         }
         return nil
+    }
+
+    /// Whether `url` is a file a browser tab shows as a page: `.html` or
+    /// `.htm` on this Mac. What `wortel open` and a ⌘-clicked path send to a
+    /// browser tab, and what a tab offers Page · Source for.
+    static func isPage(_ url: URL) -> Bool {
+        url.isFileURL && ["html", "htm"].contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether a tab at `open` is the one to bring forward for `wanted`. A
+    /// server is one place whatever its path (a tab on `localhost:5173/docs`
+    /// is the tab for `localhost:5173`). Files have no host and no port, so
+    /// by that rule every file would be every other file: a file is itself.
+    static func showsSame(_ open: URL, as wanted: URL) -> Bool {
+        if open.isFileURL || wanted.isFileURL {
+            guard open.isFileURL, wanted.isFileURL else { return false }
+            return open.resolvingSymlinksInPath().standardizedFileURL.path
+                == wanted.resolvingSymlinksInPath().standardizedFileURL.path
+        }
+        return open.host() == wanted.host() && open.port == wanted.port
+    }
+
+    /// The local files in what a page says it loaded, as paths: what is
+    /// watched beside the page's own file. Anything that isn't a `file:`
+    /// address is somewhere a change on disk can't reach.
+    static func localFiles(in addresses: [String]) -> [String] {
+        var paths: [String] = []
+        for address in addresses {
+            guard let url = URL(string: address), url.isFileURL else { continue }
+            let path = url.standardizedFileURL.path
+            if !path.isEmpty, !paths.contains(path) { paths.append(path) }
+        }
+        return paths
+    }
+
+    /// A page's selection as something to look for (⌘E): its first line,
+    /// trimmed. A selection across paragraphs has line breaks in it that no
+    /// text in the page matches.
+    static func searchable(_ selection: String?) -> String? {
+        let line = selection?.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let text = line.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
     }
 
     /// The host of an address typed without a scheme.
@@ -105,5 +164,71 @@ enum BrowserExternalLink: Equatable {
     static func decide(scheme: String?, fromMainFrame: Bool, toMainFrame: Bool) -> BrowserExternalLink {
         guard let scheme = scheme?.lowercased(), !pageSchemes.contains(scheme) else { return .load }
         return fromMainFrame && toMainFrame ? .ask : .refuse
+    }
+}
+
+/// The name a download is saved under, in the Downloads folder.
+///
+/// WebKit has already made the server's name one path component (measured
+/// 2026-11-25: `re:port/../x.zip` arrives as `re_port_.._x.zip`), so what is
+/// left here is what a folder of your own wants: nothing hidden, nothing
+/// empty, and never a file that was already there.
+enum BrowserDownloadName {
+    /// `suggested` as a file name: one component, not hidden, not empty, and
+    /// short enough for the file system (255 bytes) with room for a number.
+    static func cleaned(_ suggested: String) -> String {
+        var name = String(String.UnicodeScalarView(suggested.unicodeScalars.filter {
+            !CharacterSet.controlCharacters.contains($0)
+        }))
+        name = name.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ":", with: "_")
+        name = name.trimmingCharacters(in: .whitespaces)
+        // A leading dot would save it where the Finder doesn't show it.
+        name = String(name.drop { $0 == "." })
+        guard !name.isEmpty else { return "download" }
+        let whole = name as NSString
+        let ext = whole.pathExtension
+        var stem = whole.deletingPathExtension
+        let suffix = ext.isEmpty ? "" : "." + ext
+        while (stem + suffix).utf8.count > 240, stem.count > 1 { stem.removeLast() }
+        return stem + suffix
+    }
+
+    /// `name`, or `name 2`, `name 3`… before its extension: the first that
+    /// isn't taken, numbered as the Finder numbers a copy. A download never
+    /// replaces a file.
+    static func free(_ name: String, isTaken: (String) -> Bool) -> String {
+        guard isTaken(name) else { return name }
+        let whole = name as NSString
+        let ext = whole.pathExtension
+        let stem = whole.deletingPathExtension
+        var number = 2
+        while true {
+            let candidate = ext.isEmpty ? "\(stem) \(number)" : "\(stem) \(number).\(ext)"
+            if !isTaken(candidate) { return candidate }
+            number += 1
+        }
+    }
+
+    /// Whether a response is saved to Downloads.
+    ///
+    /// The page itself (`isForMainFrame`): what the tab can't show, or what
+    /// its server marked as an attachment. A frame inside the page: only an
+    /// attachment, and only from the page's own host. A frame from somewhere
+    /// else is usually an advertisement, and one of those answering with an
+    /// attachment would put a file in Downloads that nobody clicked for. A
+    /// site's own hidden frame is how many of them start a download, so that
+    /// still works. The host must match exactly: a frame on `cdn.example.com`
+    /// in a page on `example.com` saves nothing.
+    static func saves(isForMainFrame: Bool, canShow: Bool, isAttachment: Bool,
+                      host: String?, pageHost: String?) -> Bool {
+        if isForMainFrame { return isAttachment || !canShow }
+        guard isAttachment, let host = host?.lowercased(), !host.isEmpty else { return false }
+        return host == pageHost?.lowercased()
+    }
+
+    /// Whether a response is one to save, not show: the server said so.
+    static func isAttachment(contentDisposition: String?) -> Bool {
+        guard let value = contentDisposition?.trimmingCharacters(in: .whitespaces).lowercased() else { return false }
+        return value == "attachment" || value.hasPrefix("attachment;")
     }
 }

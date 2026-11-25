@@ -75,34 +75,9 @@ struct PreviewContent: View {
     @ViewBuilder
     private var findBar: some View {
         if find.isPresented {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Find", text: $find.query)
-                    .textFieldStyle(.plain)
-                    .focused($findFocused)
-                    // Enter walks matches without leaving the field, the way
-                    // every find bar on the platform does.
-                    .onSubmit { find.next() }
-                Text(find.summary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                HStack(spacing: 2) {
-                    Button { find.previous() } label: { Image(systemName: "chevron.up") }
-                    Button { find.next() } label: { Image(systemName: "chevron.down") }
-                }
-                .buttonStyle(.borderless)
-                .disabled(find.matches.isEmpty)
-                Button("Done") { find.dismiss() }
-                    .buttonStyle(.borderless)
-            }
-            .font(.callout)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider() }
-            .onExitCommand { find.dismiss() }
+            FindBar(query: $find.query, summary: find.summary, canStep: !find.matches.isEmpty,
+                    focused: $findFocused, next: find.next, previous: find.previous,
+                    dismiss: find.dismiss)
         }
     }
 

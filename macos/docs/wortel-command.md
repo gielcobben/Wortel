@@ -34,6 +34,16 @@ wortel open README.md                  # relative to where you are
 wortel open ~/Developer/lijn/App.swift
 ```
 
+An `.html` file opens as the page it makes, in a browser tab, and loads again
+whenever the file changes on disk (or a stylesheet, script or picture it
+loads from disk). `wortel open report.html` a second time brings that tab
+forward. The tab's header has Page · Source for the file's text, and ⌥⌘U
+flips between them.
+
+```sh
+wortel open report.html                # the page, reloading as you write it
+```
+
 Relative paths resolve against **your** working directory, not the app's. The
 window is ordered front but **never steals focus** — if you're in another app it
 waits for you rather than yanking you out of what you were doing.

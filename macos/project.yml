@@ -498,6 +498,10 @@ targets:
       # Wrong, the tabs still draw and select and the window moves instead.
       - path: Wortel/UI/WindowMovability.swift
       - path: Wortel/Browser/BrowserAddress.swift
+      # Which change on disk reloads a page shown from a file. Wrong, it
+      # either never reloads (a watch that went deaf after a save) or reloads
+      # for every file an agent touches in the folder.
+      - path: Wortel/Browser/BrowserPageWatch.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
       # ⌘P's files: the index, the ranking (pinned against real paths, since
       # "the one I meant was third" fails nothing else), the walk's limits

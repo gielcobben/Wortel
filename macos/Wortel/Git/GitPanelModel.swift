@@ -1046,16 +1046,16 @@ final class GitPanelModel {
         change(session) { $0.keep(tab) }
     }
 
-    /// Show what's at `url`: a browser already on that server comes forward
-    /// wherever it is, otherwise a new one opens where browsers go
-    /// (`elsewhere`: the other place, for ⌥-click).
+    /// Show what's at `url`: a browser already on that server, or on that
+    /// file, comes forward wherever it is, otherwise a new one opens where
+    /// browsers go (`elsewhere`: the other place, for ⌥-click).
     func showInBrowser(_ url: URL, elsewhere: Bool = false) {
         guard let session else { return }
         let tabs = session.mainTabs + session.sideTabs + session.bottomTabs
         let existing = tabs.first { tab in
             guard let id = tab.browserID,
                   let address = session.browserAddresses[id].flatMap(URL.init(string:)) else { return false }
-            return address.host() == url.host() && address.port == url.port
+            return BrowserAddress.showsSame(address, as: url)
         }
         if let existing {
             openAtHome(existing, elsewhere: elsewhere)

@@ -1562,6 +1562,56 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+- **2026-11-25. An `.html` file opens as the page it makes, in a browser
+  tab**, from `wortel open` and a ⌘-clicked path, and loads again when the
+  file changes on disk. A browser tab and not a Rendered mode of the file
+  tab (as Markdown has): the page needs links, scripts, the inspector, and
+  later mark-up and an agent's commands, which are a browser tab's. Files,
+  Changes and ⌘P still open the file's own tab, because those lists are for
+  reading a change and the preview tab only works with file tabs; that tab
+  has an "Open as Page" button. `index.html:42` is the file at its line.
+  This is the one place a ⌘-click runs what a file holds: the page's scripts
+  run, in WebKit's sandboxed process, as a page behind a ⌘-clicked
+  `localhost` link's do. It was weighed against the 2026-11-19 rule that a
+  click never launches anything. That rule is about a program started as
+  you (a `.command` in Terminal); a page can't do that. Measured 2026-11-25:
+  a page opened from a file could not read another file, beside it or
+  elsewhere, by `fetch`, `XMLHttpRequest` or a frame. What it can do is
+  what any page can: use the network, and so tell a server it was opened.
+  Not done: a store of its own without the tab's sign-ins, scripts off, or
+  read access cut to the file's folder (a page then loses a stylesheet one
+  folder up). The spike for phase 3 looks at a separate store anyway.
+- **2026-11-25. A page's source shows in the same tab, behind a Page ·
+  Source switch**, chosen by the owner over a file tab opened beside it.
+  Nothing moves but the content: no second tab, the switch is under the
+  pointer both ways, and the page stays loaded under the source. The cost is
+  two places a file's text can show (this, and its file tab), and no Diff
+  here: the diff is the file tab's, from Changes.
+- **2026-11-25. The address field takes a file.** `file:` was refused there
+  with the other non-web schemes (2026-09-29). A tab shows files now, the
+  field shows the file it is on, and only a person types in it. Scripts
+  (`javascript:`, `data:`) are still refused.
+- **2026-11-25. A download in a browser tab is saved to `~/Downloads`, and
+  nothing downloaded is opened.** This replaces the 2026-11-21 rule for web
+  addresses: a response a tab couldn't show went to the default browser,
+  which is signed out of the site that offered the file. A `file:` is still
+  only shown in the Finder. The list is a button in the tab's header with a
+  popover, as Safari has, chosen over a line under the page (no way back to
+  an earlier download) and over no sign at all (a click on a download link
+  looked like nothing happened). One list for the app, not saved: a history
+  of downloads is a browser's job, and the files are in the folder. No
+  question before a download, as the browser plan decided for an agent's
+  shell: asking adds no safety when nothing is opened. A partial file from a
+  stopped or failed download is removed, not moved to the Trash: Wortel made
+  it seconds ago and it is half a file.
+- **2026-11-25. Find in a page is WebKit's public find behind the file tab's
+  own bar**, with Safari's keys (⌘F, ⌘G, ⇧⌘G, ⌘E). One find bar in the app,
+  not the system's `NSTextFinder` bar beside Wortel's. The cost is the count:
+  the public call says found or not, so a page's bar says "Not found" where
+  a file's says "3 of 12". The count and every match lit at once are behind
+  private calls (`_countStringMatches`), left out for the reason the plan
+  leaves out a view of network requests. ⌘F reaches the page in front from
+  the terminal, as ⌘R does.
 - **2026-11-24. A preview tab: a file looked at from Changes or Files while
   a file is in front takes the place of the one before it**, in one tab with
   an italic title, as in Xcode and VS Code. A click or ↑/↓ in the list does

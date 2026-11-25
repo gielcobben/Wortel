@@ -49,7 +49,7 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertNil(url("65536"))
         XCTAssertNil(url("0"))
         XCTAssertNil(url("javascript:alert(1)"))
-        XCTAssertNil(url("file:///etc/passwd"))
+        XCTAssertNil(url("data:text/html,<p>x"))
     }
 
     /// Inline completion: the typed part kept as typed, the rest filled in
@@ -78,6 +78,69 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertEqual(BrowserAddress.short(URL(string: "http://localhost:5173/")!), "localhost:5173")
         XCTAssertEqual(BrowserAddress.short(URL(string: "http://localhost:5173/docs")!), "localhost:5173/docs")
         XCTAssertEqual(BrowserAddress.short(URL(string: "https://wortel.sh")!), "wortel.sh")
+    }
+
+    // MARK: - Files
+
+    /// A file is shown by its name and its folder, not as a `file:` address:
+    /// the start of a path is the part every file shares.
+    func testAFileIsShownByItsNameAndFolder() {
+        XCTAssertEqual(BrowserAddress.short(URL(fileURLWithPath: "/Users/someone/proj/report.html")), "proj/report.html")
+        XCTAssertEqual(BrowserAddress.short(URL(fileURLWithPath: "/tmp/a b.html")), "tmp/a b.html")
+        XCTAssertEqual(BrowserAddress.short(URL(fileURLWithPath: "/index.html")), "index.html")
+    }
+
+    /// What the field shows for a file can be typed back, and so can a path.
+    /// (Until 2026-11-25 a `file:` address was refused with the other
+    /// non-web schemes; a tab shows files as pages now, and the field is
+    /// only ever typed in by the person.)
+    func testAPathOrAFileAddressIsAFile() {
+        XCTAssertEqual(url("/tmp/report.html"), "file:///tmp/report.html")
+        XCTAssertEqual(url("/tmp/a b.html"), "file:///tmp/a%20b.html")
+        XCTAssertEqual(url("~/x.html"), URL(fileURLWithPath: NSHomeDirectory() + "/x.html").absoluteString)
+        XCTAssertEqual(url("file:///tmp/a%20b.html"), "file:///tmp/a%20b.html")
+        XCTAssertNil(url("file:"))
+        XCTAssertNil(url("ftp://example.com/x"), "still only pages and files")
+    }
+
+    func testOnlyAnHTMLFileIsAPage() {
+        XCTAssertTrue(BrowserAddress.isPage(URL(fileURLWithPath: "/tmp/report.html")))
+        XCTAssertTrue(BrowserAddress.isPage(URL(fileURLWithPath: "/tmp/INDEX.HTM")))
+        XCTAssertFalse(BrowserAddress.isPage(URL(fileURLWithPath: "/tmp/notes.md")))
+        XCTAssertFalse(BrowserAddress.isPage(URL(string: "http://localhost:3000/index.html")!), "a server's page is not a file")
+    }
+
+    /// Every file has no host and no port. Matched as servers are, opening
+    /// one file would bring forward a tab on any other.
+    func testATabOnAnotherFileIsNotTheTabForThisOne() {
+        let a = URL(fileURLWithPath: "/tmp/wortel-a/index.html")
+        let b = URL(fileURLWithPath: "/tmp/wortel-b/index.html")
+        XCTAssertTrue(BrowserAddress.showsSame(a, as: URL(string: "file:///tmp/wortel-a/./index.html")!))
+        XCTAssertFalse(BrowserAddress.showsSame(a, as: b))
+        XCTAssertFalse(BrowserAddress.showsSame(a, as: URL(string: "http://localhost:3000")!))
+        XCTAssertFalse(BrowserAddress.showsSame(URL(string: "http://localhost:3000")!, as: a))
+        // A server is one place, whatever the path.
+        XCTAssertTrue(BrowserAddress.showsSame(URL(string: "http://localhost:3000/docs")!,
+                                               as: URL(string: "http://localhost:3000")!))
+        XCTAssertFalse(BrowserAddress.showsSame(URL(string: "http://localhost:3000")!,
+                                                as: URL(string: "http://localhost:3001")!))
+    }
+
+    /// Only files on this Mac are watched beside the page, each once.
+    func testTheFilesAPageLoadedAreItsLocalOnes() {
+        XCTAssertEqual(BrowserAddress.localFiles(in: [
+            "file:///tmp/site/a%20b.css", "https://cdn.example/x.js", "", "file:///tmp/site/sub/../a%20b.css",
+            "data:image/png;base64,AAAA", "file:///tmp/site/app.js",
+        ]), ["/tmp/site/a b.css", "/tmp/site/app.js"])
+    }
+
+    /// ⌘E looks for the selection's first line: no page text matches a line break.
+    func testASelectionToLookForIsItsFirstLine() {
+        XCTAssertEqual(BrowserAddress.searchable("  needle  "), "needle")
+        XCTAssertEqual(BrowserAddress.searchable("first line\nsecond"), "first line")
+        XCTAssertEqual(BrowserAddress.searchable("\n\nafter blanks"), "after blanks")
+        XCTAssertNil(BrowserAddress.searchable("   "))
+        XCTAssertNil(BrowserAddress.searchable(nil))
     }
 }
 
@@ -117,5 +180,54 @@ final class BrowserExternalLinkTests: XCTestCase {
     func testTheSchemeIsCaseInsensitive() {
         XCTAssertEqual(BrowserExternalLink.decide(scheme: "MAILTO", fromMainFrame: true, toMainFrame: true), .ask)
         XCTAssertEqual(BrowserExternalLink.decide(scheme: "HTTPS", fromMainFrame: false, toMainFrame: false), .load)
+    }
+}
+
+/// The name a download is saved under. Wrong, it replaces a file or hides one.
+final class BrowserDownloadNameTests: XCTestCase {
+    func testADownloadNameIsOneVisibleComponent() {
+        XCTAssertEqual(BrowserDownloadName.cleaned("report.zip"), "report.zip")
+        XCTAssertEqual(BrowserDownloadName.cleaned("../../etc/passwd"), "_.._etc_passwd")
+        XCTAssertEqual(BrowserDownloadName.cleaned(".zshrc"), "zshrc")
+        XCTAssertEqual(BrowserDownloadName.cleaned("a:b"), "a_b")
+        XCTAssertEqual(BrowserDownloadName.cleaned("  \u{0}  "), "download")
+        XCTAssertEqual(BrowserDownloadName.cleaned(""), "download")
+    }
+
+    /// A name longer than the file system takes is cut in its stem, not its extension.
+    func testALongDownloadNameKeepsItsExtension() {
+        let name = BrowserDownloadName.cleaned(String(repeating: "é", count: 300) + ".tar")
+        XCTAssertLessThanOrEqual(name.utf8.count, 240)
+        XCTAssertTrue(name.hasSuffix(".tar"))
+    }
+
+    /// A download never replaces a file: it is numbered, as a copy in the Finder is.
+    func testATakenDownloadNameIsNumbered() {
+        let taken: Set<String> = ["report.zip", "report 2.zip", "notes"]
+        XCTAssertEqual(BrowserDownloadName.free("new.zip", isTaken: taken.contains), "new.zip")
+        XCTAssertEqual(BrowserDownloadName.free("report.zip", isTaken: taken.contains), "report 3.zip")
+        XCTAssertEqual(BrowserDownloadName.free("notes", isTaken: taken.contains), "notes 2")
+    }
+
+    func testAnAttachmentIsSaved() {
+        XCTAssertTrue(BrowserDownloadName.isAttachment(contentDisposition: "attachment; filename=\"a.pdf\""))
+        XCTAssertTrue(BrowserDownloadName.isAttachment(contentDisposition: "Attachment"))
+        XCTAssertFalse(BrowserDownloadName.isAttachment(contentDisposition: "inline; filename=\"attachment.pdf\""))
+        XCTAssertFalse(BrowserDownloadName.isAttachment(contentDisposition: nil))
+    }
+
+    /// A frame from another site (an advertisement) can't put a file in Downloads.
+    func testOnlyThePageAndItsOwnFramesSave() {
+        func saves(main: Bool, canShow: Bool, attachment: Bool, host: String?, page: String?) -> Bool {
+            BrowserDownloadName.saves(isForMainFrame: main, canShow: canShow, isAttachment: attachment,
+                                      host: host, pageHost: page)
+        }
+        XCTAssertTrue(saves(main: true, canShow: false, attachment: false, host: "a.example", page: "b.example"))
+        XCTAssertTrue(saves(main: true, canShow: true, attachment: true, host: "a.example", page: "a.example"))
+        XCTAssertFalse(saves(main: true, canShow: true, attachment: false, host: "a.example", page: "a.example"))
+        XCTAssertTrue(saves(main: false, canShow: true, attachment: true, host: "App.Example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, canShow: true, attachment: true, host: "ads.example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, canShow: false, attachment: false, host: "app.example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, canShow: true, attachment: true, host: nil, page: nil), "a blob in a frame")
     }
 }

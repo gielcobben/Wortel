@@ -443,7 +443,9 @@ private struct StopAllButton: View {
     }
 }
 
-private struct RowIconButton: View {
+/// A small glyph button in a popover's row, shown under the pointer. The
+/// downloads list uses it too.
+struct RowIconButton: View {
     let symbol: String
     let label: String
     var isDestructive = false

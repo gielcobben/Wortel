@@ -19,6 +19,115 @@ on a server from the running-jobs popover. A browser's address lives on its
 session (`browserAddresses`, persisted) and its live web view in
 `BrowserTabs`, not in the view, so moving the tab doesn't reload it.
 
+**Find in a page** (`BrowserFind`, one per `BrowserPage`). Edit ▸ Find's three
+items are the file tab's (`showPreviewFind:` and its two neighbours);
+`AppDelegate.findTarget` picks what they act on, the tab in front of the area
+you're in and then the column, the main area and the strip: a file that is
+text, or a browser that is somewhere. The bar is `FindBar` (`Wortel/UI/`),
+the same view a file tab shows. The search is `WKWebView.find`, the public
+call, which marks one match and says found or not: no count. Typing collapses
+the selection to its start before each search, or every letter would move to
+a later match. ⌘E (`useSelectionForFind:`) is enabled only with the keyboard
+in a page. Nothing here runs while the bar is closed.
+
+**A file as a page.** `wortel open x.html` and a ⌘-clicked `.html` path open
+a browser tab on the file (`AppDelegate.openPage`, then
+`GitPanelModel.showInBrowser`), where browsers go in that session. A tab
+already on that file comes forward: servers are matched by host and port,
+files by path (`BrowserAddress.showsSame`), since every file has neither.
+Settings' "servers go to the browser" does not apply. The address is stored
+as any browser tab's is, so the tab is back after a relaunch.
+
+- **Reload on change** (`BrowserPageWatch`). After each load the page is
+  asked which addresses its markup loads (`link`, `script`, `img` and the
+  like, run in `.defaultClient` so the page's scripts can't answer for it),
+  and the page's file plus at most 32 of those that are local files are
+  watched, each with a vnode watch on the file and one on its folder,
+  `PreviewDocument`'s pattern. An event is followed 150 ms later by a stat of
+  the watched files, and only a file whose date, size or inode moved reloads
+  the page (`reloadFromOrigin`). A file that is gone changes nothing. Any
+  `file:` address a tab is on is watched this way, a page or not.
+- **Off screen** it costs the open descriptors. A change while the tab is not
+  showing sets `reloadWhenShown`, the flag a page that crashed off screen
+  uses, and the reload happens when the tab is shown. A tab that was never
+  shown has no page and no watch.
+- **Page · Source** (`BrowserPage.showSource`, `ModeSwitch`). On an `.html`
+  file the header has the pill a file tab has for Diff · Source, and View ▸
+  Show Page Source (⌥⌘U) does the same. Source is `PreviewContent` on a
+  `PreviewDocument` of the tab's own (`PreviewTabs.sourceDocument`), laid over
+  the web view. The web view is not hidden or unloaded, so the page keeps its
+  scroll, its state and its reloads, and Page is one cut back. The keyboard
+  is taken off the covered page. The document lives until the tab goes to
+  another address. ⌘F searches whichever is showing
+  (`AppDelegate.findTarget`, `shownSource`). When the column is too narrow for
+  the pill and 72pt of address, the pill is one `</>` button
+  (`ViewThatFits`): squeezed, it lost its words.
+- **The address field** shows a file as `folder/name.html`, the whole
+  `file:` address when it has the keyboard, and takes a `file:` address or a
+  path from `/` or `~` (`BrowserAddress.url(from:)`).
+
+Measured in an off-screen web view, 2026-11-25, macOS 27.0, in a process
+that is not sandboxed, as the app is not: `load(URLRequest)` on a `file:`
+address loads a stylesheet beside the page and one in the folder above it,
+so `loadFileURL(_:allowingReadAccessTo:)` is not used; Resource Timing lists
+nothing for `file:` resources, which is why the markup is asked instead;
+`reload` keeps the scroll (900 before, 900 after).
+
+What such a page can reach, measured the same way: nothing on disk but what
+its markup loads. `fetch` and `XMLHttpRequest` of a file beside it and of
+`/etc/hosts` were both refused, and a frame showing a file beside it could
+not be read from the page. Its scripts do run and can use the network, as
+any page's in the tab can. `WKPreferences` is left at its defaults for this
+reason: the private "file access from file URLs" switches stay off.
+
+Checked in a test copy, same day: the page loaded from `wortel open`, a save
+by rename and a stylesheet written in place each reloaded it once, another
+file in the folder did not, a change while the tab was behind another waited
+until it was shown, and the tab was restored and loaded after a relaunch.
+Not checked there: ⌥⌘U and the pill in a live window.
+
+**Sign-ins.** Pages use WebKit's default data store, which is kept per
+bundle id (`~/Library/WebKit/<bundle id>`, cookies in
+`~/Library/HTTPStorages/<bundle id>.binarycookies`). Checked in a test copy
+2026-11-25: a cookie with an expiry and a `localStorage` value set before the
+copy was quit were both sent back after it was started again. So a sign-in
+survives a relaunch, with two limits: a cookie with no expiry is gone when
+the app quits, as in any browser, and a Debug build on its own bundle id
+(`Wortel Dev`) has its own sign-ins. Not checked: whether 1Password fills a
+form in the tab. That needs a person at the Mac.
+
+**Downloads** (`BrowserDownloads`, one list for the app). A response a tab
+can't show, one its server marked `Content-Disposition: attachment`, or a
+link with the `download` attribute becomes a `WKDownload`
+(`BrowserPage`'s two policy methods answer `.download`) and is saved to
+`~/Downloads`. Nothing downloaded is opened, by the tab or by a click in the
+list. The name is WebKit's suggestion made safe (`BrowserDownloadName`:
+never hidden, never empty) and numbered as the Finder numbers a copy
+(`report 2.zip`), so a download never replaces a file. A `file:` the tab
+can't show is not a download: it is shown in the Finder. From a frame inside
+a page only an attachment from the page's own host is saved
+(`BrowserDownloadName.saves`), so a frame from another site can't put a file
+in Downloads. The page itself can, without a click: Safari asks once per
+site before that, Wortel does not ask (nothing is opened, and the file is
+quarantined). A window a page opened itself
+(`BrowserPopup`) has no navigation delegate and saves nothing.
+
+The header of every browser tab has a downloads button once the list has
+something in it (`DownloadsButton`), a ring filling while a download runs,
+and a popover in the running-jobs popover's style: Show in Finder, Stop,
+Clear. The list is memory only and empty after a relaunch; the files stay.
+Progress is read by a quarter-second timer that exists only while something
+is downloading, so a hidden tab's download costs a few property writes a
+second and a redraw of whichever button is on screen.
+
+Measured off screen 2026-11-25 (macOS 27.0): WebKit sets
+`com.apple.quarantine` on the saved file itself, and hands over a file name
+that is already one path component. A stopped download leaves its partial
+file, so `BrowserDownloads.stop` removes it. A Debug build saves to
+`WORTEL_DOWNLOADS_DIR` when that is set, for a test copy
+(`BrowserDownloadsFolder`, read in `main.swift` before the launch scrub
+removes every `WORTEL_` variable).
+
 A file or browser opened without saying where goes where you last *moved* one
 of its kind in that session, or dropped one from a list (`WorkspaceTabs.home(for:)`;
 until then the main area for a file, the column for a browser). ⌥-click puts

@@ -430,8 +430,8 @@ enum MainMenu {
         selectAll.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
         // A preview window answers it for its file, and AppDelegate for a file
-        // tab in front of an area. With neither it's disabled, and ⌘F goes on
-        // to the shell, where it's the terminal's.
+        // or a page in front of an area. With none it's disabled, and ⌘F goes
+        // on to the shell, where it's the terminal's.
         //
         // In a Find submenu, as every Apple app's Edit menu has it.
         let find = editMenu.addItem(withTitle: "Find", action: nil, keyEquivalent: "")
@@ -449,6 +449,12 @@ enum MainMenu {
                                             action: #selector(PreviewWindowController.previewFindPrevious(_:)),
                                             keyEquivalent: "g")
         findPrevious.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘E, as in Safari and every Mac app with a find: what is selected in
+        // a page becomes what ⌘G looks for. Only with the keyboard in a
+        // page; otherwise it's disabled and ⌘E is the terminal's.
+        findMenu.addItem(withTitle: "Use Selection for Find",
+                         action: #selector(AppDelegate.useSelectionForFind(_:)),
+                         keyEquivalent: "e")
         selectAllItem = selectAll
 
         // View menu: what's on screen. The areas first, then what fills the
@@ -550,6 +556,11 @@ enum MainMenu {
         reloadItem = viewMenu.addItem(withTitle: "Reload Page", action: #selector(AppDelegate.reloadBrowserPage(_:)), keyEquivalent: "")
         let forceReload = viewMenu.addItem(withTitle: "Force Reload Page", action: #selector(AppDelegate.forceReloadBrowserPage(_:)), keyEquivalent: "r")
         forceReload.keyEquivalentModifierMask = [.command, .shift]
+        // ⌥⌘U, as Safari and Chrome show a page's source: for a page shown
+        // from a file, the file's text in place of the page, and back.
+        // Titled by AppDelegate.validateMenuItem; disabled on any other page.
+        let pageSource = viewMenu.addItem(withTitle: "Show Page Source", action: #selector(AppDelegate.toggleBrowserSource(_:)), keyEquivalent: "u")
+        pageSource.keyEquivalentModifierMask = [.command, .option]
         // ⌥⌘I, as Safari and Chrome open their inspector. Disabled with no
         // browser in front, so it goes on to the terminal.
         let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")

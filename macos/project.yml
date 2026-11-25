@@ -770,6 +770,10 @@ targets:
       # string an agent printed: relative to the repo, with a full stop or a
       # `:42` stuck to it. Each one opened nothing before it was a type.
       - path: Wortel/Ghostty/TerminalLink.swift
+      # Every walk up a folder tree, which must end whatever Foundation says
+      # a parent is: on macOS 15.5 the parent of `/` is not `/`, and a link
+      # click hung 2026.47.4 for good.
+      - path: Wortel/Files/PathWalk.swift
       # The link a ⌘-click is on, when an agent broke it over several rows.
       # Each case is rows an agent really drew (Claude Code's indent, its
       # approval box), and a wrong join opens the wrong page.

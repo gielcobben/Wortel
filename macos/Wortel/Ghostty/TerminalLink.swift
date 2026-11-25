@@ -212,16 +212,11 @@ enum TerminalLink {
     }
 
     /// The nearest folder at or above `folder` that holds a `.git` (a folder in
-    /// a checkout, a file in a linked worktree). A walk of `stat`s, no git.
+    /// a checkout, a file in a linked worktree). A walk of `stat`s, no git,
+    /// through `PathWalk`: this is the walk that hung 2026.47.4 on macOS 15.5.
     static func repositoryRoot(of folder: String) -> String? {
-        var url = URL(fileURLWithPath: folder).standardizedFileURL
-        while true {
-            if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
-                return url.path
-            }
-            let parent = url.deletingLastPathComponent()
-            if parent.path == url.path { return nil }
-            url = parent
+        PathWalk.upward(from: URL(fileURLWithPath: folder).standardizedFileURL.path).first {
+            FileManager.default.fileExists(atPath: ($0 as NSString).appendingPathComponent(".git"))
         }
     }
 

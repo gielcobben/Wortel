@@ -202,13 +202,8 @@ enum ChatFolder {
         guard let config,
               let object = try? JSONSerialization.jsonObject(with: config) as? [String: Any],
               let projects = object["projects"] as? [String: Any] else { return false }
-        var current = standard(path)
-        while true {
-            if let record = projects[current] as? [String: Any],
-               record["hasTrustDialogAccepted"] as? Bool == true { return true }
-            let parent = (current as NSString).deletingLastPathComponent
-            if parent == current || parent.isEmpty { return false }
-            current = parent
+        return PathWalk.upward(from: standard(path)).contains { folder in
+            (projects[folder] as? [String: Any])?["hasTrustDialogAccepted"] as? Bool == true
         }
     }
 

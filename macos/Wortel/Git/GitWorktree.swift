@@ -391,15 +391,10 @@ extension GitWorktree {
     /// for git. nil outside a repository.
     nonisolated static func repositoryHome(containing path: String) -> String? {
         if let linked = linked(containing: path) { return linked.repoHome ?? linked.root }
-        var directory = (path as NSString).standardizingPath
-        while true {
-            if FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(".git")) {
-                return realPath(directory)
-            }
-            let parent = (directory as NSString).deletingLastPathComponent
-            guard parent != directory, !parent.isEmpty else { return nil }
-            directory = parent
+        let repository = PathWalk.upward(from: (path as NSString).standardizingPath).first {
+            FileManager.default.fileExists(atPath: ($0 as NSString).appendingPathComponent(".git"))
         }
+        return repository.map(realPath)
     }
 
     /// Which worktrees are Wortel's to remove, and which branches its to

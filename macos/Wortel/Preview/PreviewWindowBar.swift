@@ -154,22 +154,18 @@ final class FileButton: HoverFillButton, NSDraggingSource {
     private func showPathMenu() {
         let menu = NSMenu()
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
-        var current = url
-        var isFile = true
-        while true {
-            let target = current
-            let item = ClosureMenuItem(title: FileManager.default.displayName(atPath: target.path)) {
+        // `PathWalk`, not `URL.deletingLastPathComponent()` until it stops
+        // changing: on macOS 15.5 the parent of `/` is not `/`.
+        let paths = PathWalk.upward(from: url.standardizedFileURL.path)
+        for (index, path) in paths.enumerated() {
+            let target = URL(fileURLWithPath: path)
+            let item = ClosureMenuItem(title: FileManager.default.displayName(atPath: path)) {
                 NSWorkspace.shared.activateFileViewerSelecting([target])
             }
-            let parent = current.deletingLastPathComponent()
-            let isRoot = parent.path == current.path
-            item.setGlyph(isFile ? Self.symbol(for: target)
-                          : isRoot ? "internaldrive"
-                          : target.standardizedFileURL.path == home ? "house" : "folder")
+            item.setGlyph(index == 0 ? Self.symbol(for: target)
+                          : index == paths.count - 1 ? "internaldrive"
+                          : path == home ? "house" : "folder")
             menu.addItem(item)
-            if isRoot { break }
-            current = parent
-            isFile = false
         }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.height + 4), in: self)
     }

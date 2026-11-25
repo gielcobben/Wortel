@@ -137,6 +137,7 @@ Procedures live in `.agents/skills/` (Claude Code reads the same files through
 | `release` | Cutting and publishing a release |
 | `release-note` | Writing the changelog entry for a version |
 | `sync-visuals` | Bringing the design canvas and the site's app windows up to date with the app |
+| `update-ghostty` | Moving to a newer Ghostty: the weekly report and draft pull request, and the review they leave to you |
 
 ## Distribution & Cloudflare
 

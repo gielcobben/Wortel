@@ -49,6 +49,17 @@ So a mark moves and zooms with its content with no arithmetic of its own.
 **Everything an adapter registers is added in `activate` and removed in
 `deactivate`.** That rule is what makes "off costs nothing" checkable.
 
+**Everything the layer calls on an adapter is a requirement of the
+protocol**, never only a default in its extension. A member that is only
+in the extension is the adapter's own when the adapter is held by its
+type, and the extension's when it is held as `any MarkupSurface`, which is
+how the layer holds it. `attach(to:)` was such a member: the file
+adapters' tests called them by their type and passed, and in the app no
+mark on a file was tied to anything (found by the owner's hand,
+2026-11-25, and then reproduced with the layer mounted the way
+`PreviewContent` mounts it). The tests hold every adapter by its protocol
+now.
+
 ## A page
 
 `WebMarkupScript` runs in a content world of Wortel's own

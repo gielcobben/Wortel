@@ -21,6 +21,18 @@ protocol MarkupSurface: AnyObject {
     /// does not, only a drag makes a mark.
     var picksThings: Bool { get }
 
+    /// Where the marks are drawn, told before `activate`. A requirement
+    /// and not only a default below: declared in the extension alone, a
+    /// call through `any MarkupSurface` runs the empty default whatever
+    /// the adapter implements, and every file's mark was then tied to
+    /// nothing (found by hand, 2026-11-25; the adapters' own tests call
+    /// them by their type and saw none of it).
+    func attach(to layer: NSView)
+    /// Whether scrolling goes to whatever is under the pointer inside
+    /// `view` (a code block that scrolls sideways within a document), not
+    /// to `view` itself.
+    var scrollsInside: Bool { get }
+
     /// Start telling where the marks are. `moved` is called whenever a
     /// placement may have changed.
     func activate(moved: @escaping () -> Void)
@@ -63,9 +75,6 @@ extension MarkupSurface {
     /// file's layer is placed by SwiftUI over views SwiftUI also places, so
     /// its adapters convert through this view.
     func attach(to layer: NSView) {}
-    /// Whether scrolling goes to whatever is under the pointer inside
-    /// `view` (a code block that scrolls sideways within a document), not
-    /// to `view` itself.
     var scrollsInside: Bool { false }
 }
 

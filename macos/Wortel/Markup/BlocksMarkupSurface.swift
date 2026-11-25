@@ -202,6 +202,7 @@ final class BlocksMarkupSurface: MarkupSurface {
         // the view, placed in the stack's coordinates, margins and all.
         guard let canvas = MarkupCanvas(part: visible, isPart: true, wholeHeight: size.height,
                                         background: ViewPicture.background(of: stack)) else { return reply(nil) }
+        canvas.isView = true
         canvas.draw(image, at: visible)
         reply(MarkupWhole(canvas: canvas, size: size, visible: visible, placements: placements))
     }

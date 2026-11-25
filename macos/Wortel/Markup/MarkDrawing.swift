@@ -138,7 +138,8 @@ enum MarkupPicture {
     }
 
     /// The whole with every mark drawn on it. Called off the main thread.
-    static func whole(_ whole: MarkupWhole, marks: [Mark], colours: [Int: CGColor]) -> (image: CGImage, isPart: Bool)? {
+    static func whole(_ whole: MarkupWhole, marks: [Mark], colours: [Int: CGColor])
+        -> (image: CGImage, kind: MarkupNote.Whole.Kind, missing: [Int])? {
         let placed = marks.compactMap { mark in whole.placements[mark.number].map { (mark, $0) } }
         let canvas: MarkupCanvas
         switch whole.source {
@@ -156,12 +157,18 @@ enum MarkupPicture {
         }
         // A line stays two pixels wide at least, however far it is shrunk.
         let unit = max(1, 1.5 / canvas.density)
-        for (mark, placement) in placed {
+        // A mark with no place, or outside what is pictured, is not in the
+        // picture, and the note says which.
+        var drawn: Set<Int> = []
+        for (mark, placement) in placed where placement.box(of: mark.shape).intersects(canvas.part) {
+            drawn.insert(mark.number)
             guard let colour = colours[mark.number] else { continue }
             MarkDrawing.draw(mark, at: placement, colour: colour, in: canvas.context,
                              height: whole.size.height, unit: unit, badge: true, within: canvas.part)
         }
-        return canvas.context.makeImage().map { ($0, canvas.isPart) }
+        let kind: MarkupNote.Whole.Kind = canvas.isView ? .view : canvas.isPart ? .part : .all
+        let missing = marks.map(\.number).filter { !drawn.contains($0) }
+        return canvas.context.makeImage().map { ($0, kind, missing) }
     }
 
     /// A picture of a drawn area with its ink on it. `rect` is the part of

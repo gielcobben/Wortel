@@ -209,19 +209,17 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
 
         let finish: (MarkupWhole?) -> Void = { [weak self] whole in
             MarkupStore.queue.async {
-                var wholePath: String?
-                var isPart = false
+                var wholePicture: MarkupNote.Whole?
                 var detailsPath: String?
                 if let folder {
                     if let whole, let picture = MarkupPicture.whole(whole, marks: marks, colours: colours) {
                         let url = folder.appendingPathComponent("whole\(suffix).png")
                         if MarkupStore.write(picture.image, to: url) {
-                            wholePath = url.path
-                            isPart = picture.isPart
+                            wholePicture = .init(path: url.path, kind: picture.kind, missing: picture.missing)
                         }
                     }
                     let details = MarkupDetailsFile(
-                        subject: subject, whole: wholePath,
+                        subject: subject, whole: wholePicture?.path,
                         marks: marks.map { mark in
                             var details = mark.details
                             details.number = mark.number
@@ -244,7 +242,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
                         picture: mark.picture.flatMap { name in folder?.appendingPathComponent(name).path })
                 }
                 let copied = MarkupNote.copied(pieces: pieces, marks: references, subject: subject,
-                                               whole: wholePath, wholeIsPart: isPart, details: detailsPath)
+                                               whole: wholePicture, details: detailsPath)
                 DispatchQueue.main.async { self?.finishCopy(copied, marks: marks) }
             }
         }

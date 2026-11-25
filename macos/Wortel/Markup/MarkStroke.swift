@@ -46,6 +46,31 @@ enum MarkStroke {
         return roomy.isNull || roomy.width < 1 || roomy.height < 1 ? nil : roomy.integral
     }
 
+    /// What a drawn area's picture shows: the area and what is around it.
+    ///
+    /// The area alone is the ink's box, and a loop drawn at the edge of a
+    /// paragraph is a picture of half of two words: enough to find the
+    /// place in a picture of the whole, and not by itself (the first note
+    /// read by an agent, 2026-11-25). So the picture has `around` points
+    /// more a side, and is never smaller than `least`: a scribble on one
+    /// word still shows the line it is in.
+    static let around: CGFloat = 32
+    static let least = CGSize(width: 360, height: 160)
+
+    static func pictured(_ area: CGRect, within bounds: CGRect) -> CGRect {
+        var rect = area.insetBy(dx: -around, dy: -around)
+        if rect.width < least.width { rect = rect.insetBy(dx: -(least.width - rect.width) / 2, dy: 0) }
+        if rect.height < least.height { rect = rect.insetBy(dx: 0, dy: -(least.height - rect.height) / 2) }
+        // Kept its size where it meets an edge, by moving in, before it is
+        // cut to the view.
+        if rect.minX < bounds.minX { rect.origin.x = bounds.minX }
+        if rect.maxX > bounds.maxX { rect.origin.x = max(bounds.minX, bounds.maxX - rect.width) }
+        if rect.minY < bounds.minY { rect.origin.y = bounds.minY }
+        if rect.maxY > bounds.maxY { rect.origin.y = max(bounds.minY, bounds.maxY - rect.height) }
+        let cut = rect.intersection(bounds)
+        return cut.isNull ? area : cut.integral.intersection(bounds)
+    }
+
     /// The line through a stroke's points: straight to the first midpoint,
     /// then a curve through each point to the next midpoint, so a hand's
     /// corners come out round and the line still passes where it was drawn.

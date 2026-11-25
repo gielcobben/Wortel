@@ -156,6 +156,8 @@ final class BrowserPage: NSObject {
         let file: URL
         let document: PreviewDocument
         let find: PreviewFind
+        /// Mark-up over the source, which is a file's and not the page's.
+        let markup: MarkupSession
     }
 
     /// The source of the file this tab is on, from the first time it was
@@ -273,6 +275,7 @@ final class BrowserPage: NSObject {
         guard on != showsSource else { return }
         // Another view of the file: the marks were on this one.
         endMarkup()
+        source?.markup.end()
         guard on else {
             showsSource = false
             source?.find.dismiss()
@@ -283,7 +286,8 @@ final class BrowserPage: NSObject {
         }
         guard let file = pageFile, let previews = BrowserTabs.shared.previews else { return }
         if source?.file.path != file.path {
-            source = Source(file: file, document: previews.sourceDocument(for: file), find: PreviewFind())
+            source = Source(file: file, document: previews.sourceDocument(for: file), find: PreviewFind(),
+                            markup: MarkupSession())
         }
         // Typing must not go on into a page nobody can see.
         if BrowserTabs.shared.page(holding: webView.window?.firstResponder) === self {
@@ -299,6 +303,7 @@ final class BrowserPage: NSObject {
     /// file's, or no file's.
     private func leaveSourceIfElsewhere() {
         guard let source, pageFile?.path != source.file.path else { return }
+        source.markup.end()
         showsSource = false
         self.source = nil
     }
@@ -797,7 +802,8 @@ struct BrowserTab: View {
                     let _ = source.document.anchorLine = source.document.visibleLine
                     let _ = source.document.anchorOffset = source.document.visibleOffset
                     PreviewContent(document: source.document, find: source.find,
-                                   settings: previews.settings, onOpenFile: previews.onOpenFile)
+                                   settings: previews.settings, onOpenFile: previews.onOpenFile,
+                                   markup: source.markup)
                         .background(Color(nsColor: Chrome.content))
                 }
             }
@@ -925,7 +931,12 @@ private struct BrowserHeader: View {
                 .disabled(page.location == nil)
             // Last at the right in every preview's bar. Absent with no page
             // to mark up: nowhere yet, still waiting, failed, or its source.
-            if page.canMarkUp {
+            if page.showsSource, let source = page.source {
+                // Over the file's source it is the source that is marked up.
+                if source.document.markupPlace != nil {
+                    MarkupButton(session: source.markup, prepare: { source.markup.prepare(for: source.document) })
+                }
+            } else if page.canMarkUp {
                 MarkupButton(session: page.markup)
             }
         }

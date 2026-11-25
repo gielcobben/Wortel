@@ -605,7 +605,7 @@ enum MainMenu {
         let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")
         inspector.keyEquivalentModifierMask = [.command, .option]
 
-        // ⇧⌘M: mark-up over the preview in front (a page, for now), with a
+        // ⇧⌘M: mark-up over the preview in front (a page or a file), with a
         // checkmark while it is on. Preview's own key for its Markup toolbar
         // is ⇧⌘A, which is Select All in a terminal here; M is free, and no
         // Mac convention sits on it. Outside the Browser section above: it

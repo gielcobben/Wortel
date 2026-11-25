@@ -12,11 +12,13 @@ with the marks in it as chips. Return copies plain text: the sentence, the
 paths of the pictures, and the path of a details file. Nothing is typed into
 a terminal and nothing is sent.
 
-It is built for every preview. **What exists today is the page in a browser
-tab.** Source, a diff, rendered Markdown and an image are the next stage, and
-need only an adapter each (see "One layer, an adapter per kind of preview").
-The decisions and what was weighed are in `../../docs/decisions.md`
-(2026-11-25, under Files, previews, browser).
+It works over every preview Wortel can see into: a page in a browser tab,
+a file's source, its diff, rendered Markdown, an image. In a file tab, a
+preview window and a browser tab's Page · Source alike. In a page a click
+picks an element; in a file a mark is a drawn area (picking a line or a
+block, and the lines' own text in what is copied, is the plan's next
+phase). The decisions and what was weighed are in
+`../../docs/decisions.md` (2026-11-25, under Files, previews, browser).
 
 ## One layer, an adapter per kind of preview
 
@@ -31,10 +33,10 @@ never asks what it is over.
 
 | Kind | Drawn and scrolled by | Adapter |
 | --- | --- | --- |
-| A page | `WKWebView`; WebKit scrolls it in another process | `WebMarkupSurface`, built |
-| Source, Diff | `DiffView`: an `NSScrollView` over an `NSTableView`, fixed row height | Next: rows, exact in the same frame |
-| Rendered Markdown | A SwiftUI `ScrollView` over a `LazyVStack` | Next: a block and an offset in it, since document coordinates drift as the lazy stack measures blocks |
-| An image, an SVG | `NSImageView`, scaled down to fit, no scrolling | Next: the picture's own proportions |
+| A page | `WKWebView`; WebKit scrolls it in another process | `WebMarkupSurface`: an element, as the page's script reports it |
+| Source, Diff | `DiffView`: an `NSScrollView` over an `NSTableView`, fixed row height | `LinesMarkupSurface`: a row |
+| Rendered Markdown | A SwiftUI `ScrollView` over a `LazyVStack` | `BlocksMarkupSurface`: a block |
+| An image, an SVG | `NSImageView`, scaled down to fit, no scrolling | `ImageMarkupSurface`: the picture |
 | A PDF, a font, an archive | `QLPreviewView`, closed to us | None. No button there |
 
 A mark (`Mark`) is tied to something of the preview's, and its shape is kept
@@ -127,13 +129,79 @@ While mark-up is on over a page (`BrowserPage.markupChanged`):
 - ⌘+ and ⌘R still reach the page with the keyboard in the note
   (`BrowserTabs.page(holding:)` counts the note as its page's).
 
+## A file
+
+One mount covers a file tab, a preview window and a page's source:
+`PreviewContent` lays `MarkupOverlayHost` over its content, under the find
+bar, while its session is on (and not over a tab kept built behind the one
+in front). SwiftUI places the layer here, over views SwiftUI also places, so
+a file's adapters convert through the layer (`attach(to:)`) and assume no
+shared origin.
+
+A file tab's views are rebuilt whenever the tab comes back from behind
+others, and its marks must not be. So the adapter lives with the session,
+and the views sign in to `MarkupViews` as they are made: `DiffView` its
+table, `MarkdownView` the view that stands for its stack, `ImagePreview`
+its image view. Weak, all of it.
+
+- **Source and Diff** (`LinesMarkupSurface`). A mark is tied to a row, and
+  the row's height is its unit, so ⌘+ scales it with the text. The clip
+  view's bounds notification moves the marks in the frame the rows move.
+  A file is rewritten under its preview all day, so a mark remembers what
+  its row held (`DiffView.Coordinator.key(ofRow:)`: the text and which side
+  of a diff, not the number) and after a change looks for that row within
+  400 either way. A line that is gone has no place; its chip and picture
+  stay. The whole file is pictured by scrolling the table a screen at a
+  time and putting the scroll back, all in one turn of the run loop, so
+  nothing on screen moves (`ViewPicture.tiles`). As wide as the view, so
+  one very long line does not shrink the rest.
+- **An image** (`ImageMarkupSurface`). Every mark is in the picture's own
+  points; only a resize moves it. A mark's picture is cut from the file's
+  own pixels, not from the screen: a screenshot shown at half its size
+  gives four times what the screen has. An SVG is drawn at twice its
+  size.
+- **Rendered Markdown** (`BlocksMarkupSurface`). A mark is tied to a block,
+  as an offset from the block's corner. Not to a place in the document: the
+  stack is lazy, blocks above the view have guessed heights, and every
+  guess corrected moves what is below it (`MainArea` records the same for a
+  reader's place). `MarkdownView` reports each built block's frame in the
+  stack through a second preference, empty unless mark-up is on. A frame in
+  the stack does not change when the document scrolls, so scrolling costs
+  no SwiftUI update. A block that is not built has no frame and its mark is
+  not drawn, which is right: it is out of view.
+- **The picture of the whole, for Markdown, is what is in view**, and the
+  copied text calls it a part. Measured 2026-11-25: scrolled 4,000pt down,
+  the stack had drawn nothing by the end of that turn of the run loop and
+  had drawn it a moment later. So a document could only be pictured whole
+  by being seen to scroll from end to end. Each mark has its own picture
+  either way.
+
+Pictures of the app's own views are `cacheDisplay` on the clip view, which
+has no scroller in it, laid on the page's colour: a file's views draw no
+background of their own, and a picture of one alone would be dark text on
+nothing.
+
+Checked 2026-11-25 in `MarkupFileTests`, against the real table and image
+view in a window that is never shown: a mark follows its row through a
+scroll, finds its line after three lines are added above it, loses its
+place when the line is deleted and has it back when it returns, and grows
+with the text; a picture of an area has the rows in it; a 200-line file is
+pictured whole with a tinted row where it is in the file, and the scroll
+is back where it was; an image's mark is in the picture's points and its
+picture in its pixels. And against the real `MarkdownView` in a clear
+window: frames for the 9 built blocks of 129, a mark tied to its block,
+moved by a scroll in the same call, a picture with the text in it.
+
 ## When it ends
 
 There is no lock on the header. When what was marked up goes elsewhere,
 mark-up ends and the marks and the note are dropped (`MarkupSession.end`):
 a new address or a route change (`webView.url`), a load committed
 (`didCommit`, which a reload is), Page · Source, the page's process dying,
-the tab closing. One rule covers what the person does and what a page does
+the tab closing; and for a file, another of Diff · Source · Rendered
+(`PreviewContent`, and `MarkupSession.prepare`), its tab or window
+closing. A file rewritten on disk is not elsewhere: the marks stay, each
+where its line or block now is. One rule covers what the person does and what a page does
 by itself, which nothing could lock anyway.
 
 Esc and a copy only turn it off (`turnOff`): the note is kept, and turning
@@ -230,3 +298,9 @@ There is no repeating timer anywhere in it.
 - An element moved by a CSS animation alone is followed at its next
   report, not during.
 - Marks and notes are memory only, gone after a relaunch.
+- In a file, a mark does not follow a code block or a wide table scrolled
+  sideways inside a Markdown document, and a paragraph rewrapped by a
+  narrower window moves under its mark.
+- A file open in two sessions has one note between them, as it has one
+  find. With both in view at once (two windows) only the newer layer is
+  kept up to date.

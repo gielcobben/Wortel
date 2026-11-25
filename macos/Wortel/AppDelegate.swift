@@ -1900,16 +1900,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// ⇧⌘M: mark-up over the preview in front, on and off.
     @objc func toggleMarkup(_ sender: Any?) {
-        markupTarget()?.toggle()
+        guard let target = markupTarget() else { return }
+        if target.session.isOn || target.prepare() { target.session.toggle() }
     }
 
     /// What View ▸ Mark Up acts on: the preview in front, the area you're
-    /// in first, as find picks its target (`findTarget`). A page that is
-    /// somewhere and loaded, for now; a file tab is next.
-    private func markupTarget() -> MarkupSession? {
-        guard let page = frontBrowser().flatMap({ BrowserTabs.shared.existingPage(for: $0) }),
-              page.canMarkUp else { return nil }
-        return page.markup
+    /// in first and then the column, the main area and the strip, as find
+    /// picks its target (`findTarget`). A file with something to mark, a
+    /// page that is somewhere and loaded, or that page's source.
+    ///
+    /// `prepare` gets a file's session ready for the view of the file that
+    /// is showing. It is apart from the looking, which the menu does every
+    /// time it opens and which must change nothing.
+    private func markupTarget() -> (session: MarkupSession, prepare: () -> Bool)? {
+        for tab in [focusedRegion(), .side, .main, .bottom].compactMap({ gitPanel.activeTab(in: $0) }) {
+            if let path = tab.filePath {
+                let document = previewTabs.document(for: path).document
+                if let session = previewTabs.markup(for: path), session.isOn || document.markupPlace != nil {
+                    return (session, { session.prepare(for: document) })
+                }
+            } else if let id = tab.browserID, let page = BrowserTabs.shared.existingPage(for: id) {
+                if let source = page.shownSource {
+                    if source.markup.isOn || source.document.markupPlace != nil {
+                        return (source.markup, { source.markup.prepare(for: source.document) })
+                    }
+                } else if page.canMarkUp {
+                    return (page.markup, { true })
+                }
+            }
+        }
+        return nil
     }
 
     /// ⌥⌘I: Web Inspector for the browser in front, or away again.
@@ -2541,9 +2561,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return page != nil
         }
         if menuItem.action == #selector(toggleMarkup(_:)) {
-            let session = markupTarget()
-            menuItem.state = session?.isOn == true ? .on : .off
-            return session != nil
+            let target = markupTarget()
+            menuItem.state = target?.session.isOn == true ? .on : .off
+            return target != nil
         }
         if menuItem.action == #selector(showWebInspector(_:)) {
             let page = frontBrowser().flatMap { BrowserTabs.shared.existingPage(for: $0) }

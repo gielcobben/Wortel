@@ -16,6 +16,8 @@ struct PreviewContent: View {
     /// Opens a file this document points at — a link in rendered Markdown — in a
     /// window of its own, through the app's one opener.
     var onOpenFile: ((URL) -> Void)?
+    /// Mark-up over this preview (`Wortel/Markup/`), beside its find.
+    var markup: MarkupSession?
     @FocusState private var findFocused: Bool
     /// False for a tab kept built behind the one in front (`TabContent`).
     @Environment(\.isEnabled) private var isEnabled
@@ -30,7 +32,7 @@ struct PreviewContent: View {
                     // The image keeps its size; the space around it is the
                     // view's. Without the frame the whole tab shrinks to the
                     // picture and its header floats down to mid-column with it.
-                    ImagePreview(url: document.url, version: document.contentVersion)
+                    ImagePreview(url: document.url, version: document.contentVersion, markup: markup?.views)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     QuickLook(url: document.url)
@@ -43,10 +45,21 @@ struct PreviewContent: View {
                 }
             }
         }
+        // The marks and the note, over the content and under the find bar.
+        // Not over a tab kept built behind the one in front.
+        .overlay {
+            if let markup, markup.isOn, isEnabled, markup.surface != nil, document.markupPlace == markup.place {
+                MarkupOverlayHost(session: markup)
+            }
+        }
         .safeAreaInset(edge: .top, spacing: 0) { findBar }
         .safeAreaInset(edge: .bottom, spacing: 0) { notices }
         // The bar searches whatever is on screen, so a mode switch re-runs it.
-        .onChange(of: document.mode) { _, _ in find.update(lines: searchableLines) }
+        .onChange(of: document.mode) { _, _ in
+            find.update(lines: searchableLines)
+            // Another view of the file: the marks were on the one before.
+            markup?.end()
+        }
         .onChange(of: document.sourceLines.count) { _, _ in find.update(lines: searchableLines) }
         .onChange(of: document.diffLines.count) { _, _ in find.update(lines: searchableLines) }
         // Hidden behind another tab: the find field gives up the keyboard, or
@@ -96,7 +109,8 @@ struct PreviewContent: View {
                      onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 },
                      reveal: document.lineReveal,
                      onRevealed: { document.revealDone($0) },
-                     onSelectLine: { document.selectedLine = $0 })
+                     onSelectLine: { document.selectedLine = $0 },
+                     markup: markup?.views)
         }
     }
 
@@ -121,7 +135,8 @@ struct PreviewContent: View {
                      onTopLine: { document.visibleLine = $0; document.visibleOffset = $1 },
                      reveal: document.lineReveal,
                      onRevealed: { document.revealDone($0) },
-                     onSelectLine: { document.selectedLine = $0 })
+                     onSelectLine: { document.selectedLine = $0 },
+                     markup: markup?.views)
         }
     }
 
@@ -130,7 +145,7 @@ struct PreviewContent: View {
         if PreviewMode.isSVG(document.url) {
             // The picture the code makes. NSImage renders SVG as vector, so it's
             // sharp at any size rather than a bitmap of one.
-            ImagePreview(url: document.url, version: document.contentVersion)
+            ImagePreview(url: document.url, version: document.contentVersion, markup: markup?.views)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if document.blocks.isEmpty {
             empty("Empty document")
@@ -149,7 +164,9 @@ struct PreviewContent: View {
                          // A document's links and images are relative to where
                          // the file *is*, and this is the only view that knows.
                          baseURL: document.url,
-                         onOpenFile: onOpenFile)
+                         onOpenFile: onOpenFile,
+                         markup: markup?.views,
+                         reportsFrames: markup?.isOn == true && isEnabled)
                 .onExitCommand { document.selectsAll = false }
         }
     }
@@ -232,6 +249,8 @@ private struct ImagePreview: NSViewRepresentable {
     let url: URL
     /// Changes only when the file does — see `PreviewDocument.contentVersion`.
     let version: Int
+    /// Where mark-up finds this picture (`MarkupViews`).
+    var markup: MarkupViews?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -250,15 +269,24 @@ private struct ImagePreview: NSViewRepresentable {
         }
         view.image = NSImage(contentsOf: url)
         context.coordinator.loaded = version
+        register(view)
         return view
     }
 
     func updateNSView(_ view: NSImageView, context: Context) {
+        register(view)
         // Re-read rather than trusting NSImage's URL cache — an agent rewriting
         // an icon has to redraw here — but only when the file actually moved.
         guard context.coordinator.loaded != version else { return }
         context.coordinator.loaded = version
         view.image = NSImage(contentsOf: url)
+        markup?.changed()
+    }
+
+    private func register(_ view: NSImageView) {
+        guard let markup, markup.image !== view else { return }
+        markup.image = view
+        markup.changed()
     }
 
     /// Fit if it's too big, natural size if it isn't.

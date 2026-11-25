@@ -104,6 +104,7 @@ final class MarkupOverlayView: NSView {
         guard !isShowing else { return }
         isShowing = true
         session.overlay = self
+        surface.attach(to: self)
         surface.activate(moved: { [weak self] in self?.moved() })
         marksChanged()
         // The keyboard to the note: mark-up is pointing and then typing.
@@ -368,8 +369,8 @@ final class MarkupOverlayView: NSView {
             self.session.add(mark)
             // The element with some room, and nothing drawn on it.
             let box = tie.placement.box(of: .thing).intersection(tie.placement.clip)
-            self.surface.capture(box.insetBy(dx: -MarkStroke.room, dy: -MarkStroke.room)) { [weak self] image in
-                if let image { self?.session.keep(image, for: number) }
+            self.surface.capture(box.insetBy(dx: -MarkStroke.room, dy: -MarkStroke.room)) { [weak self] capture in
+                if let capture { self?.session.keep(capture.image, for: number) }
             }
         }
     }
@@ -403,9 +404,9 @@ final class MarkupOverlayView: NSView {
             let colour = MarkDrawing.resolved(mark.colour, in: self.effectiveAppearance)
             // The area with its ink: a circle around a word and a line
             // through it are different things to say.
-            self.surface.capture(area) { [weak self] image in
-                guard let image else { return }
-                let inked = MarkupPicture.inked(image, showing: area.intersection(self?.bounds ?? area),
+            self.surface.capture(area) { [weak self] capture in
+                guard let capture else { return }
+                let inked = MarkupPicture.inked(capture.image, showing: capture.showing,
                                                 mark: mark, at: tie.placement, colour: colour)
                 self?.session.keep(inked, for: number)
             }
@@ -417,7 +418,14 @@ final class MarkupOverlayView: NSView {
     override func scrollWheel(with event: NSEvent) {
         showHover(nil)
         guard let view = surface.view else { return }
-        view.scrollWheel(with: event)
+        // To what is under the pointer inside the preview, where it has
+        // scrolling parts of its own, and to the preview otherwise.
+        var target = view
+        if surface.scrollsInside, let parent = view.superview,
+           let hit = view.hitTest(parent.convert(event.locationInWindow, from: nil)) {
+            target = hit
+        }
+        target.scrollWheel(with: event)
         guard !session.marks.isEmpty, event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0,
               surface.expectsMove(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY) else { return }
         awaiting = true
@@ -509,9 +517,14 @@ private final class MarkLayer: CALayer {
 struct MarkupButton: View {
     let session: MarkupSession
     var size: CGFloat = 24
+    /// Get the session ready for what is shown now, and say whether there
+    /// is anything to mark. A page is always ready.
+    var prepare: () -> Bool = { true }
 
     var body: some View {
-        Button { session.toggle() } label: {
+        Button {
+            if session.isOn || prepare() { session.toggle() }
+        } label: {
             Image(systemName: session.justCopied ? "checkmark" : "pencil.tip.crop.circle")
                 .font(.system(size: 13))
                 .frame(width: size, height: size)
@@ -524,4 +537,17 @@ struct MarkupButton: View {
         .help(session.justCopied ? "Copied" : "Mark Up (\u{21E7}\u{2318}M)")
         .accessibilityLabel("Mark Up")
     }
+}
+
+/// The mark-up layer over a file's preview, placed by SwiftUI over views
+/// SwiftUI also places. (Over a page it is AppKit's, see `WebViewContainer`.)
+struct MarkupOverlayHost: NSViewRepresentable {
+    let session: MarkupSession
+
+    func makeNSView(context: Context) -> NSView {
+        guard let surface = session.surface else { return NSView() }
+        return MarkupOverlayView(session: session, surface: surface)
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
 }

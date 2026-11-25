@@ -1,7 +1,8 @@
 # Browser plan
 
-A plan, not a record of what the app does. Decided 2026-11-25 in a question
-round with the owner, after a survey of what other tools ship. When a phase
+A plan, not a record of what the app does. Decided 2026-11-25 in question
+rounds with the owner, after a survey of what other tools ship. It began as a
+plan for the browser tab; mark-up outgrew that and covers every preview. When a phase
 lands, its behaviour moves to `architecture/` and `docs/decisions.md`, and its
 section here is deleted. When all are done, so is this file.
 
@@ -35,7 +36,7 @@ That purpose decides what is left out, for good unless it changes:
 | Other questions to the person | None. The agent already has a shell, so asking before JavaScript, downloads, uploads or a new site adds no safety. |
 | First version of the commands | A small core: `open`, `reload`, `back`, `snapshot`, `click`, `fill`, `type`, `press`, `wait`, `eval`, `console` (with page errors), `screenshot`. Names follow agent-browser, which agents already know. A command is added when a real session shows it missing. |
 | HTML files | `wortel open x.html` and a ⌘-clicked `.html` path show the page in a browser tab, reloading when the file changes. One click goes from the page to its source and one click back. |
-| Pointing at a page | Mark-up: pick elements and draw on the page, write one note around the marks, paste it into the agent's prompt. See "Mark-up" below. |
+| Pointing at something | Mark-up, in every preview and not only a page. See "Mark-up" below. |
 
 Smaller choices made while planning, open to change in a phase's own plan:
 
@@ -56,47 +57,79 @@ Smaller choices made while planning, open to change in a phase's own plan:
 
 ## Mark-up
 
-Decided in a second round the same day, after the owner showed a tool that
-does it.
+Pointing at what is on screen and saying something about it, for an agent to
+read. Decided in three rounds on 2026-11-25. The third changed the first two:
+it is not a feature of the browser tab, and it sends nothing.
+
+**It works on everything Wortel previews**: a page, source, a diff, rendered
+Markdown, an image. One mode, one note bar, one action.
+
+**Every mark is a picture, and carries exact text where the file can give
+it.** The picture is what makes it work everywhere: a kind of preview nobody
+has taught anything is still marked up, from its pixels. The exact text is
+what makes it good: an agent that reads `README.md:12-18` need not open a
+picture at all.
+
+| Marked up | Always | And when it can |
+| --- | --- | --- |
+| A page | A picture of the area | The element: what it is, its text, selector, position, key styles (font, colours, spacing, border), HTML. For a region, the elements inside it. |
+| Source, a diff, Markdown | A picture of the area | The file and its lines, and the text quoted. For a diff, which side. |
+| An image | A picture of the area | Where the area is in the file. |
 
 | Question | Answer |
 | --- | --- |
-| What you point with | Both: pick an element, and draw freehand. |
-| Switching between them | No tools. Moving the pointer outlines the element under it, a click picks it, a drag draws. A stroke becomes a region from its outline. |
-| Where the words go | One note bar over the page. Each pick or stroke drops a chip in the mark's colour where the cursor is, and one message is written around the chips. Marks can be removed and the note edited before anything reaches the agent. Drawn with the system's materials and controls. |
-| Return in the bar | Pastes the note into the agent's prompt as one paste and moves the keyboard to the terminal. A second Return, the person's own, sends it. A copy button puts the same text on the clipboard. |
-| What the agent gets | In the prompt: the sentence, each chip as a short reference (what it is, its text, its selector), the page's address, and two paths. One is a screenshot with the marks on it. The other is a details file: per mark its position, size, key styles (font, colours, spacing, border) and HTML, and for a region the elements inside it. |
+| What you point with | Both: pick a thing, and draw freehand. |
+| Switching between them | No tools. Moving the pointer outlines what is under it (an element, a line or block), a click picks it, a drag draws. A stroke becomes a region from its outline, with some room around it. |
+| Where the words go | One note bar over the preview. Each pick or stroke drops a chip in the mark's colour where the cursor is, and one message is written around the chips. Marks can be removed and the note edited. Drawn with the system's materials and controls: it has to look and feel like part of macOS. |
+| What Return does | Copies. Nothing is typed into a terminal and nothing is sent: the person pastes it where they want, into this session's agent, another one, or an issue. (The first answer was a paste into the agent's prompt. Copying is simpler, cannot hit a question an agent is asking, and needs no rule for a session without an agent.) |
+| What is copied | Plain text: the sentence, with each chip as a short reference a person can read (`README.md:12-18`, `button "Download for macOS"`) and the path of that mark's picture beside it. Then what was marked up (the file, or the page's address), the path of one picture of the whole with every mark in its colour, and the path of a details file. |
 
 The note bar is a text field of Wortel's own, next to "no AI chat box of its
 own" in `docs/product.md`. It is on the right side of that line because it
-talks to nobody: it prepares text for the agent's own prompt, and the person
-sends it there. That argument goes into `docs/decisions.md` with the phase.
+talks to nobody and sends nothing: it puts text on the clipboard. That
+argument goes into `docs/decisions.md` with the phase.
 
-Smaller choices, open to change in the phase's plan:
+What another app does, read from its source on 2026-11-25: cmux's design mode
+is part of its browser. Each mark becomes a screenshot of its own, a stroke's
+with padding around it. What is copied is the sentence with each chip replaced
+by its screenshot's path, the page's address, and the path of a JSON file with
+each element's selector, HTML, text, bounds, styles and React components. Its
+marks are drawn by a script inside the page. Three things here differ on
+purpose: the marks are a native view over whatever is shown, so one piece of
+code covers every preview and a page can neither break nor be changed by it;
+a chip reads as what it points at, so the picture is often not needed; and
+there is one picture of the whole, for a sentence that relates two marks.
 
-- The marks are drawn by a native view over the web view, not by the page.
-- While mark-up is on, clicks don't reach the page and scrolling does. Marks
-  are tied to the page and scroll with it.
-- It works in any browser tab, the person's or the agent's, and the note goes
-  to that tab's session.
+Smaller choices, open to change in a phase's plan:
+
+- While mark-up is on, clicks don't reach what is under it and scrolling
+  does. Marks are tied to the content and scroll with it.
 - A mark's colour is given, from the system's colours, and its chip matches.
-- A header button and a shortcut turn it on, Esc turns it off. A note not yet
-  sent is kept while the page stays where it is.
-- Sending clears the marks.
-- With no agent running in the session, Return copies instead of pasting
-  into a shell.
-- The source file of an element is the agent's to find, from the text and
-  selector. Only a React development build names its component.
+- A header button and a shortcut turn it on, Esc turns it off.
+- Return copies and ends mark-up. A note is kept while its file or page stays
+  where it is, so turning mark-up on again finds it.
+- Pictures and details files go in a folder an agent can read, and are
+  removed after some days. Both the place and the number are the phase's to
+  pick, with the reason.
+- Paths only help an agent that can read this disk. Pasted into a web chat
+  they point at nothing. Accepted: Wortel is for agents in a terminal.
+- The terminal itself is not marked up. Not ruled out, not planned.
+- The source file behind an element on a page is the agent's to find, from
+  the text and selector. Only a React development build names its component.
 - Render the bar and the marks off screen and look at them before a build is
   shown.
 
 ## Phases
 
-Each is one branch in its own worktree, done in order because all three
-touch `Wortel/Browser/BrowserTabs.swift`. Each ends with `./scripts/check.sh`,
-a test copy (the `test-copy` skill), a review, and the owner's hand check.
+Each is one branch in its own worktree, done in order: the first, second and
+fourth touch `Wortel/Browser/BrowserTabs.swift`, and the third builds on the
+second. Each ends with `./scripts/check.sh`, a test copy (the `test-copy`
+skill), a review, and the owner's hand check.
 
 ### 1. Basics and HTML pages
+
+Built on `browser-basics` on 2026-11-25, waiting for the owner's hand check.
+Its section leaves this file when it merges.
 
 - Find in page: ⌘F, ⌘G, ⇧⌘G, ⌘E, Safari's keys.
 - Downloads save instead of going to another browser.
@@ -104,15 +137,27 @@ a test copy (the `test-copy` skill), a review, and the owner's hand check.
 - Check, don't assume: does 1Password fill a sign-in form in the tab (its
   system-wide autofill), and does a sign-in survive a relaunch.
 
-### 2. Mark-up
+### 2. Mark-up, everywhere, as pictures
 
-The mode, picking and drawing, the note bar, the paste, the two files. It
-needs nothing from phase 3 and carries no open technical question, which is
-why it comes first.
+The whole of it for the person: the mode in every preview, drawing, the note
+bar, the copy, a picture per mark, the picture of the whole, the folder and
+its cleanup. And in a page, picking an element with its details, since a page
+can already say what is under the pointer.
 
-### Spike (measured 2026-11-25, harness thrown away)
+To find out first, in the phase's plan: how each kind of preview is drawn
+and scrolled (a web view is one host, the file tabs another, perhaps more),
+whether one view over them is enough, and whether Wortel shows images today.
+If the hosts turn out to be more than two, the phase is split by host, pages
+first.
 
-Phase 3 rested on three things nobody had measured here. They are measured
+### 3. Mark-up, exact text
+
+In source, a diff and Markdown a mark carries its file, lines and quoted
+text, and a click picks a line or a block. Then an image's own coordinates.
+
+### Spike for `wortel browser` (measured 2026-11-25, harness thrown away)
+
+Phase 4 (`wortel browser`, numbered 3 when this was measured) rested on three things nobody had measured here. They are measured
 now, on a Vite dev server, a sign-in form and a rich text editor. The short
 answers:
 
@@ -244,7 +289,7 @@ difference between 22 mW and 1 mW for a page that moves. Let the web view go
 after long disuse, as planned: what an idle one holds is memory (24 MB for
 its own process), not energy. When the tab is showing in the column and the
 person is typing in the terminal, the window must refuse the web view the
-keyboard until the person clicks in the page. Before phase 3 is built, check
+keyboard until the person clicks in the page. Before phase 4 is built, check
 the clear window by eye and on a second Space.
 
 #### 2. The outline
@@ -341,7 +386,7 @@ What failed:
   as hidden. And compact folded a disabled button into a line of text and lost
   "disabled": a control keeps its own line.
 - **`alert()`, a file input and a link that opens a new window** reach the
-  delegate and show nothing. Phase 3 has to answer each.
+  delegate and show nothing. Phase 4 has to answer each.
 
 **Recommendation.** Build it this way. `snapshot` prints the compact outline
 without addresses. Past about 4,000 tokens it prints the window's part and
@@ -431,7 +476,7 @@ works: the person can use that tab too.
   costs the page its `focus` and `blur` events while it does.
 - `select` joins the first commands. Hover does not exist yet.
 
-### 3. `wortel browser`
+### 4. `wortel browser`
 
 The agent's tab, the twelve commands, the out-of-sight rule, the one login
 question, the skill section, `docs/wortel-command.md`.
@@ -452,5 +497,5 @@ From each product's own docs, changelog or repository on that date.
   other browsers, profiles, a design mode, and has started shipping Chromium.
 - The cost people report is time: each screenshot adds seconds.
 
-Next to look at, not yet researched: commenting on a diff and sending it to
-the agent, and remote work over SSH.
+Next to look at, not yet researched: remote work over SSH. (Commenting on a
+diff for the agent is now part of mark-up.)

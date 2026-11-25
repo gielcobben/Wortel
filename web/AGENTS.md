@@ -116,7 +116,7 @@ npm run build        # → dist/, with the local pixel tools stripped out
 - Hover styles sit behind `(hover: hover) and (pointer: fine)`. A control
   under a finger takes taps from 40px or more: give a small one `.tap`
   (`site.css`, Touch) instead of drawing it larger.
-- A Download button never hands a phone the zip. `/download` offers to send
+- A Download button never hands a phone the download. `/download` offers to send
   the page to the Mac there.
 - Check at 320, 390 and 430 wide, light and dark, before calling it done.
 

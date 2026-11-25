@@ -82,6 +82,13 @@ take back from an agent agent sleep ends (below). It no longer restores
 anything. Moving those readers to the keeper's terminal (`KeeperCommand.modes`)
 and deleting the record is the next step.
 
+**A new session's start reads modes too, by itself.** `StartScanner`
+(`Sessions/StartCover.swift`) watches the output of a session made with a
+line to run, for the first mode the line's program sets, which is when the
+page over the terminal comes off. It does not use the record: what it needs
+is the order of a mode and the shell's `OSC 133;C` inside one read, and the
+record keeps states, not order. It lives for the seconds a start takes.
+
 ## The scanner
 
 `CSIScanner` finds `ESC [ … <final>` in a byte stream that arrives in arbitrary

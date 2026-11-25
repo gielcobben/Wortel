@@ -219,7 +219,7 @@ extension SurfaceView {
 
     /// A region of the viewport, both corners included, and where its first
     /// cell starts (`tl_px_x`, -1 when off screen).
-    private func readViewport(_ surface: ghostty_surface_t,
+    func readViewport(_ surface: ghostty_surface_t,
                               from start: (x: Int, y: Int), to end: (x: Int, y: Int)) -> (text: String, x: Double)? {
         func point(_ p: (x: Int, y: Int)) -> ghostty_point_s {
             ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,

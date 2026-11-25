@@ -143,6 +143,20 @@ final class TerminalLinkTests: XCTestCase {
         XCTAssertNil(resolve("/no/such/file.md"))
     }
 
+    /// 2026.47.4 on macOS 15.5: a ⌘-click in a terminal outside any
+    /// repository climbed past `/` for ever. The walk ends at the disk.
+    func testOutsideARepositoryTheWalkEndsAtTheDisk() throws {
+        let loose = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("wortel-no-repo-" + UUID().uuidString + "/.scratch/game-v1")
+            .resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: loose, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: loose.deletingLastPathComponent().deletingLastPathComponent()) }
+        XCTAssertNil(TerminalLink.repositoryRoot(of: loose.path))
+        XCTAssertNil(TerminalLink.repositoryRoot(of: "/"))
+        let folder = loose.deletingLastPathComponent().deletingLastPathComponent().path
+        XCTAssertEqual(TerminalLink.resolve(".scratch/game-v1/,", bases: TerminalLink.bases([folder]))?.kind, .folder)
+    }
+
     func testBasesAddTheRepositoryWithoutRepeats() {
         let macos = root.appendingPathComponent("macos").path
         XCTAssertEqual(TerminalLink.bases([macos, nil, macos]), [macos, root.path])

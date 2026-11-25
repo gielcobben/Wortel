@@ -327,6 +327,13 @@ final class SessionManager {
         currentTabs[session.id] = tab
     }
 
+    /// The preview tab moved on to another file in its place: where you are
+    /// now, but not a stop of its own. Thirty files looked through would
+    /// otherwise be thirty stops for Back, none of them still open.
+    func noteTabReplaced(_ tab: SideTab, in session: Session) {
+        currentTabs[session.id] = tab
+    }
+
     /// Step back, or forward, to the nearest place still open. `bringForward`
     /// puts the place's tab in front of its session once the session is
     /// selected; it is the panel's to do, and the manager doesn't own it.
@@ -430,7 +437,7 @@ final class SessionManager {
     /// closed, or gone off and since visited). The app layer keeps a banner
     /// waiting in Notification Center for it, so it still comes with Wortel
     /// quit, and takes it back here.
-    @ObservationIgnored var onReminderChanged: ((Session, Date?) -> Void)?
+    @ObservationIgnored var onReminderChanged: ((_ session: Session, _ date: Date?, _ asking: Bool) -> Void)?
     /// A reminder went off for a session nobody is looking at: the banner,
     /// now, under the session's name as it is now.
     @ObservationIgnored var onReminderDue: ((Session) -> Void)?
@@ -1399,6 +1406,20 @@ final class SessionManager {
                 session.liveConversationID = nil
             }
             if session.runningAgent != marker?.agent { session.runningAgent = marker?.agent }
+            // A start still under its cover waits for this to know its line
+            // is an agent (`StartCover`).
+            if marker != nil { session.surfaceView?.agentAppeared() }
+            // A marker on a Mac where no agent has been seen yet is a
+            // reason to look again, not an agent. The shell writes it from
+            // the command line, before anything has run: for `claude` typed
+            // on a Mac without it, for `sudo claude` at its password prompt,
+            // and for a whole `npm install -g @anthropic-ai/claude-code`.
+            // Taking any of those for an agent took the Setup row away for
+            // good from exactly the person it is for, and so did waiting a
+            // few seconds first, which an install outlasts.
+            if marker != nil, isNewRun, Permissions.shared.agent != .granted {
+                Permissions.shared.lookForAgent()
+            }
             if session.runningModel != marker?.model { session.runningModel = marker?.model }
             session.runningArgv = marker?.argv
             session.runningShellPID = marker?.shellPID
@@ -2113,9 +2134,18 @@ final class SessionManager {
         inFolder folder: String?, after fetch: Task<Void, Never>?, starting start: SessionStart,
         completion: WorktreeCompletion?
     ) -> Session {
-        let session = makeSession(cwd: nil, inFolder: folder ?? self.folder(forRepositoryAt: from),
+        let dir = folder ?? self.folder(forRepositoryAt: from)
+        // Started with an agent, it's called for the agent ("Claude") with its
+        // branch underneath from the start, as it will be once named: named
+        // for its branch, the row was one line until the agent's title came
+        // and then grew a second one under the pointer. A shell has no title
+        // coming, so it keeps the branch as its name.
+        let name = start.input(preferred: AppSettings.shared.newSessionCommand)
+            .flatMap(AgentCommands.agent(in:))
+            .map { uniqueLeaf(ChatFolder.sessionName(for: $0), in: dir) } ?? leaf
+        let session = makeSession(cwd: nil, inFolder: dir,
                                   via: .worktree, starting: start, reported: false) { session in
-            session.name = session.folderPath.map { "\($0)/\(leaf)" } ?? leaf
+            session.name = session.folderPath.map { "\($0)/\(name)" } ?? name
             session.worktreeBranch = branch
             session.preparation = WorktreePreparation(request: request, from: from, branch: branch ?? "")
         }
@@ -2726,6 +2756,9 @@ final class SessionManager {
         reportedRestSince.removeValue(forKey: session.id)
         repaintInPlace.remove(session.id)
         cancelMove(session)
+        pendingCloses.removeValue(forKey: session.id)
+        closeChecks.removeValue(forKey: session.id)?.cancel()
+        closeQuestions.removeValue(forKey: session.id)?()
         sleptAt.removeValue(forKey: session.id)
         sleepSurvivors.removeValue(forKey: session.id)
         wantsWake.remove(session.id)
@@ -2753,7 +2786,7 @@ final class SessionManager {
         let reminded = remindedIDs.remove(session.id) != nil
         if session.remindAt != nil || reminded {
             session.remindAt = nil
-            onReminderChanged?(session, nil)
+            onReminderChanged?(session, nil, false)
             armReminderTimer()
         }
         if sidebarSelection.ids.contains(session.id) || sidebarSelection.anchor == session.id {
@@ -2954,7 +2987,11 @@ final class SessionManager {
         // The branch of the worktree the session lives in, read off its HEAD:
         // not `worktreeBranch`, which is whichever checkout the shell is
         // standing in, maybe another session's.
-        guard session.preparation == nil, let checkout = session.homeCheckout, checkout.isOwned,
+        // Not for a placeholder: a worktree started with an agent is called
+        // "Claude" until the agent says what it's for, and `claude` is no
+        // name for a branch.
+        guard session.nameSource != .placeholder,
+              session.preparation == nil, let checkout = session.homeCheckout, checkout.isOwned,
               let branch = GitWorktree.checkedOutBranch(at: checkout.root),
               GitWorktree.isGenerated(branch), renamingBranches.insert(session.id).inserted
         else { return }
@@ -3040,7 +3077,11 @@ final class SessionManager {
     /// when Wortel made it, and the archived row with them. Inspected after
     /// the row has moved, never before: a `git status` on a monorepo can
     /// take seconds, and ⌘W must not.
-    func archive(_ session: Session) {
+    ///
+    /// `asked` is a `wortel close`'s answer: the worktree was asked to go,
+    /// so it goes by `WorktreeCloseDecision.decideAsked` instead, with the
+    /// changes the person said yes to, and is not kept without saying why.
+    func archive(_ session: Session, asked: AskedClose? = nil) {
         guard let item = archivedEntry(for: session) else {
             close(session)
             return
@@ -3058,7 +3099,7 @@ final class SessionManager {
         // them is still running when the inspection looks (a `nohup`ed
         // server) is using the worktree.
         let usage = WorktreeUsage(manager: self)
-        settleArchived(item, usage: usage)
+        settleArchived(item, usage: usage, asked: asked)
         refreshWorktreeListings()
     }
 
@@ -3082,21 +3123,56 @@ final class SessionManager {
 
     /// Inspect an archived worktree, and remove it when there's nothing to
     /// keep. A while after the close, so its processes have gone.
-    private func settleArchived(_ item: ArchivedSession, usage: WorktreeUsage) {
+    private func settleArchived(_ item: ArchivedSession, usage: WorktreeUsage, asked: AskedClose? = nil) {
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
-            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
-            let users = usage.users(of: item.checkout, in: processes)
+            var processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+            var users = usage.users(of: item.checkout, in: processes)
+            // Asked to go: the session's own agent and its servers can take
+            // more than the 400 ms to exit, and would keep it as "in use".
+            // Looked at again for a few seconds before that counts.
+            var tries = asked == nil ? 0 : 10
+            while !users.isEmpty, tries > 0 {
+                tries -= 1
+                try? await Task.sleep(for: .milliseconds(500))
+                processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+                users = usage.users(of: item.checkout, in: processes)
+            }
             let repos = item.repoHome.map { [$0] } ?? []
             let report = await WorktreeCleanup.inspect(path: item.checkout, knownRepos: repos, usedBy: users)
             guard let self, self.archived.contains(where: { $0.id == item.id }) else { return }
-            guard case .remove(let deleteBranch) = WorktreeCloseDecision.decide(report),
-                  !self.isShared(item) else { return }
+            // Asked to go, and not kept by the person's own answer: a keep is
+            // news to them, so it's said, once, with why. One Wortel didn't
+            // make was never going (the command's reply said so).
+            let trashing = asked.flatMap { $0.kept ? nil : $0.accepted }
+            let kept = { (why: String) in
+                guard trashing != nil, report.isOwned, !report.isMissing else { return }
+                self.onArchiveProblem?("Kept the worktree of \u{201c}\(item.leafName)\u{201d}",
+                                       why + " The session is archived, and \u{2318}P brings it back.")
+            }
+            let decision = trashing.map { WorktreeCloseDecision.decideAsked(report, accepting: $0) }
+                ?? WorktreeCloseDecision.decide(report)
+            guard case .remove(let deleteBranch) = decision else {
+                // What still keeps it: the changes said yes to don't.
+                var left = report
+                left.changedFiles.removeAll { trashing?.contains($0) == true }
+                return kept(left.blockers.joined(separator: " "))
+            }
+            guard !self.isShared(item) else { return kept("Another session is in the same worktree.") }
             self.removingArchived.insert(item.id)
             let error = await WorktreeCleanup.remove(path: item.checkout, knownRepos: repos, usedBy: users,
-                                                     deleteBranch: deleteBranch)
+                                                     deleteBranch: deleteBranch, acceptingChanges: trashing ?? [])
             self.removingArchived.remove(item.id)
-            guard error == nil else { return }
+            if let error {
+                // The folder may be in the Trash already, with git's record
+                // or the branch left: that's not "kept".
+                guard FileManager.default.fileExists(atPath: item.checkout) else {
+                    self.onArchiveProblem?("The worktree of \u{201c}\(item.leafName)\u{201d} is in the Trash", error)
+                    return
+                }
+                let why = error.hasPrefix("Kept: ") ? String(error.dropFirst(6)) : error
+                return kept(why)
+            }
             self.forgetArchived(item.id)
         }
     }
@@ -4075,6 +4151,9 @@ final class SessionManager {
         guard SessionMove.cdLine(path) != nil else {
             return .failure("Wortel can't type \(shown) into a shell safely.")
         }
+        if pendingCloses[session.id] != nil {
+            return .failure("This session is closing (wortel close), so it can't be moved.")
+        }
         // Under way: the agent is going or gone, and nothing can change that.
         if let move = pendingMoves[session.id], move.ending {
             return .failure("This session is already being moved to \(SessionMove.display(move.path)).")
@@ -4115,6 +4194,137 @@ final class SessionManager {
         scheduleMoveCheck(session, after: idle ? 0.3 : 1)
         return .success(SessionMove.acceptedMessage(to: path, waitsForTurn: !idle, instead: previous),
                         value: path)
+    }
+
+    // MARK: - Closing from the command line (`wortel close`)
+    //
+    // An agent told "delete this worktree" runs `wortel close` and finishes
+    // its reply; the session then ends as its row's × ends it. Two things
+    // differ from a click. It waits for the turn to end, so the reply isn't
+    // cut off. And the worktree was asked to go, so uncommitted files don't
+    // quietly keep it as they do on a click: they are put to the person at
+    // once, and a yes sends them to the Trash with it (`docs/cli.md`).
+
+    @ObservationIgnored private var pendingCloses: [Session.ID: PendingClose] = [:]
+    @ObservationIgnored private var closeChecks: [Session.ID: DispatchWorkItem] = [:]
+
+    /// Puts a worktree's uncommitted files to the person before a
+    /// `wortel close` trashes them: `completion(true)` to trash them too.
+    /// Set by the app; with none, they are kept.
+    /// Returns how to take the question down unanswered, for a session
+    /// closed some other way while it's up.
+    @ObservationIgnored var confirmTrashChanges: ((Session, [String], @escaping (Bool) -> Void) -> (() -> Void)?)?
+    @ObservationIgnored private var closeQuestions: [Session.ID: () -> Void] = [:]
+
+    /// Close `session` once its agent's turn has ended. Answered at once.
+    func closeFromCommand(_ session: Session) -> WortelResponse {
+        let id = session.id
+        guard pendingCloses[id] == nil else { return .success("This session is already closing.") }
+        guard session.preparation == nil else {
+            return .failure("This session's worktree is still being made. Try again once it's ready.")
+        }
+        // Both would act at the same turn end, on the same agent.
+        if let move = pendingMoves[id] {
+            return .failure("This session is being moved to \(SessionMove.display(move.path)). "
+                + "Run `wortel cd .` first to call that off.")
+        }
+        // Working, or about to show it (`busyShowDelay`): a turn just begun
+        // that runs this first is still a turn to wait for.
+        let waits = session.isBusy || busyTimers[id] != nil
+        pendingCloses[id] = PendingClose(requestedAt: Date(), busyWhenAsked: waits)
+        let home = worktreeHome(of: session)
+        if let home, home.isOwned { askAboutChanges(session, in: home.root) }
+        KeeperLog.log.notice("""
+            session \(id.uuidString, privacy: .public): close asked\
+            \(waits ? ", after this turn" : "", privacy: .public)
+            """)
+        scheduleCloseCheck(session, after: waits ? 1 : 0.3)
+        return .success(PendingClose.acceptedMessage(waitsForTurn: waits, worktreeIsWortels: home?.isOwned))
+    }
+
+    /// Inspect the worktree now, and put any uncommitted files to the
+    /// person while the agent finishes. The close waits for the answer.
+    private func askAboutChanges(_ session: Session, in root: String) {
+        let id = session.id
+        pendingCloses[id]?.inspecting = true
+        let usage = WorktreeUsage(manager: self, excluding: session)
+        Task { [weak self] in
+            let processes = await Task.detached { WorktreeUsage.Processes.read() }.value
+            let report = await WorktreeCleanup.inspect(path: root, usedBy: usage.users(of: root, in: processes),
+                                                       urgent: true)
+            guard let self, self.pendingCloses[id] != nil,
+                  let session = self.sessions.first(where: { $0.id == id }) else { return }
+            self.pendingCloses[id]?.inspecting = false
+            let changes = WorktreeCloseDecision.changesToAsk(report)
+            guard !changes.isEmpty, let ask = self.confirmTrashChanges else {
+                return self.scheduleCloseCheck(session, after: 0)
+            }
+            self.pendingCloses[id]?.asking = true
+            self.closeQuestions[id] = ask(session, changes) { [weak self] trash in
+                self?.closeQuestions[id] = nil
+                guard let self, self.pendingCloses[id] != nil else { return }
+                self.pendingCloses[id]?.asking = false
+                if trash {
+                    self.pendingCloses[id]?.accepted = Set(changes)
+                } else {
+                    self.pendingCloses[id]?.kept = true
+                }
+                self.scheduleCloseCheck(session, after: 0)
+            }
+        }
+    }
+
+    /// Look again soon. One check pending per session.
+    private func scheduleCloseCheck(_ session: Session, after delay: TimeInterval = 2) {
+        let id = session.id
+        closeChecks.removeValue(forKey: id)?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.closeChecks[id] = nil
+            guard let session = self.sessions.first(where: { $0.id == id }) else {
+                self.pendingCloses[id] = nil
+                return
+            }
+            self.tryClose(session)
+        }
+        closeChecks[id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Close it, if the turn is over and the question (if any) answered.
+    private func tryClose(_ session: Session) {
+        let id = session.id
+        guard let close = pendingCloses[id] else { return }
+        // The answer calls back here, and so does the turn's end (`clearBusy`).
+        // However long the question waits is the person's time, not the turn's.
+        guard !close.inspecting, !close.asking else { return }
+        // A block (a permission prompt) rests the session but is the middle
+        // of the turn: the agent goes on once it's answered.
+        let blocked = programRecords[id]?.effective?.state == .blocked
+        guard !session.isBusy, !blocked, !close.busyWhenAsked || close.turnEnded else {
+            if Date().timeIntervalSince(close.requestedAt) > PendingClose.patience {
+                pendingCloses[id] = nil
+                return raiseAttention(session, kind: .failed, title: session.name,
+                                      body: "Didn\u{2019}t close: the agent\u{2019}s turn didn\u{2019}t end within an hour.",
+                                      source: "close")
+            }
+            return scheduleCloseCheck(session)
+        }
+        pendingCloses[id] = nil
+        let asked = AskedClose(accepted: close.accepted, kept: close.kept)
+        let finish = { [weak self] in
+            guard let self, self.sessions.contains(where: { $0.id == id }) else { return }
+            KeeperLog.log.notice("session \(id.uuidString, privacy: .public): closing as asked")
+            if session.preparation == nil, self.worktreeHome(of: session) != nil {
+                self.archive(session, asked: asked)
+            } else {
+                self.close(session)
+            }
+        }
+        // The agent is no reason to ask: ending it is the point. Something
+        // else still running (a dev server) is, as it is on a click.
+        guard hasBackgroundWork?(session) == true, let confirmClose else { return finish() }
+        confirmClose(session) { proceed in if proceed { finish() } }
     }
 
     /// Look again soon. One check pending per session.
@@ -4392,6 +4602,10 @@ final class SessionManager {
         // At rest, perhaps: the hour starts counting (`AgentSleep`).
         armSleep(session)
         if pendingMoves[session.id] != nil { scheduleMoveCheck(session, after: 0.5) }
+        if pendingCloses[session.id] != nil {
+            pendingCloses[session.id]?.turnEnded = true
+            scheduleCloseCheck(session, after: 0.5)
+        }
     }
 
     /// Look at which conversation the running agent is in: when it starts,
@@ -4543,6 +4757,9 @@ final class SessionManager {
     private func programStatus(_ session: Session, _ report: ProgramStatusReport, replayed: Bool) {
         let id = session.id
         let before = programRecords[id]
+        // A program that says what it is doing is an agent, whatever its
+        // name: this Mac has one.
+        Permissions.shared.noteAgent()
         AgentStatusLog.log.debug("""
             status \(report.logDescription, privacy: .public) \(replayed ? "replayed " : "", privacy: .public)\
             after \(before?.effective?.state.rawValue ?? "nothing", privacy: .public) \
@@ -4769,6 +4986,9 @@ final class SessionManager {
                   let terminal = session.surfaceView?.keeperSession,
                   TerminalModeRecorder.shared.modes(for: terminal).bracketedPaste else { return }
             session.silentAgent = agent
+            // How often the triangle is really shown, per agent: what decides
+            // whether helping with the update is worth building.
+            Telemetry.capture(.agentOutdated(agent: AgentName(command: agent)))
             AgentStatusLog.log.debug("""
                 status: \(agent, privacy: .public) said nothing in \(Int(Self.silencePatience))s, saying so \
                 id=\(id.uuidString, privacy: .public)
@@ -5036,6 +5256,50 @@ final class SessionManager {
         return view
     }
 
+    /// Put `line` on a prompt for the person to run: there, unsent, as if they
+    /// had typed it and not yet pressed Return. For a command that is theirs
+    /// to read first (an agent's own installer, `AgentInstall`).
+    ///
+    /// In the session in front when its shell is at a prompt. Otherwise in a
+    /// new plain session, typed before the shell has read a byte, so it is
+    /// waiting on the first prompt: a line pasted into whatever is running
+    /// there (an editor, a build asking a question) would be typed into that.
+    func offerCommand(_ line: String) {
+        // A second press on the heels of the first (a button that stays on
+        // screen, a double click) would type the line onto itself.
+        let now = Date()
+        if let last = lastOffer, last.line == line, now.timeIntervalSince(last.at) < 2 { return }
+        lastOffer = (line, now)
+        // And only where it will be seen: with a file or a browser tab in
+        // front of the terminal the line would be typed out of sight, and
+        // the keyboard handed to a terminal nobody is looking at.
+        if let session = (placingWindow ?? activeWindow)?.selected, let view = session.surfaceView,
+           session.activeMainTab ?? .session == .session,
+           let window = view.window, window.isVisible, !view.isHiddenOrHasHiddenAncestor,
+           shellIsAtPrompt(session, view) {
+            view.sendText(line, scripted: true)
+            view.window?.makeFirstResponder(view)
+            return
+        }
+        _ = newSession(starting: .line(line))
+    }
+
+    @ObservationIgnored private var lastOffer: (line: String, at: Date)?
+
+    /// The shell of `session` has its terminal and nothing under it. The
+    /// same reading a resume is typed on (`wake`), asked once and not again:
+    /// a no here costs a new session, not a wrong keystroke.
+    private func shellIsAtPrompt(_ session: Session, _ view: SurfaceView) -> Bool {
+        guard session.runningAgent == nil, !view.isHibernated, !view.isRestoring,
+              let pty = view.ptyHost, let root = view.shellPID else { return false }
+        let table = ProcessTable.snapshot()
+        let shellPID = ProcessTable.shell(of: root, in: table)
+        guard let shell = table.first(where: { $0.pid == shellPID }),
+              ProcessTable.isShell(shell.name), !shell.isExiting else { return false }
+        return pty.foregroundProcessGroup() == shell.pgid
+            && ProcessTable.work(under: shellPID, in: table).isEmpty
+    }
+
     /// A session by id — what the CLI has, since a shell knows its session as
     /// `$WORTEL_SESSION_ID` and nothing else. A side terminal's shell carries
     /// its tab's id there (it keys that terminal's own agent marker), so a
@@ -5193,7 +5457,7 @@ final class SessionManager {
         // Set again after it went off (a snooze): the one that went off is
         // done with, or the next visit would take the new one's banner back.
         remindedIDs.remove(session.id)
-        onReminderChanged?(session, date)
+        onReminderChanged?(session, date, true)
         scheduleSave()
         armReminderTimer()
         if date != nil { Telemetry.capture(.reminderSet) }
@@ -5251,7 +5515,7 @@ final class SessionManager {
     /// been renamed since its reminder was set.
     func scheduleReminderFallbacks(now: Date = Date()) {
         for session in sessions {
-            if let date = session.remindAt, date > now { onReminderChanged?(session, date) }
+            if let date = session.remindAt, date > now { onReminderChanged?(session, date, false) }
         }
     }
 
@@ -5264,7 +5528,7 @@ final class SessionManager {
     @discardableResult
     private func answerReminder(_ session: Session) -> Bool {
         guard remindedIDs.remove(session.id) != nil else { return false }
-        onReminderChanged?(session, nil)
+        onReminderChanged?(session, nil, false)
         return true
     }
 
@@ -5280,7 +5544,7 @@ final class SessionManager {
             if !launching, isActivelyViewing(session) {
                 // You're already here: the ring flashes, and that's all.
                 window(of: session).attentionFlash = AttentionFlash(kind: .finished)
-                onReminderChanged?(session, nil)
+                onReminderChanged?(session, nil, false)
             } else {
                 markUnread(session)
                 remindedIDs.insert(session.id)
@@ -5986,13 +6250,51 @@ final class SessionManager {
     /// other link is `TerminalLink.external`'s: a web or mail link opens in
     /// its app, another scheme asks first, a malformed one does nothing.
     /// libghostty opens none of them itself any more (GhosttyRuntime).
-    private func openLink(_ link: String, from view: SurfaceView, in session: Session) {
+    ///
+    /// First, a link an agent broke over several rows is put back together
+    /// from the rows around the click (`TerminalLinkWrap`), unless the
+    /// program tagged it (OSC 8), which makes it whole already. A path is
+    /// only ever opened when the joined one exists. A click libghostty found
+    /// no link under (`request.link` nil) opens nothing but such a join.
+    ///
+    /// When libghostty matched a path, the disk is asked first (the joins,
+    /// then the match) and an address only after: a file named below an
+    /// address that ends its row is that file, not the address with its name
+    /// glued on. Otherwise the address goes first.
+    private func openLink(_ request: TerminalLinkRequest, from view: SurfaceView, in session: Session) {
+        let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
+        guard !request.tagged, let click = request.click else {
+            if let link = request.link { openLink(link, bases: bases, over: view.window) }
+            return
+        }
+        let matchedPath = request.link.map(TerminalLink.isPath) ?? false
+        if !matchedPath, let url = TerminalLink.wrappedURL(click) {
+            openLink(url, bases: bases, over: view.window)
+            return
+        }
+        if matchedPath || request.link == nil {
+            let paths = TerminalLink.wrappedPaths(click) + (request.link.map { [$0] } ?? [])
+            if let target = TerminalLink.resolveFirst(paths, bases: bases) {
+                onOpenTerminalLink?(target)
+                return
+            }
+        }
+        if matchedPath, let url = TerminalLink.wrappedURL(click) {
+            openLink(url, bases: bases, over: view.window)
+            return
+        }
+        // A web link, a server, or a path found nowhere (dropped, as before).
+        guard let link = request.link, !matchedPath else { return }
+        openLink(link, bases: bases, over: view.window)
+    }
+
+    /// One link, whole: a server on this Mac, a path, or anything else.
+    private func openLink(_ link: String, bases: [String], over window: NSWindow?) {
         if let server = TerminalLink.localServer(link) {
             onOpenLocalServer?(server)
             return
         }
         if TerminalLink.isPath(link) {
-            let bases = TerminalLink.bases([view.reportedPwd, session.cwd, session.originCwd])
             guard let target = TerminalLink.resolve(link, bases: bases) else { return }
             onOpenTerminalLink?(target)
             return
@@ -6001,7 +6303,7 @@ final class SessionManager {
         case .open(let url):
             NSWorkspace.shared.open(url)
         case .ask(let url):
-            askToOpen(url, over: view.window)
+            askToOpen(url, over: window)
         case .refuse:
             break
         }
@@ -6054,9 +6356,9 @@ final class SessionManager {
                 self.raiseAttention(session, kind: .needsInput, title: session.name, body: "Bell",
                                     source: "bell")
             }
-            view.onOpenLink = { [weak self, weak session, weak view] link in
+            view.onOpenLink = { [weak self, weak session, weak view] request in
                 guard let self, let session, let view else { return }
-                self.openLink(link, from: view, in: session)
+                self.openLink(request, from: view, in: session)
             }
         }
         session.onSurfaceCreated = { [weak self, weak session] view in
@@ -6219,9 +6521,9 @@ final class SessionManager {
                 guard let self, let session, let view else { return }
                 self.shellEnded(view, in: session, tab: nil)
             }
-            view.onOpenLink = { [weak self, weak session, weak view] link in
+            view.onOpenLink = { [weak self, weak session, weak view] request in
                 guard let self, let session, let view else { return }
-                self.openLink(link, from: view, in: session)
+                self.openLink(request, from: view, in: session)
             }
         }
     }

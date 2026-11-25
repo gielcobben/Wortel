@@ -192,6 +192,7 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.mark(session: nil, colour: "red")).rawValue, "mark")
         XCTAssertEqual(CommandVerb(.remind(session: nil, at: 0)).rawValue, "remind")
         XCTAssertEqual(CommandVerb(.changeDirectory(session: nil, path: "/secret/repo")).rawValue, "cd")
+        XCTAssertEqual(CommandVerb(.close(session: nil)).rawValue, "close")
         XCTAssertEqual(CommandVerb(.list(caller: nil)).rawValue, "list")
         XCTAssertEqual(CommandVerb(.read(session: "x", lines: nil)).rawValue, "read")
         XCTAssertEqual(CommandVerb(.send(session: "x", text: "secret prompt", enter: true)).rawValue, "send")
@@ -634,6 +635,7 @@ final class TelemetryTests: XCTestCase {
         }
         for agent in AgentName.allCases {
             events.append(.agentStarted(kind: agent))
+            events.append(.agentOutdated(agent: agent))
             events.append(.agentWoke(agent: agent))
             for cause in SleepCause.allCases { events.append(.agentSlept(agent: agent, cause: cause)) }
         }

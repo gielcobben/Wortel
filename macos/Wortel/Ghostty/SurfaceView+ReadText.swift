@@ -87,7 +87,14 @@ extension SurfaceView {
         DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
             MainActor.assumeIsolated { once.call(false) }
         }
-        afterPendingOutput { once.call(true) }
+        // And after a start still under its cover (`StartCover`), for the
+        // same reason: the program is not there yet to have asked. Whatever
+        // came of the start, `wortel send` was told to type, and does. A
+        // start is over inside `patience` (`StartCover.Patience.shell`).
+        afterStart { [weak self] _ in
+            guard let self else { return }
+            self.afterPendingOutput { once.call(true) }
+        }
     }
 
     /// The first answer of the two that race, the deadline's or the ready one.

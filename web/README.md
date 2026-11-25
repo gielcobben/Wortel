@@ -268,14 +268,19 @@ presses the page's own button, so the download starts at once and
 address, so a reload does not download again. A plain visit to `/download`
 only shows the button. On a phone or a tablet nothing starts by itself: the
 button becomes "Send to your Mac" (the share sheet, or "Copy the link" where
-there is none, `download_link_sent`), and the zip is a small link under it
-(`download_clicked` from `download-phone`). The page tells such a device by
+there is none, `download_link_sent`), and the download is a small link under
+it (`download_clicked` from `download-phone`). The page tells such a device by
 what it is, not by its width, since the question is whether it can open a Mac
-app. The button points at `https://updates.wortel.sh/Wortel-latest.zip`,
-which `release.sh --publish` always mirrors to the newest signed build. The
-version line under it, and `softwareVersion`/`fileSize` in the structured data,
-are read from `updates.wortel.sh/appcast.xml` **at build time**. They refresh
-on redeploy, not on their own.
+app. The button points at `https://updates.wortel.sh/Wortel-latest.dmg`,
+which `release.sh --publish` always mirrors to the newest notarized build: a
+plain disk image with the app beside a link to Applications
+(`macos/scripts/make-dmg.sh`). Sparkle keeps its zips; the DMG is only the
+website's. Until the bucket has a DMG, the build links the zip and its steps
+instead (`src/data/site.ts`), so a deploy can't put a 404 behind the button.
+The version line under the button and `softwareVersion` in the
+structured data are read from `updates.wortel.sh/appcast.xml`, and the size
+(`fileSize`) from a HEAD of the DMG, both **at build time**. They refresh on
+redeploy, not on their own.
 
 ## The app window, in two looks
 

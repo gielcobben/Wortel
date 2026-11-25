@@ -102,6 +102,14 @@ enum TelemetryEvent: Equatable {
     /// asked or where: it says which integrations deserve the work first.
     case agentStarted(kind: AgentName)
 
+    /// An agent Wortel knows can report its state ran in a version too old
+    /// to, so its session shows the warning triangle and no status. Which
+    /// agent, from the same fixed list, once per run that stays silent. How
+    /// often this happens decides whether helping with the update is worth
+    /// building: three of the first seven people who started an agent never
+    /// got a status from it, and nothing said whether this was why.
+    case agentOutdated(agent: AgentName)
+
     /// An idle agent was ended to give its memory back (`AgentSleep`), which
     /// one from the fixed list, and whether its hour was up or macOS said
     /// memory was short. Whether the feature does anything at all, and
@@ -197,6 +205,7 @@ enum TelemetryEvent: Equatable {
         case .agentAttention: return "agent_attention"
         case .agentJumpUsed: return "agent_jump_used"
         case .agentStarted: return "agent_started"
+        case .agentOutdated: return "agent_outdated"
         case .agentSlept: return "agent_slept"
         case .agentWoke: return "agent_woke"
         case .keeperLost: return "keeper_lost"
@@ -245,6 +254,8 @@ enum TelemetryEvent: Equatable {
             return ["kind": kind.rawValue, "agent": agent.rawValue]
         case let .agentStarted(kind):
             return ["kind": kind.rawValue]
+        case let .agentOutdated(agent):
+            return ["agent": agent.rawValue]
         case let .agentSlept(agent, cause):
             return ["agent": agent.rawValue, "cause": cause.rawValue]
         case let .agentWoke(agent):
@@ -340,9 +351,9 @@ enum SessionOrigin: String {
     /// current directory is the right default, so it has to be countable
     /// separately from the ⌘N it sits next to.
     case home
-    /// ⌃⌘N, New Terminal: a session without the command Settings names. It
-    /// exists only while there is one, so its count says how often the
-    /// command was not what was wanted.
+    /// ⌃⌘N, New Terminal, and New Terminal at Home: a session without the
+    /// command Settings names. They exist only while there is one, so the
+    /// count says how often the command was not what was wanted.
     case terminal
 }
 
@@ -405,7 +416,7 @@ enum TabArea: String, CaseIterable {
     case bottom
 }
 
-/// ⌘P (sessions and commands) or ⇧⌘P (commands only).
+/// ⌘P (sessions, files and commands) or ⇧⌘P (commands only).
 enum PaletteMode: String, CaseIterable {
     case sessions
     case commands
@@ -414,11 +425,12 @@ enum PaletteMode: String, CaseIterable {
 }
 
 /// How the palette closed: a session picked, a command run, a prompt typed
-/// in, or none of them.
+/// in, a file opened (never which), or none of them.
 enum PaletteResult: String, CaseIterable {
     case session
     case command
     case prompt
+    case file
     case dismissed
 }
 
@@ -683,6 +695,7 @@ enum CommandVerb: String {
     case mark
     case remind
     case cd
+    case close
     case list
     case read
     case send

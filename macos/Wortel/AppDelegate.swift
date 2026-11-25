@@ -147,6 +147,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.confirmCloseSessions = { [weak self] batch, running, completion in
             self?.confirmClose(batch, running: running, completion: completion)
         }
+        manager.confirmTrashChanges = { [weak self] session, changes, completion in
+            guard let self else {
+                completion(false)
+                return nil
+            }
+            return self.confirmTrashChanges(session, changes: changes, completion: completion)
+        }
         manager.onArchiveProblem = { [weak self] title, detail in
             guard let window = self?.window else { return }
             let alert = NSAlert()
@@ -168,6 +175,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         processes.roots = { [weak manager] in manager?.processRoots ?? [] }
         processes.projectRoots = { [weak manager] in manager?.projectRoots ?? [] }
         processes.startSampling()
+        // Setup's rows: an agent's installer, or the one line that points
+        // macOS back at its developer tools, on a prompt for the person to
+        // read and run (`AgentInstall`, `DeveloperTools`). Wortel runs nothing.
+        Permissions.shared.offerCommand = { [weak self] line in
+            self?.manager.offerCommand(line)
+        }
         manager.onNeedsAttention = { [weak self] session, kind, title, body, alert in
             self?.postAttentionNotification(session, kind: kind, title: title, body: body, alert: alert)
         }
@@ -329,8 +342,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             center.removeDeliveredNotifications(withIdentifiers: [id])
             center.removePendingNotificationRequests(withIdentifiers: [id])
         }
-        manager.onReminderChanged = { session, date in
-            Self.scheduleReminderFallback(for: session, at: date)
+        manager.onReminderChanged = { session, date, asking in
+            Self.scheduleReminderFallback(for: session, at: date, asking: asking)
         }
         manager.onReminderDue = { session in
             Self.postReminder(for: session)
@@ -339,25 +352,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Native "a session needs you" notifications. The signal is
         // program-authored (e.g. Claude Code emits OSC 777 on a permission/idle
         // prompt because libghostty sets TERM_PROGRAM=ghostty) — we just relay
-        // it. Ask once; if the user declines, the sidebar dot + Dock badge still
-        // work.
+        // it. If the user declines, the sidebar dot + Dock badge still work.
+        //
+        // **Not asked for here.** macOS asks once, and at launch that once was
+        // spent before anyone had seen what a notification from Wortel is
+        // for: of the first ten installs that report, seven had them off.
+        // The question is put the first time there is something to say
+        // (`whenNotificationsAnswered`), so the prompt arrives with its own
+        // reason. Launch only reads what was already decided.
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        // The grant is remembered because the turn-end chime is played by us,
-        // not by Notification Center (see playTurnDoneChime): someone who
-        // declined notifications should not be chimed at anyway.
-        // `.badge` is here for the **Dock badge**, which is drawn by us rather
-        // than by Notification Center — `NSApp.dockTile.badgeLabel`. Once an app
-        // registers with `UNUserNotificationCenter`, macOS gates that badge on
-        // the same per-app "Badges" permission, so an app that asks only for
-        // alerts and sounds can set `badgeLabel` all day and the Dock will
-        // ignore it. Which is exactly what it was doing.
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+        center.getNotificationSettings { settings in
+            let granted = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+            let decided = settings.authorizationStatus != .notDetermined
             DispatchQueue.main.async {
                 Self.notificationsAuthorized = granted
-                Permissions.shared.refresh()
+                if decided { Self.notificationsDecided = true }
             }
         }
+        Permissions.shared.refresh()
 
         // The side column's tabs: a side shell that exits takes its tab with
         // it, in the window its session is in.
@@ -469,6 +483,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Hangs off the ⓘ in the sidebar, which is also where it lives
             // afterwards: shown once, reachable forever.
             TelemetryNotice.shared.presentFirstRunIfNeeded()
+            // Whether this Mac has an agent at all, asked until the answer
+            // has been yes once and never after. Here, after the first
+            // frame, for the same reason as everything else in this block.
+            Permissions.shared.lookForAgent()
         }
     }
 
@@ -626,6 +644,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
             self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
         }
+        let files = SideTab.pane(.files), changes = SideTab.pane(.changes)
+        // A list's click, Space or double-click. ⌥-double-click still opens
+        // the file in the other place, as a tab to keep.
+        fileTree.onPeek = { [weak self] url, trigger in
+            guard let self else { return }
+            if trigger == .open, Self.optionClicked { return self.openPreview(url) }
+            guard let generation = self.peeks(url, trigger, from: files) else { return }
+            self.openPreview(url, placement: .peek(from: files, generation: generation))
+        }
+        gitPanel.onPeek = { [weak self] url, diff, trigger in
+            guard let self else { return }
+            if trigger == .open, Self.optionClicked {
+                return self.presentPreview(url, diff: diff, hasChanges: true)
+            }
+            guard let generation = self.peeks(url, trigger, diff: diff, from: changes) else { return }
+            self.presentPreview(url, diff: diff, hasChanges: true,
+                                placement: .peek(from: changes, generation: generation))
+        }
         gitPanel.onTabClosed = { [weak self] tab in
             if let path = tab.filePath { self?.releaseFile(path) }
             if let id = tab.browserID { BrowserTabs.shared.forget(id) }
@@ -636,6 +672,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Every tab brought forward is a stop on Back and Forward's trail.
         gitPanel.onTabBroughtForward = { [weak manager] tab, session in
             manager?.noteTabBroughtForward(tab, in: session)
+        }
+        gitPanel.onTabReplaced = { [weak manager] tab, session in
+            manager?.noteTabReplaced(tab, in: session)
         }
         // Bring Here: an archived session's worktree is in use too, waiting
         // for it to come back.
@@ -928,7 +967,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Trade-off: an NSSound isn't routed by Notification Center, so it is
         // heard even when a Focus would have suppressed the banner.
         content.sound = (alert && kind.chime == .alert) ? .default : nil
-        if alert, kind.chime == .soft { Self.playTurnDoneChime() }
         content.userInfo = [Self.sessionKey: session.id.uuidString]
         let request = UNNotificationRequest(
             identifier: session.id.uuidString, content: content, trigger: nil)
@@ -939,19 +977,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // system and nothing told them apart.
         let id = session.id.uuidString
         let sound = content.sound != nil ? "alert" : (alert && kind.chime == .soft ? "chime" : "none")
-        UNUserNotificationCenter.current().add(request) { error in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
-                AgentStatusLog.log.debug("""
-                    banner \(error == nil ? "handed to Notification Center" : "refused", privacy: .public) \
-                    sound=\(sound, privacy: .public) \
-                    allowed=\(settings.authorizationStatus == .authorized, privacy: .public) \
-                    banners=\(settings.alertSetting == .enabled, privacy: .public) \
-                    \(error.map { "error=\($0.localizedDescription)" } ?? "", privacy: .public) \
-                    id=\(id, privacy: .public)
-                    """)
+        Self.whenNotificationsAnswered { [weak session] in
+            // The first time, this runs when the prompt is answered, which
+            // can be an hour on: by then the session may have been seen to,
+            // and a banner for it would be news about nothing.
+            guard session?.attention != nil else { return }
+            if alert, kind.chime == .soft { Self.playTurnDoneChime() }
+            UNUserNotificationCenter.current().add(request) { error in
+                UNUserNotificationCenter.current().getNotificationSettings { settings in
+                    AgentStatusLog.log.debug("""
+                        banner \(error == nil ? "handed to Notification Center" : "refused", privacy: .public) \
+                        sound=\(sound, privacy: .public) \
+                        allowed=\(settings.authorizationStatus == .authorized, privacy: .public) \
+                        banners=\(settings.alertSetting == .enabled, privacy: .public) \
+                        \(error.map { "error=\($0.localizedDescription)" } ?? "", privacy: .public) \
+                        id=\(id, privacy: .public)
+                        """)
+                }
             }
         }
     }
+
+    // MARK: - Asking for notifications
+
+    /// Run `post` once macOS has an answer about notifications, asking for
+    /// one the first time: the system's prompt, at the moment there is
+    /// something to say. Once it is decided `post` runs at once, in this
+    /// call, as it did when the question was put at launch. (What can't
+    /// wait for a reply at all, the reminders handed over again at launch
+    /// and on the way out, never comes through here:
+    /// `scheduleReminderFallback(asking: false)`.)
+    /// `post` runs whatever the answer: what Notification Center is handed
+    /// and may not show is its own business.
+    ///
+    /// The grant is remembered because the turn-end chime is played by us,
+    /// not by Notification Center (see playTurnDoneChime): someone who
+    /// declined notifications should not be chimed at anyway.
+    ///
+    /// `.badge` is here for the **Dock badge**, which is drawn by us rather
+    /// than by Notification Center — `NSApp.dockTile.badgeLabel`. Once an app
+    /// registers with `UNUserNotificationCenter`, macOS gates that badge on
+    /// the same per-app "Badges" permission, so an app that asks only for
+    /// alerts and sounds can set `badgeLabel` all day and the Dock will
+    /// ignore it. Which is exactly what it was doing.
+    private static func whenNotificationsAnswered(_ post: @escaping @MainActor @Sendable () -> Void) {
+        if notificationsDecided {
+            post()
+            return
+        }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            DispatchQueue.main.async {
+                notificationsAuthorized = granted
+                notificationsDecided = true
+                Permissions.shared.refresh()
+                post()
+            }
+        }
+    }
+
+    /// macOS has an answer, yes or no, so nothing is left to ask. False
+    /// until launch has read it, which only costs the first post a round
+    /// trip that shows nothing.
+    private static var notificationsDecided = false
 
     // MARK: - Reminders
 
@@ -977,7 +1064,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// running takes it back on time and posts its own (`postReminder`),
     /// with the session's name as it is by then. nil takes it back, shown or
     /// not.
-    private static func scheduleReminderFallback(for session: Session, at date: Date?) {
+    ///
+    /// `asking` is a reminder being set, which is asking to be told and so
+    /// a moment to put macOS's question. Without it (every reminder handed
+    /// over again at launch and on the way out) the request is added as it
+    /// stands: at launch the answer hasn't been read yet, and going through
+    /// the question there put the system's prompt at launch, each launch,
+    /// for anyone who had let it slide away unanswered. And on the way out
+    /// nothing can wait for a reply.
+    private static func scheduleReminderFallback(for session: Session, at date: Date?, asking: Bool) {
         let center = UNUserNotificationCenter.current()
         let id = reminderID(session)
         center.removePendingNotificationRequests(withIdentifiers: [id])
@@ -988,9 +1083,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let when = Calendar.current.dateComponents(
             [.year, .month, .day, .hour, .minute, .second, .timeZone],
             from: date.addingTimeInterval(SessionManager.reminderFallbackDelay))
-        center.add(UNNotificationRequest(
+        let request = UNNotificationRequest(
             identifier: id, content: reminderContent(sessionID: session.id, name: session.name),
-            trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: false)))
+            trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: false))
+        guard asking else {
+            center.add(request)
+            return
+        }
+        // Answered after the reminder was taken back or moved (`remindAt`
+        // is no longer this date), nothing is left behind.
+        whenNotificationsAnswered { [weak session] in
+            guard session?.remindAt == date else { return }
+            center.add(request)
+        }
     }
 
     /// A reminder went off for a session nobody is looking at. Unless the
@@ -1009,8 +1114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// Whether the user allowed notifications, remembered from the launch
-    /// prompt. Only gates the chime we play ourselves — everything Notification
+    /// Whether the user allowed notifications, read at launch and again each
+    /// time the question is put (`whenNotificationsAnswered`). Only gates the chime we play ourselves — everything Notification
     /// Center delivers is already gated by the system.
     private static var notificationsAuthorized = false
 
@@ -1168,11 +1273,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Close confirmation
 
+    /// `wortel close` on a worktree with uncommitted files: may they go to
+    /// the Trash with it? A sheet on the session's own window, which waits
+    /// there for you: nothing is brought forward, as the CLI never steals
+    /// focus, and the close waits for the answer. With no window to ask on,
+    /// the answer is keep. Returns how to take it down unanswered.
+    ///
+    /// Return keeps. The sheet arrives unasked, on a window you may be
+    /// typing in, so trashing files takes a click: Move to Trash has no key.
+    private func confirmTrashChanges(_ session: Session, changes: [String],
+                                     completion: @escaping (Bool) -> Void) -> (() -> Void)? {
+        guard let window = sessionWindow(session) else {
+            completion(false)
+            return nil
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = TrashChangesQuestion.title(session: session.name)
+        alert.informativeText = TrashChangesQuestion.detail(changes: changes)
+        let trash = alert.addButton(withTitle: TrashChangesQuestion.trash)
+        trash.keyEquivalent = ""
+        trash.hasDestructiveAction = true
+        alert.addButton(withTitle: TrashChangesQuestion.keep).keyEquivalent = "\r"
+        alert.beginSheetModal(for: window) { response in
+            completion(response == .alertFirstButtonReturn)
+        }
+        return { [weak window, weak alert] in
+            guard let window, let sheet = alert?.window, window.sheets.contains(sheet) else { return }
+            window.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+        }
+    }
+
+    /// The main window `session` is in, else the front one: a question about
+    /// a session goes where that session is.
+    private func sessionWindow(_ session: Session) -> NSWindow? {
+        controller(for: manager.window(of: session))?.window ?? window
+    }
+
     /// Sheets a warning when closing a session that still has a running
     /// process. `completion(true)` proceeds with the close. Falls back to
     /// closing immediately if there's no window to sheet onto.
     private func confirmClose(_ session: Session, completion: @escaping (Bool) -> Void) {
-        guard let window else {
+        guard let window = sessionWindow(session) else {
             completion(true)
             return
         }
@@ -1234,6 +1376,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private enum FilePlacement {
         case home(elsewhere: Bool)
         case dropped(TabRegion, index: Int)
+        /// The preview tab, looked at from the list in this pane tab. Only
+        /// while `generation` is the latest: a file outside the panel's repo
+        /// is looked up first, and a lookup finishing after a newer click
+        /// must not put back the file before it.
+        case peek(from: SideTab, generation: Int)
     }
 
     /// Open a file in a preview window, working out what its diff should be.
@@ -1275,6 +1422,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // file, while the window is opened with the path you actually clicked so
         // it can tell you when that was an alias.
         let url = requested.resolvingSymlinksInPath().standardizedFileURL
+        // Opened on purpose, from anywhere: ⌘P puts it first next time. Not a
+        // look through a list with the arrows (the preview tab).
+        // The real path, as ⌘P's folders are kept (`/private/tmp`, not `/tmp`).
+        if case .peek = placement {} else { RecentFiles.shared.record(GitWorktree.realPath(url.path)) }
         // Already open, in a tab or a window: bring it forward (or, dropped,
         // move it there) and do no git work whatsoever.
         if manager.selected?.workspace.region(of: .file(url.path)) != nil {
@@ -1345,7 +1496,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func presentPreview(_ url: URL, diff: PreviewDiffSource = .none,
                                 hasChanges: Bool = false, mode: PreviewMode? = nil,
                                 placement: FilePlacement? = nil, line: Int? = nil) {
-        let tab = previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode)
+        var mode = mode
+        var quiet = false
+        if case .peek(_, let generation)? = placement {
+            guard generation == peekGeneration else { return }
+            if let previous = gitPanel.peekTab?.filePath {
+                let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+                // Going through diffs, the next file opens on its diff too.
+                if mode == nil, previewTabs.mode(of: previous) == .diff { mode = .diff }
+                // The preview moving on is the same look, not a new one.
+                quiet = true
+                // The same file from the list's other side (staged, then
+                // not): the diff that row shows, in the same tab.
+                if previous == path, let shown = previewTabs.diffSource(of: path),
+                   !shown.showsSameSide(as: diff) {
+                    previewTabs.retarget(path, diff: diff, hasChanges: hasChanges)
+                }
+            }
+        }
+        let tab = previewTabs.tab(for: url, diff: diff, hasChanges: hasChanges, mode: mode, quiet: quiet)
         place(tab, placement ?? .home(elsewhere: Self.optionClicked))
         // Only for a tab that is there: a line kept for one that never opened
         // would land on the next, unrelated open of the file.
@@ -1356,8 +1525,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func place(_ tab: SideTab, _ placement: FilePlacement) {
         switch placement {
-        case .home(let elsewhere): gitPanel.openAtHome(tab, elsewhere: elsewhere)
+        case .home(let elsewhere):
+            gitPanel.openAtHome(tab, elsewhere: elsewhere)
+            // Opened on purpose: the preview tab showing it stays.
+            gitPanel.keep(tab)
         case .dropped(let region, let index): gitPanel.openDropped(tab, in: region, at: index)
+        case .peek(let list, let generation):
+            guard generation == peekGeneration else { return }
+            gitPanel.showPeek(tab, from: list)
+        }
+    }
+
+    /// The latest list request for the preview tab (`FilePlacement.peek`).
+    private var peekGeneration = 0
+
+    /// A list asking to show a file in the preview tab; the rules are
+    /// `WorkspaceTabs.peekAction`. The generation to show it with, or nil
+    /// when there is nothing to show. `diff` is the row's, from Changes: a
+    /// double-click on the previewed file's other side shows that side
+    /// rather than keeping the one on screen.
+    private func peeks(_ url: URL, _ trigger: PeekTrigger, diff: PreviewDiffSource? = nil,
+                       from list: SideTab) -> Int? {
+        peekGeneration += 1
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let tab = SideTab.file(path)
+        switch gitPanel.peekAction(for: tab, trigger, from: list) {
+        case .none:
+            return nil
+        case .show:
+            return peekGeneration
+        case .keep:
+            if let diff, let shown = previewTabs.diffSource(of: path), !shown.showsSameSide(as: diff) {
+                return peekGeneration
+            }
+            gitPanel.keep(tab)
+            gitPanel.openAtHome(tab)
+            return nil
+        case .close:
+            if let peek = gitPanel.peekTab { gitPanel.requestClose(peek) }
+            return nil
         }
     }
 
@@ -1397,6 +1603,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func newHomeSession(_ sender: Any?) {
         focusMainWindow()
         manager.newHomeSession(starting: .preferred)
+    }
+
+    /// ⌃⌥⌘N, New Terminal at Home: ⌥⌘N without the command Settings names, there
+    /// on the same condition as New Terminal.
+    @objc func newHomeTerminalSession(_ sender: Any?) {
+        focusMainWindow()
+        manager.newHomeSession(via: .terminal, starting: .plain)
     }
 
     @objc func newWorktreeSession(_ sender: Any?) {
@@ -1533,6 +1746,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// is flipped while working, as a Finder window's sorting is.
     @objc func toggleSortUnreadFirst(_ sender: Any?) {
         manager.sortUnreadFirst.toggle()
+    }
+
+    /// View ▸ Show Diff in Changes: the diff under the Changes list, or the
+    /// list on its own. The same switch as dragging the divider to the bottom.
+    @objc func toggleChangesDiff(_ sender: Any?) {
+        StoredFlag.changesDiff.value.toggle()
     }
 
     /// ⇧⌘L: a new browser in the row you're in.
@@ -1783,9 +2002,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private lazy var sessionSwitcher = SessionSwitcher(manager: manager) { [weak self] text in
-        self?.insertPrompt(text)
-    }
+    private lazy var sessionSwitcher: SessionSwitcher = {
+        // ⌘P's file list takes what the git panel already read rather than
+        // run git again for it.
+        FileIndexStore.shared.knownStatus = { [weak self] root in
+            self?.gitPanel.knownStatus(ofRoot: root)
+        }
+        return SessionSwitcher(
+            manager: manager,
+            insert: { [weak self] text in self?.insertPrompt(text) },
+            openFile: { [weak self] url, line, elsewhere in
+                // A submodule, or a tracked symlink to a folder, is one entry
+                // in git's list and a folder on disk: shown selected in the
+                // Finder, never opened, since opening a bundle (`.app`) runs it.
+                var isFolder: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.resolvingSymlinksInPath().path,
+                                                  isDirectory: &isFolder), isFolder.boolValue {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    return
+                }
+                self?.openPreview(url, placement: .home(elsewhere: elsewhere), line: line)
+            })
+    }()
 
     /// ⌘P: go to a session by name, folder, branch or directory.
     @objc func showSessionSwitcher(_ sender: Any?) {
@@ -2002,6 +2240,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleSortUnreadFirst(_:)) {
             menuItem.state = manager.sortUnreadFirst ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(toggleChangesDiff(_:)) {
+            menuItem.state = StoredFlag.changesDiff.value ? .on : .off
             return true
         }
         if menuItem.action == #selector(toggleSessionSidebar(_:)) {

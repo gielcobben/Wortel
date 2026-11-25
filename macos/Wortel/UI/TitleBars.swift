@@ -667,12 +667,14 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         sideBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         sideBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        sideBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
         sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
         // The main area's row.
         mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
         mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
         mainBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        mainBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
         mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
     }
 
@@ -728,7 +730,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             let symbol = ["md", "markdown"].contains(url.pathExtension.lowercased())
                 ? "doc.richtext" : "doc.text"
             return .init(tab: tab, title: url.lastPathComponent, symbol: symbol,
-                         detail: (path as NSString).abbreviatingWithTildeInPath)
+                         detail: (path as NSString).abbreviatingWithTildeInPath,
+                         isPreview: session?.peekTab == tab)
         case .browser(let id):
             // The page's title once it has one, where it is until then.
             let page = BrowserTabs.shared.existingPage(for: id)

@@ -63,6 +63,27 @@ plain terminal.
   setting once, when the row is made, and uses the mechanism `wortel new --`
   already had (`Session.startupInput`: the keeper types it before the shell
   has read a byte; a worktree session gets it once git is done).
+- **The start is kept under an empty page** (`StartCover`, in
+  `Sessions/StartCover.swift`, with its clock in `Ghostty/StartWatch.swift`).
+  `Session.ensureSurfaceView` asks for it for any session made with a line
+  that will run (one ending in a newline, so not `offerCommand`'s);
+  `GhosttyRuntime` grants it when the keeper has just forked the shell and
+  typed the line, and the login shell is zsh or bash. Before the first read,
+  `SurfaceView.coverStart` holds what is typed (`PtyHost.holdTyping`) and has
+  `KeptTerminalFeed` read the output for the start (`StartScanner`, on the
+  pty queue, events to the main thread). `SessionManager.refreshAgentActivity`
+  says when the marker shows the line is an agent, and the watch reads
+  the marker itself once before deciding there is none. Return is caught in
+  `keyDown` (`PtyHost.cutHeldTyping`). When the rule ends, typing is
+  released or dropped, `afterStart`'s waiters run (a paste, `wortel send`),
+  and `TerminalHostViewController` takes its page off. A terminal closed,
+  attached to again or left by its shell gives the start up
+  (`StartWatch.giveUp`). The
+  terminal is in the hierarchy and first responder the whole time. To watch
+  one: `log stream --level debug --predicate 'subsystem ==
+  "com.gielcobben.Wortel" && category == "session-start"'`. The rule, its
+  numbers and what was left out are in `../../../docs/decisions.md`
+  (Sessions, 2026-11-24).
 - **An agent headed for the home folder gets a folder of its own**
   (`ChatFolder`): `~/Wortel/<day>/<n>`, numbered from 1 each day, made when
   the row is made. Only for `.preferred` with a command set, and only when
@@ -87,19 +108,25 @@ plain terminal.
 - **New Terminal** (⌃⌘N) is hidden unless the field holds a command, in the
   Session menu (shown and hidden from `AppSettings.onNewSessionCommandChange`,
   as Restart to Update is by the updater), the sidebar's + menu and a
-  folder's menu.
+  folder's menu. **New Terminal at Home** (⌃⌥⌘N) is the same for ⌥⌘N, in the
+  Session menu and the sidebar's +.
 - **The menu at the field's end** holds the known agents this Mac has, and
   Terminal, which empties the field. It opens under the field at the field's
   width (`MenuAnchor`), and is absent until there is an agent to offer
   (`AgentDiscovery`): the login shell is run once when the window opens,
   whichever tab is in front and however often they are switched, off the
   main thread, with `command -v` between two sentinel lines so nothing its
-  startup files print can get in. It has four seconds, counted by the
+  startup files print can get in. The question adds `~/.local/bin` to that
+  shell's PATH first, as the shell integration does for a session, so what
+  runs in a session is what is listed. It has four seconds, counted by the
   discovery itself: the command runner waits for the shell's output to
   close, and a startup file that leaves something running keeps it open. If
   no answer comes, the usual install folders are scanned instead, and while
-  one shell is still out no second one is started. Nothing runs while the
-  window is closed. The names are `AgentCommands`, which a test holds
+  one shell is still out no second one is started. The same question is
+  asked at launch and when the permissions popover opens, only on a Mac
+  where no agent has been seen yet (`Permissions.lookForAgent`); there no
+  answer is left as no answer, and the folders are not taken for one.
+  Otherwise nothing runs while the window is closed. The names are `AgentCommands`, which a test holds
   against the shell integration's six copies of the same list.
 
 ## How it is built

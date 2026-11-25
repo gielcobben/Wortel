@@ -26,6 +26,9 @@ final class SideTabStrip: NSView {
         var pinned = false
         /// Where the tab is, for its hover card: a path, an address, a folder.
         var detail: String? = nil
+        /// The preview tab, which the next file looked at replaces: its title
+        /// is in italics, as in Xcode and VS Code.
+        var isPreview = false
     }
 
     enum DragPhase { case began, moved, ended, cancelled }
@@ -36,6 +39,8 @@ final class SideTabStrip: NSView {
     var onClose: (SideTab) -> Void = { _ in }
     var onCloseOthers: (SideTab) -> Void = { _ in }
     var onMove: (SideTab, TabRegion) -> Void = { _, _ in }
+    /// A tab double-clicked: the preview tab, kept.
+    var onKeep: (SideTab) -> Void = { _ in }
     /// A tab is being dragged; `point` is in window coordinates. The drag is
     /// resolved by whoever knows every strip and drop zone (TabDragController).
     var onDrag: (DragPhase, SideTab, NSView, NSPoint) -> Void = { _, _, _, _ in }
@@ -131,7 +136,7 @@ final class SideTabStrip: NSView {
         self.active = active
         for (view, item) in zip(tabViews, items) {
             view.configure(title: item.title, symbol: item.symbol, detail: item.detail,
-                           isActive: item.tab == active)
+                           isActive: item.tab == active, isPreview: item.isPreview)
         }
         // A divider between two quiet tabs only; the raised one is its own edge.
         for (index, view) in tabViews.enumerated() {
@@ -155,7 +160,8 @@ final class SideTabStrip: NSView {
     static func picture(of item: Item, in window: NSWindow) -> NSImage? {
         guard let host = window.contentView else { return nil }
         let view = SideTabView(tab: item.tab, pinned: item.pinned)
-        view.configure(title: item.title, symbol: item.symbol, detail: nil, isActive: true)
+        view.configure(title: item.title, symbol: item.symbol, detail: nil, isActive: true,
+                       isPreview: item.isPreview)
         let width = min(max(view.fittingWidth, minTabWidth), maxTabWidth)
         view.frame = NSRect(x: -10_000, y: 0, width: width, height: tabHeight)
         host.addSubview(view)
@@ -171,6 +177,7 @@ final class SideTabStrip: NSView {
         view.onClose = { [weak self] in self?.onClose(item.tab) }
         view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
         view.onMove = { [weak self] region in self?.onMove(item.tab, region) }
+        view.onKeep = { [weak self] in self?.onKeep(item.tab) }
         view.onDrag = { [weak self, weak view] phase, point in
             guard let self, let view else { return }
             self.onDrag(phase, item.tab, view, point)
@@ -400,6 +407,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
     var onClose: () -> Void = {}
     var onCloseOthers: () -> Void = {}
     var onMove: (TabRegion) -> Void = { _ in }
+    var onKeep: () -> Void = {}
     var onDrag: (SideTabStrip.DragPhase, NSPoint) -> Void = { _, _ in }
     var stripRegion: () -> TabRegion = { .side }
     var showsTrailingDivider = false {
@@ -428,7 +436,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
         icon.symbolConfiguration = Chrome.glyph
         icon.imageScaling = .scaleProportionallyDown
-        label.font = .systemFont(ofSize: 13)
+        label.font = Self.titleFont
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
         closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Tab")?
@@ -475,7 +483,13 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
     /// Only what changed: a row is updated whole whenever any tab in it
     /// changes, and a terminal's title changes often.
-    func configure(title: String, symbol: String, detail: String?, isActive: Bool) {
+    func configure(title: String, symbol: String, detail: String?, isActive: Bool,
+                   isPreview: Bool = false) {
+        if self.isPreview != isPreview {
+            self.isPreview = isPreview
+            label.font = isPreview ? Self.previewFont : Self.titleFont
+            titleWidth = 0
+        }
         if label.stringValue != title || titleWidth == 0 {
             label.stringValue = title
             measureTitle()
@@ -497,6 +511,11 @@ private final class SideTabView: NSControl, TabTitleProviding {
     }
 
     private var configured = false
+    private var isPreview = false
+
+    private static let titleFont = NSFont.systemFont(ofSize: 13)
+    /// The preview tab's title: the same face, slanted.
+    private static let previewFont = NSFontManager.shared.convert(titleFont, toHaveTrait: .italicFontMask)
 
     override func layout() {
         super.layout()
@@ -588,6 +607,8 @@ private final class SideTabView: NSControl, TabTitleProviding {
     override func mouseDown(with event: NSEvent) {
         TabHoverCard.shared.dismiss(self)
         onSelect()
+        // A double-click keeps the preview tab, as in Xcode and VS Code.
+        if event.clickCount == 2 { onKeep() }
         guard let window else { return }
         let start = event.locationInWindow
         var dragging = false

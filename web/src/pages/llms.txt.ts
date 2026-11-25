@@ -2,7 +2,7 @@
 // read in one fetch to decide what else to pull. It is deliberately NOT the
 // whole site; /llms-full.txt is. Both render from src/data/site.ts.
 import type { APIRoute } from 'astro';
-import { SITE, SECTIONS, FAQ, DOCS_SECTIONS } from '../data/site';
+import { SITE, SECTIONS, FAQ, DOCS_SECTIONS, DOWNLOAD_IS_DMG } from '../data/site';
 
 export const GET: APIRoute = () => {
   const abs = (p: string) => new URL(p, SITE.url).href;
@@ -58,8 +58,8 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 
 ## Download
 
-- [Download page](${abs('/download')}): the download for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later (one universal app for Apple silicon and Intel) and the three steps to install it.
-- [Latest signed build](${SITE.download}): a zip of Wortel.app; always the newest release.
+- [Download page](${abs('/download')}): the download for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later (one universal app for Apple silicon and Intel) and the four steps from the download to a running agent.
+- [Latest signed build](${SITE.download}): ${DOWNLOAD_IS_DMG ? 'a disk image (.dmg)' : 'a zip'} of Wortel.app; always the newest release.
 - [Sparkle appcast](${SITE.appcast}): the update feed, with version, release date and minimum macOS version.
 
 ## Changelog

@@ -54,6 +54,12 @@ enum WortelCommand: Codable, Equatable {
     /// same conversation continues there. `path` is absolute by the time it's
     /// sent; the app checks it exists.
     case changeDirectory(session: String?, path: String)
+    /// Close a session, the caller's: as its row's × does, once its agent's
+    /// turn has ended, and its worktree goes to the Trash even when it has
+    /// uncommitted files, if the person says yes to them
+    /// (`SessionManager.closeFromCommand`). No `--session`: ending another
+    /// session's work is not something to do by name from a script.
+    case close(session: String?)
     /// Every open session, described (`WortelSessionInfo`, as JSON in the
     /// reply's `value`). `caller` is the asking shell's `$WORTEL_SESSION_ID`,
     /// so the list can say which row is "you".
@@ -91,6 +97,7 @@ enum WortelCommand: Codable, Equatable {
         case .mark: return "mark"
         case .remind: return "remind"
         case .changeDirectory: return "cd"
+        case .close: return "close"
         case .list: return "list"
         case .read: return "read"
         case .send: return "send"
@@ -159,7 +166,8 @@ enum WortelCLI {
     static let answerTimeout: TimeInterval = 10
     /// How long the app holds a `send` for its terminal to take a paste (a
     /// session just warmed, its surface still waiting for the keeper's
-    /// snapshot; `SurfaceView.whenPasteReachesProgram`). Past
+    /// snapshot, or a session just made whose program is still starting
+    /// under its page; `SurfaceView.whenPasteReachesProgram`). Past
     /// it, the app says so and types **nothing**. It has to end well inside
     /// `answerTimeout`, `send --enter`'s Return included: an app that typed
     /// after the CLI had already reported a failure made a script that
@@ -305,6 +313,9 @@ enum WortelCommandParser {
           cd <dir>                 move this session to another directory: its
                                    agent quits when its turn ends and continues
                                    the same conversation there
+          close                    close this session when its agent's turn ends;
+                                   its worktree goes to the Trash, after asking
+                                   you if it has uncommitted files
 
           list [--json]            the open sessions: id, name, state, agent,
                                    branch and directory
@@ -544,6 +555,10 @@ enum WortelCommandParser {
             // Against the caller's directory, which for an agent is where its
             // own shell tool stands: `cd ../site && wortel cd .` means the site.
             return .changeDirectory(session: session, path: absolute(path, from: currentDirectory))
+
+        case "close":
+            if let extra = rest.first { throw ParseError.unexpected(extra, verb) }
+            return .close(session: session)
 
         default:
             throw ParseError.unknown(verb)

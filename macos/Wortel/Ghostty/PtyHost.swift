@@ -27,7 +27,8 @@ import os
 
 /// Something that wants a copy of the bytes the terminal sends the program.
 /// Each `feed` is one whole write: one key press, one reply to a query, one
-/// part of a paste, never a sequence cut in two (see `TypedLineBuilder`).
+/// part of a paste. A sequence is normally whole in its write, though not
+/// always: `TypedLineBuilder` says how it copes with one cut in two.
 protocol PtyInputListener: AnyObject, Sendable {
     func feed(_ bytes: UnsafePointer<UInt8>, count: Int)
 }
@@ -483,7 +484,76 @@ final class PtyHost: @unchecked Sendable {
 
     // MARK: - The two directions
 
-    /// What the user typed.
+    /// What the user typed: to the pty, or kept while typing is held
+    /// (`holdTyping`).
+    func write(_ bytes: UnsafePointer<UInt8>, count: Int) {
+        let held = typingHold.withLock { hold -> Bool in
+            guard hold != nil else { return false }
+            let room = Self.heldTypingLimit - hold!.reduce(0) { $0 + $1.count }
+            // Past the limit nothing more is kept, so what is handed over
+            // ends where it stopped fitting instead of having a hole in it:
+            // the same mark a held Return leaves.
+            hold!.append(count <= room ? Array(UnsafeBufferPointer(start: bytes, count: count)) : Self.heldReturn)
+            return true
+        }
+        if held { return }
+        type(bytes, count: count)
+    }
+
+    /// Keep what is typed from here on instead of writing it, until
+    /// `releaseTyping`: for a session whose program is still starting
+    /// (`StartCover`), where a key would reach the shell, or a terminal still
+    /// in the shell's line mode, instead of the program it was meant for.
+    /// Each write is kept whole, as the prompt tap needs them.
+    func holdTyping() {
+        typingHold.withLock { if $0 == nil { $0 = [] } }
+    }
+
+    /// Return was pressed while typing is held: nothing from here on is
+    /// handed over (`releaseTyping`). For the key itself, whatever it would
+    /// have been encoded as: a program that has just asked for the kitty
+    /// keyboard protocol is sent `CSI 13 u` for it, not a carriage return.
+    func cutHeldTyping() {
+        typingHold.withLock { $0?.append(Self.heldReturn) }
+    }
+
+    /// Stop holding. `deliver` types what was held, in order, as if typed
+    /// now; otherwise it is dropped. Does nothing when nothing is held.
+    ///
+    /// **A Return that was held is never typed, nor anything after it.** It
+    /// was pressed at a screen nobody had seen, and what a program shows
+    /// first is not always its prompt: a folder to trust, an update to
+    /// install, each with Return as yes. Codex put its update question up a
+    /// quarter second after its first frame (measured 2026-11-24, 0.170), so
+    /// a line typed blind and sent would have installed it. The text is left
+    /// in the program's input, where it can be read before it is sent.
+    func releaseTyping(deliver: Bool) {
+        // Written under the lock, so a key pressed in this instant waits its
+        // turn behind the ones held instead of overtaking them.
+        typingHold.withLock { hold in
+            let writes = hold ?? []
+            hold = nil
+            guard deliver else { return }
+            for bytes in writes.prefix(while: { $0 != Self.heldReturn }) {
+                bytes.withUnsafeBufferPointer { raw in
+                    if let base = raw.baseAddress { type(base, count: raw.count) }
+                }
+            }
+        }
+    }
+
+    /// Return, as a terminal that was asked for nothing sends it, which is
+    /// what one whose program is still starting is.
+    private static let heldReturn: [UInt8] = [0x0D]
+
+    /// What is typed while held, a write each; nil when not holding.
+    private let typingHold = OSAllocatedUnfairLock<[[UInt8]]?>(initialState: nil)
+
+    /// The most that is held. A hold lasts seconds, so this is a paste gone
+    /// wrong; what is past it is dropped rather than kept without bound.
+    private static let heldTypingLimit = 64 * 1024
+
+    /// Write what was typed to the pty.
     ///
     /// The descriptor is taken under the lock rather than read from a bare
     /// field, which is what makes it a defined value here at all. What that
@@ -495,7 +565,7 @@ final class PtyHost: @unchecked Sendable {
     /// *that* window needs the descriptor reference-counted rather than closed
     /// outright. Deliberately not done: it would put a retain/release on the
     /// keystroke path to fix a race no one has hit.
-    func write(_ bytes: UnsafePointer<UInt8>, count: Int) {
+    private func type(_ bytes: UnsafePointer<UInt8>, count: Int) {
         if let tap = tap.withLock({ $0 }) { tap.feed(bytes, count: count) }
         let master = shared.withLock { $0.typing >= 0 ? $0.typing : $0.master }
         guard master >= 0 else { return }

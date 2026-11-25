@@ -17,6 +17,9 @@ reason — this is the feature most likely to grow teeth:
 > No project search. No splits. No tabs within a document. No file management.
 > One window per file, opened from where you already were.
 
+"No project search" is searching inside files. Going to a file by its name
+is ⌘P (since 2026-11-24): it is how you open one from where you already are.
+
 Editing is deliberately out of scope for now. If it ever arrives it is ⌘S and
 nothing else, gated behind a modification check so it can never clobber an agent
 mid-run.
@@ -30,7 +33,8 @@ open in the main area, where there's room to read, until you drag one to
 another row (or onto one, out of a list or as a preview window docking), and
 then where you put it. The rules below still hold,
 tab for window: opening a file that already has a tab brings that tab forward,
-one tab per file, and no tab ever changes its file under you. A tab's header has
+one tab per file, and no tab ever changes its file under you, except the
+preview tab, whose italic title says it will (see Behaviour). A tab's header has
 the mode control, "Open in <the file's app>" (at the selected line, else the
 top of the view; editing stays out of the preview, so this is the way to it)
 and "Open in Window" for when a file deserves a window of its
@@ -49,6 +53,16 @@ An earlier version had the window *follow* your selection, with a pin to stop it
 following — Xcode's preview-tab rule. It was tried and removed: two gestures made
 three states, and "why did this window change under me" is a question a preview
 should never provoke. The plan argued for it; using it settled it.
+
+**The preview tab (2026-11-24)** brings the idea back in the form editors
+use. While a file is in front where files show, a click or ↑/↓ in Changes or
+Files shows the picked file in one tab with an italic title, which the next
+file replaces; Space or a double-click opens it from the terminal, and Space
+closes it again. A double-click on the file it already shows (in the list or
+on the italic tab), dragging it, or Open in the row's menu keeps it as an
+ordinary tab, as in VS Code. It never comes up over a terminal by itself, and the italic
+title is the answer to "why did this change": that tab is the one that does.
+The rules are `WorkspaceTabs.showPeek`, `keep` and `showsFile(in:)`.
 
 **Modes: Source · Diff · Rendered**, plus images and anything else Quick Look
 handles. The mode is inferred once, when the window opens — a file with changes

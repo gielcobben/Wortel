@@ -140,7 +140,9 @@ Archives are worktree sessions only, so `session_archived` and
 `session_unarchived` carry nothing, and so does `reminder_set`: when a
 reminder is for says something about the person's day. `agent_started` is a run the person
 started: the agents alive at launch and the resumes Wortel types itself are
-`agents_resumed` instead.
+`agents_resumed` instead. `agent_outdated` is the warning triangle: an agent
+that can report its state ran in a version too old to, which one from the
+fixed list, once per run that stays silent (`SessionManager.watchForSilence`).
 
 ## Launch cost
 

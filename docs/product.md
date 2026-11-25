@@ -124,8 +124,9 @@ Ask these before building, and say the answers when you propose it.
 5. **Is there already a Mac way to do it?** Use that one.
 6. **Is it another way to do something there is already a way to do?** Starting
    a session has four ways in and only four. Seven was more than anyone kept
-   apart. (New Terminal is ⌘N without the command Settings names, and is
-   only there while it names one.)
+   apart. (New Terminal is ⌘N without the command Settings names, New
+   Terminal at Home is ⌥⌘N without it, and both are only there while it
+   names one.)
 7. **If it is wrong, what is lost?** Design it so the wrong answer keeps the
    work: archive, Trash, "unknown counts as running".
 8. **Can it be taken out again?** Things get tried here. Build it so removing

@@ -245,6 +245,34 @@ is still running when it quits stops. A relative `<dir>` is read from where the
 command was run. `wortel cd .` (the folder it is in) calls off a move that is
 still waiting.
 
+### `wortel close`
+
+Closes the session it was run in, the way its row's × does, and removes its
+worktree. Meant for the agent: tell it "we're done, delete this worktree" and
+it runs this instead of `git worktree remove`, which it can't do from inside
+the folder anyway. The skill Wortel installs tells Claude Code to.
+
+Nothing happens at once. When the agent's turn ends, the session closes and
+its worktree goes to the Trash, with its branch if Wortel made it and nothing
+on it is unique. Where closing the row keeps a worktree with uncommitted or
+untracked files, this one asks you, straight away, on the session's window:
+**Move to Trash** takes them with it (they are in the Trash if you want them
+back), **Keep Worktree** archives the session as a click does. A worktree
+another tool made, one that's locked, or one another session is in is never
+removed; the session is archived and ⌘P brings it back. If the worktree is
+kept when you said to trash it (a new file appeared after you answered), a
+sheet says why.
+
+```sh
+wortel close
+```
+
+Anything else still running in the session (a dev server) gets the same
+question closing it by hand does. In a session that isn't in a worktree it
+only closes the session. If the turn doesn't end within an hour, the session
+gets a red dot and stays open. No `--session`: it closes the session it was
+run in, and nothing else.
+
 ## Reaching other sessions
 
 The commands above act on the session they're run in. These four act on any
@@ -342,6 +370,13 @@ the way you would. `--stdin` reads the text from standard input and drops one
 trailing newline, as `$(...)` does. The session is not selected and nothing
 takes focus, so you can keep typing where you are. Sending to the session you're
 in works too. Up to 256 KB at a time.
+
+A `send` to a session that was just made with a command (`wortel new --
+claude`) waits for that command's program to have its interface up, so the
+text arrives as one paste. It gives up after five seconds, typing nothing.
+With `--enter`, the Return lands on whatever the program shows first, which
+for an agent is sometimes a question (trust this folder, install an update)
+rather than its prompt. When that matters, `wait --idle` and `read` first.
 
 A session whose agent has been idle for an hour may have had it put to sleep.
 `list` still names the agent, and selecting the session brings it back. `send`

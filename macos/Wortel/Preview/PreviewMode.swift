@@ -113,6 +113,17 @@ enum PreviewMode: String, CaseIterable, Identifiable, Sendable {
 /// the list you clicked in. The tree and a ⌘-clicked path have no such notion,
 /// and there the question you're actually asking is "what's different from the
 /// last commit".
+extension PreviewDiffSource {
+    /// Whether two sources show the same diff of a file for the person
+    /// reading it: only a Changes row's side (staged or not) tells them
+    /// apart. A status code moving, or the same file reached from Files,
+    /// is the same diff on screen.
+    func showsSameSide(as other: PreviewDiffSource) -> Bool {
+        if case .change(_, let a) = self, case .change(_, let b) = other { return a.staged == b.staged }
+        return true
+    }
+}
+
 enum PreviewDiffSource: Equatable {
     case none
     /// Everything since HEAD for one path. `untracked` because git can't diff a

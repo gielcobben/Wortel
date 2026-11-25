@@ -98,6 +98,48 @@ there, in a shell of its own that never reports a cwd). The regex keeps a senten
   control, zero-width, bidirectional or line-separating characters, or with
   no scheme or host, does nothing.
 
+**A link an agent broke over several rows** (`TerminalLinkWrap.swift`). An
+agent's renderer wraps its own text, so a long path or URL reaches the
+terminal as rows with a real line break and an indent between them, and
+libghostty matches in the clicked row only (it does follow a line it wrapped
+itself). Half a path existed nowhere, and a first half with no dot matched
+nothing at all, so no OPEN_URL came. So a ⌘-click (press and release on one
+cell) reads its row and four either side at the release, before libghostty
+handles it (`SurfaceView.linkClick(at:)`, `pendingLinkClick`). OPEN_URL takes
+the rows with the link (`SurfaceView.openLink`); when it found none, a check
+queued after the release still has them, and asks with no link.
+`SessionManager.openLink` then tries, unless the link is an OSC 8 one (whole
+as the program tagged it):
+
+- **An address put back together** (`wrappedURL`): the run of address
+  characters under the click, followed into the next row's first run and the
+  previous row's last, past an indent or an agent's frame (`│`, `⎿`, `▌`). A
+  row is only followed when it was full, its text within 3 cells of the edge
+  (Claude Code breaks a long address right at its edge; every row recorded
+  ended within two), and not past a comma or into a row starting an address
+  of its own. This is the only guess here: nothing on disk says yes.
+- **A path put back together** (`wrappedPaths`): the same runs, every join of
+  up to four rows each way, longest first, and the first that
+  `TerminalLink.resolveFirst` finds on disk opens (the repository's folders
+  listed once per click, not once per join). A join that exists nowhere falls
+  back to libghostty's match, so a whole path with the sentence going on below
+  it opens as before, and a click libghostty found nothing under opens only a
+  join that exists.
+
+When libghostty matched a path, the path is tried first (its joins, then the
+match), and an address only after nothing on disk answered: a file named
+below an address that ends its row is the file, not the address with its
+name glued on. Otherwise the address is tried first. Only a single click
+counts (a double-click would open it twice), and a ⌘-press that leaves its
+cell is a selection, even when it comes back.
+
+Claude Code and Codex tag their prose links with one OSC 8 hyperlink across
+the rows, and libghostty opens the whole address from either, so those never
+needed this; what does is their paths, and Claude Code's tool-call header,
+approval box and echoed prompt (recorded 2026-11-24, Claude Code 2.1.331,
+Codex 0.172). On ⌘-hover, a half libghostty doesn't match shows no underline
+or hand, though the click opens it: the hover is libghostty's.
+
 **Open in the file's app** (`Wortel/Preview/ExternalEditor.swift`), the
 header button of a preview tab and window. No setting: the
 app is the file's default, and Wortel adds the line (the selected one, else
@@ -110,8 +152,9 @@ terminal, Python Launcher, the Installer) is only as good as the apps
 somebody thought of. A deleted row's line is
 taken from the row after it: the editor opens the file as it is now.
 
-**Previews** (`Wortel/Preview/`) — double-click a file (the tree, a Changes
-row, a file in a commit) or ⌘-click a path in the terminal and it opens as a
+**Previews** (`Wortel/Preview/`) — double-click a file (the tree or a Changes
+row open it in the preview tab, see `workspace-tabs.md`; a file in a commit,
+Open in a row's menu) or ⌘-click a path in the terminal and it opens as a
 **tab** (`SideTab.file`, `PreviewTabs`) in the main area (or wherever you
 last dragged one, per session; ⌥ for the other place), or comes forward where
 it already is: Source, Diff or Rendered Markdown, plus Quick Look for anything
@@ -126,3 +169,46 @@ its inode; stat before reading; keep the last good content), and that **previews
 are accessories** — they close with the main window and are not restored, so
 quitting stays what it was. They are also why the inspector no longer shares its
 column with anything.
+
+**⌘P's files** (`FileIndex`, `FileMatch`, `FileListing`, `FileIndexStore`,
+`FileSearch`) — go to a file by name, in the session's repository, or its
+folder outside one (`manager.branchSource()`, as ⌘Y). The decision and its
+numbers are in `../docs/decisions.md` (2026-11-24).
+
+- **Where the list comes from.** In a repository, `GitService.trackedFiles`
+  (`ls-files -z`, the index, no walk) plus the untracked files: the git
+  panel's current status when it has one (`GitPanelModel.knownStatus`),
+  else `GitService.untrackedFiles`, once, behind `backgroundScans`. Outside
+  one, `FileListing.walk`: Zed's rules (five levels, VCS folders and
+  `node_modules` skipped, no symlinked folders, one volume, a 200k cap that
+  titles the section "part of this folder"), readdir with `d_type` on every
+  core, repositories inside handed to git. `FileListing.mayWalk` refuses `/`,
+  home and anything above it, and a volume's top.
+- **The index is immutable.** One byte buffer, offsets, file-name starts and
+  a letter mask per path, in byte order so a folder's contents are one range.
+  An update builds a new one off the main thread (`FileIndexStore.rebuild`)
+  and swaps it in; a search on the old one is never disturbed.
+- **Kept current** by a `GitRepoWatcher` with the paths-and-flags callback:
+  `.git` (or a linked worktree's gitdir) re-reads `ls-files` when the index
+  file's size or date moved; a changed folder is re-read by itself
+  (`FileIndexStore.difference`), new files go through `check-ignore`, a new
+  folder through `ls-files --others` on it alone; dropped events rescan the
+  untracked files under them. A walked folder is walked again. Four folders
+  kept at most, each let go (and its watch ended) 30 minutes after its last
+  search, checked every five minutes; nothing is built until ⌘P opens.
+- **What the watch leaves alone.** A folder git ignores is asked about once
+  and its events dropped from then on; events keep coming from a dev
+  server's cache, so an update put off past a second runs anyway. A
+  repository, submodule or worktree inside the checkout is its own (git
+  fails a whole `check-ignore` for one path in a submodule), and a
+  `check-ignore` with no answer adds nothing rather than everything. The
+  re-read folder is compared with git's list skipping only `.git`, with any
+  symlink a file, since git tracks those as entries.
+- **Ranking** (`FileMatch`): fzf v2's dynamic programme over bytes, a word
+  found in the file name a tier above one found only across the path, a
+  shorter name first among names, then small boosts for files changed here
+  (the panel's status) and files opened lately (`RecentFiles`, a ten-day
+  half-life), then the shorter path. One or two letters score file names
+  only. A query that extends the last one searches only its survivors; every
+  key cancels the ranking before it. `FileMatchTests` pins the order on real
+  Linux paths.

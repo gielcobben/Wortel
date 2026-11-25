@@ -81,7 +81,8 @@ every one a glob matches.
   `GhosttyKit/`: `ghostty.ref` (the Ghostty commit), `spm.ref` (the
   libghostty-spm commit whose build scripts and patch stack are used),
   `zig.version`, and `Patches/` (Wortel's own, applied after libghostty-spm's;
-  `0100` adds the snapshot restore). Two libraries come out of the one patched
+  `0100` adds the snapshot restore, `0101` the `system-mono` font family
+  that `wortel.conf` names). Two libraries come out of the one patched
   tree: GhosttyKit for the app, libghostty-vt for the keeper and the tests, and
   they must, since the snapshots they pass are only defined within one commit.
   Never link both into one binary: they share C dependencies. A build is

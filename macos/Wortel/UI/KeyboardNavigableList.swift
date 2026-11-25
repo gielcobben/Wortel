@@ -26,6 +26,9 @@ struct KeyboardNavigableList: ViewModifier {
     /// the terminal's own claim on it only applies while the terminal is what has
     /// focus, which it isn't when this list does.
     let selectAll: (() -> Void)?
+    /// Space, as in Finder: the selected file in the preview tab, or the
+    /// preview closed when it's what is in front.
+    let space: (() -> Void)?
 
     func body(content: Content) -> some View {
         content
@@ -39,6 +42,11 @@ struct KeyboardNavigableList: ViewModifier {
                 } else {
                     move(delta)
                 }
+                return .handled
+            }
+            .onKeyPress(keys: [.space]) { press in
+                guard press.modifiers.isEmpty, let space else { return .ignored }
+                space()
                 return .handled
             }
             .onKeyPress(keys: ["a"]) { press in
@@ -63,9 +71,11 @@ extension View {
         focused: FocusState<Bool>.Binding,
         move: @escaping (Int) -> Void,
         extendMove: ((Int) -> Void)? = nil,
-        selectAll: (() -> Void)? = nil
+        selectAll: (() -> Void)? = nil,
+        space: (() -> Void)? = nil
     ) -> some View {
         modifier(KeyboardNavigableList(
-            focused: focused, move: move, extendMove: extendMove, selectAll: selectAll))
+            focused: focused, move: move, extendMove: extendMove, selectAll: selectAll,
+            space: space))
     }
 }

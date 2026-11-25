@@ -131,6 +131,9 @@ final class Session: Identifiable {
     /// Where each recently opened tab came from: `WorkspaceTabs.openers`. Not
     /// persisted.
     @ObservationIgnored var tabOpeners: [SideTab: SideTab] = [:]
+    /// The preview tab, whose title is italic: `WorkspaceTabs.peek`. Observed
+    /// for that title; not persisted.
+    var peekTab: SideTab?
 
     /// Every terminal tab id the session holds, wherever it sits.
     var terminalTabIDs: [UUID] { workspace.terminalIDs }
@@ -144,7 +147,7 @@ final class Session: Identifiable {
                           side: sideTabs, activeSide: activeSideTab, sideVisible: gitPanelVisible,
                           bottom: bottomTabs, activeBottom: activeBottomTab,
                           bottomVisible: bottomVisible, closed: closedTabs, habits: tabHabits,
-                          openers: tabOpeners)
+                          openers: tabOpeners, peek: peekTab)
         }
         set {
             if mainTabs != newValue.main { mainTabs = newValue.main }
@@ -158,6 +161,7 @@ final class Session: Identifiable {
             closedTabs = newValue.closed
             tabHabits = newValue.habits
             tabOpeners = newValue.openers
+            if peekTab != newValue.peek { peekTab = newValue.peek }
         }
     }
     /// Full title reported by the shell (user@host:cwd, or the running
@@ -384,6 +388,9 @@ final class Session: Identifiable {
     /// "macos" or "src" under its name said where the prompt was, not which
     /// checkout. nil outside a worktree.
     var worktreeLabel: String? {
+        // Still waiting on git: the branch it asked for, so a row that will
+        // be two lines is two lines while it prepares too.
+        if preparation != nil { return worktreeBranch }
         guard isInWorktree else { return nil }
         if let worktreeBranch { return worktreeBranch }
         return (GitWorktree.checkout(containing: cwd) ?? linkedCheckout?.root)
@@ -401,8 +408,10 @@ final class Session: Identifiable {
     var isInWorktree: Bool { isInOwnWorktree || linkedCheckout != nil }
 
     /// A worktree session shows its branch under the name, unless the name
-    /// *is* the branch, which is what a fresh one is called until an agent or
-    /// the model says what it's for. Drives the row's two-line layout.
+    /// *is* the branch, which is what a fresh shell in one is called until the
+    /// model says what it's for (one started with an agent is called for the
+    /// agent instead, so it is two lines from the start). Drives the row's
+    /// two-line layout.
     var showsBranchLine: Bool {
         guard let label = worktreeLabel else { return false }
         // Against the branch's leaf, because that is what the name is made of.
@@ -454,7 +463,15 @@ final class Session: Identifiable {
         if let surfaceView { return surfaceView }
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd,
                                sessionID: id, initialInput: pendingResumeInput ?? startupInput,
-                               environment: shellEnvironment, isSessionTerminal: true)
+                               environment: shellEnvironment, isSessionTerminal: true,
+                               // A session made with a line to run opens on an
+                               // empty page until that line's program is up
+                               // (`StartCover`). Not a resume: it comes back
+                               // to a screen that is already there to read.
+                               // And not a line left on the prompt unsent
+                               // (`SessionManager.offerCommand`): nothing
+                               // starts until the person presses Return.
+                               coversStart: pendingResumeInput == nil && startupInput?.hasSuffix("\n") == true)
         if startupInput != nil, pendingResumeInput == nil { startupInputDropped = view.initialInputDropped }
         startupInput = nil
         // Typed, not settled: still owed until the agent shows up running,

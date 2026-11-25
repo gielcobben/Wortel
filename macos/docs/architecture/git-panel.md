@@ -8,7 +8,9 @@ diff, commit box) and a read-only History pane (commit list, graph gutter,
 diff), both driven by `GitRepoModel` off the `git` CLI (`GitService`). The
 commit box can be turned off in Settings (`AppSettings.showsCommitBox`); the
 bar under the diff then appears only to show a git error, since that notice is
-the one place a failed fetch, pull or push is reported. Its
+the one place a failed fetch, pull or push is reported. The diff can be
+hidden (View ▸ Show Diff in Changes, or its divider dragged to the bottom:
+`StoredFlag.changesDiff`), and while it is, no diff is loaded. Its
 design is dominated by one rule: **cost must track the window on screen, not the
 size of the repo**, because the terminal beside it has to stay smooth on a
 monorepo. Four things follow from that, each of which looks like a pointless
@@ -32,6 +34,24 @@ synthetic; `WortelTests` pins all of them):
 - **Parsing happens off the main actor, and diffs are capped** (`DiffParser`).
   `GitRepoModel` is `@MainActor`, so parsing a regenerated lock file's 51MB
   patch there froze the app — terminal included — for 1.2s.
+
+**Git is only started on a Mac that has one** (`DeveloperTools`). On a new
+Mac `/usr/bin/git` is a stub that raises macOS's "install the command line
+developer tools" dialog, and Wortel runs git without being asked. So
+`GitService.run` and `runData` first read from the disk whether a developer
+directory with a git exists, the way `xcode-select` resolves one (the
+selection link if there is one, else Xcode in Applications, else the command
+line tools). A yes is kept for the run; a no is read again each time, so git
+works the moment an install finishes. While it is missing a command fails
+with a sentence and no process, the two panes say "Git is not installed" with
+an Install… button (`xcode-select --install`, Apple's installer), and the
+permissions popover lists it (`Permissions.developerTools`, read again
+whenever Wortel comes to the front, which is also when the pane asks about
+its folder again). A selection link that points at a developer directory
+which is gone, with Apple's tools still on the disk, is its own answer
+(`Git.misdirected`): the panes say "Git cannot run", and the button is Fix,
+which types `sudo xcode-select --reset` on a prompt
+(`SessionManager.offerCommand`) because the installer has nothing to install.
 
 `refresh()` runs one `git status` at a time (it's a full worktree walk; the
 FSEvents watcher fires on every write, and bursts used to stack scans), and

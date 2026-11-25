@@ -359,7 +359,7 @@ final class GhosttyRuntime {
     func newSurface(view: SurfaceView, workingDirectory: String? = nil,
                     sessionID: UUID? = nil, initialInput: String? = nil,
                     environment: [String: String] = [:],
-                    fontSize: Float = 0) -> ghostty_surface_t? {
+                    fontSize: Float = 0, coversStart: Bool = false) -> ghostty_surface_t? {
         var cfg = ghostty_surface_config_new()
         cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
         cfg.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
@@ -379,6 +379,12 @@ final class GhosttyRuntime {
             return UnsafePointer(p)
         }
         defer { allocations.forEach { free($0) } }
+
+        // Claude Code in its fullscreen renderer unless the person chose one
+        // (`ClaudeRenderer`). Into `environment`, which both the keeper's
+        // spawn and the exec backend below add to the shell's. The session's
+        // own block wins, though it never sets this.
+        let environment = environment.merging(ClaudeRenderer.forNewShell()) { session, _ in session }
 
         if let workingDirectory { cfg.working_directory = dup(workingDirectory) }
         // Auto-run a resume command (e.g. "claude --continue") in a restored
@@ -472,8 +478,13 @@ final class GhosttyRuntime {
             // nothing; then libghostty types it into the fresh shell, as it
             // did before the keeper could. A survived shell never gets it here.
             if attachment.resumed || attachment.inputDelivered { cfg.initial_input = nil }
+            // Covered only when the keeper has just forked the shell and typed
+            // the line into it: a shell that was already there has its screen
+            // to show, and a line nobody typed has nothing to wait for.
+            let covers = coversStart && initialInput != nil && !attachment.resumed
+                && attachment.inputDelivered && Self.shellMarksItsCommands
             return keeperTerminalSurface(view: view, config: &cfg, attachment: attachment,
-                                         keeper: keeper, resumeAgain: resumeAgain)
+                                         keeper: keeper, resumeAgain: resumeAgain, coversStart: covers)
         }
 
         return newExecSurface(config: &cfg, environment: &envVars)
@@ -504,7 +515,8 @@ final class GhosttyRuntime {
     /// pty and its own terminal at one point in the stream.
     private func keeperTerminalSurface(
         view: SurfaceView, config cfg: inout ghostty_surface_config_s,
-        attachment: KeeperConnection.Attachment, keeper: KeeperConnection, resumeAgain: String?
+        attachment: KeeperConnection.Attachment, keeper: KeeperConnection, resumeAgain: String?,
+        coversStart: Bool = false
     ) -> ghostty_surface_t? {
         let session = attachment.session
         let pty = PtyHost(channel: attachment.descriptor, typing: attachment.typingDescriptor)
@@ -548,6 +560,10 @@ final class GhosttyRuntime {
         pty.onHangup = { [weak view, weak pty] in
             DispatchQueue.main.async {
                 guard let view, let pty, view.ptyHost === pty else { return }
+                // A shell that ended under a start's page has said why on
+                // the screen (a broken startup file): shown now, not when
+                // the wait for its first line runs out.
+                view.giveUpStart()
                 if GhosttyRuntime.keeper?.running().contains(where: { $0.session == session.uuidString }) == true {
                     KeeperLog.log.error("session \(session.uuidString, privacy: .public): its channel ended while it runs; attaching again")
                     view.restartShell(workingDirectory: view.pwd, sessionID: session, initialInput: nil,
@@ -572,6 +588,9 @@ final class GhosttyRuntime {
                 }
             }
         }
+        // Before the first read, so the watch misses nothing the shell says
+        // and no key gets past the hold.
+        if coversStart { view.coverStart(pty: pty, feed: feed, session: session) }
         pty.beginReading()
         return surface
     }
@@ -623,6 +642,18 @@ final class GhosttyRuntime {
     /// emits OSC 133 command marks, writes the agent marker files, reports the
     /// cwd and puts `wortel` on PATH, so a session without it silently stops
     /// driving busy detection, the attention system and agent resume.
+    /// Whether the login shell says when it starts and ends a command
+    /// (`OSC 133`, from the bundled integration), which is all a covered
+    /// start has to go on (`StartCover`). zsh and bash, where that has been
+    /// seen working; fish has an integration too, and joins them when its
+    /// marks have been checked on a Mac that has it.
+    private static var shellMarksItsCommands: Bool {
+        switch ShellSpawn.Shell(path: ShellSpawn.loginShell()) {
+        case .zsh, .bash: return true
+        case .fish, .other: return false
+        }
+    }
+
     private static func shellPlan(sessionID: UUID?, environment: [String: String] = [:]) -> ShellSpawn.Plan {
         let resources = Bundle.main.resourceURL
         var extra = environment
@@ -998,13 +1029,17 @@ final class GhosttyRuntime {
             // no longer a way to have libghostty open it: since its
             // `f9e8ef02d` its macOS fallback refuses both kinds a click
             // produces (`unknown`, `osc8`) and opens nothing, which is how
-            // every web link went dead in 2026.47.4.
+            // every web link went dead in 2026.47.4. An OSC 8 link is whole
+            // as the program tagged it; a matched one is from the clicked row
+            // only, and may be half of what an agent broke over two
+            // (`SurfaceView.openLink`, `TerminalLinkWrap`).
             guard let view = surfaceView(fromTarget: target) else { return false }
             let open = action.action.open_url
             let ptr = open.url
             // The bytes aren't guaranteed NUL-terminated; `len` is authoritative.
             let link = String(decoding: Data(bytes: ptr, count: Int(open.len)), as: UTF8.self)
-            DispatchQueue.main.async { view.onOpenLink?(link) }
+            let tagged = open.kind == GHOSTTY_ACTION_OPEN_URL_KIND_OSC8
+            DispatchQueue.main.async { view.openLink(link, tagged: tagged) }
             return true
 
         default:

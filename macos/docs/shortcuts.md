@@ -31,6 +31,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | New session | ⌘N | Codex, Claude, cmux |
 | New terminal (only while Settings names a command for new sessions) | ⌃⌘N | |
 | New session at home | ⌥⌘N | |
+| New terminal at home (on the same condition as New terminal) | ⌃⌥⌘N | |
 | New worktree session | ⌥⇧⌘N | |
 | Open folder | ⌘O | Codex, cmux, every Mac app |
 | Close session | ⇧⌘W | iTerm, Ghostty, Warp, VS Code (close window) |
@@ -38,7 +39,7 @@ Sessions take the keys Codex and cmux give their chats and workspaces.
 | Back / forward through the sessions you've been on | ⌃⌘[ / ⌃⌘] | Safari, Chrome (⌘[ / ⌘], with ⌃ added because those are the areas here) |
 | Session 1 to 9 | ⌘1 to ⌘9 | Codex, cmux |
 | Next waiting session | ⌥⇧⌘↓ (also ⌥⌘]) | Slack (⌥⇧↓, the next unread) |
-| Go to a session, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
+| Go to a session or a file, or run any command | ⌘P | VS Code, Cursor, Zed (quick open) |
 | Run a command (the palette, commands only) | ⇧⌘P | VS Code (command palette) |
 | Find a prompt you typed to an agent, and type it in again | ⌘Y | Safari, Chrome (History) |
 | Rename session | ⌥⌘R | Codex |
@@ -99,8 +100,12 @@ Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 | Show Files | ⌃⌘3 (also ⇧⌘E, ⌥⌘E) | VS Code, Cursor, Zed, Codex (⇧⌘E) |
 | Source control, on the pane you used last | ⌃⇧G (also ⌥⌘G) | VS Code, Cursor, Zed, Codex |
 | Focus the list | ⌥⌘L | |
+| The selected file in the preview tab, or close it (in Changes or Files) | Space | Finder (Quick Look) |
 
 Each opens its pane, brings it forward, or closes it when it's already in front.
+While a file is in front, a click or ↑/↓ in Changes or Files shows the picked
+file in the preview tab (italic title). A double-click on a file opens it
+there too, and a double-click on the file it already shows keeps it as a tab.
 
 ## Tabs
 
@@ -182,8 +187,8 @@ into the main area otherwise.
   day, which is also how Codex and cmux spend those keys. So the git apps' ⌘1
   and ⌘2 for Changes and History are ⌃⌘1 and ⌃⌘2 here.
 - **⌘, is Settings**, as in every Mac app: a short window of switches. Keys
-  are not among them; `wortel.conf` decides those. ⌘P finds any session or
-  command, ⇧⌘P commands only, and so does the Help menu's search field.
+  are not among them; `wortel.conf` decides those. ⌘P finds any session, file
+  or command, ⇧⌘P commands only, and so does the Help menu's search field.
 
 ## Deliberately not used
 

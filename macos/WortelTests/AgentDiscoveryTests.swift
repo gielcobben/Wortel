@@ -85,7 +85,9 @@ final class AgentDiscoveryTests: XCTestCase {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: shell)
             process.arguments = flags + ["-c", script]
-            process.environment = ["PATH": "\(folder.path):/usr/bin:/bin"]
+            // A home of its own: the script also looks in `~/.local/bin`,
+            // and this Mac's may well hold an agent.
+            process.environment = ["PATH": "\(folder.path):/usr/bin:/bin", "HOME": folder.path]
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = FileHandle.nullDevice
@@ -93,6 +95,37 @@ final class AgentDiscoveryTests: XCTestCase {
             let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             process.waitUntilExit()
             XCTAssertEqual(AgentDiscovery.parse(output, names: names), ["pi"], shell)
+        }
+    }
+
+    /// A session's shell has `~/.local/bin` on its PATH through the shell
+    /// integration, whatever the shell's own files say. The shell asked here
+    /// has no integration, so the question has to look there itself, or
+    /// Claude Code installed by its own installer runs in every session and
+    /// is missing from Settings.
+    func testTheScriptLooksWhereASessionLooks() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wortel-home-\(UUID().uuidString)")
+        let bin = home.appendingPathComponent(".local/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let tool = bin.appendingPathComponent("claude")
+        try "#!/bin/sh\n".write(to: tool, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+
+        for (shell, flags) in [("/bin/zsh", ["-f"]), ("/bin/bash", ["--noprofile", "--norc"])] {
+            let script = try XCTUnwrap(AgentDiscovery.script(for: ShellSpawn.Shell(path: shell), names: names))
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: shell)
+            process.arguments = flags + ["-c", script]
+            process.environment = ["PATH": "/usr/bin:/bin", "HOME": home.path]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            process.waitUntilExit()
+            XCTAssertEqual(AgentDiscovery.parse(output, names: names), ["claude"], shell)
         }
     }
 

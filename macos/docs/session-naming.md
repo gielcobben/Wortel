@@ -55,7 +55,10 @@ path reconstructs typed lines (`TypedLineBuilder`: backspace, ctrl-U/W,
 bracketed paste, the kitty keyboard protocol, and the terminal's own query
 replies all handled or dropped; it reads one write at a time, since libghostty
 writes each key press and each reply separately, which is what keeps a reply
-like the background colour out of the prompt), and the first line that is a prompt rather
+like the background colour out of the prompt; a reply whose opening `ESC P`
+or `ESC _` arrives alone is held until it ends, after a session was named
+`>|ghostty 1.3.1Gi=31;O…` from Claude's XTVERSION and kitty graphics
+answers), and the first line that is a prompt rather
 than a dialog answer or a slash command (`FirstPrompt.accept`) goes to the
 on-device model with a prompt tuned to Claude's style. A prompt on the
 agent's command line (`codex "add a changelog page"`) is taken as is. Without
@@ -87,7 +90,7 @@ in precedence order:
 
 | Source | Set by | Replaced by |
 |---|---|---|
-| `placeholder` | the directory at creation ("Home" for the home folder); the agent's command ("Claude") for an agent in a folder of its own (`ChatFolder`); the branch for a worktree session | anything |
+| `placeholder` | the directory at creation ("Home" for the home folder); the agent's command ("Claude") for an agent in a folder of its own (`ChatFolder`) and for a worktree session started with a known agent; the branch for any other worktree session | anything |
 | `model` | the on-device model, from the screen (`SessionNameGenerator`) | prompt, agent, user, or a better model guess |
 | `prompt` | the first prompt typed into the agent, titled by the model | a new conversation's prompt, an agent title, or the user |
 | `agent` | the agent's terminal title | a new agent title, or the user |
@@ -100,19 +103,25 @@ periodically renames an agent session: its name changes only when a new
 conversation starts.
 
 **A worktree session is named for its task and shows its branch underneath.**
-The branch is where the work lives, not what the work is. The session starts
-out called after the branch (a placeholder, so the agent may replace it), and
-once it has a real name the branch moves to a second line on the row, with the
-same glyph as the toolbar's branch chip. The row is two lines tall only in
-that state (`Session.showsBranchLine`), which is why the sidebar's identity
+The branch is where the work lives, not what the work is. A session started
+with a known agent (`AgentCommands.agent(in:)`) starts out called for the agent
+("Claude", a placeholder) with its branch already on a second line, the same
+glyph as the toolbar's branch chip, from the moment the row appears, while git
+is still preparing the worktree. When the agent's title arrives only the words
+change: named for its branch, the row was one line and grew a second under the
+pointer a few seconds in. A worktree session with no agent (a plain shell, a
+`wortel new --worktree -- npm run dev`) has no title coming, so it is called
+after its branch, one line, until the model or a rename gives it a real name.
+The row is two lines tall only in that state (`Session.showsBranchLine`), which is why the sidebar's identity
 snapshot carries the set of tall rows: height is the one visual fact the
 hosted SwiftUI row can't change on its own. Sessions persisted before the
 branch was recorded ask git for it once at restore.
 
 **The branch follows the name, once.** A worktree made without a branch name
 (⌥⇧⌘N, `wortel new --worktree`) starts on a placeholder, `worktree/brave-river-1a2f`.
-When the session gets a real name from any source, the branch is renamed for
-it (`fix-login-redirect`), but only while nobody else can know the old one:
+When the session gets a real name from any source but a placeholder ("Claude"
+is no name for a branch), the branch is renamed for it (`fix-login-redirect`),
+but only while nobody else can know the old one:
 Wortel made it, it was never pushed, and it's checked out in that worktree
 alone (`GitWorktree.mayRename`). The worktree's folder keeps its name, since
 agents keep their history by directory. After that the branch is no longer a

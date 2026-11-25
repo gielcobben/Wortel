@@ -61,6 +61,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   + and a folder's menu. With the field empty it would be a second New
   Session, so it is absent. This is the answer the "four ways" entry below
   asks for: not a fifth place to start, the same place minus one typed line.
+- **2026-11-23. New Terminal at Home, on the same condition.** With an agent
+  in the field, ⌥⌘N starts it in a folder of its own, and the plain shell at
+  home that ⌥⌘N used to be took a ⌃⌘N and a `cd`. It is ⌥⌘N minus the typed
+  line, as New Terminal is ⌘N minus it: in the Session menu and the
+  sidebar's +, on ⌃⌥⌘N (⌃ for "without the command", ⌥ for "at home"). The
+  + menu is in three groups by where the session lands: where you are
+  (session, terminal, worktree), at home, and Open Folder. Its items show
+  no keys: that was tried the same day, to teach them, and taken out for
+  making a short menu wide and busy. The Session menu has them. Its worktree item is "New Worktree…", as a folder's menu has
+  it; the Session menu keeps the full "New Worktree Session…".
 - **2026-09-29. "Wortel has no tabs" was reversed.** Tabs in three fixed places:
   the main area, a side column, a bottom strip. Still no splits and no free
   grid. The terminal engine's own tab and split actions still return
@@ -69,6 +79,36 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   exists so that Wortel never needs a per-agent integration (`76ea9f8`).
 - **2026-08-04. No invented benchmark numbers**, on the site or anywhere
   (`a55082b`).
+- **2026-11-23. A Mac with no agent is told so once, and offered three.**
+  Of the first ten installs that report, three never started an agent and
+  none of those came back another day. The permissions popover gets a Setup
+  section, there only while something is missing: "An agent" (Claude Code,
+  Codex or Pi) and "Git" (`decisions.md`, Git panel). Picking an agent puts
+  that agent's own one-line installer on a prompt, unsent
+  (`AgentInstall`, `SessionManager.offerCommand`): the person reads it and
+  presses Return, in their own shell. Wortel downloads, runs and installs
+  nothing, and writes nothing into the agent afterwards, so "the agent is a
+  guest" holds. Only agents whose installer needs nothing a new Mac lacks:
+  a line starting with `npm` or `brew` is two more installs there. Each
+  line was read off the agent's own page that day. Whether the Mac has an
+  agent is asked (the usual folders, then the login shell) only until the
+  answer has been yes once, or an agent has run in a session, and never
+  after. Only the shell's own "none" counts as a no: when it gave no answer
+  (too slow, a shell Wortel can't ask) nothing is said, because the folders
+  alone miss a version manager's and every alias, and "no agent" in front
+  of someone who has had one for a year is worse than silence. A marker
+  alone is not an agent either: the shell writes it from the command line,
+  for `claude` typed on a Mac without it and for a whole
+  `npm install -g @anthropic-ai/claude-code`, so it would have taken the
+  row away for good (and waiting five seconds first, tried the same day, is
+  outlasted by an install). A marker has the shell asked again; a status
+  report is an agent. The line is typed only where it will be
+  seen, the terminal in front of its session, and otherwise in a new
+  session. The missing agent raises the sidebar's icon until the popover has
+  been opened once: someone who uses Wortel as a plain terminal is told one
+  time. Not built: the same for updating an agent that is too old. Which
+  installer it came from can be guessed wrong, and how often it happens is
+  not known yet (`agent_outdated`, below, counts it).
 
 ## Window, terminal and keys
 
@@ -696,6 +736,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   libghostty's previous and next prompt (Ghostty 30fdc8f4c). Not ported:
   Ghostty.app's split focus clicks and its menu shortcut translation, which
   Wortel has no equivalent of.
+- **2026-11-24. The terminal font is the Mac's own SF Mono, reached by API.**
+  `font-family = SF Mono` found the font only on a Mac with Apple's separate
+  SF Mono download in `/Library/Fonts`; everywhere else the terminal quietly
+  drew Ghostty's embedded JetBrains Mono. macOS ships SF Mono only as a
+  hidden system UI font, and CoreText refuses it by name: a family search
+  for `.SF NS Mono` with a style returns every font of that style, and
+  `CTFontCreateWithName` returns Times New Roman. `wortel.conf` now names
+  `system-mono`, which a Ghostty patch (`GhosttyKit/Patches/0101`) resolves
+  through `NSFont.monospacedSystemFont`, the font the diff view and Markdown
+  code already use. Considered and not chosen: bundling SF Mono (its licence
+  forbids redistribution), Menlo (always there, but not the system's look),
+  and keeping `SF Mono` first with `system-mono` as a fallback (the owner's
+  Mac would then draw the 2022 download while everyone else drew the system
+  copy).
 
 ## Sidebar
 
@@ -867,6 +921,56 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   icon hidden: an alert that would be taller than about five thirds of its
   width (measured, macOS 26) lays itself out sideways and twice as wide, and
   one 292pt wide to stay under that read as not quite an alert.
+- **2026-11-24. A new session opens on an empty page until its program is
+  up.** A session made with a line to run (Settings' line, `wortel new --`)
+  showed the whole start: the prompt, the line typed on it, the agent's
+  interface popping in. Measured that day on one Mac: the shell 0.1 to 0.3 s,
+  then Claude Code 0.3 to 0.8 s, Codex 0.3 s, Pi 0.8 to 1.2 s. None of it is
+  Wortel's to make faster, so it is kept out of sight: the terminal is under
+  a page of its own colour, at its full size and being drawn into, and the
+  page comes off in one cut (`StartCover`, `TerminalHostViewController`).
+  The rule reads the session's own output. Nothing counts before the shell
+  marks the line started (`OSC 133;C`), because zsh sets bracketed paste at
+  its own prompt. After it, a mode a full-screen program sets, then 50 ms of
+  quiet (at most 0.3 s), is the first frame: at that moment the screen was
+  whole for all three agents. The agent's marker lands 3 to 7 ms after the
+  mark, so a line with no marker and no mode by 0.15 s is not an agent and
+  is shown (`wortel new -- npm run dev`). The line ending first, or the
+  shell never starting it in 2.5 s, lifts the page on the shell; 2 s without
+  an interface lifts it anyway. That wait was 4 s for an hour, and a spinner
+  on the page was considered for it: both hide a slow start, which is the
+  one worth seeing (an update, a login, a shell that is stuck), so the page
+  comes off sooner and the terminal is its own progress.
+  **What is typed under the page is held, and goes only to the program.**
+  Lifted on the shell, it is dropped: a sentence meant for an agent is a
+  command to a shell. **A Return that was held is never typed, nor anything
+  after it:** it was pressed at a screen nobody had seen, and Codex put
+  "Update now" up a quarter second after its first frame, with Return as
+  yes. The text is left in the program's input to be read and sent. Return
+  is caught as the key, before it is encoded: a program that has just asked
+  for the kitty keyboard protocol is sent `CSI 13 u` for it, which no rule
+  about bytes would know. A paste and `wortel send` wait for the start to be
+  over instead, since the program has not asked for bracketed paste before
+  then. The paste goes in only to an interface that came up, after the held
+  keys (the order between them is not kept), and is dropped otherwise.
+  `wortel send` types whatever came of the start, as it was told to, which
+  makes `wortel new -- claude` followed at once by `wortel send --enter`
+  arrive as one prompt; its Return is the script's own, and lands on
+  whatever the program shows first. The waits add up to under `send`'s five
+  seconds of patience. Review, the same day, found five ways it was wrong
+  as first built: a line left on a prompt unsent (the Setup row's install
+  line) was covered for three seconds and its Return thrown away, so only a
+  line that ends in a newline is covered; a paste was typed raw when the
+  page lifted without an interface; a start given up on (closed, attached
+  to again) typed its held keys; a shell that died under the page stayed
+  hidden until the wait ran out; and the marker wait could run out on a
+  busy main thread with the news of the marker still queued, so the marker
+  is read from disk once before that answer is given. Only zsh and bash, whose marks were seen working; fish joins
+  when its marks have been checked on a Mac that has it. Left out: a resume
+  after a lost keeper, agent sleep's wake and `wortel cd` (each comes back
+  to a screen worth reading), a plain terminal, and keeping a spare agent
+  warm, which would be instant and would cost memory, hooks and MCP servers
+  for a session nobody may open.
 
 ## Attention and agent detection
 
@@ -953,6 +1057,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the agent came from npm, Homebrew or its own installer.
 - **2026-09-10. The screen fallback stays for Pi.** An upstream request for it
   to report progress was declined.
+- **2026-11-23. Notifications are asked for when there is one to show, not
+  at launch.** macOS puts the question once. At launch it was answered before
+  anyone had seen what a notification from Wortel is for: of the first ten
+  installs that report, seven had them off at their latest launch (a count
+  that includes allowed with every way of showing one turned off). Now the
+  prompt comes with the first banner (a session out of sight that finished
+  or needs you) or the first reminder set, and that banner is posted once it
+  is answered, if the session still wants anyone. Reminders handed to
+  Notification Center again at launch and at quit never put the question:
+  that had it back at every launch for anyone who let the prompt slide away
+  with a reminder still pending. Until then the permissions
+  icon is in the sidebar with its Grant button, as it is for a no. Not
+  checked: the Dock badge before the question has been put, which needs a
+  signed build on a Mac that was never asked.
 
 ## Agent resume
 
@@ -1279,6 +1397,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (`96d8a5f`, `c5fd8d7`).
 - **2026-09-14. Pull is fast-forward only.** There is no conflict UI
   (`ace5ace`).
+- **2026-11-24. `check-ignore` runs without `GIT_LITERAL_PATHSPECS`.** Every
+  git has had it since `45f5f2a` (2026-11-09: a path with brackets means
+  that file only), and `check-ignore` refuses the `literal` magic outright,
+  so from then nothing was ever reported ignored: the Files pane stopped
+  greying ignored files. It reads each line as one path, never a glob, so
+  leaving it out for this one command names no other file. Pinned by
+  `FileListingTests.testCheckIgnoreAnswers`.
 - **2026-10-06. Only the repository on screen does git work.** Every git gets
   `core.fsmonitor=false`. Other worktrees are read when asked, never on a timer
   (`c20f403`, `9b366bb`).
@@ -1300,6 +1425,32 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `gpg.program` is not blanked: the Commit button signs with the user's. The
   filter-driver gap stays, as for any git-aware prompt
   (`macos/docs/architecture/git-panel.md`).
+- **2026-11-23. Git is never started on a Mac that has none.** `/usr/bin/git`
+  is always there, and without Xcode or Apple's command line tools it is a
+  stub that raises macOS's installer. Wortel runs git unasked (a row's
+  branch, the Changes pane), so that dialog would have come at a moment
+  nobody chose. Whether git can run is read from the disk first
+  (`DeveloperTools`, the way `xcode-select` resolves a developer directory),
+  and while it can't, the git panes say "Git is not installed" with an
+  Install… button and the permissions popover has a Git row. Both open
+  Apple's own installer (`xcode-select --install`): Wortel downloads and
+  installs nothing itself. A git of the person's own (Nix, MacPorts) is used
+  when Apple's is absent. One more state, for an Xcode that was selected
+  and then deleted: the tools are on the disk, git fails on the selection,
+  and the installer only says "already installed". There the button is Fix,
+  and it types `sudo xcode-select --reset` on a prompt for the person to
+  run, since it needs an administrator. That runs inside Wortel, so for a
+  few minutes after it the disk is read every two seconds: nothing else
+  would tell the panes it worked. Not reproduced on a Mac without the tools: the
+  detection is tested, the stub's dialog is Apple's documented behaviour.
+
+- **2026-11-24. The diff under the Changes list can be put away**: drag its
+  divider to the bottom (less than the diff's 120pt minimum left, it snaps
+  shut) or untick View ▸ Show Diff in Changes; both are the same switch. A
+  checkmark, not a Settings row, because it is flipped while working. While
+  it's hidden a selected row runs no `git diff` (`StoredFlag.changesDiff`,
+  checked in `GitRepoModel.loadDiff`). It was kept rather than removed for
+  reading a diff without the main area changing.
 
 ## Files, previews, browser
 
@@ -1331,6 +1482,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   refuse matched URLs and OSC 8 links, so in 2026.47.4 no web link opened.
   Web and mail links open directly; another app's scheme asks first, as a
   page's does; a link with hidden characters does nothing.
+- **2026-11-24. A link an agent broke over rows is put back together by the
+  app, from the rows around the click, not by a patch to Ghostty.** Agents
+  wrap their own text, so a long path arrives as two rows with a line break
+  and an indent, and libghostty matches one row: the click opened half a
+  path, or nothing. A path is joined only when the join exists on disk, which
+  is what makes joining safe. cmux patched its Ghostty to join rows that end
+  in certain punctuation instead, and has open bugs for each shape that rule
+  misses (a break inside a `%XX`, an indented row; its #8583, #9866,
+  #24990). Web addresses have no disk to ask, so a row is only followed when
+  it was full, and an OSC 8 link (Claude Code's and Codex's prose) is left
+  as the program tagged it. Cost: on ⌘-hover a half libghostty doesn't match
+  shows no underline, though the click opens it.
 - **2026-11-23. A selection goes to a pasteboard of Wortel's own.** Ghostty's
   1.4 defaults on macOS (`copy-on-select = primary`, `middle-click-action =
   primary-paste`) only work with a selection clipboard, so Wortel has one, as
@@ -1371,6 +1534,39 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+- **2026-11-24. A preview tab: a file looked at from Changes or Files while
+  a file is in front takes the place of the one before it**, in one tab with
+  an italic title, as in Xcode and VS Code. A click or ↑/↓ in the list does
+  it, Space opens it (Finder's key) or closes it when it's in front, and so
+  does a double-click in the list, from anywhere: a double-click that opened
+  a kept tab made the next click open a second tab beside it. A double-click
+  on the file the preview already shows keeps it, as in VS Code (with a
+  file in front that is any double-click, since its first click put the file
+  there); so do a double-click on the italic tab, a drag, or Open in the
+  row's menu. With the
+  terminal (or a page) in front a click only selects: the main area also
+  holds the agent you're watching, and a click to stage a file must not
+  cover it. Why this isn't the follow-the-selection window dropped on
+  2026-08-06: that was a window with a pin, and nothing on screen said which
+  window would change; here the italic title says it, it's the convention
+  people already have from their editors, and it never comes up over a
+  terminal by itself. Selecting several rows never moves it. After a
+  relaunch it is an ordinary tab (`WorkspaceTabs.peek`).
+- **2026-11-24. ⌘P finds files, close to Zed's file finder.** Once something
+  is typed, a Files section sits under the sessions and over the commands;
+  with nothing typed ⌘P is as it was, so ⌘P then Return still goes back. In a
+  repository the list is git's index (`ls-files`: 20 ms for the Linux tree's
+  97k files, no walk), plus the untracked files the git panel's status
+  already has, or one `ls-files --others` the first time, queued behind the
+  other background scans. Zed walks repositories too; with several worktrees
+  of a 500k-file monorepo open, where `git status` takes 7 s, each would pay
+  that walk. Elsewhere it is Zed's walk: five levels, VCS folders and
+  `node_modules` skipped, no symlinks, a repository inside listed by git, and
+  never from `/`, the home folder or a volume's top. Kept live by FSEvents,
+  one changed folder re-read at a time. Matching is fzf's v2 scoring with
+  the file name a tier above the path (VS Code's and Zed's rule): measured
+  optimised at 487k paths, 1 to 12 ms a key. Debug builds are about 40 times
+  slower at this, which only shows on a repository that size.
 
 ## Running processes
 
@@ -1425,6 +1621,46 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   checksum of the bundled terminfo and the remote step always runs `tic`, so
   the 5ebe501 entry (overline, `Se` to the default cursor) replaces an old one.
   The list is in `macos/docs/debugging.md`.
+- **2026-11-23. `~/.local/bin` is on the PATH of every shell Wortel starts,
+  last.** Claude Code's own installer puts `claude` there, a Mac that never
+  had a dotfile does not look there, and the installer's note about adding
+  a line to `~/.zshrc` is missed: the first thing a new session said was
+  "command not found: claude" (reported 2026-11-23, from a new Mac).
+  Appended by the shell integration after the person's own startup files,
+  so it never wins over anything already found and a PATH set there is
+  kept. Added whether or not the folder exists, because the shell that runs
+  the installer is the one that has to find the result (checked in zsh and
+  bash: not found, install, found, same shell). The cost, on purpose:
+  `claude` then runs in Wortel and not in another terminal until that line
+  is added. The shell Settings asks which agents this Mac has
+  (`AgentDiscovery`) has no integration, so its question adds the folder
+  too, or an agent that runs in every session would be missing there. fish and elvish have the same lines and were not run.
+- **2026-11-24. Claude Code opens fullscreen in Wortel, unless the person
+  chose otherwise.** Seen on a small window: the side column open, the
+  terminal at its 320pt minimum (44 columns), Claude made an edit, and after
+  the column closed that diff stayed 44 columns wide, broken mid-word. Claude
+  Code's inline renderer redraws only the visible screen at a new width.
+  Measured with 2.1.331 in a pty harness, 44 to 100 columns: the visible
+  rows came back wide, everything above stayed at 44, Ctrl+L the same, and
+  only `claude --continue` reprinted it all. Its fullscreen renderer redraws
+  the whole conversation at any width and for either appearance, so every
+  shell Wortel starts gets `CLAUDE_CODE_NO_FLICKER=1` (`ClaudeRenderer`).
+  Claude reads that variable before its `tui` setting and before its own
+  safety switch (fullscreen turned off on a Mac where it failed to start
+  several times, which names this variable as the override), so it is left
+  out when Claude's user settings name a `tui` (a `/tui classic` stays
+  classic), when Claude's global config holds `fullscreenAutoDisabled`,
+  when the inherited environment sets it or
+  `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN`, and when the settings file is not
+  JSON. Looked at at each shell's start (read again only when a file
+  changed), so a choice holds from the next new shell. Project settings are
+  not read. Only a screen reader still turns fullscreen off ahead of the
+  variable; tmux's control mode, which Claude would otherwise leave inline,
+  does not. Not done: restarting
+  an inline Claude when its terminal widens, as is done for a change of
+  appearance; it would restart the agent at every peek at Changes and leave
+  the narrow copy above the reprint. A shell the keeper kept from before
+  this has no variable until it is replaced.
 
 ## Release and updates
 
@@ -1448,6 +1684,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the click no longer depends on that request. The fallback quits from a
   run-loop timer: started from a `Task` it deadlocked against the deferred
   quit.
+- **2026-11-24. The website downloads a DMG; Sparkle keeps the zip.** A
+  plain disk image: the app beside a link to Applications, large icons, no
+  toolbar, no background picture, nothing branded
+  (`macos/scripts/make-dmg.sh`). It is notarized and stapled on its own and
+  goes up as `Wortel-latest.dmg` and `Wortel-<version>.dmg`, never into
+  `macos/releases/`, where `generate_appcast` would sign it into the feed as
+  a second archive. `Wortel-latest.zip` is still uploaded every release,
+  because the old link is pasted in places nobody can edit. The site's build
+  links the zip (and its steps) until a HEAD finds the DMG, so a deploy before
+  the first release that uploads one can't put a 404 behind the button.
 
 ## Telemetry and privacy
 
@@ -1469,6 +1715,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   closed sets, buckets and offsets into our binary, the same bargain as
   `app_crashed`. MetricKit's hang diagnostics were not used, for the same
   reason as for crashes: the `.hang` file is the one the person can open.
+- **2026-11-23. `agent_outdated` counts the warning triangle.** An agent
+  that can report its state ran in a version too old to: which agent, from
+  the fixed list, once per run that stays silent. Three of the first seven
+  people who started an agent never got a status from it and nothing said
+  why. It decides whether helping with an update is worth building.
 
 ## Website
 
@@ -1569,11 +1820,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Settings at the stage's width. Tried on the way: the real bar with all
   three buttons, which left the name two letters ("Qu…"), and Settings at its
   380 points, which cut every switch in half at the stage's edge.
-- **2026-11-24. A phone is not handed the zip.** Every Download button leads
-  to `/download`, which started the download on arrival, on a phone too: a
-  27 MB Mac app in a phone's Downloads. There the page now offers to send
+- **2026-11-24. A phone is not handed the download.** Every Download button
+  leads to `/download`, which started the download on arrival, on a phone
+  too: a Mac app in a phone's Downloads. There the page now offers to send
   itself to the Mac (the share sheet, so AirDrop is one tap) and keeps the
-  zip a link away.
+  download, the disk image or the zip, a link away.
 - **2026-11-24. No page scrolls sideways on a phone.** `/docs` did: the
   commands table was as wide as its longest command. A table of terms is a
   list there, and `/compare` shows Wortel and one other app, each question
@@ -1661,3 +1912,24 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `main` too. The Ghostty build is saved as soon as it exists rather than
   only when every test passes: no run had reused one, so every run spent
   five minutes building it again. A hung run stops at 30 minutes, not 60.
+- **2026-11-24. An agent closes its own session with `wortel close`.** Told
+  "delete this worktree", an agent reached for `git worktree remove` from
+  inside the worktree, lost the path between messages twice, and needed
+  `--force` for the untracked files it had copied in, while closing the row
+  in Wortel would have kept the worktree for those same files. Now it runs
+  `wortel close` and finishes its reply: the session closes when the turn
+  ends (not cut off mid-sentence, as `cd` waits), and the worktree goes as a
+  click's would, except that uncommitted files are asked about at once on
+  the session's window instead of keeping it, and a yes trashes the files
+  shown (by path; a new one keeps it). Return keeps: the sheet arrives
+  unasked, so trashing takes a click. Trash, never `rm`, and the branch only when Wortel made it
+  and nothing on it is unique. One verb, no `--force` and no `--session`: a
+  flag the agent picks would be the agent deciding to throw away files, and
+  the question puts that with the person.
+- **2026-11-24. A new worktree session is two lines from the start.** Named
+  for its placeholder branch (`brave-river-1a2f`), the row was one line until
+  the agent's title came, then grew its branch line and pushed every row below
+  it down. Started with a known agent it is now called for the agent
+  ("Claude") with the branch underneath while it prepares, so the title
+  replaces words and nothing moves. A plain shell keeps the branch as its
+  name: nothing will title it, and "Terminal" over its branch would say less.

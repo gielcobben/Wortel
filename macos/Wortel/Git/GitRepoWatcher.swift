@@ -37,8 +37,24 @@ final class GitRepoWatcher {
     /// list if it's longer.
     static let kernelExclusionLimit = 8
 
+    /// For a caller that wants to know where: each batch's paths (folders,
+    /// as FSEvents reports them, real paths) and their flags, past the
+    /// exclusions. `onChange` is not called when this is set.
+    private let onEvents: (([String], [FSEventStreamEventFlags]) -> Void)?
+
     init(paths: [String], excluding: [String] = [], onChange: @escaping () -> Void) {
         self.onChange = onChange
+        onEvents = nil
+        // FSEvents reports real paths (`/private/var/…`); a caller's may be
+        // the way it was reached.
+        excluded = excluding.map(GitWorktree.realPath)
+        start(paths: paths, excluding: excluding)
+    }
+
+    init(paths: [String], excluding: [String] = [],
+         onEvents: @escaping ([String], [FSEventStreamEventFlags]) -> Void) {
+        onChange = {}
+        self.onEvents = onEvents
         // FSEvents reports real paths (`/private/var/…`); a caller's may be
         // the way it was reached.
         excluded = excluding.map(GitWorktree.realPath)
@@ -49,10 +65,10 @@ final class GitRepoWatcher {
 
     private func start(paths: [String], excluding: [String]) {
         guard !paths.isEmpty else { return }
-        let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
             guard let info else { return }
             let watcher = Unmanaged<GitRepoWatcher>.fromOpaque(info).takeUnretainedValue()
-            watcher.deliver(count: count, paths: paths)
+            watcher.deliver(count: count, paths: paths, flags: flags)
         }
         var context = FSEventStreamContext(
             version: 0,
@@ -81,9 +97,21 @@ final class GitRepoWatcher {
 
     /// A batch of events: news unless every path in it is left out. Without
     /// `UseCFTypes` the paths come as C strings.
-    private func deliver(count: Int, paths: UnsafeMutableRawPointer) {
-        guard !excluded.isEmpty else { return onChange() }
+    private func deliver(count: Int, paths: UnsafeMutableRawPointer,
+                         flags: UnsafePointer<FSEventStreamEventFlags>) {
         let list = paths.assumingMemoryBound(to: UnsafePointer<CChar>.self)
+        if let onEvents {
+            var kept: [String] = [], keptFlags: [FSEventStreamEventFlags] = []
+            for index in 0..<count {
+                let path = String(cString: list[index])
+                if Self.isExcluded(path, by: excluded) { continue }
+                kept.append(path)
+                keptFlags.append(flags[index])
+            }
+            if !kept.isEmpty { onEvents(kept, keptFlags) }
+            return
+        }
+        guard !excluded.isEmpty else { return onChange() }
         for index in 0..<count where !Self.isExcluded(String(cString: list[index]), by: excluded) {
             return onChange()
         }

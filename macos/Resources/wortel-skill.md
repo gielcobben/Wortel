@@ -1,6 +1,6 @@
 ---
 name: wortel
-description: Use when running inside the Wortel terminal ($WORTEL_SESSION_ID is set) and the work calls for Wortel itself - moving this session and its conversation to another project folder (wortel cd), starting another session or agent, reading, sending to or waiting on another session, raising attention, colouring or renaming a session, or setting a reminder.
+description: Use when running inside the Wortel terminal ($WORTEL_SESSION_ID is set) and the work calls for Wortel itself - moving this session and its conversation to another project folder (wortel cd), closing this session or removing, deleting or cleaning up its worktree (wortel close), starting another session or agent, reading, sending to or waiting on another session, raising attention, colouring or renaming a session, or setting a reminder.
 ---
 
 <!-- Written by Wortel and kept up to date by it. Edit it and Wortel leaves it alone; delete it and it stays deleted. -->
@@ -26,6 +26,23 @@ quits you, `cd`s the shell there and resumes this same conversation, so the
 person sees that project's git and you get its own CLAUDE.md and settings.
 Anything you started that is still running stops. Never suggest `/add-dir` or a
 new session instead of a move.
+
+## Close this session, and its worktree with it
+
+When the person asks to close this session, or to remove, delete or clean up
+the worktree you are working in, don't run `git worktree remove` or
+`git branch -d`, and don't tell them to. Run:
+
+```sh
+wortel close
+```
+
+Then finish your reply and start nothing else. When your turn ends, Wortel
+closes the session and moves its worktree to the Trash, with the branch if
+nothing on it is unique. If there are uncommitted or untracked files, Wortel
+asks the person in the app first; if they keep it, the session is archived.
+Before you run it, say anything worth knowing that would go: work not yet
+copied or committed somewhere else.
 
 ## Start and drive other sessions
 

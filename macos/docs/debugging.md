@@ -101,6 +101,11 @@ the kernel withholds its environment.
 goes into all three, in both the interactive classifier (the synthetic spinner)
 and the agent classifier (the resume marker).
 
+The two PATH lines (Wortel's own `bin` first, `~/.local/bin` last) are in all
+three and in the elvish file too. Test a change to them the same way: `sed`
+the block out, `source` it under `env -i` with a throwaway `HOME`, and read
+`$PATH` back.
+
 They are pure classifiers, so test them without the app: extract the function
 with `sed`, source it in the real shell, and run a table of command lines
 against expected verdicts.

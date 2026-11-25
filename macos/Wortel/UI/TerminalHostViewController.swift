@@ -43,9 +43,33 @@ final class TerminalHostViewController: NSViewController {
     /// taking keys.
     private static let wakePatience: TimeInterval = 0.5
 
+    /// The empty page a session opens on while its program starts
+    /// (`StartCover`): the terminal's own colour over the terminal, which is
+    /// underneath at its full size, taking keys and being drawn into. Taken
+    /// off in one cut when the start is over.
+    private let startCover = FilledView(color: Chrome.content)
+
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
+        startCover.isHidden = true
+        startCover.autoresizingMask = [.width, .height]
+    }
+
+    /// The page over `surfaceView` while it starts, and off otherwise.
+    private func coverStart(of surfaceView: SurfaceView?) {
+        guard let surfaceView, surfaceView.isStarting else {
+            startCover.isHidden = true
+            return
+        }
+        surfaceView.onStartSettled = { [weak self, weak surfaceView] in
+            guard let self, let surfaceView, self.ownCurrentView === surfaceView else { return }
+            self.startCover.isHidden = true
+        }
+        startCover.frame = view.bounds
+        // In front of every terminal, the one just added included.
+        view.addSubview(startCover, positioned: .above, relativeTo: nil)
+        startCover.isHidden = false
     }
 
     func show(_ session: Session, runtime: GhosttyRuntime) {
@@ -134,6 +158,7 @@ final class TerminalHostViewController: NSViewController {
             // terminal looked frozen until a keypress woke it.)
             surfaceView.occlusionDidChange(visible: true)
             currentView = surfaceView
+            coverStart(of: surfaceView)
 
             focusTerminal(surfaceView)
         }
@@ -148,12 +173,17 @@ final class TerminalHostViewController: NSViewController {
             wakingView = nil
             HibernationPolicy.shared.hidden(waking)
         }
-        guard let currentView = ownCurrentView else { self.currentView = nil; return }
+        guard let currentView = ownCurrentView else {
+            self.currentView = nil
+            coverStart(of: nil)
+            return
+        }
         currentView.isHidden = true
         currentView.occlusionDidChange(visible: false)
         HibernationPolicy.shared.hidden(currentView)
         if view.window?.firstResponder === currentView { view.window?.makeFirstResponder(nil) }
         self.currentView = nil
+        coverStart(of: nil)
     }
 
     /// The window arriving is the other chance to focus, and the reliable one.

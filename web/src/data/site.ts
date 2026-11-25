@@ -22,6 +22,20 @@
 // to the templates, and to any HTML comment that ships in the build.
 // ==========================================================================
 
+// The download is the DMG that release.sh --publish uploads. Until the bucket
+// has one (a site deployed before the first release that uploads it), linking
+// there would put a 404 behind every Download button, so the build keeps the
+// zip until a HEAD finds the DMG. Only a definite 404 falls back: an offline
+// build links the DMG, and a deploy is never offline.
+const DMG = 'https://updates.wortel.sh/Wortel-latest.dmg';
+const ZIP = 'https://updates.wortel.sh/Wortel-latest.zip';
+const DOWNLOAD = await fetch(DMG, { method: 'HEAD' }).then(
+  (r) => (r.status === 404 ? ZIP : DMG),
+  () => DMG,
+);
+/** Whether the download is the disk image, which the steps and llms.txt say. */
+export const DOWNLOAD_IS_DMG = DOWNLOAD === DMG;
+
 export const SITE = {
   name: 'Wortel',
   url: 'https://wortel.sh',
@@ -35,13 +49,29 @@ export const SITE = {
   authorUrl: 'https://gielcobben.com',
   /** The source, under the GPL. */
   repo: 'https://github.com/gielcobben/wortel',
-  /** release.sh --publish always mirrors the newest signed zip here. */
-  download: 'https://updates.wortel.sh/Wortel-latest.zip',
+  /** release.sh --publish always mirrors the newest notarized DMG here. */
+  download: DOWNLOAD,
   appcast: 'https://updates.wortel.sh/appcast.xml',
   /** Sparkle's minimumSystemVersion, minus the ".0" that reads as noise. */
   minMacOS: '14',
   minMacOSName: 'Sonoma',
 } as const;
+
+// ---- /download: from the disk image to a running agent --------------------
+export const INSTALL_STEPS: [string, string][] = [
+  ...(DOWNLOAD_IS_DMG
+    ? ([
+        ['Open Wortel.dmg', 'It is in Downloads. A window opens with Wortel and your Applications folder side by side.'],
+        ['Drag it to Applications', 'From there it can replace itself when a new version comes out. Then eject the disk image.'],
+        ['Open it from Applications', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+      ] as [string, string][])
+    : ([
+        ['Open the zip', 'Safari unzips it for you, so Wortel is already waiting in Downloads.'],
+        ['Drag it to Applications', 'From there it can replace itself when a new version comes out.'],
+        ['Open it', 'macOS asks once whether to open an app from the internet. Say yes, and you are in.'],
+      ] as [string, string][])),
+  ['Start an agent', 'Wortel does not come with one. Install Claude Code, Codex or Pi, then type its name in a session.'],
+];
 
 // ---- the five-line summary in the hero's left column ----------------------
 // Short enough to sit in a 96px/1fr grid; these are the deck, not the article.
@@ -338,6 +368,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['wortel mark <colour>', 'Colours the session in the sidebar'],
             ['wortel remind <when>', 'Brings the session back to you later'],
             ['wortel cd <dir>', 'Moves the session, and its agent, to another folder'],
+            ['wortel close', 'Closes the session when the agent is done, and its worktree with it'],
             ['wortel list', 'The open sessions, in sidebar order'],
             ['wortel read <session>', 'Prints the text on a session’s screen'],
             ['wortel send <session> <text>', 'Types text into a session as a paste'],
@@ -367,6 +398,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['New worktree session / open folder', '⌥⇧⌘N / ⌘O'],
             ['New window', '⇧⌘N'],
             ['New terminal, without the command Settings starts', '⌃⌘N'],
+            ['The same, at home', '⌃⌥⌘N'],
             ['Go to a session, or bring back an archived one', '⌘P'],
             ['Run a command', '⇧⌘P'],
             ['Find a prompt you typed to an agent', '⌘Y'],
@@ -595,7 +627,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'What are the system requirements?',
-    a: 'macOS ' + SITE.minMacOS + ' ' + SITE.minMacOSName + ' or later. Wortel is a signed and notarized native application.',
+    a: 'macOS ' + SITE.minMacOS + ' ' + SITE.minMacOSName + ' or later. Wortel is a signed and notarized native application. It does not come with an agent: install Claude Code, Codex, Pi or another one the way its own site says, and it runs in any session. Worktrees and the git panes need git, which comes with Apple’s command line tools. On a Mac without them Wortel says so and opens Apple’s installer for you.',
   },
   {
     q: 'Does Wortel read my existing shell configuration?',

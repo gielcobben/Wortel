@@ -19,6 +19,20 @@ test('the website download is a new user', () => {
   });
 });
 
+test('the website download is the DMG, and it is a new user too', () => {
+  assert.deepEqual(classify('Wortel-latest.dmg', BROWSER), {
+    event: 'app_downloaded',
+    props: { source: 'web' },
+  });
+});
+
+test('a versioned DMG is a direct download', () => {
+  assert.deepEqual(classify('Wortel-2026.32.3.dmg', BROWSER), {
+    event: 'app_downloaded',
+    props: { source: 'direct', version: '2026.32.3' },
+  });
+});
+
 test('latest is still a download when Sparkle is not involved at all', () => {
   // curl -LO of the stable link. A real download, not an upgrade.
   assert.equal(classify('Wortel-latest.zip', 'curl/8.7.1')?.event, 'app_downloaded');
@@ -56,6 +70,8 @@ test('anything that is not an archive or the feed is not counted', () => {
   assert.equal(classify('appcast.xml.bak', SPARKLE), null);
   assert.equal(classify('old_updates/Wortel-2026.1.1.zip', SPARKLE), null);
   assert.equal(classify('Wortel.zip', BROWSER), null);
+  assert.equal(classify('Wortel.dmg', BROWSER), null);
+  assert.equal(classify('Wortel-2026.32.3.dmg.bak', BROWSER), null);
   assert.equal(classify('', BROWSER), null);
 });
 
@@ -85,6 +101,8 @@ test('the moving links are never cached long and the frozen ones always are', ()
   // A stale appcast is a release nobody sees.
   assert.match(cacheControl('appcast.xml'), /max-age=300/);
   assert.match(cacheControl('Wortel-latest.zip'), /max-age=300/);
+  assert.match(cacheControl('Wortel-latest.dmg'), /max-age=300/);
   // A versioned archive is the same bytes forever.
   assert.match(cacheControl('Wortel-2026.32.3.zip'), /immutable/);
+  assert.match(cacheControl('Wortel-2026.32.3.dmg'), /immutable/);
 });

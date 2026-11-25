@@ -1,5 +1,5 @@
 // ==========================================================================
-// updates.wortel.sh — the Sparkle feed, the signed zips, and the only place
+// updates.wortel.sh — the Sparkle feed, the signed zips and DMGs, and the only place
 // Wortel's downloads are ever counted.
 //
 // This used to be the wortel-updates R2 bucket on a custom domain, with no
@@ -17,9 +17,11 @@
 // request counts are dominated by existing users and a naive "downloads"
 // number would mostly be measuring people who already have the app:
 //
-//   Wortel-latest.zip      a new user, from the website
+//   Wortel-latest.dmg      a new user, from the website
+//   Wortel-latest.zip      a new user, from the website's old link
 //   Wortel-<version>.zip   with a Sparkle agent: an existing user upgrading
 //   Wortel-<version>.zip   without one: a direct or scripted download
+//   Wortel-<version>.dmg   a direct download (Sparkle only takes the zip)
 //   appcast.xml            an install that still exists and still checks in
 //
 // That last one is the most valuable thing here. Sparkle puts the app version

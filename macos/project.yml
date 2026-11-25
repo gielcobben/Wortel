@@ -499,8 +499,19 @@ targets:
       - path: Wortel/UI/WindowMovability.swift
       - path: Wortel/Browser/BrowserAddress.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
+      # ⌘P's files: the index, the ranking (pinned against real paths, since
+      # "the one I meant was third" fails nothing else), the walk's limits
+      # (never the disk, never a symlink, never deeper than five) and what
+      # an event in a folder changes.
+      - path: Wortel/Files/FileIndex.swift
+      - path: Wortel/Files/FileMatch.swift
+      - path: Wortel/Files/FileListing.swift
+      - path: Wortel/Files/FileIndexStore.swift
       - path: Wortel/Git/GitService.swift
+      - path: Wortel/Git/DeveloperTools.swift
       - path: Wortel/Git/GitRepoModel.swift
+      # GitRepoModel reads whether the Changes diff is shown (StoredFlag).
+      - path: Wortel/Git/StoredHeight.swift
       - path: Wortel/Git/GitMessage.swift
       - path: Wortel/Git/GitRepoWatcher.swift
       - path: Wortel/Git/CommitMessageGenerator.swift
@@ -566,6 +577,7 @@ targets:
       # Which of them the Mac has: reading the login shell's answer out of
       # whatever its startup files print around it.
       - path: Wortel/Settings/AgentDiscovery.swift
+      - path: Wortel/Settings/AgentInstall.swift
       # Sort Unread First: a drawn order over the stored one, and the rules that
       # hold the selected row and a pending click's row still. Every way it's
       # wrong is a row sliding out from under the pointer, which no build or
@@ -598,6 +610,8 @@ targets:
       - path: Wortel/Sessions/ChatFolder.swift
       # What `wortel cd` types and tells the agent that asked.
       - path: Wortel/Sessions/SessionMove.swift
+      # What `wortel close` waits for and tells the agent that asked.
+      - path: Wortel/Sessions/SessionClose.swift
       # When the Claude Code skill is installed, updated, or left alone.
       - path: Wortel/Sessions/AgentSkill.swift
       # Which conversation Claude, Pi or Codex is in, read from each agent's
@@ -691,6 +705,11 @@ targets:
       # marker that ends that. Pure, and wrong in both directions without a
       # sound: an answer let through is typed into an agent's prompt, a window
       # that never closes swallows every key.
+      # When a new session's cover lifts, and whether what was typed under it
+      # is handed over: read off the output of a shell starting an agent.
+      # Lifted early, the startup it hides is back on screen; never lifted
+      # right, typed text goes to a shell or is thrown away.
+      - path: Wortel/Sessions/StartCover.swift
       # The signals read off a hibernated session's output, and taken out of
       # what is written back into its terminal. A signal missed is a dot that
       # never lights; one let through is raised a second time, late.
@@ -715,6 +734,9 @@ targets:
       # an agent marker, never reports its cwd. Busy dots and agent resume stop
       # working and nothing says so.
       - path: Wortel/Ghostty/ShellSpawn.swift
+      # Whether a new shell gets Claude Code's fullscreen switch: off when the
+      # person chose a renderer, since the variable beats their setting.
+      - path: Wortel/Ghostty/ClaudeRenderer.swift
       # The CLI's wire protocol and argument parsing. Pure, and the layer where
       # a command-line tool rots: an argument silently ignored, a relative path
       # resolved against the wrong directory, an error a script can't detect.
@@ -748,6 +770,14 @@ targets:
       # string an agent printed: relative to the repo, with a full stop or a
       # `:42` stuck to it. Each one opened nothing before it was a type.
       - path: Wortel/Ghostty/TerminalLink.swift
+      # Every walk up a folder tree, which must end whatever Foundation says
+      # a parent is: on macOS 15.5 the parent of `/` is not `/`, and a link
+      # click hung 2026.47.4 for good.
+      - path: Wortel/Files/PathWalk.swift
+      # The link a ⌘-click is on, when an agent broke it over several rows.
+      # Each case is rows an agent really drew (Claude Code's indent, its
+      # approval box), and a wrong join opens the wrong page.
+      - path: Wortel/Ghostty/TerminalLinkWrap.swift
       # What text goes with a key, and which key an input method's commit
       # still sends. Pure, and each wrong answer is a key sent twice or a
       # word arriving as a paste, which no test with a keyboard catches.

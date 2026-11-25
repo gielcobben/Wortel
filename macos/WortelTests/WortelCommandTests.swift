@@ -162,6 +162,15 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertThrowsError(try parse(["cd", "My", "Project"]))
     }
 
+    /// `close` is the caller's own session only, and takes nothing: a stray
+    /// word is more likely a session name, which it refuses to act on.
+    func testCloseIsTheCallersOnly() {
+        XCTAssertEqual(try parse(["close"]), .close(session: session))
+        XCTAssertThrowsError(try parse(["close", "other"]))
+        XCTAssertThrowsError(try parse(["close", "--session", "other"]))
+        XCTAssertEqual(try WortelCommandParser.parse(["close"], environment: [:]), .close(session: nil))
+    }
+
     /// A reminder that can't be understood is refused here, not set for some
     /// other time: a bare number could be minutes or a time of day.
     func testRemindRefusesWhatItCantRead() {

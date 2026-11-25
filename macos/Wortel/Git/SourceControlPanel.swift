@@ -42,22 +42,54 @@ struct SourceControlPanel: View {
                 EmptyView()
             }
         }
+        // Git was installed while "Git is not installed" was up: the folder
+        // is asked again, now that asking can be answered.
+        .onChange(of: Permissions.shared.developerTools) { _, now in
+            if now == .granted { panel.resolveAgain() }
+        }
         // No background on purpose. As an inspector split item the system supplies
         // the material itself (Liquid Glass on macOS 26), and painting anything
         // opaque here — a tinted fill, or an NSVisualEffectView — sits on top of
         // that material and blocks it. Width now comes from .inspectorColumnWidth.
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: panel.resolvedNonRepo ? "folder" : "arrow.triangle.branch")
-                .font(.system(size: 26))
-                .foregroundStyle(.tertiary)
-            Text(panel.resolvedNonRepo ? "Not a git repository" : "No repository")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    @ViewBuilder private var emptyState: some View {
+        if Permissions.shared.developerTools == .denied {
+            // A new Mac: nothing here can be read until git is there, and
+            // "not a git repository" would be blaming the folder for it.
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.tertiary)
+                Text(Permissions.shared.gitNeedsReset ? "Git cannot run" : "Git is not installed")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Text(!Permissions.shared.gitNeedsReset ? "It comes with Apple\u{2019}s command line tools."
+                     : Permissions.shared.resetOffered ? "The fix is typed in the terminal. Press Return there."
+                     : "macOS is pointed at developer tools that are gone.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(Permissions.shared.gitNeedsReset ? "Fix" : "Install\u{2026}") {
+                    Permissions.shared.fixDeveloperTools()
+                }
+                    .controlSize(.small)
+                    .padding(.top, 4)
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: panel.resolvedNonRepo ? "folder" : "arrow.triangle.branch")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.tertiary)
+                Text(panel.resolvedNonRepo ? "Not a git repository" : "No repository")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -93,6 +125,13 @@ private struct RepoView: View {
     private let listHeightStore = StoredHeight.changesList
     private static let listMin: CGFloat = 80
     private static let diffMin: CGFloat = 120
+    /// Whether the diff is there at all (View ▸ Show Diff in Changes).
+    private let showsDiff = StoredFlag.changesDiff
+    /// The list's height while its divider is being dragged. The drag may
+    /// take the diff below its minimum, all the way to nothing; let go there,
+    /// the diff hides, and the list's stored height stays what it was, for
+    /// when the diff comes back.
+    @State private var dragHeight: CGFloat?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -102,19 +141,37 @@ private struct RepoView: View {
             // Draggable split between the files list and the diff. The list gets
             // an explicit, persisted height; the diff takes whatever's left.
             GeometryReader { geo in
+                // All of it but the divider's line: the diff at nothing.
+                let full = max(Self.listMin, geo.size.height - 1)
                 let maxList = max(Self.listMin, geo.size.height - Self.diffMin)
+                let resting = showsDiff.value
+                    ? min(max(CGFloat(listHeightStore.value), Self.listMin), maxList) : full
                 let listHeight = Binding(
-                    get: { min(max(CGFloat(listHeightStore.value), Self.listMin), maxList) },
-                    set: { listHeightStore.value = Double($0) }
+                    get: { dragHeight ?? resting },
+                    set: { height in
+                        dragHeight = height
+                        // Dragged back up out of the bottom: the diff is
+                        // back as soon as there's room for it.
+                        if !showsDiff.value, geo.size.height - height >= Self.diffMin {
+                            showsDiff.value = true
+                        }
+                    }
                 )
                 VStack(spacing: 0) {
                     changesList
                         .frame(height: listHeight.wrappedValue)
-                    DragDivider(axis: .vertical, length: listHeight, range: Self.listMin...maxList)
-                    diffPane
-                        .frame(maxHeight: .infinity)
+                    DragDivider(axis: .vertical, length: listHeight, range: Self.listMin...full,
+                                showsLine: showsDiff.value || dragHeight != nil,
+                                onEnded: { settleDivider(in: geo.size.height) })
+                    if showsDiff.value {
+                        diffPane
+                            .frame(maxHeight: .infinity)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
                 }
             }
+            .onChange(of: showsDiff.value) { _, _ in repo.loadLeadDiff() }
             // The commit box is a row in Settings; with it off the bar is
             // only there while it has an error to show.
             if showsCommitBar {
@@ -176,6 +233,20 @@ private struct RepoView: View {
             let newFiles = new == 1 ? "untracked file" : "untracked files"
             return "Your changes to \(edited) \(files) will be permanently lost, "
                 + "and \(new) \(newFiles) will be deleted."
+        }
+    }
+
+    /// The divider let go: with less than the diff's minimum left under it,
+    /// the diff hides and the list keeps the height it had; otherwise this is
+    /// the list's height now.
+    private func settleDivider(in height: CGFloat) {
+        guard let dragged = dragHeight else { return }
+        dragHeight = nil
+        if height - dragged < Self.diffMin {
+            showsDiff.value = false
+        } else {
+            showsDiff.value = true
+            listHeightStore.value = Double(dragged)
         }
     }
 
@@ -272,9 +343,13 @@ private struct RepoView: View {
         // selection along with them, and ⌘A takes the lot.
         .keyboardNavigableList(
             focused: $listFocused,
-            move: { repo.selectAdjacent($0) },
+            move: {
+                repo.selectAdjacent($0)
+                repo.peekLead(.follow)
+            },
             extendMove: { repo.selectAdjacent($0, extending: true) },
-            selectAll: { repo.selectAllChanges() })
+            selectAll: { repo.selectAllChanges() },
+            space: { repo.peekLead(.toggle) })
     }
 
     @ViewBuilder
@@ -323,15 +398,19 @@ private struct RepoView: View {
                             repo.extendSelection(to: change.id)
                         } else {
                             repo.select(change.id)
+                            // With a file in front, it shows this one now.
+                            repo.peekLead(.follow)
                         }
                         listFocused = true
                     },
-                    // Double-click opens the file in its own window, showing
+                    // Double-click opens the file in the preview tab, showing
                     // *this* row's diff — the staged or unstaged side, as
-                    // clicked, because the pane separates them and a window that
-                    // showed the other one would contradict the list.
+                    // clicked, because the pane separates them and a tab that
+                    // showed the other one would contradict the list. Clicks
+                    // after it go on in the same tab; the row's menu (Open)
+                    // or a double-click on the tab keeps one.
                     open: {
-                        repo.openPreview(for: change)
+                        repo.peek(change, .open)
                     },
                     action: { rowAction(change) },
                     requestDiscard: { discardCandidates = $0 })

@@ -82,8 +82,8 @@ about the thing it happened to:
   and file panes) and in which area of the window (never what is in it, where
   a browser is pointed, or which file)
 - the command palette was used (⌘P or ⇧⌘P), and whether it ended with a session
-  picked, a command run, or neither (never what was typed or which session or
-  command it was)
+  picked, a command run, a file opened, or neither (never what was typed or
+  which session, command or file it was)
 - a commit was made from the Changes pane, and whether its message was typed,
   drafted on your Mac and kept, or drafted and then edited (never the message,
   the files or the repository)
@@ -96,6 +96,9 @@ about the thing it happened to:
   of agents Wortel recognises (Claude Code, Codex, Pi, Gemini, OpenCode, Goose,
   Aider, Amp, Crush, Cline, Ollama, llm, Cursor). Anything else is reported as
   "other", never by its name, and never what it was asked or where it ran
+- one of those agents ran in a version too old to say what it is doing, so
+  Wortel showed its "update" warning, and which agent it was (never the
+  version, and never what it was asked or where it ran)
 - an idle agent was put to sleep to free memory, which one from that same
   list, and whether it was its time or the Mac running short of memory; and
   that one was brought back when its session was selected

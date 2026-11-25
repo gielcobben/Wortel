@@ -16,8 +16,10 @@ Whatever `macos/scripts/release.sh --publish` puts in the bucket:
 | Object | Who asks for it |
 | --- | --- |
 | `appcast.xml` | Sparkle, in every installed copy, on a schedule |
-| `Wortel-latest.zip` | the download button on wortel.sh |
+| `Wortel-latest.dmg` | the download button on wortel.sh |
 | `Wortel-<version>.zip` | Sparkle, when it has an update to install |
+| `Wortel-<version>.dmg` | nobody in particular: each release's DMG, kept |
+| `Wortel-latest.zip` | the download button's old link, still kept current |
 
 This Worker only ever reads. Publishing is `release.sh`'s job and goes straight
 to R2.
@@ -36,9 +38,9 @@ off the total would be a number about your existing users.
 
 | Request | Event |
 | --- | --- |
-| `Wortel-latest.zip` | `app_downloaded` `{ source: web }` |
+| `Wortel-latest.dmg` or `.zip` | `app_downloaded` `{ source: web }` |
 | `Wortel-<v>.zip` + Sparkle agent | `app_updated` `{ from_version, to_version }` |
-| `Wortel-<v>.zip` + anything else | `app_downloaded` `{ source: direct, version }` |
+| `Wortel-<v>.zip` or `.dmg` + anything else | `app_downloaded` `{ source: direct, version }` |
 | `appcast.xml` | `update_checked` `{ app_version }` |
 
 `update_checked` is the useful one. Sparkle puts the running version in its

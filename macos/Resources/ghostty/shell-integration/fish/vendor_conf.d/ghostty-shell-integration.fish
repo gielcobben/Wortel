@@ -98,6 +98,14 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
         fish_add_path --global --path --prepend "$WORTEL_BIN_DIR"
     end
 
+    # WORTEL: ~/.local/bin, last, where Claude Code's installer (and uv, pipx)
+    # put their commands and a new Mac does not look. See the zsh copy. Not
+    # fish_add_path: that skips a folder that does not exist yet, and the
+    # shell that runs the installer is the one that has to find the result.
+    if test -n "$HOME"; and not contains -- "$HOME/.local/bin" $PATH
+        set --global --export --append PATH "$HOME/.local/bin"
+    end
+
     # When using sudo shell integration feature, ensure $TERMINFO is set
     # and `sudo` is not already a function or alias
     if contains sudo $features; and test -n "$TERMINFO"; and test file = (type -t sudo 2> /dev/null; or echo "x")

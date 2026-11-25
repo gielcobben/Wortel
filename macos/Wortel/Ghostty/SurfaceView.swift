@@ -54,11 +54,19 @@ final class SurfaceView: NSView {
     /// `replayed`: read from what it wrote while nobody was attached, so it is
     /// what is true now, not something that just happened.
     var onProgramStatus: ((_ report: ProgramStatusReport, _ replayed: Bool) -> Void)?
-    /// A ⌘-clicked link that is a path, a `file:` URL or a server on this Mac,
-    /// as libghostty matched it (`GhosttyRuntime`'s OPEN_URL handler). The
-    /// owner resolves a path against this terminal's folders (`TerminalLink`)
-    /// and opens it. Other web links never reach here: libghostty opens those.
-    var onOpenLink: ((_ link: String) -> Void)?
+    /// A ⌘-click that may be on a link: what libghostty matched there
+    /// (`GhosttyRuntime`'s OPEN_URL handler), and the rows around it, for a
+    /// link an agent broke over several rows (`TerminalLinkWrap`). The owner
+    /// decides what it is and opens it (`SessionManager.openLink`).
+    var onOpenLink: ((_ request: TerminalLinkRequest) -> Void)?
+
+    /// libghostty found a link under a click (OPEN_URL). The click's rows go
+    /// with it, if this was the ⌘-click just released.
+    func openLink(_ link: String, tagged: Bool) {
+        let click = pendingLinkClick
+        pendingLinkClick = nil
+        onOpenLink?(TerminalLinkRequest(link: link, tagged: tagged, click: click))
+    }
     /// The folder the shell last reported (OSC 7), for resolving a relative
     /// path clicked in this terminal. A side terminal's own: the session's
     /// `cwd` follows its main shell only.
@@ -171,6 +179,13 @@ final class SurfaceView: NSView {
     /// Whether the left press now held down took the ⌘-as-Shift override;
     /// nil while no left button is down. See `pointerMods`.
     private var pressOverride: Bool?
+    /// Where a left press with ⌘ held went down, to tell a ⌘-click from a
+    /// ⌘-drag at the release. nil for any other press.
+    private var commandPressPoint: NSPoint?
+    /// A ⌘-click's rows, read at the release and kept until libghostty has
+    /// said whether it found a link there (`openLink(_:tagged:)`) or, a turn
+    /// of the main queue later, that it didn't (`mouseUp`).
+    private var pendingLinkClick: TerminalLinkClick?
     private var cursor: NSCursor = .iBeam
     private var cursorVisible: Bool = true
 
@@ -479,6 +494,53 @@ final class SurfaceView: NSView {
     /// session goes on owing it.
     var initialInputDropped = false
 
+    /// Set while this terminal's first line is still starting: the host keeps
+    /// it under an empty page and what is typed is held (`StartCover`).
+    private var startWatch: StartWatch?
+    var isStarting: Bool { startWatch != nil }
+    /// The start is over, however it went: the page comes off. Main thread.
+    var onStartSettled: (() -> Void)?
+
+    /// Cover this terminal's start: called by the runtime for a session made
+    /// with a line to run, once the keeper has typed it and before anything
+    /// is read. What is typed from here on waits in `pty`; `feed` reads the
+    /// output for how the start goes.
+    func coverStart(pty: PtyHost, feed: KeptTerminalFeed, session: UUID) {
+        pty.holdTyping()
+        let agentIsKnown = { AgentResumeStore.currentMarkers()[session] != nil }
+        let watch = StartWatch(session: session, agentIsKnown: agentIsKnown) { [weak self, weak pty, weak feed] end in
+            pty?.releaseTyping(deliver: end.deliversTyping)
+            if let feed { pty?.enqueue { feed.stopWatchingStart() } }
+            guard let self else { return }
+            self.startWatch = nil
+            let waiting = self.startWaiters
+            self.startWaiters = []
+            waiting.forEach { $0(end) }
+            self.onStartSettled?()
+        }
+        startWatch = watch
+        feed.watchStart { [weak watch] events, time in
+            DispatchQueue.main.async { watch?.heard(events, at: time) }
+        }
+    }
+
+    /// The session's agent marker appeared: its line is an agent.
+    func agentAppeared() { startWatch?.agentKnown() }
+
+    /// The shell is gone, or the terminal is: a start still covered is over,
+    /// and what is under the page (the reason the shell ended, say) is shown.
+    func giveUpStart() { startWatch?.giveUp() }
+
+    private var startWaiters: [(StartCover.End?) -> Void] = []
+
+    /// Run `body` once this terminal's start is over: now, unless it is still
+    /// covered. It is told how the start ended, nil when nothing was covered.
+    /// For what is not a key: a paste is only wrapped as one once the
+    /// program has asked for that, which it has not while it starts.
+    func afterStart(_ body: @escaping (_ end: StartCover.End?) -> Void) {
+        if isStarting { startWaiters.append(body) } else { body(nil) }
+    }
+
     /// The keeper-hosted shell ended: everything on its tty is gone and the pty
     /// hung up. Called on the main thread, once per shell. When unset the
     /// terminal is simply told (`finishProcess`), which is what the exec
@@ -525,7 +587,7 @@ final class SurfaceView: NSView {
     init(runtime: GhosttyRuntime, workingDirectory: String? = nil,
          sessionID: UUID? = nil, initialInput: String? = nil,
          environment: [String: String] = [:], fontSize: Float = 0,
-         isSessionTerminal: Bool = false) {
+         isSessionTerminal: Bool = false, coversStart: Bool = false) {
         self.runtime = runtime
         self.environment = environment
         self.isSessionTerminal = isSessionTerminal
@@ -550,7 +612,8 @@ final class SurfaceView: NSView {
             sessionID: sessionID,
             initialInput: initialInput,
             environment: environment,
-            fontSize: fontSize)
+            fontSize: fontSize,
+            coversStart: coversStart)
         // The layer first: the size is what asks it for a frame.
         layerReplaced()
         tellFirstSize()
@@ -631,6 +694,9 @@ final class SurfaceView: NSView {
         // Closing a *session* is the user saying they are done with it, so the
         // shell goes too — unlike quitting the app, which deliberately leaves it
         // running and is handled by the connection simply dropping.
+        // Closed while its start was still covered: what was typed under
+        // the page is for nobody now.
+        startWatch?.giveUp()
         if let keeperSession {
             GhosttyRuntime.keeper?.close(session: keeperSession)
             // Its terminal's modes went with it.
@@ -878,6 +944,9 @@ final class SurfaceView: NSView {
     func restartShell(workingDirectory: String?, sessionID: UUID, initialInput: String?,
                       isNewShell: Bool = true) {
         guard let runtime else { return }
+        // A start still covered is over: this is another shell, or another
+        // channel to the same one, and the watch was reading the old.
+        startWatch?.giveUp()
         if let feed = keptFeed, let old = ptyHost { old.enqueue { feed.hide() } }
         keptFeed = nil
         keptDrop = nil
@@ -1525,6 +1594,15 @@ final class SurfaceView: NSView {
     }
 
     @objc func paste(_ sender: Any?) {
+        // Under a start's cover the program has not asked for bracketed
+        // paste yet, so this would go in as typing, a Return per line. It
+        // waits for the program's interface, and goes in after the keys
+        // held with it; a start that ends any other way drops it.
+        guard !isStarting else {
+            return afterStart { [weak self] end in
+                if end?.takesPaste == true { self?.performBinding("paste_from_clipboard") }
+            }
+        }
         performBinding("paste_from_clipboard")
     }
 
@@ -1694,6 +1772,8 @@ final class SurfaceView: NSView {
         noteUserInput(text: false)
         let override = overridesShift(event.modifierFlags)
         pressOverride = override
+        commandPressPoint = event.modifierFlags.contains(.command)
+            ? convert(event.locationInWindow, from: nil) : nil
         let mods = pointerMods(event.modifierFlags)
         // The ⌘ press before this click usually refreshed the link already
         // (`flagsChanged`), but not when it reached another view first.
@@ -1704,10 +1784,31 @@ final class SurfaceView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         prevPressureStage = 0
-        defer { pressOverride = nil }
+        defer { pressOverride = nil; commandPressPoint = nil }
         guard let surface else { return }
         let mods = pointerMods(event.modifierFlags)
+        // A ⌘-click (not a drag): its rows are read now, before libghostty
+        // handles the release and the program can draw over them. libghostty
+        // opens a link at the release, inside this call, and its OPEN_URL
+        // queues `openLink` on the main queue, which takes the rows. If it
+        // found none, the check queued after it still has them: the click may
+        // be on half a link an agent broke over rows, which libghostty's
+        // one-row match can't see (`TerminalLinkWrap`).
+        pendingLinkClick = nil
+        let point = convert(event.locationInWindow, from: nil)
+        // One click only: the second of a double-click would open it again.
+        if event.modifierFlags.contains(.command), event.clickCount == 1,
+           let press = commandPressPoint, sameCell(press, point) {
+            pendingLinkClick = linkClick(at: point)
+        }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
+        if let click = pendingLinkClick {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.pendingLinkClick == click else { return }
+                self.pendingLinkClick = nil
+                self.onOpenLink?(TerminalLinkRequest(link: nil, tagged: false, click: click))
+            }
+        }
         ghostty_surface_mouse_pressure(surface, 0, 0)
         accessibilitySelectionMayHaveChanged()
     }
@@ -1752,6 +1853,11 @@ final class SurfaceView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        // Off the pressed cell, a ⌘-press is a drag (a selection), even if it
+        // comes back: not a click on a link.
+        if let press = commandPressPoint, !sameCell(press, convert(event.locationInWindow, from: nil)) {
+            commandPressPoint = nil
+        }
         mouseMoved(with: event)
         accessibilitySelectionMayHaveChanged()
     }
@@ -1805,6 +1911,15 @@ final class SurfaceView: NSView {
 
     override func keyDown(with event: NSEvent) {
         Self.onKeyboardActivity?(self)
+        // Return under a start's cover was pressed at a screen nobody has
+        // seen: it is not typed, and neither is what follows it
+        // (`PtyHost.releaseTyping`). Caught as the key, before it is encoded.
+        // Not while composing, where Return only settles the text being
+        // composed.
+        if isStarting, !hasMarkedText(), event.keyCode == 0x24 || event.keyCode == 0x4C { // Return, keypad Enter
+            ptyHost?.cutHeldTyping()
+            return
+        }
         // Typing clears a selection, and a keybind can make one.
         accessibilitySelectionMayHaveChanged()
         guard let surface else {

@@ -403,6 +403,29 @@ enum TabRegion: String, Sendable {
     case main, side, bottom
 }
 
+/// Why a list (Changes, Files) is asking to show a file in the preview tab.
+enum PeekTrigger {
+    /// A click or ↑/↓ moved the selection: shown only while a file is in front.
+    case follow
+    /// Space: opens the preview, or closes it when it's in front.
+    case toggle
+    /// A double-click (or Return in Files): opens the preview from anywhere.
+    case open
+}
+
+/// What a click, key or double-click in a list does with the preview tab
+/// (`WorkspaceTabs.peekAction`).
+enum PeekAction: Equatable {
+    /// Nothing: a click with the terminal in front only selects.
+    case none
+    /// The file in the preview tab, in front.
+    case show
+    /// The file is the preview tab already: it stays, as an ordinary tab.
+    case keep
+    /// Space with the preview in front: closed, back to where you were.
+    case close
+}
+
 extension SideTab {
     /// Whether this tab may be put in `region`.
     func fits(_ region: TabRegion) -> Bool {

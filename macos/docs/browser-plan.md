@@ -100,6 +100,19 @@ code covers every preview and a page can neither break nor be changed by it;
 a chip reads as what it points at, so the picture is often not needed; and
 there is one picture of the whole, for a sentence that relates two marks.
 
+And Cursor's, read from its docs the same day (Design Mode, Annotate): one
+mode in its browser. A click picks an element and opens a note on it, arrow
+up and down move to the parent or child first, Shift-click adds elements to
+the same note, a drag boxes an area, and an area can be drawn on (freehand,
+ellipse, rectangle, arrow). A note is a card on its mark, or a numbered pin
+when notes are batched, and it is sent to Cursor's own chat. A copy to the
+clipboard is not described, nor any use outside the browser and its canvas.
+Per mark the agent gets the tag, id, classes, a selector path, the first 200
+characters of text, size and position, six computed styles, the component
+name in React, Vue and Svelte, and a screenshot cropped to the mark with the
+drawing on it. Worth taking: arrow keys to reach a parent or child, and Esc
+that first cancels what is open and only then leaves the mode.
+
 **Where it lives.** The button that turns mark-up on sits in the bar each
 preview already has, at the right, beside the open-in buttons: the browser
 tab's header (`BrowserHeader`), the file tab's (`PreviewTabHeader`) and a

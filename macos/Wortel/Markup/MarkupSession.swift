@@ -32,6 +32,8 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
 
     /// The preview under the marks.
     @ObservationIgnored var surface: (any MarkupSurface)?
+    /// A file's views, which register here as they are made (`MarkupViews`).
+    @ObservationIgnored let views = MarkupViews()
     /// What is being marked up, asked when a note is copied.
     @ObservationIgnored var subject: () -> MarkupSubject = { .page("") }
     @ObservationIgnored var place = MarkupPlace.page
@@ -246,7 +248,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
                 DispatchQueue.main.async { self?.finishCopy(copied, marks: marks) }
             }
         }
-        if let surface { surface.whole(reply: finish) } else { finish(nil) }
+        if let surface { surface.whole(marks, reply: finish) } else { finish(nil) }
     }
 
     private func finishCopy(_ copied: String, marks: [Mark]) {
@@ -263,5 +265,51 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         let flash = DispatchWorkItem { [weak self] in self?.justCopied = false }
         copiedFlash = flash
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: flash)
+    }
+}
+
+extension PreviewDocument {
+    /// What mark-up would be over, as the file is shown now, or nil where
+    /// there is nothing to mark: a Quick Look preview (which is closed to
+    /// the app), an empty file, a diff with no changes.
+    var markupPlace: MarkupPlace? {
+        if isBinary { return PreviewMode.isImage(url) ? .image : nil }
+        switch mode {
+        case .source:
+            return sourceLines.isEmpty ? nil : .source
+        case .diff:
+            return diffLoaded && !diffIsBinary && !diffLines.isEmpty ? .diff : nil
+        case .rendered:
+            if PreviewMode.isSVG(url) { return .image }
+            return blocks.isEmpty ? nil : .rendered
+        }
+    }
+}
+
+extension MarkupSession {
+    /// Get ready to mark up a file as it is shown now: the adapter for
+    /// that view of it, and what the note will say was marked up. False
+    /// where there is nothing to mark.
+    ///
+    /// Another view of the file than last time is another thing to mark
+    /// up: the marks on the old one would point at nothing, so they go
+    /// (`end`), as they do when a page goes elsewhere.
+    @discardableResult
+    func prepare(for document: PreviewDocument) -> Bool {
+        guard let place = document.markupPlace else { return false }
+        if surface == nil || self.place != place {
+            end()
+            switch place {
+            case .source, .diff: surface = LinesMarkupSurface(views: views)
+            case .rendered: surface = BlocksMarkupSurface(views: views)
+            case .image: surface = ImageMarkupSurface(views: views)
+            case .page: return false
+            }
+            self.place = place
+        }
+        let path = document.url.path
+        let view: String? = place == .image ? nil : document.mode.title
+        subject = { .file(path: path, view: view) }
+        return true
     }
 }

@@ -113,6 +113,9 @@ enum MarkupPicture {
     /// Past this many screens tall, the picture is the stretch that holds
     /// the marks, with a screen above and below, and says so.
     static let screens: CGFloat = 12
+    /// And that stretch is this many screens at most, from its top: marks
+    /// at both ends of a 9,000-line file are not one picture.
+    static let longest: CGFloat = 24
 
     /// The part of the whole to picture: all of it, or for something very
     /// tall the stretch from a screen above the first mark to a screen
@@ -121,7 +124,8 @@ enum MarkupPicture {
         let all = CGRect(origin: .zero, size: size)
         guard screen >= 1, size.height > screens * screen, let first = marks.first else { return (all, false) }
         let around = marks.dropFirst().reduce(first) { $0.union($1) }
-        let top = max(0, around.minY - screen), bottom = min(size.height, around.maxY + screen)
+        let top = max(0, around.minY - screen)
+        let bottom = min(size.height, around.maxY + screen, top + longest * screen)
         guard bottom > top else { return (all, false) }
         return (CGRect(x: 0, y: top, width: size.width, height: bottom - top).integral.intersection(all), true)
     }
@@ -136,31 +140,28 @@ enum MarkupPicture {
     /// The whole with every mark drawn on it. Called off the main thread.
     static func whole(_ whole: MarkupWhole, marks: [Mark], colours: [Int: CGColor]) -> (image: CGImage, isPart: Bool)? {
         let placed = marks.compactMap { mark in whole.placements[mark.number].map { (mark, $0) } }
-        let (part, isPart) = Self.part(of: whole.size, screen: whole.visible.height,
-                                       marks: placed.map { $0.1.box(of: $0.0.shape) })
-        let density = Self.density(for: part.size)
-        let width = Int((part.width * density).rounded(.up)), height = Int((part.height * density).rounded(.up))
-        guard width >= 1, height >= 1,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        context.scaleBy(x: density, y: density)
-        // The part's bottom-left corner to the picture's: the whole counts
-        // from its own bottom, which is `size.height - part.maxY` below.
-        context.translateBy(x: -part.minX, y: -(whole.size.height - part.maxY))
-        context.saveGState()
-        whole.draw(context)
-        context.restoreGState()
+        let canvas: MarkupCanvas
+        switch whole.source {
+        case .canvas(let made):
+            canvas = made
+        case .draw(let draw):
+            let (part, isPart) = Self.part(of: whole.size, screen: whole.visible.height,
+                                           marks: placed.map { $0.1.box(of: $0.0.shape) })
+            guard let made = MarkupCanvas(part: part, isPart: isPart, wholeHeight: whole.size.height,
+                                          background: whole.background) else { return nil }
+            made.context.saveGState()
+            draw(made.context)
+            made.context.restoreGState()
+            canvas = made
+        }
         // A line stays two pixels wide at least, however far it is shrunk.
-        let unit = max(1, 1.5 / density)
+        let unit = max(1, 1.5 / canvas.density)
         for (mark, placement) in placed {
             guard let colour = colours[mark.number] else { continue }
-            MarkDrawing.draw(mark, at: placement, colour: colour, in: context,
-                             height: whole.size.height, unit: unit, badge: true, within: part)
+            MarkDrawing.draw(mark, at: placement, colour: colour, in: canvas.context,
+                             height: whole.size.height, unit: unit, badge: true, within: canvas.part)
         }
-        return context.makeImage().map { ($0, isPart) }
+        return canvas.context.makeImage().map { ($0, canvas.isPart) }
     }
 
     /// A picture of a drawn area with its ink on it. `rect` is the part of

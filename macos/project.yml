@@ -521,6 +521,12 @@ targets:
       - path: Wortel/Markup/WebMarkReport.swift
       - path: Wortel/Markup/MarkupSurface.swift
       - path: Wortel/Markup/MarkDrawing.swift
+      # Mark-up over a file: a mark that finds its row again after the file
+      # is rewritten, a picture cut from an image's own pixels, and a whole
+      # file pictured by scrolling a table that has to be back where it was.
+      - path: Wortel/Markup/LinesMarkupSurface.swift
+      - path: Wortel/Markup/ImageMarkupSurface.swift
+      - path: Wortel/Markup/BlocksMarkupSurface.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
       # ⌘P's files: the index, the ranking (pinned against real paths, since
       # "the one I meant was third" fails nothing else), the walk's limits

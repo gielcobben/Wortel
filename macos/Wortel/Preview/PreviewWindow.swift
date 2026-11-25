@@ -24,6 +24,9 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     /// ⌘F state, owned here because the menu item reaches this object through
     /// the responder chain — a window controller sits in it, after its window.
     private let find = PreviewFind()
+    /// Mark-up over the file, for the same reason owned here: View ▸ Mark Up
+    /// reaches this object while the window is key.
+    private let markup = MarkupSession()
     /// Shared with every other preview, so ⌘+ resizes the text in all of them.
     private let settings: PreviewSettings
     /// The window server's own titlebar dragging, kept off while it would
@@ -100,11 +103,11 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // idiom the sidebar's hosted rows already use.
         let hosting = NSHostingController(
             rootView: PreviewContent(document: document, find: find, settings: settings,
-                                     onOpenFile: openFile))
+                                     onOpenFile: openFile, markup: markup))
         hosting.sizingOptions = []
         // The main window's layers: one behind-window material, the row on it,
         // and the file as an opaque page under the row's hairline.
-        let bar = PreviewWindowBar(document: document, openPage: openPage)
+        let bar = PreviewWindowBar(document: document, markup: markup, openPage: openPage)
         let pane = ChromePaneController(bar: bar, content: hosting, bodyColor: Chrome.content)
         window.contentViewController = BackdropController(child: pane)
         window.contentMinSize = NSSize(width: 360, height: 240)
@@ -278,7 +281,16 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         file.mode = mode
     }
 
+    /// View ▸ Mark Up (⇧⌘M), over this window's file.
+    @objc func toggleMarkup(_ sender: Any?) {
+        if markup.isOn || markup.prepare(for: file) { markup.toggle() }
+    }
+
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleMarkup(_:)) {
+            menuItem.state = markup.isOn ? .on : .off
+            return markup.isOn || file.markupPlace != nil
+        }
         if menuItem.action == #selector(showPreviewMode(_:)) {
             guard let mode = PreviewMode.mode(menuTag: menuItem.tag) else { return false }
             // A checkmark on the mode you're in: the switch in the row says the
@@ -308,6 +320,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         // Zoom and full-screen resize a window without ever ending a live
         // resize, so closing is the other place the final size is known.
         persistSize()
+        markup.end()
         endWindowDrag()
         movability?.invalidate()
         movability = nil

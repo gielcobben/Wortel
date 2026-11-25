@@ -212,7 +212,7 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
 
     // MARK: - Pictures
 
-    func capture(_ rect: CGRect, reply: @escaping (CGImage?) -> Void) {
+    func capture(_ rect: CGRect, reply: @escaping (MarkCapture?) -> Void) {
         guard let webView else { return reply(nil) }
         // Whole points, and no further than the view: past its edge a
         // snapshot is white.
@@ -225,12 +225,13 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         webView.takeSnapshot(with: configuration) { image, _ in
             MainActor.assumeIsolated {
                 var proposed = CGRect(origin: .zero, size: image?.size ?? .zero)
-                reply(image?.cgImage(forProposedRect: &proposed, context: nil, hints: nil))
+                reply(image?.cgImage(forProposedRect: &proposed, context: nil, hints: nil)
+                    .map { MarkCapture(image: $0, showing: wanted) })
             }
         }
     }
 
-    func whole(reply: @escaping (MarkupWhole?) -> Void) {
+    func whole(_ marks: [Mark], reply: @escaping (MarkupWhole?) -> Void) {
         guard let webView else { return reply(nil) }
         // Where the marks are first, then the page: asked in this order so
         // the two describe the same moment as nearly as two calls can.

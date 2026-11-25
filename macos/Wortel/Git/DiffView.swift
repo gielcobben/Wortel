@@ -41,6 +41,8 @@ struct DiffView: NSViewRepresentable {
     /// Reports the line of the selected row (the first, for several), or nil
     /// when nothing is selected.
     var onSelectLine: ((Int?) -> Void)?
+    /// Where mark-up finds this table, when it is a preview's (`MarkupViews`).
+    var markup: MarkupViews?
 
     enum Gutter { case patch, file }
 
@@ -117,7 +119,17 @@ struct DiffView: NSViewRepresentable {
         // …and scroll changes, which is what reports the top line.
         scroll.contentView.postsBoundsChangedNotifications = true
         context.coordinator.observeResize(of: scroll)
+        register(table, with: context.coordinator)
         return scroll
+    }
+
+    /// Tell mark-up which table is the file's now. A tab that comes back
+    /// from behind others has a new one, and the marks have to find it.
+    private func register(_ table: NSTableView, with coordinator: Coordinator) {
+        guard let markup, markup.table !== table else { return }
+        markup.table = table
+        markup.rowKey = { [weak coordinator] row in coordinator?.key(ofRow: row) }
+        markup.changed()
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
@@ -136,6 +148,7 @@ struct DiffView: NSViewRepresentable {
         }
         let result = context.coordinator.update(lines: lines, highlights: highlights)
         guard let table = scroll.documentView as? NSTableView else { return }
+        register(table, with: context.coordinator)
         defer {
             // Last, so it wins over the scroll-to-top a new file otherwise gets:
             // arriving in a mode with a place to be is not arriving at a new file.
@@ -160,6 +173,8 @@ struct DiffView: NSViewRepresentable {
         let anchor = resized ? table.rows(in: scroll.documentVisibleRect).location : -1
         if resized { table.rowHeight = context.coordinator.rowHeight }
         table.reloadData()
+        // The rows are other rows, or another size: marks find theirs again.
+        if result.scrollToTop || resized { markup?.changed() }
         if anchor > 0, anchor < table.numberOfRows {
             scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX,
                                                   y: table.rect(ofRow: anchor).minY))
@@ -224,6 +239,18 @@ struct DiffView: NSViewRepresentable {
 
         var onTopLine: ((Int, CGFloat) -> Void)?
         private var anchored = false
+
+        /// What a row holds, for a mark to know its line by: the text and
+        /// which side of a diff it is on. Not its number, which changes for
+        /// every line under an insertion.
+        func key(ofRow row: Int) -> Int? {
+            guard lines.indices.contains(row) else { return nil }
+            var hasher = Hasher()
+            hasher.combine(lines[row].text)
+            hasher.combine(lines[row].oldLine == nil)
+            hasher.combine(lines[row].newLine == nil)
+            return hasher.finalize()
+        }
 
         /// A row's line in the file. Both sides carry it: for a whole file the
         /// two agree, and in a patch the new side is the one that still exists.

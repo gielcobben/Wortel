@@ -2719,6 +2719,24 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   to an element's parent or child (the note has the keyboard, and the
   arrows move its caret; a container is picked by its padding or by a drag
   around it).
+- **2026-11-25. In rendered Markdown the picture of the whole is what is in
+  view.** A page and a file's source are pictured whole, as decided above:
+  a page by its PDF, a table by scrolling it a screen at a time inside one
+  turn of the run loop, so nothing is seen to move. Markdown is a lazy
+  SwiftUI stack. Tried the table's way: scrolled 4,000pt down, it had
+  drawn nothing by the end of that turn and had drawn it a moment later.
+  So the document would have to be seen scrolling from end to end, a turn
+  a screen. It is pictured as it is in view, the copied text says "The
+  part with the marks", and every mark still has its own picture.
+- **2026-11-25. A mark on a file is tied to its line or its block, and
+  finds it again after the file is rewritten.** A file under a preview is
+  rewritten all day; that is what the agent beside it does. A mark kept
+  at a scroll position would sit on another line after the first edit
+  above it. So a mark on source or a diff remembers what its row held and
+  looks for it again near where it was, and a mark on Markdown is an
+  offset in a block. When the line or block is gone the mark is not
+  drawn, and its chip and picture stay: the note is still about what was
+  there.
 
 ## Running processes
 

@@ -539,12 +539,9 @@ final class FileIndexStore {
     /// Whether `relative` is in a repository of its own inside `root`: it or
     /// a folder above it, below the root, has a `.git`.
     nonisolated static func isInNestedRepository(_ relative: String, root: String) -> Bool {
-        var folder = relative
-        while !folder.isEmpty {
-            if FileListing.isRepository((root as NSString).appendingPathComponent(folder)) { return true }
-            folder = (folder as NSString).deletingLastPathComponent
+        PathWalk.upward(from: relative).contains {
+            FileListing.isRepository((root as NSString).appendingPathComponent($0))
         }
-        return false
     }
 
     private static func exists(_ path: String, in root: String) -> Bool {

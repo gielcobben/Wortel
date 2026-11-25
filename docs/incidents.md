@@ -387,3 +387,25 @@ the thing it is drawn on must still be there. And a check that reads back a
 screen nothing was drawn on since proves the screen, not the drawing: the
 test has to have a program that draws the way the ones that matter do
 (`macos/scripts/try-hibernate-screen.sh`).
+
+## 2026-11-25. A ⌘-clicked path hung the app for good
+
+**Seen:** on macOS 15.5, 2026.47.4 beach-balled on a ⌘-click on
+`.scratch/game-v1/` in a Claude Code session, until a force quit.
+
+**Cause:** the user's `.hang` and `.cpu_resource.diag` had every main-thread
+sample in `TerminalLink.repositoryRoot`, with the footprint going from
+6.5 GB to 25 GB. The walk up to the repository root used
+`URL.deletingLastPathComponent()` and stopped when the parent equalled the
+folder. Outside any repository it reached `/`, and on 15.5 the parent of `/`
+is not `/`, so it climbed `/..`, `/../..` for ever. macOS 27 stops at `/`,
+which is why it never showed here.
+
+**Changed:** every walk up a folder tree goes through `PathWalk.upward`,
+which stops because each step is a strictly shorter string. The preview
+window's path menu had the same loop.
+
+**Rule:** a loop that ends when the system stops changing its answer trusts
+the system to have a fixed point. End it on something the loop owns: a
+shorter string, a count. And test the app's oldest supported macOS where a
+Foundation call decides when a loop ends.

@@ -61,9 +61,14 @@ export function initPanes() {
   const phone = matchMedia('(max-width: 760px)');
   const tight = matchMedia('(max-width: 1000px)');
   const fit = (to: Layout): Layout =>
-    phone.matches ? { ...to, sidebar: 'hidden', side: to.side === 'hidden' ? state.side : to.side }
+    phone.matches ? { ...to, sidebar: 'hidden', side: to.side !== 'hidden' ? to.side : state.side !== 'hidden' ? state.side : 'changes' }
     : tight.matches ? { ...to, sidebar: 'hidden' }
     : to;
+  // On a phone: which half of the window the stage shows.
+  let column = true;
+  const box = win.parentElement!;
+  /** Whether the column is out of sight: folded, or on a phone off the stage. */
+  const aside = (): boolean => (phone.matches ? !column : state.side === 'hidden');
   const wide = (place: Place, value: string) => (place !== 'side' ? size.sidebar : phone.matches ? (win!.offsetWidth - 1) / 2 : COLUMN[value] ?? size.side);
   const FOLD = { duration: 0.5, ease: 'power3.inOut' };
   // The buttons the main bar gains with no sidebar: Show Sidebar, Back, Forward.
@@ -109,7 +114,7 @@ export function initPanes() {
         gsap.to(div(place), { autoAlpha: open ? 1 : 0, duration: 0.2 * d, delay: delay + (open ? 0 : 0.35 * d) });
       }
       if (place === 'sidebar') lead(!open, d, delay);
-      if (place === 'side') gsap.delayedCall(delay + (open ? 0 : 0.3 * d), () => trail(!open));
+      if (place === 'side') gsap.delayedCall(delay + (open ? 0 : 0.3 * d), () => trail(aside()));
     } else if (place === 'side' && from !== value && wide('side', from) !== wide('side', value)) {
       // The column changes width with what it holds.
       gsap.to(slot('side'), { width: wide('side', value), ...FOLD, duration: FOLD.duration * d, delay });
@@ -151,33 +156,42 @@ export function initPanes() {
       set(place, to[place], animate ? 1 : 0, animate ? k * 0.14 : 0);
       k++;
     }
-    pan(chapter, animate);
+    pan(chapter.side !== 'hidden', animate);
   }
 
   // ---- on a phone, the window pans to the place the chapter is about --------
   // The column, when the chapter opens one; the main pane when it does not.
-  function pan(chapter: Layout, animate: boolean) {
+  // The column is never folded there, so "hidden" is being off the stage: the
+  // main bar offers Show Side Column while it is, as it does beside a folded
+  // one, and Hide Side Column pans back instead of folding.
+  function pan(toColumn: boolean, animate: boolean) {
+    column = toColumn;
+    trail(aside());
     if (!phone.matches) { gsap.set(win!, { x: 0 }); return; }
-    const box = win!.parentElement!;
     const over = Math.max(0, win!.offsetWidth - box.clientWidth);
-    gsap.to(win!, { x: chapter.side !== 'hidden' ? -over : 0, duration: animate && !reduced() ? 0.6 : 0, ease: 'power3.inOut', overwrite: 'auto' });
+    gsap.to(win!, { x: toColumn ? -over : 0, duration: animate && !reduced() ? 0.6 : 0, ease: 'power3.inOut', overwrite: 'auto' });
   }
   // Turned on its side, or a window dragged past the width: the same chapter, laid out again.
   const again = () => {
+    arrange(last, false);
     // The column's width is the stylesheet's on a phone and ours beyond it.
     if (state.side !== 'hidden') gsap.set(slot('side'), phone.matches ? { clearProps: 'width' } : { width: wide('side', state.side) });
-    arrange(last, false);
   };
   phone.addEventListener('change', again);
   tight.addEventListener('change', again);
+  // The pan is a distance in pixels of the stage's width, so a stage that
+  // changes width without crossing either line (a small phone turned on its
+  // side) is panned again, to the same place.
+  let seen = box.clientWidth;
+  new ResizeObserver(() => { if (box.clientWidth !== seen) { seen = box.clientWidth; pan(column, false); } }).observe(box);
 
   // ---- your hands on the window ---------------------------------------------
   // What each named control does to the state. The names are the canvas's.
   const PRESS: Record<string, () => void> = {
     'Hide Sidebar': () => set('sidebar', 'hidden'),
     'Show Sidebar': () => set('sidebar', 'sidebar'),
-    'Hide Side Column': () => set('side', 'hidden'),
-    'Show Side Column': () => set('side', 'changes'),
+    'Hide Side Column': () => (phone.matches ? pan(false, true) : set('side', 'hidden')),
+    'Show Side Column': () => (phone.matches ? pan(true, true) : set('side', 'changes')),
     'Hide Bottom Strip': () => set('strip', 'hidden'),
     'Changes tab': () => set('side', 'changes'),
     'History tab': () => set('side', 'history'),

@@ -34,7 +34,7 @@ const shown = (el: Element) => !(el as HTMLElement).hidden && (el as HTMLElement
 // (measured 2026-11-24, both ways, in the same terminal).
 const TUCKED = ['visibility', 'marginTop', 'marginBottom', 'minHeight'] as const;
 const untuck = (root: HTMLElement) => {
-  root.querySelectorAll<HTMLElement>(':scope > [data-fit]').forEach((el) => {
+  root.querySelectorAll<HTMLElement>('[data-fit]').forEach((el) => {
     for (const k of TUCKED) el.style[k] = '';
     el.style.display = '';
     delete el.dataset.fit;
@@ -56,19 +56,27 @@ export function fitTerminal(root: HTMLElement) {
   // over it while the agent works. Everything above is the transcript.
   let end = rows.findIndex((r) => r.dataset.name === 'Status');
   if (end < 0) end = rows.findIndex((r) => r.dataset.name === 'Rule');
-  const body = end < 0 ? rows : rows.slice(0, end);
+  // With neither, the transcript ends at the spacer: what is under it
+  // (another agent's input box and status lines) stays where it is.
+  const upto = end >= 0 ? end : rest ? all.indexOf(rest) : rows.length;
+  // A screen that keeps what the agent said in one box (data-rows: Codex's
+  // and Pi's) gives up those rows one at a time, not the box at once: on a
+  // narrow window that left the input box under an empty terminal.
+  const body = rows.slice(0, upto)
+    .flatMap((r) => ('rows' in r.dataset ? (Array.from(r.children) as HTMLElement[]).filter(drawn) : [r]));
   const pinned = end < 0 ? null : rows[end];
   const cs = getComputedStyle(root);
   const room = root.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   const used = rows.reduce((h, r) => h + r.offsetHeight, 0);
   if (used <= room + 0.5) return;
 
+  const max = body.length;
   let i = 0, gone = 0;
   const tuck = () => { gone += body[i].offsetHeight; mark(body[i++]).style.visibility = 'hidden'; };
-  while (i < body.length && used - gone > room + 0.5) tuck();
+  while (i < max && used - gone > room + 0.5) tuck();
   if (!i) return;
   // Having cut, do not open on an empty row, or on a result whose tool line went.
-  while (i < body.length && (!body[i].textContent?.trim() || body[i].dataset.name === 'Result')) tuck();
+  while (i < max && (!body[i].textContent?.trim() || body[i].dataset.name === 'Result')) tuck();
 
   // The room left over once whole rows are gone. Where it goes is where the
   // terminal had it before: over the prompt box, under the last line of a
@@ -153,8 +161,13 @@ export function wholeRows(root: ParentNode) {
   // from the bottom; scrolled, a stale fit would push the prompt box out of
   // sight. Fitting only writes styles and its own marks, which this does not
   // watch, so it cannot set itself off.
+  // A spinner turning its glyph is not a change of rows: the glyphs are one
+  // cell wide, and fitting on each turn ran a layout 12 times a second for
+  // as long as the page was open.
+  const turning = (n: Node) => !!(n instanceof Element ? n : n.parentElement)?.closest('[data-pi-spin], [data-claude-spin]');
   for (const t of terms) {
-    new MutationObserver(() => fitTerminal(t)).observe(t, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+    new MutationObserver((changes) => { if (changes.some((c) => !turning(c.target))) fitTerminal(t); })
+      .observe(t, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
   }
   document.fonts?.ready.then(run);
 }
@@ -201,7 +214,8 @@ export function claudeHeader(path = '~/Developer/wortel') {
   (head.firstElementChild as SVGElement).setAttribute('style', 'position:absolute;left:0;top:19px');
   const row = (text: string, cls: string) => {
     const p = document.createElement('p');
-    p.className = 'h-[19px] whitespace-pre pl-[93.5px] ' + cls;
+    // It wraps in a window narrower than its longest line (a phone's).
+    p.className = 'min-h-[19px] whitespace-pre-wrap [overflow-wrap:anywhere] pl-[93.5px] ' + cls;
     p.textContent = text;
     return p;
   };
@@ -603,7 +617,9 @@ export function termRow(parts: Part[], band = '') {
   return p;
 }
 const blank = (band = '') => termRow([['']], band);
-const spring = () => { const d = document.createElement('div'); d.className = 'flex-1'; return d; };
+// The room between what an agent said and its input box. Named as the
+// canvas names a terminal's spacer, so a fit gives it the room left over.
+const spring = () => { const d = document.createElement('div'); d.className = 'flex-1'; d.dataset.name = 'Rest'; return d; };
 
 const CX = {
   blue: 'text-[#1c64c8] dark:text-[#63a8f8]', file: 'text-[#40a02b] dark:text-[#a6e3a1]',
@@ -681,6 +697,7 @@ export function codexScreen(asked: string, log: HTMLElement[] = [], path = '~/De
   top.dataset.agent = 'codex';
   const body = document.createElement('div');
   body.className = 'flex shrink-0 flex-col';
+  body.dataset.rows = '';
   body.append(...log.flatMap((r, i) => (i && r.textContent?.startsWith('•') ? [blank(), r] : [r])));
   const nodes = [
     ...codexHeader(path, top),
@@ -761,6 +778,7 @@ export function piScreen(asked: string, log: HTMLElement[] = [], path = '~/Devel
   top.dataset.agent = 'pi';
   const body = document.createElement('div');
   body.className = 'flex shrink-0 flex-col';
+  body.dataset.rows = '';
   // Its editor, between the two rules: what you type goes here.
   const typed = document.createElement('span');
   const field = termRow([[' ']]);

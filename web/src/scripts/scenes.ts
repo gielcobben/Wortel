@@ -295,6 +295,8 @@ for (const v of document.querySelectorAll<HTMLElement>('[data-film="start"]')) {
   };
   const prompt = (cmd = '') => {
     const p = promptMould.cloneNode(true) as HTMLElement;
+    p.classList.remove('h-[19px]', 'whitespace-pre');
+    p.classList.add('min-h-[19px]', 'whitespace-pre-wrap', '[overflow-wrap:anywhere]');
     const cursor = p.lastElementChild as HTMLElement;
     const typed = document.createElement('span');
     // The canvas draws the prompt with no space after it: the command brings one.

@@ -41,7 +41,7 @@ const schema = [{
     </p>
     <div class="ctas" data-reveal>
       <a class="btn" href={SITE.download} data-get data-ph="download_clicked" data-ph-location="download" data-ph-version={latest?.version}>Download for macOS</a>
-      <button class="btn" type="button" data-send hidden data-ph="download_link_sent" data-ph-location="download" data-ph-version={latest?.version}>Send to your Mac</button>
+      <button class="btn" type="button" data-send hidden data-version={latest?.version}>Send to your Mac</button>
       {latest && <a class="btn ghost" href="/updates" data-ph="changelog_opened" data-ph-location="download" data-ph-version={latest.version}>What’s new in {latest.version}</a>}
     </div>
     <p class="label" data-reveal aria-live="polite">
@@ -98,13 +98,18 @@ const schema = [{
     idle.hidden = true;
     away.hidden = false;
     if (!navigator.share) send.textContent = 'Copy the link';
+    // Counted once the page has really gone somewhere, not on the tap: a
+    // sheet closed without choosing sent nothing.
+    const sent = () => (window as { posthog?: { capture: (name: string, props?: object) => void } }).posthog
+      ?.capture('download_link_sent', { location: 'download', ...(send.dataset.version ? { version: send.dataset.version } : {}) });
     send.addEventListener('click', async () => {
       if (navigator.share) {
         // Closing the sheet without choosing rejects; that is not an error.
-        try { await navigator.share({ title: document.title, url }); } catch {}
+        try { await navigator.share({ title: document.title, url }); sent(); } catch {}
         return;
       }
       try { await navigator.clipboard.writeText(url); } catch { return; }
+      sent();
       // The button says so itself, for a moment, and the download's link stays.
       send.textContent = 'Link copied';
       setTimeout(() => { send.textContent = 'Copy the link'; }, 2000);

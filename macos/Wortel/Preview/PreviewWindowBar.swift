@@ -162,7 +162,10 @@ final class FileButton: HoverFillButton, NSDraggingSource {
                 NSWorkspace.shared.activateFileViewerSelecting([target])
             }
             let parent = current.deletingLastPathComponent()
-            let isRoot = parent.path == current.path
+            // A parent no shorter than its folder is the disk: on macOS 15.5
+            // the parent of `/` is `/..`, not `/`, and an equality test never
+            // ended (`TerminalLink.repositoryRoot`).
+            let isRoot = parent.path.count >= current.path.count
             item.setGlyph(isFile ? Self.symbol(for: target)
                           : isRoot ? "internaldrive"
                           : target.standardizedFileURL.path == home ? "house" : "folder")

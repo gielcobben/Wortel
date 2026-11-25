@@ -213,15 +213,22 @@ enum TerminalLink {
 
     /// The nearest folder at or above `folder` that holds a `.git` (a folder in
     /// a checkout, a file in a linked worktree). A walk of `stat`s, no git.
+    ///
+    /// Walked on strings, and only ever to a shorter path. It was a walk of
+    /// `URL.deletingLastPathComponent()` that stopped when the parent equalled
+    /// the folder, and on macOS 15.5 the parent of `/` is not `/`: a ⌘-click
+    /// on a path in a terminal outside any repository climbed `/..`,
+    /// `/../..` for ever on the main thread, 25 GB before a force quit
+    /// (2026.47.4, a user's `.hang` of 2026-11-25).
     static func repositoryRoot(of folder: String) -> String? {
-        var url = URL(fileURLWithPath: folder).standardizedFileURL
+        var path = URL(fileURLWithPath: folder).standardizedFileURL.path
         while true {
-            if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
-                return url.path
+            if FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent(".git")) {
+                return path
             }
-            let parent = url.deletingLastPathComponent()
-            if parent.path == url.path { return nil }
-            url = parent
+            let parent = (path as NSString).deletingLastPathComponent
+            guard !parent.isEmpty, parent.count < path.count else { return nil }
+            path = parent
         }
     }
 

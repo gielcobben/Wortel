@@ -30,6 +30,32 @@ the selection to its start before each search, or every letter would move to
 a later match. ⌘E (`useSelectionForFind:`) is enabled only with the keyboard
 in a page. Nothing here runs while the bar is closed.
 
+**Downloads** (`BrowserDownloads`, one list for the app). A response a tab
+can't show, one its server marked `Content-Disposition: attachment`, or a
+link with the `download` attribute becomes a `WKDownload`
+(`BrowserPage`'s two policy methods answer `.download`) and is saved to
+`~/Downloads`. Nothing downloaded is opened, by the tab or by a click in the
+list. The name is WebKit's suggestion made safe (`BrowserDownloadName`:
+never hidden, never empty) and numbered as the Finder numbers a copy
+(`report 2.zip`), so a download never replaces a file. A `file:` the tab
+can't show is not a download: it is shown in the Finder. From a frame inside
+a page only an attachment is saved. A window a page opened itself
+(`BrowserPopup`) has no navigation delegate and saves nothing.
+
+The header of every browser tab has a downloads button once the list has
+something in it (`DownloadsButton`), a ring filling while a download runs,
+and a popover in the running-jobs popover's style: Show in Finder, Stop,
+Clear. The list is memory only and empty after a relaunch; the files stay.
+Progress is read by a quarter-second timer that exists only while something
+is downloading, so a hidden tab's download costs a few property writes a
+second and a redraw of whichever button is on screen.
+
+Measured off screen 2026-11-25 (macOS 27.0): WebKit sets
+`com.apple.quarantine` on the saved file itself, and hands over a file name
+that is already one path component. A stopped download leaves its partial
+file, so `BrowserDownloads.stop` removes it. A Debug build saves to
+`WORTEL_DOWNLOADS_DIR` when that is set, for a test copy.
+
 A file or browser opened without saying where goes where you last *moved* one
 of its kind in that session, or dropped one from a list (`WorkspaceTabs.home(for:)`;
 until then the main area for a file, the column for a browser). ⌥-click puts

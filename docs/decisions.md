@@ -1558,6 +1558,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+- **2026-11-25. A download in a browser tab is saved to `~/Downloads`, and
+  nothing downloaded is opened.** This replaces the 2026-11-21 rule for web
+  addresses: a response a tab couldn't show went to the default browser,
+  which is signed out of the site that offered the file. A `file:` is still
+  only shown in the Finder. The list is a button in the tab's header with a
+  popover, as Safari has, chosen over a line under the page (no way back to
+  an earlier download) and over no sign at all (a click on a download link
+  looked like nothing happened). One list for the app, not saved: a history
+  of downloads is a browser's job, and the files are in the folder. No
+  question before a download, as the browser plan decided for an agent's
+  shell: asking adds no safety when nothing is opened. A partial file from a
+  stopped or failed download is removed, not moved to the Trash: Wortel made
+  it seconds ago and it is half a file.
 - **2026-11-25. Find in a page is WebKit's public find behind the file tab's
   own bar**, with Safari's keys (⌘F, ⌘G, ⇧⌘G, ⌘E). One find bar in the app,
   not the system's `NSTextFinder` bar beside Wortel's. The cost is the count:

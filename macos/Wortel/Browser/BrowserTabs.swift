@@ -377,7 +377,8 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         switch BrowserExternalLink.decide(scheme: url?.scheme,
                                           fromMainFrame: fromMainFrame, toMainFrame: toMainFrame) {
         case .load:
-            decisionHandler(.allow)
+            // A link that says it is for saving (`<a download>`).
+            decisionHandler(action.shouldPerformDownload ? .download : .allow)
         case .ask:
             decisionHandler(.cancel)
             if let url { askToOpen(url, over: webView.window) }
@@ -400,27 +401,48 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         }
     }
 
-    /// A response the tab can't show (a download) goes to your browser.
+    /// A response the tab can't show, or that its server marked as an
+    /// attachment, is saved to Downloads (`BrowserDownloads`). Nothing is
+    /// opened, here or there.
     ///
-    /// Only a web address does. The page chose this URL, and handing any other
-    /// to NSWorkspace opens it with whatever claims it: a local page linking
-    /// to `file:///…/run.command` would have it run in Terminal, unasked. A
-    /// file the tab can't show is shown in the Finder instead, and anything
-    /// else (`data:`, `blob:`) stays where it is. A link to another app
-    /// (`mailto:`) never gets here: it is asked about before it loads
-    /// (`BrowserExternalLink`).
+    /// Until 2026-11-25 it went to the default browser, where the sign-in
+    /// that got you the file doesn't exist. A `file:` the tab can't show is
+    /// not a download (it is on this Mac already): it is shown in the
+    /// Finder, never handed to NSWorkspace to open, since a local page
+    /// linking to `file:///…/run.command` would have it run in Terminal,
+    /// unasked. A link to another app (`mailto:`) never gets here: it is
+    /// asked about before it loads (`BrowserExternalLink`).
+    ///
+    /// From a frame inside the page, only what the server marked as an
+    /// attachment is saved. A frame's response the tab merely can't show is
+    /// left alone, as it was.
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
-        if !response.canShowMIMEType, response.isForMainFrame, let url = response.response.url {
-            switch url.scheme?.lowercased() {
-            case "http", "https": NSWorkspace.shared.open(url)
-            case "file": NSWorkspace.shared.activateFileViewerSelecting([url])
-            default: break
-            }
-            decisionHandler(.cancel)
-            return
+        let disposition = (response.response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Disposition")
+        let attachment = BrowserDownloadName.isAttachment(contentDisposition: disposition)
+        guard attachment || (!response.canShowMIMEType && response.isForMainFrame) else {
+            return decisionHandler(.allow)
         }
-        decisionHandler(.allow)
+        switch response.response.url?.scheme?.lowercased() {
+        case "http", "https", "blob", "data":
+            decisionHandler(.download)
+        case "file":
+            if let url = response.response.url { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+            decisionHandler(.cancel)
+        default:
+            decisionHandler(.cancel)
+        }
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction,
+                 didBecome download: WKDownload) {
+        BrowserDownloads.shared.adopt(download)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse,
+                 didBecome download: WKDownload) {
+        BrowserDownloads.shared.adopt(download)
     }
 
     /// The page's process died (a crash, or memory pressure): start again
@@ -676,6 +698,11 @@ private struct BrowserHeader: View {
                     }
                 }
                 .padding(.leading, 4)
+            // There from the first download on, in every browser tab: the
+            // list is the app's, as Safari's is.
+            if !BrowserDownloads.shared.items.isEmpty {
+                DownloadsButton(downloads: .shared)
+            }
             button("arrow.up.forward.square", "Open in Your Browser", action: page.openInBrowser)
                 .disabled(page.location == nil)
         }

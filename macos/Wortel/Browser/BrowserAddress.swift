@@ -116,3 +116,52 @@ enum BrowserExternalLink: Equatable {
         return fromMainFrame && toMainFrame ? .ask : .refuse
     }
 }
+
+/// The name a download is saved under, in the Downloads folder.
+///
+/// WebKit has already made the server's name one path component (measured
+/// 2026-11-25: `re:port/../x.zip` arrives as `re_port_.._x.zip`), so what is
+/// left here is what a folder of your own wants: nothing hidden, nothing
+/// empty, and never a file that was already there.
+enum BrowserDownloadName {
+    /// `suggested` as a file name: one component, not hidden, not empty, and
+    /// short enough for the file system (255 bytes) with room for a number.
+    static func cleaned(_ suggested: String) -> String {
+        var name = String(String.UnicodeScalarView(suggested.unicodeScalars.filter {
+            !CharacterSet.controlCharacters.contains($0)
+        }))
+        name = name.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ":", with: "_")
+        name = name.trimmingCharacters(in: .whitespaces)
+        // A leading dot would save it where the Finder doesn't show it.
+        name = String(name.drop { $0 == "." })
+        guard !name.isEmpty else { return "download" }
+        let whole = name as NSString
+        let ext = whole.pathExtension
+        var stem = whole.deletingPathExtension
+        let suffix = ext.isEmpty ? "" : "." + ext
+        while (stem + suffix).utf8.count > 240, stem.count > 1 { stem.removeLast() }
+        return stem + suffix
+    }
+
+    /// `name`, or `name 2`, `name 3`… before its extension: the first that
+    /// isn't taken, numbered as the Finder numbers a copy. A download never
+    /// replaces a file.
+    static func free(_ name: String, isTaken: (String) -> Bool) -> String {
+        guard isTaken(name) else { return name }
+        let whole = name as NSString
+        let ext = whole.pathExtension
+        let stem = whole.deletingPathExtension
+        var number = 2
+        while true {
+            let candidate = ext.isEmpty ? "\(stem) \(number)" : "\(stem) \(number).\(ext)"
+            if !isTaken(candidate) { return candidate }
+            number += 1
+        }
+    }
+
+    /// Whether a response is one to save, not show: the server said so.
+    static func isAttachment(contentDisposition: String?) -> Bool {
+        guard let value = contentDisposition?.trimmingCharacters(in: .whitespaces).lowercased() else { return false }
+        return value == "attachment" || value.hasPrefix("attachment;")
+    }
+}

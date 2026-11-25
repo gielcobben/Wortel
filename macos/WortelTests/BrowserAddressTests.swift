@@ -128,3 +128,37 @@ final class BrowserExternalLinkTests: XCTestCase {
         XCTAssertEqual(BrowserExternalLink.decide(scheme: "HTTPS", fromMainFrame: false, toMainFrame: false), .load)
     }
 }
+
+/// The name a download is saved under. Wrong, it replaces a file or hides one.
+final class BrowserDownloadNameTests: XCTestCase {
+    func testADownloadNameIsOneVisibleComponent() {
+        XCTAssertEqual(BrowserDownloadName.cleaned("report.zip"), "report.zip")
+        XCTAssertEqual(BrowserDownloadName.cleaned("../../etc/passwd"), "_.._etc_passwd")
+        XCTAssertEqual(BrowserDownloadName.cleaned(".zshrc"), "zshrc")
+        XCTAssertEqual(BrowserDownloadName.cleaned("a:b"), "a_b")
+        XCTAssertEqual(BrowserDownloadName.cleaned("  \u{0}  "), "download")
+        XCTAssertEqual(BrowserDownloadName.cleaned(""), "download")
+    }
+
+    /// A name longer than the file system takes is cut in its stem, not its extension.
+    func testALongDownloadNameKeepsItsExtension() {
+        let name = BrowserDownloadName.cleaned(String(repeating: "é", count: 300) + ".tar")
+        XCTAssertLessThanOrEqual(name.utf8.count, 240)
+        XCTAssertTrue(name.hasSuffix(".tar"))
+    }
+
+    /// A download never replaces a file: it is numbered, as a copy in the Finder is.
+    func testATakenDownloadNameIsNumbered() {
+        let taken: Set<String> = ["report.zip", "report 2.zip", "notes"]
+        XCTAssertEqual(BrowserDownloadName.free("new.zip", isTaken: taken.contains), "new.zip")
+        XCTAssertEqual(BrowserDownloadName.free("report.zip", isTaken: taken.contains), "report 3.zip")
+        XCTAssertEqual(BrowserDownloadName.free("notes", isTaken: taken.contains), "notes 2")
+    }
+
+    func testAnAttachmentIsSaved() {
+        XCTAssertTrue(BrowserDownloadName.isAttachment(contentDisposition: "attachment; filename=\"a.pdf\""))
+        XCTAssertTrue(BrowserDownloadName.isAttachment(contentDisposition: "Attachment"))
+        XCTAssertFalse(BrowserDownloadName.isAttachment(contentDisposition: "inline; filename=\"attachment.pdf\""))
+        XCTAssertFalse(BrowserDownloadName.isAttachment(contentDisposition: nil))
+    }
+}

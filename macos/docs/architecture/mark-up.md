@@ -60,6 +60,15 @@ listener a document), a resize, the page changing itself (a
 and `stop` and posts nothing while there are no marks. A report is a flat
 list of numbers, read by `WebMarkReport` as if it could be anything.
 
+**What a page says about itself is not trusted.** An element's name, id,
+selector and text are whatever the page's author wrote, and what is copied
+is pasted into a terminal. Every string from the page is cut to a length
+and passed through `MarkText.clean` on its way in (`WebMarkupSurface.text`):
+control characters, line and paragraph separators and invisible formatting
+characters are removed, so a name cannot carry an escape sequence, end a
+bracketed paste or start a line of its own. The words themselves are the
+page's, quoted and short; an agent reading them reads a page.
+
 An element is followed by reference, so a fixed header's mark stays with
 the header, and a mark inside a scrolling panel moves with the panel and is
 cut off where the panel is (the report carries the clip). An element that

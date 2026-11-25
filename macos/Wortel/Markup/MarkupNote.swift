@@ -43,7 +43,9 @@ enum MarkupNote {
             case .mark(let number):
                 guard let mark = marks[number] else { continue }
                 if let last = sentence.last, !last.isWhitespace, last != "(" { sentence += " " }
-                sentence += mark.picture.map { "\(mark.text) (\($0))" } ?? mark.text
+                // Whatever named the mark, it is one word of one sentence.
+                let name = MarkText.clean(mark.text)
+                sentence += mark.picture.map { "\(name) (\($0))" } ?? name
                 afterMark = true
             }
         }

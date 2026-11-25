@@ -164,7 +164,7 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         details.text = Self.text(raw["text"], most: 220)
         details.selector = Self.text(raw["selector"], most: 600)
         details.frame = Self.text(raw["frame"], most: 600)
-        details.html = Self.text(raw["html"], most: 2100)
+        details.html = Self.text(raw["html"], most: 2100, lines: true)
         if let styles = raw["styles"] as? [String: Any] {
             var kept: [String: String] = [:]
             for (key, value) in styles.prefix(20) {
@@ -188,9 +188,12 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         return CGRect(x: values[0], y: values[1], width: max(values[2], 0), height: max(values[3], 0))
     }
 
-    private static func text(_ value: Any?, most: Int) -> String? {
-        guard let text = value as? String, !text.isEmpty else { return nil }
-        return String(text.prefix(most))
+    /// A string the page gave, cut to a length and with nothing in it that
+    /// a terminal would act on (`MarkText`): the page's author chose it.
+    private static func text(_ value: Any?, most: Int, lines: Bool = false) -> String? {
+        guard let text = value as? String else { return nil }
+        let clean = MarkText.clean(String(text.prefix(most)), lines: lines)
+        return clean.isEmpty ? nil : clean
     }
 
     func placement(of number: Int) -> MarkPlacement? {

@@ -21,7 +21,9 @@ Wortel builds Ghostty from one pinned commit. Nothing moves it on its own.
   `ghostty/<tag>`. It moves `ghostty.ref` (and
   `zig.version` if the tag needs a newer Zig) and nothing else. The macos
   workflow is started on it, so CI already says whether the patch stack
-  applies and the tests pass.
+  applies and the tests pass. That run is linked in the pull request's first
+  comment, not in its checks: GitHub lists no run started by
+  workflow_dispatch there. A push to the branch runs CI as usual.
 
 What follows is the part that cannot be automated. Moving to 5ebe501 built and
 passed every test, and still shipped dead links and a broken copy-on-select in

@@ -1858,6 +1858,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   night). The stage clips at its own edges already, so the inner clip is
   gone, and the pan and the two overlays measured against that box (Settings,
   the notification) are measured against the plain one.
+- **2026-11-25. The panel under the bento is the site's grey, not a beige
+  of its own.** It was `--fog-2`, a cream that nothing else on the site
+  used. It is now `--btn-2`, the grey the quiet buttons and a chosen row are
+  filled with, and `--fog-2` and `--fog-3` are gone so the beige cannot come
+  back by name.
+- **2026-11-25. The closing photo has no version line.** "Version 2026.47.4
+  · 27 MB" sat beside the buttons as small grey print on the landscape, where
+  it could not be read. It is gone at every width (a phone had already lost
+  it). The download page says the version and the size.
 
 ## Contributing
 

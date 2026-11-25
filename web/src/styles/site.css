@@ -39,11 +39,10 @@
 :root {
   color-scheme: light dark;
 
-  /* fog: page, raised band, tile */
+  /* fog: the page, and a raised band on it (code, a table's own column).
+     There is no darker fog: a filled surface is the grey below (--btn-2). */
   --fog-0: #fbfaf7;
   --fog-1: #f3f2ed;
-  --fog-2: #e9e7e0;
-  --fog-3: #dedbd2;
   /* ink: text, secondary, tertiary */
   --ink: #1b1b17;
   --ink-2: #6b6960;
@@ -57,6 +56,7 @@
   --accent-soft: rgb(0 112 245 / 0.12);
   --btn: #1b1b17;
   --btn-ink: #fbfaf7;
+  /* The one grey: the quiet button, a chosen row, the panel under the bento. */
   --btn-2: rgb(27 27 23 / 0.06);
   --nav: rgb(251 250 247 / 0.86);
   --shadow-window: 0 32px 64px -16px rgb(40 38 28 / 0.36), 0 0 0 0.5px rgb(0 0 0 / 0.28);
@@ -84,8 +84,6 @@
   :root {
     --fog-0: #0e0e0c;
     --fog-1: #151512;
-    --fog-2: #1d1d19;
-    --fog-3: #272722;
     --ink: #ecebe6;
     --ink-2: #9e9b90;
     --ink-3: #8a877c;

@@ -417,7 +417,8 @@ of the window keeps both in a wider window, and the stage shows one at a time.
 | Token | Light | Dark | For |
 | --- | --- | --- | --- |
 | `--fog-0` | `#fbfaf7` | `#0e0e0c` | The page |
-| `--fog-1`, `--fog-2`, `--fog-3` | `#f3f2ed` `#e9e7e0` `#dedbd2` | `#151512` `#1d1d19` `#272722` | Raised band, tile |
+| `--fog-1` | `#f3f2ed` | `#151512` | A raised band: code, a table's own column |
+| `--btn-2` | ink at 6% | ink at 8% | The one grey: the quiet button, a chosen row, the panel under the bento |
 | `--ink` | `#1b1b17` | `#ecebe6` | Text, and the primary button |
 | `--ink-2`, `--ink-3` | `#6b6960` `#77746a` | `#9e9b90` `#8a877c` | Secondary, tertiary |
 | `--tone` | `#9c998e` | `#6c6a61` | The grey half of a heading. Large type only |

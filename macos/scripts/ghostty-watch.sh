@@ -60,6 +60,24 @@ echo "[*] pin ${pin:0:9}; newest tag: ${target:-none}; relevant on main: $releva
 
 # --- the pull request -------------------------------------------------------
 
+# Starts macos.yml on the branch and says where it is on the pull request: a
+# run started by workflow_dispatch is on the commit but not in the pull
+# request's checks (seen 2026-11-25, pull request 4), so the link is the way
+# to it.
+start_ci() {
+    local before run
+    before=$(gh run list --workflow macos.yml --branch "$branch" --event workflow_dispatch \
+        --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+    gh workflow run macos.yml --ref "$branch"
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 3
+        run=$(gh run list --workflow macos.yml --branch "$branch" --event workflow_dispatch \
+            --limit 1 --json databaseId,url --jq ".[0] | select(.databaseId != $before) | .url")
+        [ -n "$run" ] && break
+    done
+    gh pr comment "$pr_url" --body "The macOS CI for this pull request: ${run:-the latest macos run on \`$branch\` under Actions}. It builds Ghostty with every patch and runs the tests. A run started by this workflow is not listed under the checks here, so look there; a push to this branch runs CI as usual."
+}
+
 pr_url=""
 if [ -n "$target" ]; then
     branch="ghostty/$target"
@@ -78,13 +96,14 @@ if [ -n "$target" ]; then
         fi
         {
             cat <<EOF
-Moves Ghostty to **\`$target\`**. Only the pin moved: CI below says whether the
-patch stack still applies and the tests pass. Nothing else here is done yet.
+Moves Ghostty to **\`$target\`**. Only the pin moved: the macOS CI run linked
+in the first comment says whether the patch stack still applies and the tests
+pass. Nothing else here is done yet.
 
 To finish it, ask an agent to **"update Ghostty on this pull request"** (the
 \`update-ghostty\` skill):
 
-- [ ] The build and every patch apply (CI on this branch)
+- [ ] The build and every patch apply (the CI run in the first comment)
 - [ ] Each change under Links, Config, C API and Ghostty.app below is read, and what changed for Wortel is handled
 - [ ] Shell integration fixes ported, terminfo regenerated (if those areas appear)
 - [ ] \`scripts/check-terminals.sh\` and \`scripts/verify-agent-status.py\` pass
@@ -105,7 +124,7 @@ EOF
             pr_url=$(gh pr create --draft --base main --head "$branch" \
                 --title "Ghostty: $target" --body-file "$WORK/pr.md")
             echo "[*] $pr_url"
-            gh workflow run macos.yml --ref "$branch"
+            start_ci
         else
             git switch --quiet -c "$branch"
             echo "$target_sha" > GhosttyKit/ghostty.ref
@@ -121,7 +140,7 @@ EOF
             pr_url=$(gh pr create --draft --base main --head "$branch" \
                 --title "Ghostty: $target" --body-file "$WORK/pr.md")
             echo "[*] $pr_url"
-            gh workflow run macos.yml --ref "$branch"
+            start_ci
             git switch --quiet -
         fi
     fi

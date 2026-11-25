@@ -1285,7 +1285,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   with what changed since the pin that reaches Wortel, sorted by what each
   change asks for, and opens a draft pull request for the newest `v*` or
   `vt-*` tag past the pin (one, if two came in a week) that moves only the
-  pin, with `macos.yml` started on it. Tags rather
+  pin, with `macos.yml` started on it. That run is linked in a comment on
+  the pull request: one started by workflow_dispatch is on the commit but
+  not in the pull request's checks (pull request 4, the first). A token of
+  its own would make the pull request's own CI run, at the cost of a secret
+  to keep; the link was enough. Tags rather
   than Ghostty's main branch: every move restarts the user's shells once
   (above) and needs the review in the `update-ghostty` skill, so it is done
   at the points upstream calls stable, or at once for a security fix. The

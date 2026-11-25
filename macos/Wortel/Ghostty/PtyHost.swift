@@ -489,11 +489,22 @@ final class PtyHost: @unchecked Sendable {
     func write(_ bytes: UnsafePointer<UInt8>, count: Int) {
         let held = typingHold.withLock { hold -> Bool in
             guard hold != nil else { return false }
+            // Nothing after a held Return is ever typed (`releaseTyping`), so
+            // nothing after one is kept either.
+            guard hold!.last != Self.heldReturn else { return true }
             let room = Self.heldTypingLimit - hold!.reduce(0) { $0 + $1.count }
+            let typed = UnsafeBufferPointer(start: bytes, count: count)
+            // A write with a line break in it is a Return pressed blind like
+            // any other: a middle-click paste or dropped text, which don't
+            // wait for the start as ⌘V does, arrive as one write with their
+            // lines ended by "\r", and the program would send the first line
+            // on. It ends the hold and is not kept, not even up to the break:
+            // that could be a bracketed paste's opening without its end.
+            let breaks = typed.contains { $0 == 0x0D || $0 == 0x0A }
             // Past the limit nothing more is kept, so what is handed over
             // ends where it stopped fitting instead of having a hole in it:
             // the same mark a held Return leaves.
-            hold!.append(count <= room ? Array(UnsafeBufferPointer(start: bytes, count: count)) : Self.heldReturn)
+            hold!.append(!breaks && count <= room ? Array(typed) : Self.heldReturn)
             return true
         }
         if held { return }

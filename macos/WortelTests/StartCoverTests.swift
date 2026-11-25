@@ -192,14 +192,23 @@ final class StartCoverTests: XCTestCase {
         XCTAssertEqual(typed(), "first")
     }
 
-    func testAPasteWithAReturnInItIsNotAHeldReturn() {
-        // Only the key: text that happens to hold one is one write, kept whole.
+    func testAPasteWithALineBreakInItEndsTheHold() {
+        // A middle-click paste or dropped text is one write with its lines
+        // already ended by "\r", and the program would send its first line
+        // on at a screen nobody had seen. It is dropped whole, with whatever
+        // comes after it; what came before still goes.
         let (host, typed, close) = typingHost()
         defer { close() }
         host.holdTyping()
+        type("fix ", into: host)
         type("one\rtwo", into: host)
+        type("more", into: host)
         host.releaseTyping(deliver: true)
-        XCTAssertEqual(typed(), "one\rtwo")
+        XCTAssertEqual(typed(), "fix ")
+        host.holdTyping()
+        type("\u{1B}[200~one\ntwo\u{1B}[201~", into: host)
+        host.releaseTyping(deliver: true)
+        XCTAssertEqual(typed(), "")
     }
 
     // MARK: - The rule

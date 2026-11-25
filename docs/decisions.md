@@ -965,7 +965,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   to again) typed its held keys; a shell that died under the page stayed
   hidden until the wait ran out; and the marker wait could run out on a
   busy main thread with the news of the marker still queued, so the marker
-  is read from disk once before that answer is given. Only zsh and bash, whose marks were seen working; fish joins
+  is read from disk once before that answer is given. A second review
+  (2026-11-25) found a middle-click paste or dropped text did not wait as
+  ⌘V does, and went in with its Returns: one write with a line break in it
+  now ends the hold like a Return and is dropped whole, since cutting it at
+  the break could hand over a bracketed paste's opening without its end. Only zsh and bash, whose marks were seen working; fish joins
   when its marks have been checked on a Mac that has it. Left out: a resume
   after a lost keeper, agent sleep's wake and `wortel cd` (each comes back
   to a screen worth reading), a plain terminal, and keeping a spare agent

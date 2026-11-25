@@ -55,6 +55,11 @@ final class MarkupFileTests: XCTestCase {
         DiffView(lines: lines(texts, added: added), fontSize: fontSize, gutter: .file, markup: views)
     }
 
+    // Every adapter below is held as `any MarkupSurface`, which is how the
+    // layer holds one. Held by its own type, a member the protocol only
+    // gives a default for is the adapter's; through the protocol it is the
+    // default. `attach(to:)` was such a member, and no mark on a file was
+    // tied to anything while these tests passed.
     private func tie(_ surface: any MarkupSurface, _ number: Int, to box: CGRect) -> MarkTie? {
         var answer: MarkTie?
         surface.tie(number, to: box) { answer = $0 }
@@ -71,7 +76,7 @@ final class MarkupFileTests: XCTestCase {
 
     func testAMarkIsTiedToTheRowItWasDrawnOnAndScrollsWithIt() throws {
         _ = show(diff(numbered(200)))
-        let surface = LinesMarkupSurface(views: views)
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
         surface.attach(to: layer)
         var moves = 0
         surface.activate(moved: { moves += 1 })
@@ -105,7 +110,7 @@ final class MarkupFileTests: XCTestCase {
     func testAMarkFindsItsLineAgainWhenTheFileIsRewrittenAndHasNoPlaceWhenItIsGone() throws {
         var texts = numbered(60)
         let host = show(diff(texts))
-        let surface = LinesMarkupSurface(views: views)
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})
         let height = try XCTUnwrap(views.table).rowHeight
@@ -133,7 +138,7 @@ final class MarkupFileTests: XCTestCase {
 
     func testAMarkGrowsWithTheText() throws {
         let host = show(diff(numbered(40)))
-        let surface = LinesMarkupSurface(views: views)
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})
         let table = try XCTUnwrap(views.table)
@@ -150,7 +155,7 @@ final class MarkupFileTests: XCTestCase {
 
     func testAPictureOfAnAreaIsWhatTheTableShowsThereOnThePagesColour() throws {
         _ = show(diff(numbered(100), added: [2]))
-        let surface = LinesMarkupSurface(views: views)
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})
         let height = try XCTUnwrap(views.table).rowHeight
@@ -176,7 +181,7 @@ final class MarkupFileTests: XCTestCase {
         // 200 lines in a view that shows about 20: the added line near the
         // end is far out of view.
         _ = show(diff(numbered(200), added: [180]))
-        let surface = LinesMarkupSurface(views: views)
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})
         let table = try XCTUnwrap(views.table)
@@ -248,7 +253,7 @@ final class MarkupFileTests: XCTestCase {
         root.addSubview(layer)
         views.image = imageView
 
-        let surface = ImageMarkupSurface(views: views)
+        let surface: any MarkupSurface = ImageMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})
         // Beside the picture there is nothing to mark.
@@ -304,7 +309,7 @@ extension MarkupFileTests {
         root.addSubview(layer)
         let views = MarkupViews()
         views.image = imageView
-        let surface = ImageMarkupSurface(views: views)
+        let surface: any MarkupSurface = ImageMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})
 

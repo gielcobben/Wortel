@@ -24,11 +24,21 @@ enum ViewPicture {
         return onBackground(shot, background(of: view))
     }
 
+    /// The most pixels a side of a mark's picture has. What a file says its
+    /// size is, is the file's to say: an SVG can declare any width, and a
+    /// mark across it must not ask for a bitmap that large.
+    static let mostPixels = 4096
+
+    /// `image` on a colour, made smaller when a side is over `mostPixels`.
     static func onBackground(_ image: CGImage, _ background: CGColor) -> CGImage? {
-        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+        let shrink = min(1, CGFloat(mostPixels) / CGFloat(max(image.width, 1)),
+                         CGFloat(mostPixels) / CGFloat(max(image.height, 1)))
+        let width = max(Int((CGFloat(image.width) * shrink).rounded()), 1)
+        let height = max(Int((CGFloat(image.height) * shrink).rounded()), 1)
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        let all = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let all = CGRect(x: 0, y: 0, width: width, height: height)
         context.setFillColor(background)
         context.fill(all)
         context.draw(image, in: all)

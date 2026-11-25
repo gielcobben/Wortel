@@ -176,6 +176,11 @@ its image view. Weak, all of it.
   by being seen to scroll from end to end. Each mark has its own picture
   either way.
 
+A mark's picture is 4,096 pixels a side at most (`ViewPicture.mostPixels`),
+and a picture with no pixels of its own is never drawn larger than that. An
+image's size is what its file declares: an SVG that says it is 100,000
+points wide must not be drawn into a bitmap of 200,000.
+
 Pictures of the app's own views are `cacheDisplay` on the clip view, which
 has no scroller in it, laid on the page's colour: a file's views draw no
 background of their own, and a picture of one alone would be dark text on

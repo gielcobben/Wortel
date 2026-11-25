@@ -282,6 +282,54 @@ final class MarkupFileTests: XCTestCase {
     }
 }
 
+extension MarkupFileTests {
+    func testAPictureThatDeclaresAnEnormousSizeIsNotDrawnAtIt() throws {
+        // What an SVG can say of itself: 100,000 points a side. Drawn at
+        // twice that it would be a bitmap of 160 GB.
+        let huge = NSImage(size: NSSize(width: 100_000, height: 100_000), flipped: false) { rect in
+            NSColor.red.setFill()
+            rect.fill()
+            return true
+        }
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 300), styleMask: [.borderless],
+                          backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
+        window.contentView = root
+        let imageView = NSImageView(frame: root.bounds)
+        imageView.imageScaling = .scaleProportionallyDown
+        imageView.image = huge
+        root.addSubview(imageView)
+        layer = Layer(frame: root.bounds)
+        root.addSubview(layer)
+        let views = MarkupViews()
+        views.image = imageView
+        let surface = ImageMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+
+        var capture: MarkCapture?
+        surface.capture(CGRect(x: 0, y: 0, width: 300, height: 300)) { capture = $0 }
+        let cut = try XCTUnwrap(capture)
+        XCTAssertLessThanOrEqual(cut.image.width, ViewPicture.mostPixels)
+        XCTAssertLessThanOrEqual(cut.image.height, ViewPicture.mostPixels)
+        XCTAssertGreaterThan(cut.image.width, 1000)
+    }
+
+    func testAPictureLargerThanAllowedIsMadeSmaller() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 6000, height: 300, bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let wide = try XCTUnwrap(context.makeImage())
+        let fitted = try XCTUnwrap(ViewPicture.onBackground(wide, CGColor(gray: 1, alpha: 1)))
+        XCTAssertEqual(fitted.width, ViewPicture.mostPixels)
+        XCTAssertEqual(fitted.height, 205)
+        // One that fits is left at its size.
+        let small = try XCTUnwrap(wide.cropping(to: CGRect(x: 0, y: 0, width: 80, height: 60)))
+        XCTAssertEqual(ViewPicture.onBackground(small, CGColor(gray: 1, alpha: 1))?.width, 80)
+    }
+}
+
 /// A picture's pixels, counted from the top-left.
 private struct Pixels {
     struct Colour: Equatable { let r, g, b, a: UInt8 }

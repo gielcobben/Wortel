@@ -1558,6 +1558,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+- **2026-11-25. Find in a page is WebKit's public find behind the file tab's
+  own bar**, with Safari's keys (⌘F, ⌘G, ⇧⌘G, ⌘E). One find bar in the app,
+  not the system's `NSTextFinder` bar beside Wortel's. The cost is the count:
+  the public call says found or not, so a page's bar says "Not found" where
+  a file's says "3 of 12". The count and every match lit at once are behind
+  private calls (`_countStringMatches`), left out for the reason the plan
+  leaves out a view of network requests. ⌘F reaches the page in front from
+  the terminal, as ⌘R does.
 - **2026-11-24. A preview tab: a file looked at from Changes or Files while
   a file is in front takes the place of the one before it**, in one tab with
   an italic title, as in Xcode and VS Code. A click or ↑/↓ in the list does

@@ -56,6 +56,15 @@ enum BrowserAddress {
         return nil
     }
 
+    /// A page's selection as something to look for (⌘E): its first line,
+    /// trimmed. A selection across paragraphs has line breaks in it that no
+    /// text in the page matches.
+    static func searchable(_ selection: String?) -> String? {
+        let line = selection?.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let text = line.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
+    }
+
     /// The host of an address typed without a scheme.
     private static func host(of text: String) -> String {
         if text.hasPrefix("[") { return String(text.dropFirst().prefix { $0 != "]" }) }

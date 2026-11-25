@@ -19,6 +19,17 @@ on a server from the running-jobs popover. A browser's address lives on its
 session (`browserAddresses`, persisted) and its live web view in
 `BrowserTabs`, not in the view, so moving the tab doesn't reload it.
 
+**Find in a page** (`BrowserFind`, one per `BrowserPage`). Edit ▸ Find's three
+items are the file tab's (`showPreviewFind:` and its two neighbours);
+`AppDelegate.findTarget` picks what they act on, the tab in front of the area
+you're in and then the column, the main area and the strip: a file that is
+text, or a browser that is somewhere. The bar is `FindBar` (`Wortel/UI/`),
+the same view a file tab shows. The search is `WKWebView.find`, the public
+call, which marks one match and says found or not: no count. Typing collapses
+the selection to its start before each search, or every letter would move to
+a later match. ⌘E (`useSelectionForFind:`) is enabled only with the keyboard
+in a page. Nothing here runs while the bar is closed.
+
 A file or browser opened without saying where goes where you last *moved* one
 of its kind in that session, or dropped one from a list (`WorkspaceTabs.home(for:)`;
 until then the main area for a file, the column for a browser). ⌥-click puts

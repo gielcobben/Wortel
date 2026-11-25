@@ -102,6 +102,7 @@ enum PaletteCommands {
         "moveTabDown:": "arrow.down.to.line",
         "moveTabUp:": "arrow.up.to.line",
         "showPreviewFind:": "magnifyingglass",
+        "useSelectionForFind:": "text.magnifyingglass",
         "markSessionUnread:": "circle.dashed",
         "updateSessionAgent:": "exclamationmark.triangle",
         "togglePinSession:": "pin",

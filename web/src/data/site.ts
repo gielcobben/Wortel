@@ -426,7 +426,7 @@ export const DOCS_SECTIONS: Section[] = [
             ['Browser: address field', '⌘L'],
             ['Browser: reload', '⌘R'],
             ['Browser: back / forward', '⌘[ / ⌘]'],
-            ['Find in a file, next / previous match', '⌘F, ⌘G / ⇧⌘G'],
+            ['Find in a file or a page, next / previous match', '⌘F, ⌘G / ⇧⌘G'],
             ['Clear the terminal', '⌘K'],
             ['Increase / decrease / reset font size', '⌘+ / ⌘− / ⌘0'],
             ['Select all (⌘A clears the input line)', '⇧⌘A'],

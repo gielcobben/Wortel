@@ -79,6 +79,15 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertEqual(BrowserAddress.short(URL(string: "http://localhost:5173/docs")!), "localhost:5173/docs")
         XCTAssertEqual(BrowserAddress.short(URL(string: "https://wortel.sh")!), "wortel.sh")
     }
+
+    /// ⌘E looks for the selection's first line: no page text matches a line break.
+    func testASelectionToLookForIsItsFirstLine() {
+        XCTAssertEqual(BrowserAddress.searchable("  needle  "), "needle")
+        XCTAssertEqual(BrowserAddress.searchable("first line\nsecond"), "first line")
+        XCTAssertEqual(BrowserAddress.searchable("\n\nafter blanks"), "after blanks")
+        XCTAssertNil(BrowserAddress.searchable("   "))
+        XCTAssertNil(BrowserAddress.searchable(nil))
+    }
 }
 
 final class BrowserExternalLinkTests: XCTestCase {

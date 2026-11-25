@@ -93,6 +93,9 @@ final class BrowserPage: NSObject {
     /// Bumped to put the keyboard in the address field.
     private(set) var addressFocusRequest = 0
 
+    /// ⌘F over this page.
+    @ObservationIgnored let find = BrowserFind()
+
     @ObservationIgnored var onNavigate: (URL) -> Void = { _ in }
     /// The view the web view is in, or should be: the newest place showing
     /// this page. See `WebViewHost`.
@@ -129,6 +132,7 @@ final class BrowserPage: NSObject {
         super.init()
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        find.webView = webView
         // Inspect Element in the context menu.
         webView.isInspectable = true
         // What `toggleInspector` needs: without it the inspector never
@@ -537,6 +541,7 @@ struct BrowserTab: View {
     @State private var query: String?
     @State private var highlighted: URL?
     @FocusState private var editing: Bool
+    @FocusState private var finding: Bool
 
     var body: some View {
         let servers = BrowserTabs.shared.servers()
@@ -550,6 +555,15 @@ struct BrowserTab: View {
             Rectangle()
                 .fill(Color(nsColor: Chrome.hairline))
                 .frame(height: 1)
+            if page.find.isPresented {
+                @Bindable var find = page.find
+                FindBar(query: $find.query, summary: find.summary, canStep: find.canStep,
+                        focused: $finding, next: find.next, previous: find.previous,
+                        dismiss: find.dismiss)
+                    // Made with the keyboard asked for (⌘F), or without (⌘G
+                    // bringing the bar back).
+                    .onAppear { if find.focusRequest != focusedFor { focusFind() } }
+            }
             ZStack {
                 WebViewHost(page: page)
                     // Whether it's on screen, once the move settles: a tab moving
@@ -570,8 +584,25 @@ struct BrowserTab: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: Chrome.content))
+        .onAppear { focusedFor = page.find.focusRequest }
+        .onChange(of: page.find.focusRequest) { _, _ in focusFind() }
         // Another browser in the same row is another web view to borrow.
         .id(ObjectIdentifier(page))
+    }
+
+    /// The find request the keyboard was last moved for, so a bar that comes
+    /// back for ⌘G (no request) leaves the keyboard in the page.
+    @State private var focusedFor = 0
+
+    /// The keyboard into the find field, its text selected so typing
+    /// replaces it, as ⌘F does in every browser.
+    private func focusFind() {
+        focusedFor = page.find.focusRequest
+        finding = true
+        DispatchQueue.main.async {
+            guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+            editor.selectAll(nil)
+        }
     }
 
     /// The servers the field suggests: all of them until you've typed, then

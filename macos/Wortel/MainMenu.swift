@@ -430,8 +430,8 @@ enum MainMenu {
         selectAll.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
         // A preview window answers it for its file, and AppDelegate for a file
-        // tab in front of an area. With neither it's disabled, and ⌘F goes on
-        // to the shell, where it's the terminal's.
+        // or a page in front of an area. With none it's disabled, and ⌘F goes
+        // on to the shell, where it's the terminal's.
         //
         // In a Find submenu, as every Apple app's Edit menu has it.
         let find = editMenu.addItem(withTitle: "Find", action: nil, keyEquivalent: "")
@@ -449,6 +449,12 @@ enum MainMenu {
                                             action: #selector(PreviewWindowController.previewFindPrevious(_:)),
                                             keyEquivalent: "g")
         findPrevious.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘E, as in Safari and every Mac app with a find: what is selected in
+        // a page becomes what ⌘G looks for. Only with the keyboard in a
+        // page; otherwise it's disabled and ⌘E is the terminal's.
+        findMenu.addItem(withTitle: "Use Selection for Find",
+                         action: #selector(AppDelegate.useSelectionForFind(_:)),
+                         keyEquivalent: "e")
         selectAllItem = selectAll
 
         // View menu: what's on screen. The areas first, then what fills the

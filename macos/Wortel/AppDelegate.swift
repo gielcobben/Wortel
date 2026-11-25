@@ -1919,33 +1919,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         previewTabs.forget(path)
     }
 
-    /// ⌘F with a file tab showing: that file's find bar, as a preview window's.
-    /// The tab in front of the area you're in first, then any area's. With no
-    /// searchable file on screen the item is disabled and ⌘F goes on to the
-    /// terminal, as it always has.
+    /// ⌘F with a file or a page showing: its find bar, as a preview window's.
+    /// The tab in front of the area you're in first, then any area's, so it
+    /// reaches a page from the terminal as ⌘R does. With nothing to search on
+    /// screen the item is disabled and ⌘F goes on to the terminal, as it
+    /// always has.
     @objc func showPreviewFind(_ sender: Any?) {
-        guard let path = findableFileTab() else { return }
-        // As ⌘L: the find bar has the keyboard, so its area is the one you're in.
-        if let region = manager.selected?.workspace.region(of: .file(path)) { gitPanel.lastRegion = region }
-        previewTabs.document(for: path).find.isPresented = true
+        switch findTarget() {
+        case .file(let path)?:
+            // As ⌘L: the find bar has the keyboard, so its area is the one you're in.
+            if let region = manager.selected?.workspace.region(of: .file(path)) { gitPanel.lastRegion = region }
+            previewTabs.document(for: path).find.isPresented = true
+        case .page(let id)?:
+            if let region = manager.selected?.workspace.region(of: .browser(id)) { gitPanel.lastRegion = region }
+            BrowserTabs.shared.page(for: id).find.present()
+        case nil:
+            break
+        }
     }
 
-    /// ⌘G / ⇧⌘G: the next and previous match of the find bar that's open.
-    @objc func previewFindNext(_ sender: Any?) { openFind()?.next() }
-    @objc func previewFindPrevious(_ sender: Any?) { openFind()?.previous() }
+    /// ⌘G / ⇧⌘G: the next and previous match. In a file, of the find bar
+    /// that's open; in a page, of what was last looked for there, bar or no
+    /// bar (⌘E, then ⌘G, as in Safari).
+    @objc func previewFindNext(_ sender: Any?) { stepFind(forward: true) }
+    @objc func previewFindPrevious(_ sender: Any?) { stepFind(forward: false) }
+
+    private func stepFind(forward: Bool) {
+        switch findTarget() {
+        case .file?:
+            forward ? openFind()?.next() : openFind()?.previous()
+        case .page(let id)?:
+            let find = BrowserTabs.shared.page(for: id).find
+            forward ? find.next() : find.previous()
+        case nil:
+            break
+        }
+    }
+
+    /// ⌘E: look for what is selected in the page that has the keyboard.
+    @objc func useSelectionForFind(_ sender: Any?) {
+        keyboardBrowserPage?.find.useSelection()
+    }
+
+    /// Whether ⌘G has something to step through.
+    private var canStepFind: Bool {
+        switch findTarget() {
+        case .file?: return openFind()?.matches.isEmpty == false
+        case .page(let id)?: return BrowserTabs.shared.existingPage(for: id)?.find.canStep == true
+        case nil: return false
+        }
+    }
 
     /// The find bar of the file tab ⌘F would pick, if it's up.
     private func openFind() -> PreviewFind? {
-        guard let path = findableFileTab() else { return nil }
+        guard case .file(let path)? = findTarget() else { return nil }
         let find = previewTabs.document(for: path).find
         return find.isPresented ? find : nil
     }
 
-    private func findableFileTab() -> String? {
-        let fronts = [focusedRegion(), .side, .main, .bottom].map { gitPanel.activeTab(in: $0) }
-        for case let path? in fronts.map({ $0?.filePath }) {
-            let document = previewTabs.document(for: path).document
-            if document.mode != .rendered, !document.isBinary { return path }
+    /// What ⌘F searches.
+    private enum FindTarget {
+        case file(String)
+        case page(UUID)
+    }
+
+    /// The first searchable tab in front: of the area you're in, then the
+    /// column, the main area, the strip. A file that is text and not
+    /// rendered, or a browser that is somewhere.
+    private func findTarget() -> FindTarget? {
+        for tab in [focusedRegion(), .side, .main, .bottom].compactMap({ gitPanel.activeTab(in: $0) }) {
+            if let path = tab.filePath {
+                let document = previewTabs.document(for: path).document
+                if document.mode != .rendered, !document.isBinary { return .file(path) }
+            } else if let id = tab.browserID, BrowserTabs.shared.existingPage(for: id)?.location != nil {
+                return .page(id)
+            }
         }
         return nil
     }
@@ -2307,11 +2355,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(showPreviewFind(_:)) {
-            return findableFileTab() != nil
+            return findTarget() != nil
         }
         if menuItem.action == #selector(previewFindNext(_:))
             || menuItem.action == #selector(previewFindPrevious(_:)) {
-            return openFind()?.matches.isEmpty == false
+            return canStepFind
+        }
+        if menuItem.action == #selector(useSelectionForFind(_:)) {
+            return keyboardBrowserPage != nil
         }
         if menuItem.action == #selector(showWebInspector(_:)) {
             let page = frontBrowser().flatMap { BrowserTabs.shared.existingPage(for: $0) }

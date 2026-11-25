@@ -153,10 +153,19 @@ session, the same as closing a tab in any other terminal ends its shell.
 | Back / forward | ⌘[ / ⌘] | Safari, Chrome, cmux |
 | Zoom in / out / actual size | ⌘+ / ⌘- / ⌘0 | Safari, Chrome |
 | Web Inspector | ⌥⌘I | Safari, Chrome |
+| Find in the page | ⌘F | everyone |
+| Next / previous match | ⌘G / ⇧⌘G (also Return) | everyone |
+| Look for what is selected | ⌘E | Safari, every Mac app with a find |
 
-⌘L, ⌘R and ⇧⌘R reach the browser in front from anywhere, the terminal included:
-change something, ⌘R, look. With no browser showing they are left to the
-terminal (and ⌘R renames the session).
+⌘L, ⌘R, ⇧⌘R and ⌘F reach the browser in front from anywhere, the terminal
+included: change something, ⌘R, look. With no browser showing they are left to
+the terminal (and ⌘R renames the session).
+
+⌘E needs the keyboard in the page, since it reads the page's selection. It
+also puts the text on the Mac's find pasteboard, so ⌘G in another app looks
+for the same thing. After ⌘E, ⌘G works without opening the bar first. The bar
+says "Not found" and gives no count of matches: WebKit's public find does not
+report one.
 
 Back, forward and zoom need the keyboard in the page. When the page has no
 history in that direction, ⌘[ and ⌘] move between areas as they do everywhere
@@ -170,7 +179,8 @@ else, so the keyboard is never stuck in a page.
 | Next / previous match | ⌘G / ⇧⌘G (also Return) | everyone |
 | Open a file or server in the other place, this once | ⌥-click | |
 
-With no file tab showing, ⌘F is left to the terminal.
+With a file and a page both showing, ⌘F takes the one in the area you're in.
+With neither showing, ⌘F is left to the terminal.
 
 A file opens in the main area and a browser in the column until you drag one
 somewhere else (between rows, or onto a row from a list or a preview window);

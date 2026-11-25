@@ -62,6 +62,7 @@ scripts/check-terminals.sh   # every terminal test, in throwaway copies, about 7
 | `Wortel/Git/` | `docs/architecture/git-panel.md` |
 | Anything about worktrees | `docs/worktrees.md` (the model), `docs/architecture/worktrees.md` (the code) |
 | `Wortel/Files/`, `Wortel/Preview/`, `Wortel/Markdown/` | `docs/architecture/files-and-previews.md`, `docs/file-preview.md` |
+| `Wortel/Markup/`, a new kind of preview to mark up | `docs/architecture/mark-up.md` |
 | `Wortel/Keeper/`, `WortelKeeper/` | `docs/architecture/keeper.md`, `../docs/incidents.md` |
 | `Wortel/CLI/`, `WortelCLI/` | `docs/architecture/command-menus-hotkey.md`, `docs/cli.md` (design), `docs/wortel-command.md` (the user's guide) |
 | `Wortel/Processes/` | `docs/running-processes.md`. Run `scripts/verify-running-jobs.py` before it ships |

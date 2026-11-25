@@ -82,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()
+            // And the pictures of mark-up notes nothing was written to for
+            // a week (`MarkupStore`).
+            MarkupStore.shared.sweep()
         }
 
         let manager = SessionManager(runtime: runtime)
@@ -1895,6 +1898,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return page
     }
 
+    /// ⇧⌘M: mark-up over the preview in front, on and off.
+    @objc func toggleMarkup(_ sender: Any?) {
+        markupTarget()?.toggle()
+    }
+
+    /// What View ▸ Mark Up acts on: the preview in front, the area you're
+    /// in first, as find picks its target (`findTarget`). A page that is
+    /// somewhere and loaded, for now; a file tab is next.
+    private func markupTarget() -> MarkupSession? {
+        guard let page = frontBrowser().flatMap({ BrowserTabs.shared.existingPage(for: $0) }),
+              page.canMarkUp else { return nil }
+        return page.markup
+    }
+
     /// ⌥⌘I: Web Inspector for the browser in front, or away again.
     @objc func showWebInspector(_ sender: Any?) {
         guard let id = frontBrowser() else { return }
@@ -2522,6 +2539,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let page = frontFilePage()
             menuItem.title = page?.showsSource == true ? "Show Page" : "Show Page Source"
             return page != nil
+        }
+        if menuItem.action == #selector(toggleMarkup(_:)) {
+            let session = markupTarget()
+            menuItem.state = session?.isOn == true ? .on : .off
+            return session != nil
         }
         if menuItem.action == #selector(showWebInspector(_:)) {
             let page = frontBrowser().flatMap { BrowserTabs.shared.existingPage(for: $0) }

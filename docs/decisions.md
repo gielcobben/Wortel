@@ -2672,6 +2672,81 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the file name a tier above the path (VS Code's and Zed's rule): measured
   optimised at 487k paths, 1 to 12 ms a key. Debug builds are about 40 times
   slower at this, which only shows on a repository that size.
+- **2026-11-25. Mark-up: point at what a preview shows, write one sentence,
+  copy it.** One mode for every preview (a page first; source, a diff,
+  Markdown and an image next), turned on from the preview's own header or
+  View ▸ Mark Up. A click picks an element of a page, a drag draws, each mark
+  is a picture and a chip in the note. Return copies plain text with the
+  paths of the pictures and a details file. It copies, and neither types
+  into a terminal nor sends: the person pastes it where they want, into
+  this session's agent, another one, or an issue, and a copy cannot land in
+  a question an agent is asking. That is also what keeps the note bar on
+  the right side of "no AI chat box of its own" (`docs/product.md`): it
+  talks to nobody. `macos/docs/architecture/mark-up.md` has how it is
+  built.
+- **2026-11-25. The marks are a native view over the preview, not a script
+  in the page.** cmux draws its marks inside the page; so would have been
+  quicker here. A layer of the app's own cannot be broken by a page or
+  change one, is in no picture of the page by accident, and is one piece of
+  code for every kind of preview, with an adapter each for where a mark is
+  and how a picture is taken. The cost was expected to be a mark trailing a
+  scrolling page, since WebKit scrolls in another process. Measured, a
+  report reaches the app 0.6 ms after its scroll event on an idle page and
+  as late as the page stalls on a busy one (41 ms with 40 ms stalls). So
+  marks follow the page's reports and are drawn faint only while one is
+  owed for more than 50 ms. Drawing them faint on every scroll was planned
+  and dropped once the number was in.
+- **2026-11-25. No lock on the header while marks exist.** When the preview
+  goes elsewhere (a new address, a reload, a route change, Page · Source,
+  a closed tab) mark-up ends and the marks and the note are dropped, without
+  asking. cmux does the same. Switching the header's controls off while
+  marks exist was the first proposal: it protects a sentence from a stray
+  ⌘R, but it is extra code on top of this rule and not instead of it, since
+  a page navigates by itself and nothing can lock that. One thing does
+  wait: Wortel's own reload of a page whose file changed, which would
+  otherwise wipe a note mid-sentence for an edit the agent made.
+- **2026-11-25. After a copy the note is still there.** Return copies and
+  turns mark-up off; turning it on again finds the marks and the sentence,
+  until the preview goes elsewhere. The owner's choice over a clean start
+  each time, which was the recommendation (by then the agent has usually
+  changed the page). It lets a note be copied again or added to. ⌘A then ⌫
+  clears it.
+- **2026-11-25. The picture of the whole is the whole page.** Every mark
+  drawn on one picture of the page from top to bottom, as cmux has, chosen
+  by the owner over a picture of what is in view at Return. cmux scrolls the
+  page tile by tile and stitches. Here `WKWebView.createPDF` gives the whole
+  page without scrolling it (measured: a 6,000pt page in 8 ms, the part
+  below the fold included), so nothing moves while it is taken. 1,600
+  pixels wide at most; past 12 screens tall it is the stretch around the
+  marks, and says so.
+- **2026-11-25. A mark has a colour and a number.** Its badge on the
+  preview and its chip in the note carry the same number, and a drawn area
+  is "area 2" in what is copied. cmux ties them by colour alone, from 14
+  colours. Here the colours are the system's, seven before they repeat (the
+  Finder's tag order, without yellow, which cannot be read as a line on
+  white), so the number is what holds after the seventh mark and for an eye
+  that cannot tell the colours apart.
+- **2026-11-25. A note's pictures go in the app's cache folder and are
+  removed after seven days.** `~/Library/Caches/<bundle id>/Markup/<day>/<n>/`:
+  no space in the path, no macOS permission question, and macOS does not
+  empty it by itself, which it does the temp folder (at a restart, and
+  after three days). A pasted image goes after one day because its path is
+  typed straight into a prompt; a note is copied and may be pasted later.
+  Swept at launch and whenever a new note's folder is made. cmux keeps the
+  newest 100 files instead; a count leaves months-old pictures until more
+  are made.
+- **2026-11-25. Mark Up is ⇧⌘M.** Preview's own key for its Markup toolbar
+  is ⇧⌘A, which is Select All in a terminal here. cmux uses ⌃⌥⌘D. M is
+  free in Wortel and on no Mac convention.
+- **2026-11-25. Mark-up is built in two stages, pages first.** The plan
+  asked how many kinds of view the layer has to sit over, and to split by
+  kind past two. There are four that can be marked up (a web view, a table,
+  a lazy SwiftUI stack, an image view) and one that cannot (Quick Look). So
+  the first stage is everything shared and the page, and the second is the
+  file tab and the preview window. Not built, with the reason: arrow keys
+  to an element's parent or child (the note has the keyboard, and the
+  arrows move its caret; a container is picked by its padding or by a drag
+  around it).
 
 ## Running processes
 

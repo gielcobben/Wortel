@@ -6,6 +6,14 @@ enum BrowserAddress {
     /// `localhost:5173`, `localhost:5173/docs`, `wortel.sh`: what a tab and
     /// the address field call an address. The scheme is noise.
     static func short(_ url: URL) -> String {
+        // A file by its name and the folder it is in: `proj/report.html`.
+        // The whole path starts with the part every file shares, and in a
+        // narrow field that was all there was room for. The field shows the
+        // whole address when it has the keyboard, as for any page.
+        if url.isFileURL {
+            let parts = url.standardizedFileURL.pathComponents.filter { $0 != "/" }
+            return parts.suffix(2).joined(separator: "/")
+        }
         guard let host = url.host(), !host.isEmpty else { return url.absoluteString }
         var text = host.contains(":") ? "[\(host)]" : host
         if let port = url.port { text += ":\(port)" }
@@ -18,9 +26,18 @@ enum BrowserAddress {
     /// What was typed, as somewhere to go, or nil when it isn't an address.
     /// A port alone is a local server (`3000`, `:3000`); a local name or a
     /// private network address without a scheme is http (dev servers don't
-    /// do TLS), anything else https. Only http and https.
+    /// do TLS), anything else https. Only http and https, and a file on this
+    /// Mac: a `file:` address (what the field shows for a page opened from a
+    /// file) or a path from `/` or `~`.
     static func url(from typed: String) -> URL? {
         var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("/") || text.hasPrefix("~") {
+            return URL(fileURLWithPath: (text as NSString).expandingTildeInPath).standardizedFileURL
+        }
+        if text.lowercased().hasPrefix("file:") {
+            guard let url = URL(string: text), url.isFileURL, !url.path.isEmpty else { return nil }
+            return url
+        }
         guard !text.isEmpty, !text.contains(" ") else { return nil }
         if Int(text.dropFirst(text.hasPrefix(":") ? 1 : 0)) != nil {
             text = "localhost:" + text.drop { $0 == ":" }
@@ -54,6 +71,39 @@ enum BrowserAddress {
             }
         }
         return nil
+    }
+
+    /// Whether `url` is a file a browser tab shows as a page: `.html` or
+    /// `.htm` on this Mac. What `wortel open` and a ⌘-clicked path send to a
+    /// browser tab, and what a tab offers Page · Source for.
+    static func isPage(_ url: URL) -> Bool {
+        url.isFileURL && ["html", "htm"].contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether a tab at `open` is the one to bring forward for `wanted`. A
+    /// server is one place whatever its path (a tab on `localhost:5173/docs`
+    /// is the tab for `localhost:5173`). Files have no host and no port, so
+    /// by that rule every file would be every other file: a file is itself.
+    static func showsSame(_ open: URL, as wanted: URL) -> Bool {
+        if open.isFileURL || wanted.isFileURL {
+            guard open.isFileURL, wanted.isFileURL else { return false }
+            return open.resolvingSymlinksInPath().standardizedFileURL.path
+                == wanted.resolvingSymlinksInPath().standardizedFileURL.path
+        }
+        return open.host() == wanted.host() && open.port == wanted.port
+    }
+
+    /// The local files in what a page says it loaded, as paths: what is
+    /// watched beside the page's own file. Anything that isn't a `file:`
+    /// address is somewhere a change on disk can't reach.
+    static func localFiles(in addresses: [String]) -> [String] {
+        var paths: [String] = []
+        for address in addresses {
+            guard let url = URL(string: address), url.isFileURL else { continue }
+            let path = url.standardizedFileURL.path
+            if !path.isEmpty, !paths.contains(path) { paths.append(path) }
+        }
+        return paths
     }
 
     /// A page's selection as something to look for (⌘E): its first line,

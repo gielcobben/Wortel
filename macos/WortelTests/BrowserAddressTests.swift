@@ -49,7 +49,7 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertNil(url("65536"))
         XCTAssertNil(url("0"))
         XCTAssertNil(url("javascript:alert(1)"))
-        XCTAssertNil(url("file:///etc/passwd"))
+        XCTAssertNil(url("data:text/html,<p>x"))
     }
 
     /// Inline completion: the typed part kept as typed, the rest filled in
@@ -78,6 +78,60 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertEqual(BrowserAddress.short(URL(string: "http://localhost:5173/")!), "localhost:5173")
         XCTAssertEqual(BrowserAddress.short(URL(string: "http://localhost:5173/docs")!), "localhost:5173/docs")
         XCTAssertEqual(BrowserAddress.short(URL(string: "https://wortel.sh")!), "wortel.sh")
+    }
+
+    // MARK: - Files
+
+    /// A file is shown by its name and its folder, not as a `file:` address:
+    /// the start of a path is the part every file shares.
+    func testAFileIsShownByItsNameAndFolder() {
+        XCTAssertEqual(BrowserAddress.short(URL(fileURLWithPath: "/Users/someone/proj/report.html")), "proj/report.html")
+        XCTAssertEqual(BrowserAddress.short(URL(fileURLWithPath: "/tmp/a b.html")), "tmp/a b.html")
+        XCTAssertEqual(BrowserAddress.short(URL(fileURLWithPath: "/index.html")), "index.html")
+    }
+
+    /// What the field shows for a file can be typed back, and so can a path.
+    /// (Until 2026-11-25 a `file:` address was refused with the other
+    /// non-web schemes; a tab shows files as pages now, and the field is
+    /// only ever typed in by the person.)
+    func testAPathOrAFileAddressIsAFile() {
+        XCTAssertEqual(url("/tmp/report.html"), "file:///tmp/report.html")
+        XCTAssertEqual(url("/tmp/a b.html"), "file:///tmp/a%20b.html")
+        XCTAssertEqual(url("~/x.html"), URL(fileURLWithPath: NSHomeDirectory() + "/x.html").absoluteString)
+        XCTAssertEqual(url("file:///tmp/a%20b.html"), "file:///tmp/a%20b.html")
+        XCTAssertNil(url("file:"))
+        XCTAssertNil(url("ftp://example.com/x"), "still only pages and files")
+    }
+
+    func testOnlyAnHTMLFileIsAPage() {
+        XCTAssertTrue(BrowserAddress.isPage(URL(fileURLWithPath: "/tmp/report.html")))
+        XCTAssertTrue(BrowserAddress.isPage(URL(fileURLWithPath: "/tmp/INDEX.HTM")))
+        XCTAssertFalse(BrowserAddress.isPage(URL(fileURLWithPath: "/tmp/notes.md")))
+        XCTAssertFalse(BrowserAddress.isPage(URL(string: "http://localhost:3000/index.html")!), "a server's page is not a file")
+    }
+
+    /// Every file has no host and no port. Matched as servers are, opening
+    /// one file would bring forward a tab on any other.
+    func testATabOnAnotherFileIsNotTheTabForThisOne() {
+        let a = URL(fileURLWithPath: "/tmp/wortel-a/index.html")
+        let b = URL(fileURLWithPath: "/tmp/wortel-b/index.html")
+        XCTAssertTrue(BrowserAddress.showsSame(a, as: URL(string: "file:///tmp/wortel-a/./index.html")!))
+        XCTAssertFalse(BrowserAddress.showsSame(a, as: b))
+        XCTAssertFalse(BrowserAddress.showsSame(a, as: URL(string: "http://localhost:3000")!))
+        XCTAssertFalse(BrowserAddress.showsSame(URL(string: "http://localhost:3000")!, as: a))
+        // A server is one place, whatever the path.
+        XCTAssertTrue(BrowserAddress.showsSame(URL(string: "http://localhost:3000/docs")!,
+                                               as: URL(string: "http://localhost:3000")!))
+        XCTAssertFalse(BrowserAddress.showsSame(URL(string: "http://localhost:3000")!,
+                                                as: URL(string: "http://localhost:3001")!))
+    }
+
+    /// Only files on this Mac are watched beside the page, each once.
+    func testTheFilesAPageLoadedAreItsLocalOnes() {
+        XCTAssertEqual(BrowserAddress.localFiles(in: [
+            "file:///tmp/site/a%20b.css", "https://cdn.example/x.js", "", "file:///tmp/site/sub/../a%20b.css",
+            "data:image/png;base64,AAAA", "file:///tmp/site/app.js",
+        ]), ["/tmp/site/a b.css", "/tmp/site/app.js"])
     }
 
     /// ⌘E looks for the selection's first line: no page text matches a line break.

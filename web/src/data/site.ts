@@ -360,7 +360,7 @@ export const DOCS_SECTIONS: Section[] = [
           head: ['Command', 'What it does'],
           mono: 'first',
           rows: [
-            ['wortel open <path>', 'Opens a file in a tab'],
+            ['wortel open <path>', 'Opens a file in a tab, an .html file as a page'],
             ['wortel new --branch <name>', 'A session, in its own worktree'],
             ['wortel new --branch <name> --from <ref>', 'Forks the new branch from something else'],
             ['wortel rename <name>', 'Renames the session it was run in'],

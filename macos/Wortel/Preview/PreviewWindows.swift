@@ -26,6 +26,8 @@ final class PreviewWindows {
     /// rather than calling `open` here, so a linked file gets the same diff
     /// treatment as one double-clicked in the tree.
     var onOpenFile: ((URL) -> Void)?
+    /// Show an `.html` file as the page it makes, in a browser tab.
+    var onOpenPage: ((URL) -> Void)?
     /// A window dragged by its row, the pointer on screen: whether it's over
     /// one of the main window's tab rows, and on `.ended` whether it became
     /// a tab there (MainSplitViewController.dockWindowDrag). Handed the
@@ -85,7 +87,7 @@ final class PreviewWindows {
             mode: mode,
             highlighter: highlighter)
         let controller = PreviewWindowController(document: document, settings: settings,
-                                                 openFile: onOpenFile)
+                                                 openFile: onOpenFile, openPage: onOpenPage)
         controller.onClose = { [weak self] closed in
             self?.windows.removeAll { $0 === closed }
         }

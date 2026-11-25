@@ -556,6 +556,11 @@ enum MainMenu {
         reloadItem = viewMenu.addItem(withTitle: "Reload Page", action: #selector(AppDelegate.reloadBrowserPage(_:)), keyEquivalent: "")
         let forceReload = viewMenu.addItem(withTitle: "Force Reload Page", action: #selector(AppDelegate.forceReloadBrowserPage(_:)), keyEquivalent: "r")
         forceReload.keyEquivalentModifierMask = [.command, .shift]
+        // ⌥⌘U, as Safari and Chrome show a page's source: for a page shown
+        // from a file, the file's text in place of the page, and back.
+        // Titled by AppDelegate.validateMenuItem; disabled on any other page.
+        let pageSource = viewMenu.addItem(withTitle: "Show Page Source", action: #selector(AppDelegate.toggleBrowserSource(_:)), keyEquivalent: "u")
+        pageSource.keyEquivalentModifierMask = [.command, .option]
         // ⌥⌘I, as Safari and Chrome open their inspector. Disabled with no
         // browser in front, so it goes on to the terminal.
         let inspector = viewMenu.addItem(withTitle: "Show Web Inspector", action: #selector(AppDelegate.showWebInspector(_:)), keyEquivalent: "i")

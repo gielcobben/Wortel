@@ -34,7 +34,6 @@ That purpose decides what is left out, for good unless it changes:
 | Logins | Local addresses just work. The first time an agent wants to use a real site where the person is signed in, the session raises attention and the tab asks: use the sign-in for this site, or go on signed out. Remembered per site. |
 | Other questions to the person | None. The agent already has a shell, so asking before JavaScript, downloads, uploads or a new site adds no safety. |
 | First version of the commands | A small core: `open`, `reload`, `back`, `snapshot`, `click`, `fill`, `type`, `press`, `wait`, `eval`, `console` (with page errors), `screenshot`. Names follow agent-browser, which agents already know. A command is added when a real session shows it missing. |
-| HTML files | `wortel open x.html` and a ⌘-clicked `.html` path show the page in a browser tab, reloading when the file changes. One click goes from the page to its source and one click back. |
 | Pointing at a page | Mark-up: pick elements and draw on the page, write one note around the marks, paste it into the agent's prompt. See "Mark-up" below. |
 
 Smaller choices made while planning, open to change in a phase's own plan:
@@ -45,8 +44,8 @@ Smaller choices made while planning, open to change in a phase's own plan:
 - Input is real mouse and key events sent to the web view, so a page sees
   what it sees from a person. A JavaScript `click()` is not a fallback.
 - Local means `localhost`, `*.localhost`, loopback addresses and `file:`.
-- A download saves to `~/Downloads`, as Safari's does. An agent's download
-  goes where the agent names. Nothing downloaded is opened.
+- An agent's download goes where the agent names. (A person's is saved to
+  `~/Downloads`, since phase 1.) Nothing downloaded is opened.
 - A screenshot is written to a file and the command prints the path.
 - While the tab is showing, the element an agent acts on is ringed briefly.
 - The `wortel` skill gets a section. It tells an agent to prefer `snapshot`
@@ -96,13 +95,12 @@ Each is one branch in its own worktree, done in order because all three
 touch `Wortel/Browser/BrowserTabs.swift`. Each ends with `./scripts/check.sh`,
 a test copy (the `test-copy` skill), a review, and the owner's hand check.
 
-### 1. Basics and HTML pages
+### 1. Basics and HTML pages (landed 2026-11-25)
 
-- Find in page: ⌘F, ⌘G, ⇧⌘G, ⌘E, Safari's keys.
-- Downloads save instead of going to another browser.
-- An `.html` file opens as a page, with the step to its source and back.
-- Check, don't assume: does 1Password fill a sign-in form in the tab (its
-  system-wide autofill), and does a sign-in survive a relaunch.
+Find in page, downloads that save, and `.html` files as pages. What it does
+is in `architecture/workspace-tabs.md` and `../../docs/decisions.md`. One
+check is still owed, by hand: whether 1Password fills a sign-in form in the
+tab.
 
 ### 2. Mark-up
 

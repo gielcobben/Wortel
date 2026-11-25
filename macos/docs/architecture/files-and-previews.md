@@ -82,7 +82,10 @@ there, in a shell of its own that never reports a cwd). The regex keeps a senten
   location (`docs/decisions.md.`, `App.swift:42:7`, `README.md#L12`), so each
   spelling is tried until one exists; `a/` and `b/` from a diff come off
   last. **Every file opens in the preview**, never in its default app, so a
-  click can't run a `.command`; at the line, when there was one
+  click can't run a `.command` (an `.html` path with no line is the one
+  exception: it opens as a page in a browser tab, `AppDelegate.openPage`,
+  see `workspace-tabs.md`; `index.html:42` is still the file, at its
+  line); at the line, when there was one
   (`PreviewDocument.reveal(line:)`: Diff gives way to Source, the row is
   selected a third of the way down; Rendered lands on the line's block). A
   folder goes to Finder, a package is only revealed. A path found nowhere is
@@ -151,6 +154,13 @@ PDF and not a script: an allowlist, because a list of apps to avoid (a
 terminal, Python Launcher, the Installer) is only as good as the apps
 somebody thought of. A deleted row's line is
 taken from the row after it: the editor opens the file as it is now.
+
+**Open as Page** (`OpenAsPageButton`), the globe in the header of an `.html`
+file's tab and window: the file as the page it makes, in a browser tab
+(`AppDelegate.openPage`). Files, Changes and ⌘P keep opening an `.html`
+file's own tab, since those lists are for reading a change and the preview
+tab only works with file tabs, so this button is the way from there to the
+page. Absent for every other kind of file.
 
 **Previews** (`Wortel/Preview/`) — double-click a file (the tree or a Changes
 row open it in the preview tab, see `workspace-tabs.md`; a file in a commit,

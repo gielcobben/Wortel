@@ -1558,6 +1558,24 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+- **2026-11-25. An `.html` file opens as the page it makes, in a browser
+  tab**, from `wortel open` and a ⌘-clicked path, and loads again when the
+  file changes on disk. A browser tab and not a Rendered mode of the file
+  tab (as Markdown has): the page needs links, scripts, the inspector, and
+  later mark-up and an agent's commands, which are a browser tab's. Files,
+  Changes and ⌘P still open the file's own tab, because those lists are for
+  reading a change and the preview tab only works with file tabs; that tab
+  has an "Open as Page" button. `index.html:42` is the file at its line.
+- **2026-11-25. A page's source shows in the same tab, behind a Page ·
+  Source switch**, chosen by the owner over a file tab opened beside it.
+  Nothing moves but the content: no second tab, the switch is under the
+  pointer both ways, and the page stays loaded under the source. The cost is
+  two places a file's text can show (this, and its file tab), and no Diff
+  here: the diff is the file tab's, from Changes.
+- **2026-11-25. The address field takes a file.** `file:` was refused there
+  with the other non-web schemes (2026-09-29). A tab shows files now, the
+  field shows the file it is on, and only a person types in it. Scripts
+  (`javascript:`, `data:`) are still refused.
 - **2026-11-25. A download in a browser tab is saved to `~/Downloads`, and
   nothing downloaded is opened.** This replaces the 2026-11-21 rule for web
   addresses: a response a tab couldn't show went to the default browser,

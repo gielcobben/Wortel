@@ -736,7 +736,11 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             // The page's title once it has one, where it is until then.
             let page = BrowserTabs.shared.existingPage(for: id)
             let address = page?.location ?? session?.browserAddresses[id].flatMap(URL.init(string:))
-            let title = page?.tabTitle ?? address.map(BrowserAddress.short) ?? "New Tab"
+            // A page not made yet (a restored tab never shown): a file by
+            // its name, as its page will call it.
+            let title = page?.tabTitle
+                ?? address.map { $0.isFileURL ? $0.lastPathComponent : BrowserAddress.short($0) }
+                ?? "New Tab"
             return .init(tab: tab, title: title, symbol: "globe",
                          detail: address?.absoluteString)
         case .session:

@@ -35,6 +35,9 @@ final class BrowserTabs {
     /// What's serving on this Mac, the selected session's first: what an
     /// address field offers.
     @ObservationIgnored var servers: () -> [BrowserServer] = { [] }
+    /// The file previews: what a tab on a file borrows to show the file's
+    /// source in place of the page (Page · Source).
+    @ObservationIgnored var previews: PreviewTabs?
 
     /// The page for a tab, loaded the first time it's asked for.
     func page(for id: UUID) -> BrowserPage {
@@ -96,6 +99,24 @@ final class BrowserPage: NSObject {
     /// ⌘F over this page.
     @ObservationIgnored let find = BrowserFind()
 
+    /// A file's source, shown in place of its page.
+    struct Source {
+        let file: URL
+        let document: PreviewDocument
+        let find: PreviewFind
+    }
+
+    /// The source of the file this tab is on, from the first time it was
+    /// asked for until the tab goes somewhere else. Kept while the page is
+    /// showing, so the way back to the source is where you left it.
+    private(set) var source: Source?
+    /// The header's Page · Source is on Source: the file's text covers the
+    /// page. The page is not unloaded or hidden, only covered, so it keeps
+    /// its scroll, its state and its reloads, and the way back is one cut.
+    private(set) var showsSource = false
+    /// Loads the page again when its file changes on disk.
+    @ObservationIgnored private let watch = BrowserPageWatch()
+
     @ObservationIgnored var onNavigate: (URL) -> Void = { _ in }
     /// The view the web view is in, or should be: the newest place showing
     /// this page. See `WebViewHost`.
@@ -133,6 +154,7 @@ final class BrowserPage: NSObject {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         find.webView = webView
+        watch.onChange = { [weak self] in self?.fileChanged() }
         // Inspect Element in the context menu.
         webView.isInspectable = true
         // What `toggleInspector` needs: without it the inspector never
@@ -148,6 +170,7 @@ final class BrowserPage: NSObject {
                 MainActor.assumeIsolated {
                     guard let self, let url = view.url else { return }
                     self.currentURL = url
+                    self.leaveSourceIfElsewhere()
                     self.onNavigate(url)
                 }
             },
@@ -178,7 +201,84 @@ final class BrowserPage: NSObject {
     /// one, or "New Tab" before it's anywhere.
     var tabTitle: String {
         if !title.isEmpty { return title }
+        // A file by its name, as its file tab would be called.
+        if let location, location.isFileURL { return location.lastPathComponent }
         return location.map(BrowserAddress.short) ?? "New Tab"
+    }
+
+    /// The file this tab shows as a page, when it is on one: what Page ·
+    /// Source switches over.
+    var pageFile: URL? {
+        guard let location, BrowserAddress.isPage(location) else { return nil }
+        return location
+    }
+
+    /// Page · Source. The source is the file's own text in the view a file
+    /// tab uses (`PreviewContent`), with a document of this tab's own.
+    func showSource(_ on: Bool) {
+        guard on != showsSource else { return }
+        guard on else {
+            showsSource = false
+            source?.find.dismiss()
+            // The keyboard back to the page, if it was taken off it below and
+            // nothing has it since.
+            if let window = webView.window, window.firstResponder === window { focusPage() }
+            return
+        }
+        guard let file = pageFile, let previews = BrowserTabs.shared.previews else { return }
+        if source?.file.path != file.path {
+            source = Source(file: file, document: previews.sourceDocument(for: file), find: PreviewFind())
+        }
+        // Typing must not go on into a page nobody can see.
+        if BrowserTabs.shared.page(holding: webView.window?.firstResponder) === self {
+            webView.window?.makeFirstResponder(nil)
+        }
+        showsSource = true
+    }
+
+    /// The source, while it is what the tab shows: what ⌘F searches then.
+    var shownSource: Source? { showsSource ? source : nil }
+
+    /// The tab went somewhere else: the source it was showing is another
+    /// file's, or no file's.
+    private func leaveSourceIfElsewhere() {
+        guard let source, pageFile?.path != source.file.path else { return }
+        showsSource = false
+        self.source = nil
+    }
+
+    /// The file the page is from, or one it loaded, changed on disk.
+    private func fileChanged() {
+        // Not on screen: when it is shown, as a page that crashed there.
+        guard webView.window != nil, !webView.isHiddenOrHasHiddenAncestor else {
+            reloadWhenShown = true
+            return
+        }
+        // Past the cache: a stylesheet has no server to say it changed.
+        reloadFromOrigin()
+    }
+
+    /// Every address the page's own markup loads from. Run apart from the
+    /// page's scripts (`.defaultClient`), so a page can't redefine what it
+    /// answers with.
+    private static let loadedAddresses = """
+        Array.from(document.querySelectorAll(
+            'link[href],script[src],img[src],source[src],video[src],audio[src],iframe[src]'
+        )).map(function (e) { return e.href || e.src || '' })
+        """
+
+    /// Watch the file this tab is on, and the local files it loaded, so a
+    /// change on disk reloads it. Asked after each load: the list is the
+    /// page's as it is now. Any `file:` address is watched, a page or not.
+    private func followFile() {
+        guard let file = location, file.isFileURL else { return watch.stop() }
+        webView.evaluateJavaScript(Self.loadedAddresses, in: nil, in: .defaultClient) { [weak self] result in
+            MainActor.assumeIsolated {
+                guard let self, self.location?.path == file.path else { return }
+                let addresses = (try? result.get()) as? [String] ?? []
+                self.watch.watch(page: file.path, resources: BrowserAddress.localFiles(in: addresses))
+            }
+        }
     }
 
     /// Go where the address field says.
@@ -283,7 +383,8 @@ final class BrowserPage: NSObject {
             let visible = self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor
             if visible, self.reloadWhenShown {
                 self.reloadWhenShown = false
-                self.reload()
+                // Past the cache: it may be owed for a file that changed.
+                self.reloadFromOrigin()
             }
             self.onScreenChanged(visible)
         }
@@ -303,6 +404,7 @@ final class BrowserPage: NSObject {
 
     fileprivate func close() {
         retry?.cancel()
+        watch.stop()
         snapshotTimer?.invalidate()
         webView.stopLoading()
         webView.navigationDelegate = nil
@@ -335,6 +437,7 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         isWaiting = false
         failure = nil
         retry?.cancel()
+        followFile()
         // Once it's had a moment to paint.
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
@@ -357,6 +460,13 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         } else {
             isWaiting = false
             failure = error.localizedDescription
+            // A file that isn't there (a restored tab, a branch switched
+            // away): watched all the same, so it loads when it is back.
+            if let location, location.isFileURL {
+                watch.watch(page: location.path, resources: [])
+            } else {
+                watch.stop()
+            }
         }
     }
 
@@ -579,7 +689,7 @@ struct BrowserTab: View {
             Rectangle()
                 .fill(Color(nsColor: Chrome.hairline))
                 .frame(height: 1)
-            if page.find.isPresented {
+            if page.find.isPresented, !page.showsSource {
                 @Bindable var find = page.find
                 FindBar(query: $find.query, summary: find.summary, canStep: find.canStep,
                         focused: $finding, next: find.next, previous: find.previous,
@@ -603,6 +713,16 @@ struct BrowserTab: View {
                     PageNotice(spinner: true, text: "Waiting for \(BrowserAddress.short(location))")
                 } else if let failure = page.failure {
                     PageNotice(spinner: false, text: failure)
+                }
+                // The file's source, over its page. The page stays under it,
+                // loaded and laid out, so Page is one cut back.
+                if page.showsSource, let source = page.source, let previews = BrowserTabs.shared.previews {
+                    // Back where it was left, as a file tab is (`PreviewTab`).
+                    let _ = source.document.anchorLine = source.document.visibleLine
+                    let _ = source.document.anchorOffset = source.document.visibleOffset
+                    PreviewContent(document: source.document, find: source.find,
+                                   settings: previews.settings, onOpenFile: previews.onOpenFile)
+                        .background(Color(nsColor: Chrome.content))
                 }
             }
         }
@@ -686,6 +806,9 @@ private struct BrowserHeader: View {
                 .onKeyPress(.downArrow) { step(1) }
                 .onKeyPress(.upArrow) { step(-1) }
                 .padding(.horizontal, 8)
+                // Room for a port or a file's name before the pill beside
+                // it gives way (`sourceToggle`).
+                .frame(minWidth: 72)
                 .frame(height: 24)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(nsColor: editing.wrappedValue ? Chrome.hoverFill : .clear)))
@@ -700,6 +823,23 @@ private struct BrowserHeader: View {
                     }
                 }
                 .padding(.leading, 4)
+            // Only on a file that is a page: the file as the page it makes,
+            // or as its text. The pill a file tab has for Diff · Source.
+            if page.pageFile != nil {
+                // The pill while the address keeps some room beside it, one
+                // button when the column is narrow: squeezed, the pill cut
+                // "Source" short and then lost both words (seen in a render
+                // at 384pt and at 260pt, the column's least).
+                ViewThatFits(in: .horizontal) {
+                    ModeSwitch(modes: [false, true],
+                               selection: Binding(get: { page.showsSource }, set: { page.showSource($0) }),
+                               title: { $0 ? "Source" : "Page" })
+                        .fixedSize()
+                        .padding(.horizontal, 4)
+                    sourceToggle
+                }
+                .layoutPriority(1)
+            }
             // There from the first download on, in every browser tab: the
             // list is the app's, as Safari's is.
             if !BrowserDownloads.shared.items.isEmpty {
@@ -746,6 +886,22 @@ private struct BrowserHeader: View {
 
     private var shown: String {
         page.location.map(BrowserAddress.short) ?? ""
+    }
+
+    /// Page · Source as one button, lit while the source shows.
+    private var sourceToggle: some View {
+        Button { page.showSource(!page.showsSource) } label: {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .font(.system(size: 12))
+                .frame(width: 24, height: 24)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(nsColor: page.showsSource ? Chrome.selectedFill : .clear)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverFillStyle())
+        .foregroundStyle(.secondary)
+        .help(page.showsSource ? "Show Page" : "Show Page Source")
+        .accessibilityLabel(page.showsSource ? "Show Page" : "Show Page Source")
     }
 
     /// Change the field's text without it counting as typing.

@@ -22,7 +22,7 @@ final class PreviewWindowBar: ChromeBarView {
     /// A press on the row's empty space, about to move the window.
     var onWindowDrag: () -> Void = {}
 
-    init(document: PreviewDocument) {
+    init(document: PreviewDocument, openPage: ((URL) -> Void)? = nil) {
         super.init()
 
         let icon = FileButton(url: document.url)
@@ -35,7 +35,7 @@ final class PreviewWindowBar: ChromeBarView {
 
         // The tab's own switch, hosted. It hides itself for a binary file and
         // for a file with one mode, as the tab's does: absent, not greyed.
-        let modes = NSHostingView(rootView: PreviewWindowModeSwitch(document: document))
+        let modes = NSHostingView(rootView: PreviewWindowModeSwitch(document: document, openPage: openPage))
         modes.sizingOptions = [.intrinsicContentSize]
         modes.safeAreaRegions = []
 
@@ -65,12 +65,14 @@ final class PreviewWindowBar: ChromeBarView {
 /// out to the file's editor.
 private struct PreviewWindowModeSwitch: View {
     @Bindable var document: PreviewDocument
+    let openPage: ((URL) -> Void)?
 
     var body: some View {
         HStack(spacing: 8) {
             if !document.isBinary, document.availableModes.count > 1 {
                 ModeSwitch(modes: document.availableModes, selection: $document.mode)
             }
+            OpenAsPageButton(document: document, size: Chrome.controlSize, open: openPage)
             // The row's controls are 28pt, as its FileButton is (DESIGN.md).
             OpenInEditorButton(document: document, size: Chrome.controlSize)
         }

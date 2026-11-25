@@ -47,6 +47,8 @@ final class PreviewTabs {
     private static let keptBehind = 3
     /// Open a file a document links to (a link in rendered Markdown).
     var onOpenFile: ((URL) -> Void)?
+    /// Show an `.html` file as the page it makes, in a browser tab.
+    var onOpenPage: ((URL) -> Void)?
     /// Turn a tab into a window, on the view the tab was showing, its
     /// top-left at a point on screen when the tab was dragged out to one.
     var onOpenInWindow: ((URL, PreviewDiffSource, Bool, PreviewMode?, NSPoint?) -> Void)?
@@ -120,6 +122,14 @@ final class PreviewTabs {
 
     func hasDocument(for path: String) -> Bool { documents[path] != nil }
 
+    /// A file's source for a browser tab's Page · Source: a document of that
+    /// tab's own, not one of these. A file tab's document is made, kept
+    /// built and let go by its tab; this one lives and dies with the page it
+    /// is the source of, whether or not the file also has a tab.
+    func sourceDocument(for url: URL) -> PreviewDocument {
+        PreviewDocument(url: url, mode: .source, highlighter: highlighter)
+    }
+
     /// A file's tab came to the front.
     func noteShown(_ path: String) {
         shown.removeAll { $0 == path }
@@ -169,7 +179,8 @@ struct PreviewTab: View {
         let _ = document.anchorLine = document.visibleLine
         let _ = document.anchorOffset = document.visibleOffset
         VStack(spacing: 0) {
-            PreviewTabHeader(document: document, openInWindow: { tabs.openInWindow(path) })
+            PreviewTabHeader(document: document, openPage: tabs.onOpenPage,
+                             openInWindow: { tabs.openInWindow(path) })
             PreviewContent(document: document, find: find, settings: tabs.settings,
                            onOpenFile: tabs.onOpenFile)
         }
@@ -183,6 +194,7 @@ struct PreviewTab: View {
 /// into a window. Laid out like the source-control tabs' RepoHeader.
 private struct PreviewTabHeader: View {
     @Bindable var document: PreviewDocument
+    let openPage: ((URL) -> Void)?
     let openInWindow: () -> Void
 
     var body: some View {
@@ -198,6 +210,7 @@ private struct PreviewTabHeader: View {
             if !document.isBinary, document.availableModes.count > 1 {
                 ModeSwitch(modes: document.availableModes, selection: $document.mode)
             }
+            OpenAsPageButton(document: document, open: openPage)
             OpenInEditorButton(document: document)
             Button(action: openInWindow) {
                 Image(systemName: "macwindow.badge.plus")
@@ -219,10 +232,12 @@ private struct PreviewTabHeader: View {
 /// segmented control: the one in front is a raised pill with a hairline, the
 /// rest are quiet text. A blue segmented control was the only accent in the
 /// chrome, and it said "control" louder than anything around it. A preview
-/// window's titlebar row uses it too (PreviewWindowBar).
-struct ModeSwitch: View {
-    let modes: [PreviewMode]
-    @Binding var selection: PreviewMode
+/// window's titlebar row uses it too (PreviewWindowBar), and a browser tab on
+/// a file for Page · Source, which is why it takes any kind of mode.
+struct ModeSwitch<Mode: Hashable>: View {
+    let modes: [Mode]
+    @Binding var selection: Mode
+    let title: (Mode) -> String
 
     var body: some View {
         HStack(spacing: 2) {
@@ -231,7 +246,7 @@ struct ModeSwitch: View {
                 Button {
                     selection = mode
                 } label: {
-                    Text(mode.title)
+                    Text(title(mode))
                         .font(.system(size: 12, weight: selected ? .medium : .regular))
                         .foregroundStyle(selected ? .primary : .secondary)
                         .padding(.horizontal, 10)
@@ -256,6 +271,12 @@ struct ModeSwitch: View {
     }
 }
 
+extension ModeSwitch where Mode == PreviewMode {
+    init(modes: [PreviewMode], selection: Binding<PreviewMode>) {
+        self.init(modes: modes, selection: selection, title: \.title)
+    }
+}
+
 /// Open the file in its default app, at the line you're on
 /// (`ExternalEditor`). Absent when the file has no app to offer, or its app
 /// would act on it rather than show it.
@@ -277,6 +298,30 @@ struct OpenInEditorButton: View {
             .foregroundStyle(.secondary)
             .help("Open in \(app.name)")
             .accessibilityLabel("Open in \(app.name)")
+        }
+    }
+}
+
+/// Show an `.html` file as the page it makes, in a browser tab: the way from
+/// a file's text to its page, wherever the file is shown. Absent for every
+/// other kind of file.
+struct OpenAsPageButton: View {
+    let document: PreviewDocument
+    var size: CGFloat = 24
+    let open: ((URL) -> Void)?
+
+    var body: some View {
+        if let open, BrowserAddress.isPage(document.url) {
+            Button { open(document.url) } label: {
+                Image(systemName: "globe")
+                    .font(.system(size: 13))
+                    .frame(width: size, height: size)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverFillStyle())
+            .foregroundStyle(.secondary)
+            .help("Open as Page")
+            .accessibilityLabel("Open as Page")
         }
     }
 }

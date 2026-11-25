@@ -45,7 +45,8 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
 
     init(document: PreviewDocument,
          settings: PreviewSettings,
-         openFile: ((URL) -> Void)? = nil) {
+         openFile: ((URL) -> Void)? = nil,
+         openPage: ((URL) -> Void)? = nil) {
         self.file = document
         self.settings = settings
 
@@ -103,7 +104,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
         hosting.sizingOptions = []
         // The main window's layers: one behind-window material, the row on it,
         // and the file as an opaque page under the row's hairline.
-        let bar = PreviewWindowBar(document: document)
+        let bar = PreviewWindowBar(document: document, openPage: openPage)
         let pane = ChromePaneController(bar: bar, content: hosting, bodyColor: Chrome.content)
         window.contentViewController = BackdropController(child: pane)
         window.contentMinSize = NSSize(width: 360, height: 240)

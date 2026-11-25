@@ -377,6 +377,7 @@ ships inside the app bundle and every shell Wortel spawns gets its directory on
 
 ```sh
 wortel open README.md                       # open a file in a tab
+wortel open report.html                     # an .html file opens as a page, and reloads
 wortel new --cwd ~/Developer/lijn           # a session there
 wortel new --branch fix/1482 --from main    # a session in its own worktree
 wortel rename "css rules"                   # rename the session you are in

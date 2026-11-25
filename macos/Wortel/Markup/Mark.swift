@@ -131,6 +131,47 @@ struct MarkDetails: Codable, Equatable {
     }
 }
 
+/// Text that came from what was marked up, made safe to put on the
+/// clipboard.
+///
+/// A page names its own elements: an `aria-label`, an id, a class are
+/// whatever the page's author wrote. What is copied is pasted into a
+/// terminal, where an escape character is an instruction and a line break
+/// can end one prompt and start another. So nothing from a preview reaches
+/// the note with a control character, a line or paragraph separator, or an
+/// invisible formatting character (the ones that reorder text or hide in
+/// it) still in it.
+enum MarkText {
+    /// `text` with those characters gone. On one line, every run of white
+    /// space becomes one space; with `lines` kept, a new line and a tab
+    /// stay (for HTML in the details file, which is written as JSON).
+    static func clean(_ text: String, lines: Bool = false) -> String {
+        var out = String.UnicodeScalarView()
+        var gap = false
+        for scalar in text.unicodeScalars {
+            if lines, scalar == "\n" || scalar == "\t" {
+                out.append(scalar)
+                gap = false
+                continue
+            }
+            switch scalar.properties.generalCategory {
+            case .control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned:
+                // A control character that separated words still does.
+                if scalar.properties.isWhitespace || scalar == "\n" || scalar == "\t" { gap = true }
+                continue
+            case .spaceSeparator:
+                if lines { out.append(" ") } else { gap = true }
+                continue
+            default:
+                if gap, !out.isEmpty { out.append(" ") }
+                gap = false
+                out.append(scalar)
+            }
+        }
+        return String(out)
+    }
+}
+
 /// What was marked up: the first lines of the details file, and the line
 /// under the sentence in what is copied.
 enum MarkupSubject: Equatable {
@@ -140,8 +181,11 @@ enum MarkupSubject: Equatable {
 
     var line: String {
         switch self {
-        case .page(let address): return "Page: \(address)"
-        case .file(let path, let view): return view.map { "File: \(path) (\($0))" } ?? "File: \(path)"
+        // A file's name may hold a line break; the line it is named on may not.
+        case .page(let address): return "Page: \(MarkText.clean(address))"
+        case .file(let path, let view):
+            let path = MarkText.clean(path)
+            return view.map { "File: \(path) (\($0))" } ?? "File: \(path)"
         }
     }
 }

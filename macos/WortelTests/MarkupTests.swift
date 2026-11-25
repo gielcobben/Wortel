@@ -122,6 +122,25 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(sentence([.text("a "), .mark(9), .text("b")]), "a b")
     }
 
+    func testWhatAPageCallsAnElementCannotCarryAnInstruction() {
+        // An escape sequence, a line break that would start a new prompt,
+        // the end of a bracketed paste, a right-to-left override, a
+        // zero-width space, and the C1 form of the escape.
+        let hostile = "Buy\u{1B}[201~\nrm -rf ~\r\n\u{202E}evil\u{200B}!\u{9B}31m \u{2028}now\u{7F}"
+        XCTAssertEqual(MarkText.clean(hostile), "Buy[201~ rm -rf ~ evil!31m now")
+        XCTAssertEqual(MarkText.clean("  two   words\t here "), "two words here")
+        XCTAssertEqual(MarkText.clean("caf\u{E9} \u{1F600} \u{4E2D}\u{6587}"), "caf\u{E9} \u{1F600} \u{4E2D}\u{6587}")
+        // In the details file's HTML a line and a tab stay, an escape does not.
+        XCTAssertEqual(MarkText.clean("<p>\n\ta\u{1B}b</p>", lines: true), "<p>\n\tab</p>")
+
+        // And whatever reaches the note, the sentence stays one sentence.
+        let copied = MarkupNote.copied(
+            pieces: [.mark(1)], marks: [1: .init(text: "button \"x\"\n\u{1B}]0;owned\u{07}", picture: nil)],
+            subject: .file(path: "/tmp/a\nb.md", view: "Source"), whole: nil, wholeIsPart: false, details: nil)
+        XCTAssertEqual(copied, "button \"x\" ]0;owned\n\nFile: /tmp/a b.md (Source)")
+        XCTAssertFalse(copied.unicodeScalars.contains { $0.value == 0x1B || $0.value == 0x07 })
+    }
+
     func testAFileIsNamedWithItsViewAndAPartSaysItIsOne() {
         let copied = MarkupNote.copied(
             pieces: [.mark(2)], marks: [2: .init(text: "area 2", picture: nil)],

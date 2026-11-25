@@ -402,9 +402,10 @@ final class MarkupOverlayView: NSView {
                             picture: nil, details: details)
             self.session.add(mark)
             let colour = MarkDrawing.resolved(mark.colour, in: self.effectiveAppearance)
-            // The area with its ink: a circle around a word and a line
-            // through it are different things to say.
-            self.surface.capture(area) { [weak self] capture in
+            // The area with its ink (a circle around a word and a line
+            // through it are different things to say), and what is around
+            // it, so the picture can be placed without another.
+            self.surface.capture(MarkStroke.pictured(area, within: self.bounds)) { [weak self] capture in
                 guard let capture else { return }
                 let inked = MarkupPicture.inked(capture.image, showing: capture.showing,
                                                 mark: mark, at: tie.placement, colour: colour)

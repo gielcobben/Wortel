@@ -93,7 +93,7 @@ final class MarkupTests: XCTestCase {
         let copied = MarkupNote.copied(
             pieces: [.text("Make "), .mark(1), .text(" the same blue as "), .mark(2)],
             marks: references, subject: .page("http://localhost:4321/"),
-            whole: "/m/whole.png", wholeIsPart: false, details: "/m/details.json")
+            whole: .init(path: "/m/whole.png"), details: "/m/details.json")
         XCTAssertEqual(copied, """
             Make button "Download" (/m/1.png) the same blue as area 2 (/m/2.png)
 
@@ -106,7 +106,7 @@ final class MarkupTests: XCTestCase {
     func testAChipSitsInTheSentenceAsAWordDoes() {
         func sentence(_ pieces: [MarkupNote.Piece]) -> String {
             MarkupNote.copied(pieces: pieces, marks: references, subject: .page("x"),
-                              whole: nil, wholeIsPart: false, details: nil)
+                              whole: nil, details: nil)
                 .components(separatedBy: "\n")[0]
         }
         // Typed right up against a chip on both sides.
@@ -136,7 +136,7 @@ final class MarkupTests: XCTestCase {
         // And whatever reaches the note, the sentence stays one sentence.
         let copied = MarkupNote.copied(
             pieces: [.mark(1)], marks: [1: .init(text: "button \"x\"\n\u{1B}]0;owned\u{07}", picture: nil)],
-            subject: .file(path: "/tmp/a\nb.md", view: "Source"), whole: nil, wholeIsPart: false, details: nil)
+            subject: .file(path: "/tmp/a\nb.md", view: "Source"), whole: nil, details: nil)
         XCTAssertEqual(copied, "button \"x\" ]0;owned\n\nFile: /tmp/a b.md (Source)")
         XCTAssertFalse(copied.unicodeScalars.contains { $0.value == 0x1B || $0.value == 0x07 })
     }
@@ -145,7 +145,7 @@ final class MarkupTests: XCTestCase {
         let copied = MarkupNote.copied(
             pieces: [.mark(2)], marks: [2: .init(text: "area 2", picture: nil)],
             subject: .file(path: "/repo/README.md", view: "Rendered"),
-            whole: "/m/whole.png", wholeIsPart: true, details: nil)
+            whole: .init(path: "/m/whole.png", kind: .part), details: nil)
         XCTAssertEqual(copied, """
             area 2
 
@@ -154,9 +154,62 @@ final class MarkupTests: XCTestCase {
             """)
     }
 
+    func testThePictureOfTheWholeSaysWhatItIsAndWhichMarksAreNotInIt() {
+        func line(_ whole: MarkupNote.Whole) -> String {
+            MarkupNote.copied(pieces: [.mark(1), .mark(2)], marks: references, subject: .page("x"),
+                              whole: whole, details: nil).components(separatedBy: "\n")[3]
+        }
+        XCTAssertEqual(line(.init(path: "/w.png")), "All marks: /w.png")
+        XCTAssertEqual(line(.init(path: "/w.png", kind: .part)), "The part with the marks: /w.png")
+        // Markdown is pictured as it was in view, and a mark scrolled away
+        // is not in the picture: said, so a reader does not look for it.
+        XCTAssertEqual(line(.init(path: "/w.png", kind: .view)), "What was in view: /w.png")
+        XCTAssertEqual(line(.init(path: "/w.png", kind: .view, missing: [2])),
+                       "What was in view (area 2 is not in it): /w.png")
+        XCTAssertEqual(line(.init(path: "/w.png", kind: .all, missing: [1, 2])),
+                       "The whole (button \"Download\" and area 2 are not in it): /w.png")
+        // A mark nobody knows has no name to give.
+        XCTAssertEqual(line(.init(path: "/w.png", kind: .view, missing: [9])), "What was in view: /w.png")
+    }
+
+    func testAnAreasPictureShowsWhatIsAroundIt() {
+        let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+        // A loop on one word: 60 by 30. The picture is the least it may be,
+        // centred on the loop.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 370, y: 285, width: 60, height: 30), within: bounds),
+                       CGRect(x: 220, y: 220, width: 360, height: 160))
+        // A large area has 32 points more a side.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 100, y: 100, width: 500, height: 300), within: bounds),
+                       CGRect(x: 68, y: 68, width: 564, height: 364))
+        // At the view's corner it keeps its size by moving in.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 0, y: 0, width: 40, height: 40), within: bounds),
+                       CGRect(x: 0, y: 0, width: 360, height: 160))
+        // In a view smaller than the least, it is the view.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 10, y: 10, width: 40, height: 40),
+                                           within: CGRect(x: 0, y: 0, width: 260, height: 120)),
+                       CGRect(x: 0, y: 0, width: 260, height: 120))
+    }
+
+    func testAMarkOutsideWhatIsPicturedIsSaidToBeMissing() throws {
+        // Two marks 30,000 apart in something 60,000 tall: the stretch
+        // pictured is cut at 24 screens, and the second mark is past it.
+        let whole = MarkupWhole(draw: { _ in }, size: CGSize(width: 400, height: 60_000),
+                                visible: CGRect(x: 0, y: 0, width: 400, height: 300),
+                                placements: [
+                                    1: MarkPlacement(origin: CGPoint(x: 10, y: 1000), size: CGSize(width: 50, height: 20),
+                                                     scale: 1, clip: .infinite),
+                                    2: MarkPlacement(origin: CGPoint(x: 10, y: 31_000), size: CGSize(width: 50, height: 20),
+                                                     scale: 1, clip: .infinite),
+                                ])
+        let picture = try XCTUnwrap(MarkupPicture.whole(whole, marks: [mark(1), mark(2), mark(3)], colours: [:]))
+        XCTAssertEqual(picture.kind, .part)
+        // The second is out of the stretch, the third has no place at all.
+        XCTAssertEqual(picture.missing, [2, 3])
+    }
+
     func testANoteKeepsItsLines() {
         let copied = MarkupNote.copied(pieces: [.text("one \n two"), .mark(1)], marks: references,
-                                       subject: .page("x"), whole: nil, wholeIsPart: false, details: nil)
+                                       subject: .page("x"), whole: nil, details: nil)
         XCTAssertTrue(copied.hasPrefix("one\ntwo button \"Download\" (/m/1.png)\n\nPage: x"))
     }
 
@@ -364,7 +417,8 @@ final class MarkupTests: XCTestCase {
                         name: "area", picture: nil, details: MarkDetails())
         let red = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), blue = CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)
         let picture = try XCTUnwrap(MarkupPicture.whole(whole, marks: [mark(1), area], colours: [1: red, 2: blue]))
-        XCTAssertFalse(picture.isPart)
+        XCTAssertEqual(picture.kind, .all)
+        XCTAssertEqual(picture.missing, [])
         XCTAssertEqual(picture.image.width, 200)
         XCTAssertEqual(picture.image.height, 400)
         let pixels = try XCTUnwrap(Pixels(picture.image))

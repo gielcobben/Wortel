@@ -173,6 +173,8 @@ final class MarkupCanvas: @unchecked Sendable {
     let part: CGRect
     /// Whether that is less than all of it.
     let isPart: Bool
+    /// Whether it is only what was in view, and not chosen for the marks.
+    var isView = false
     /// Pixels per unit.
     let density: CGFloat
     let wholeHeight: CGFloat

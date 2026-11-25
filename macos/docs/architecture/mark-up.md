@@ -256,11 +256,16 @@ Details: /…/details.json
 
 - A mark's picture is taken when the mark is made and written at once, so
   a note holds paths and no bitmaps. A picked element's is the element with
-  8pt of room, clean. A drawn area's has its ink on it.
+  8pt of room, clean. A drawn area's has its ink on it and what is around
+  it: 32pt more a side, and never less than 360 by 160 (`MarkStroke.pictured`),
+  so the picture can be placed without another.
 - `whole.png` is the whole page with every mark and badge drawn on it
   natively (`MarkupPicture.whole`), 1,600 pixels wide at most. Past 12
   screens tall it is the stretch from a screen above the first mark to a
-  screen below the last, and the line says "The part with the marks".
+  screen below the last, and the line says "The part with the marks". For
+  rendered Markdown it says "What was in view". Whichever it is, a mark
+  that is not in the picture is named: "What was in view (area 1 is not in
+  it)".
 - `details.json` (`MarkupDetailsFile`) has, per mark, its number, colour,
   name, picture and place, and for a page's element its tag, text,
   selector, key styles and HTML; for an area, what lies inside it.
@@ -273,6 +278,14 @@ its own. A note's folder is removed seven days after its last write, at
 launch (with the pasted images) and whenever a new note's folder is made;
 the folders of notes still open are skipped. Removed, not moved to the
 Trash.
+
+Both of those last two come from the first note an agent read, the
+owner's, pasted into the session that built this (2026-11-25). The agent
+opened all four files unasked and found both places in the file. What it
+could not do: find the first mark in the picture of the whole, which the
+line called "the part with the marks" and which showed only the second;
+and place the second mark from its own picture, which was a loop at a
+paragraph's edge and showed half of two words.
 
 ## What it costs
 

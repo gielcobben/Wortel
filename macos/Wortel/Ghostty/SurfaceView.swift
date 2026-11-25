@@ -678,14 +678,25 @@ final class SurfaceView: NSView {
     /// Once per surface, and nothing at all once the surface is gone.
     func finishProcess(endedAt: Date = Date()) {
         guard !processFinished else { return }
+        processEndedAt = endedAt
         guard let surface else {
             // Hibernated: the terminal is told when it wakes (`wake`).
             if keptDrop != nil { processFinished = true }
             return
         }
         processFinished = true
-        let ran = UInt64(max(endedAt.timeIntervalSince(shellStartedAt), 0) * 1000)
-        ghostty_surface_process_exit(surface, 0, ran)
+        ghostty_surface_process_exit(surface, 0, processRan)
+    }
+
+    /// When the shell ended, kept for a terminal that was asleep then and is
+    /// told when it wakes: told 0 ms, libghostty takes any end for a failed
+    /// launch, shows its red banner and keeps the session open.
+    private var processEndedAt: Date?
+
+    /// How long the shell ran, in milliseconds, as `ghostty_surface_process_exit`
+    /// takes it.
+    private var processRan: UInt64 {
+        UInt64(max((processEndedAt ?? Date()).timeIntervalSince(shellStartedAt), 0) * 1000)
     }
 
     /// Explicit teardown (deinit ordering with AppKit view hierarchies is
@@ -1096,7 +1107,7 @@ final class SurfaceView: NSView {
                     """)
                 DispatchQueue.main.async {
                     guard let self else { onRestored?(); return }
-                    if self.processFinished, self.surface == new { ghostty_surface_process_exit(new, 0, 0) }
+                    if self.processFinished, self.surface == new { ghostty_surface_process_exit(new, 0, self.processRan) }
                     if self.surface == new { self.isRestoring = false }
                     onRestored?()
                     let waiting = self.restoreWaiters
@@ -1117,7 +1128,7 @@ final class SurfaceView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.restorePatience) { [weak self] in
             guard let self, self.surface == new, self.isRestoring else { return }
             HibernationLog.log.error("no snapshot came for \(session.uuidString, privacy: .public); shown as it is")
-            if self.processFinished { ghostty_surface_process_exit(new, 0, 0) }
+            if self.processFinished { ghostty_surface_process_exit(new, 0, self.processRan) }
             self.isRestoring = false
             let waiting = self.restoreWaiters
             self.restoreWaiters = []

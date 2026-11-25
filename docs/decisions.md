@@ -1278,6 +1278,26 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   and a keeper holding sessions outlives an update. So any release that
   moves Ghostty restarts running shells once, agents resumed; say so in its
   note.
+- **2026-11-25. Ghostty is moved to its tags, and a weekly check says when.**
+  Nothing told anyone a Ghostty fix existed: the pin was moved when someone
+  remembered. `.github/workflows/ghostty-watch.yml` (Linux, Mondays; the work
+  is `macos/scripts/ghostty-watch.sh` and `ghostty-news.py`) keeps one issue
+  with what changed since the pin that reaches Wortel, sorted by what each
+  change asks for, and opens a draft pull request for the newest `v*` or
+  `vt-*` tag past the pin (one, if two came in a week) that moves only the
+  pin, with `macos.yml` started on it. Tags rather
+  than Ghostty's main branch: every move restarts the user's shells once
+  (above) and needs the review in the `update-ghostty` skill, so it is done
+  at the points upstream calls stable, or at once for a security fix. The
+  review is not automated on purpose: the move to 5ebe501 built and passed
+  every test and still shipped dead links, because a callback's answer and
+  two defaults had changed meaning. The report names no Ghostty pull request
+  as `#n` or by link: this repository is public, and each mention would land
+  in that pull request's timeline every week. An advisory counts only when
+  the fix it names is not in the pin: Ghostty publishes them hours after the
+  release that fixes them, so the date alone reported fixes Wortel had.
+  Renovate was not used: it can follow a git ref, but not sort the changes
+  or open the issue, and it would be a second place the rules live.
 - **2026-11-20. A quiet terminal's scrollback is compressed by the keeper**,
   after a 15 s look that finds it unchanged. 108 MB to 23 MB for ten full
   scrollbacks; decompressed when touched.

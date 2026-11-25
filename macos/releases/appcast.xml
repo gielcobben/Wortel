@@ -3,6 +3,46 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.48.1</title>
+            <pubDate>Wed, 25 Nov 2026 11:22:03 -0500</pubDate>
+            <sparkle:version>2026.48.1</sparkle:version>
+            <sparkle:shortVersionString>2026.48.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Files on ⌘P, a preview tab, and links that open again</h1>
+<p class="date">Wortel 2026.48.1 &middot; 2026-11-25</p>
+<p><strong>Links open again.</strong> In 2026.47.4 a ⌘-clicked web link opened nothing, a middle click pasted nothing, and on macOS 15 a ⌘-clicked path outside a repository could hang Wortel. All three are fixed. Selected text is kept for a middle click and no longer replaces what you copied with ⌘C. A long path an agent broke over two rows now opens whole.</p>
+<p><strong>Files on ⌘P.</strong> Once you type, ⌘P lists the files in the session’s repository or folder. Return opens one in a tab, and <code>name:120</code> opens it at that line.</p>
+<p><strong>A preview tab.</strong> A file you pick in Changes or Files shows in one tab with its title in italics, and the next one takes its place. Double-click to keep it. With the terminal in front a click only selects, so your agent stays in view, and Space opens the preview. The diff under the Changes list can be put away from View ▸ Show Diff in Changes.</p>
+<p><strong>New sessions open clean.</strong> A session that starts an agent used to show the prompt, the command typed on it, then the agent popping in. It now stays an empty page until the agent has drawn, two seconds at most. Keys typed meanwhile reach the agent once it’s up, except Return.</p>
+<p><strong>Help on a new Mac.</strong> When there is no agent or no git, the raised hand in the sidebar says so and types the official install line for you to run. A <code>claude</code> installed by its own installer is now found in every session. Wortel asks to send notifications the first time it has one, not at launch.</p>
+<p><strong>Claude Code redraws at any width.</strong> New sessions open Claude Code in its fullscreen view, which redraws the whole conversation when the terminal changes size, so a diff drawn while a column was open no longer stays narrow. A renderer you chose in Claude’s own settings is kept.</p>
+<p><strong>Safer with what’s in the terminal.</strong> A program can no longer read your clipboard. Git in Changes and History no longer runs a diff or signature program that a repository’s own config names.</p>
+<p><strong>Smaller things.</strong> Closing a session goes back to the one you were in before it, not the row above. <code>exit</code> closes its session again instead of showing a red banner. The font is SF Mono on every Mac: without Apple’s separate download it had been JetBrains Mono. An agent can end its own session and worktree with <code>wortel close</code>, and Wortel asks you about uncommitted files first. A folded section shows the working dots of a session inside it. A server Claude Code started no longer keeps its session working. ⌘↑ and ⌘↓ jump between prompts. Wortel’s source is open, under the GPL.</p>
+<p><strong>Usage data.</strong> After Wortel hung and was force quit, the next launch reports where it was stuck, for how long and roughly how much memory it held, as it does for a crash. It also counts an agent too old to report its state, and a file picked on ⌘P, never which. File, folder and repository names are still never collected.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.48.1.zip" length="28255966" type="application/octet-stream" sparkle:edSignature="GGQJ8DhQcP3KOhycdpoM1VEc6aDZip8dzr6Nsmy58nY8uS0V1s6PzpfAL2rEYhAVa8q+xqrI0qeKcRnFBTeoAQ=="/>
+        </item>
+        <item>
             <title>2026.47.4</title>
             <pubDate>Fri, 20 Nov 2026 22:50:16 -0500</pubDate>
             <sparkle:version>2026.47.4</sparkle:version>
@@ -75,44 +115,6 @@
 <p><strong>Smaller things.</strong> ⌘-clicking a path an agent printed opens it in Wortel at its line. A new agent session that would start in your home folder gets a folder of its own in ~/Wortel, and sessions opened at home are called Home. Every terminal follows light and dark at once, and text stays readable when you switch. ⌘O and renaming a folder work again.</p>
 <p><strong>Usage data.</strong> Wortel now counts when a window is opened, with roughly how many are open, and when sessions move between windows, and how. It still never collects what you type, what your terminals show, or the names of your files, folders or repositories.</p>]]></description>
             <enclosure url="https://updates.wortel.sh/Wortel-2026.47.3.zip" length="24796784" type="application/octet-stream" sparkle:edSignature="tOq3VB//cdCzaWl8c8nhuNv3J+YtlLKIPGaZqBN2oJiAMVIfgaMvh9FRHteEUXjPwYmTErdQ5XHcmDuO3u/lCw=="/>
-        </item>
-        <item>
-            <title>2026.47.2</title>
-            <pubDate>Wed, 18 Nov 2026 20:10:11 -0500</pubDate>
-            <sparkle:version>2026.47.2</sparkle:version>
-            <sparkle:shortVersionString>2026.47.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-    margin: 0; padding: 12px 14px;
-    color: #16171b; background: transparent;
-  }
-  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
-  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
-  p { margin: 0 0 10px; }
-  ul { margin: 0 0 10px; padding-left: 18px; }
-  li { margin-bottom: 5px; }
-  strong { font-weight: 600; }
-  code {
-    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
-    padding: 1px 4px; border-radius: 4px;
-    background: color-mix(in srgb, currentColor 10%, transparent);
-  }
-  a { color: #0070f5; }
-</style>
-<h1>New sessions can start your agent, and Wortel has Settings</h1>
-<p class="date">Wortel 2026.47.2 &middot; 2026-11-18</p>
-<p><strong>New sessions start your agent.</strong> In Settings, type any command into “New sessions start with”, or pick one of the agents Wortel finds on your Mac from the menu beside the field. Every new session then starts it: ⌘N, ⌥⌘N, ⇧⌘N, ⌘O, a folder’s + and a folder dropped on the sidebar. Session ▸ New Terminal (⌃⌘N) opens one without it, and is there only while the field is filled. Left empty, a new session is a plain terminal, as before. <code>wortel new</code> and the sessions Wortel brings back at launch don’t use it.</p>
-<p><strong>Settings.</strong> Wortel ▸ Settings… (⌘,) opens a small window with two tabs. General has what new sessions start with, whether Source Control shows its commit box, and whether local servers open in your browser. Updates has automatic updates and anonymous usage data. The menu items Check for Updates Automatically, Share Anonymous Usage Data and Open Servers in Default Browser are gone; their switches are here now. The ⓘ at the bottom of the sidebar still has its usage data switch.</p>
-<p><strong>New sessions go on top.</strong> A new session outside a folder now goes to the top of the sidebar, so the newest is first. In a folder it goes under the session you’re on.</p>
-<p><strong>Idle agents give their memory back.</strong> An idle Claude Code holds 130 to 400 MB. When one has finished its turn and its session hasn’t been on screen for an hour, Wortel now ends it and keeps the shell. Select the session and the same conversation is resumed, in a second or two. One waiting on your answer, with something still running under it, with a prompt typed and not sent, or with Remote Control on, gets eight hours instead, and what it started ends with it. A working agent and the session in front of you are never touched. Other agents are left alone for now.</p>
-<p><strong>Terminals use less memory.</strong> A terminal you haven’t looked at for ten minutes gives back its screen’s memory, about 70 MB each, and has it back when you select it. A leak that grew Wortel by over 100 MB an hour is fixed.</p>
-<p><strong>Faster switching.</strong> A click on a session switches on mouse-down, as Finder’s sidebar does, and its terminal appears at its final size instead of growing into place.</p>
-<p><strong>Smaller things.</strong> The sidebar’s toggle and arrows move with it when it opens or closes. A terminal drawn under the side column or in a corner of its pane is now put right as soon as the layout settles. Usage data now counts whether a new session started with a command and which agent was ended or resumed this way, with nothing about the command you typed, the session or the conversation.</p>]]></description>
-            <enclosure url="https://updates.wortel.sh/Wortel-2026.47.2.zip" length="24122517" type="application/octet-stream" sparkle:edSignature="N/0MufNHs+ZTMSROIA25cLjVcQhahClfAJidl3q3QCvsDabA+RedL5IOMOTcEl4aW/vMofUyztoH6ozjAnLLDg=="/>
         </item>
     </channel>
 </rss>

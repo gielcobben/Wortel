@@ -206,6 +206,23 @@ final class TerminalLinkWrapTests: XCTestCase {
         XCTAssertNil(TerminalLink.wrappedURL(click(rows, row: 0, on: "https")))
     }
 
+    /// A word-wrapped sentence whose address happens to end near the edge:
+    /// the next row's first word is the sentence going on, not the address.
+    func testProseAfterAnAddressAtTheEdgeIsNotGluedOn() {
+        let rows = [
+            "See the guide at https://example.com/docs/getting-started",
+            "for details. It covers the rest.",
+        ]
+        XCTAssertEqual(rows[0].count, 57)
+        XCTAssertNil(TerminalLink.wrappedURL(click(rows, row: 0, on: "https")))
+        XCTAssertNil(TerminalLink.wrappedURL(click(rows, row: 1, on: "for")))
+        // A broken address's last piece of letters alone, ending its row,
+        // still joins.
+        let broken = ["  https://example.com/docs/getting-sta", "  rted"]
+        XCTAssertEqual(TerminalLink.wrappedURL(click(broken, row: 0, on: "https", columns: 40)),
+                       "https://example.com/docs/getting-started")
+    }
+
     /// An address on one row is libghostty's to match, as before.
     func testAnUnbrokenAddressIsLeftAlone() {
         let rows = ["  see https://wortel.sh for it"]

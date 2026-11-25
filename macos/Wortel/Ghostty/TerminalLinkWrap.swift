@@ -89,7 +89,7 @@ extension TerminalLink {
         // Up to the row the address starts on, and not past a comma ending a
         // row, which is a list going on rather than an address.
         var up: [String] = []
-        if !pieces.middle.contains("://") {
+        if !pieces.middle.contains("://"), !isProse(pieces.middle, followed: pieces.middleFollowed) {
             for piece in pieces.up {
                 guard !piece.hasSuffix(",") else { break }
                 up.append(piece)
@@ -99,8 +99,8 @@ extension TerminalLink {
         // Down until a row starts an address of its own.
         var down: [String] = []
         var last = pieces.middle
-        for piece in pieces.down {
-            guard !last.hasSuffix(","), !piece.contains("://") else { break }
+        for (piece, followed) in zip(pieces.down, pieces.downFollowed) {
+            guard !last.hasSuffix(","), !piece.contains("://"), !isProse(piece, followed: followed) else { break }
             down.append(piece)
             last = piece
         }
@@ -117,6 +117,20 @@ extension TerminalLink {
         // another row part of it: otherwise it is libghostty's own match.
         guard at - start < url.count, start < before.count || !down.isEmpty else { return nil }
         return url
+    }
+
+    /// A row's first run that is a plain word with more of the sentence
+    /// after it ("for details."): what a word-wrapping program printed after
+    /// an address that happened to end near the edge, not the address's last
+    /// piece. Measured broken addresses go on with a path or query piece, or
+    /// end their row. The cost: an address broken just before a last piece of
+    /// letters alone, with prose after it, opens without that piece, as
+    /// libghostty's own match of the row.
+    private static func isProse(_ piece: String, followed: Bool) -> Bool {
+        guard followed else { return false }
+        var word = Substring(piece)
+        while let tail = word.last, ".,:;!?".contains(tail) { word.removeLast() }
+        return !word.isEmpty && word.allSatisfy(\.isLetter)
     }
 
     // MARK: - Rows
@@ -147,9 +161,12 @@ extension TerminalLink {
     /// ends its row (nothing after it but gutter) and the row is `full`, into
     /// the next row's first run when that row begins with one after its
     /// gutter. Up is the mirror. `offset` is the click's place in `middle`.
+    /// `middleFollowed` and `downFollowed` say whether more than gutter comes
+    /// after a run on its row.
     private static func pieces(_ click: TerminalLinkClick, characters set: CharacterSet,
                                reachesEdge full: (String) -> Bool)
-        -> (up: [String], middle: String, offset: Int, down: [String])? {
+        -> (up: [String], middle: String, middleFollowed: Bool, offset: Int,
+            down: [String], downFollowed: [Bool])? {
         guard click.rows.indices.contains(click.row) else { return nil }
         let row = Array(click.rows[click.row])
         guard row.indices.contains(click.index), isLink(row[click.index], set) else { return nil }
@@ -158,8 +175,10 @@ extension TerminalLink {
         while end < row.count, isLink(row[end], set) { end += 1 }
         let middle = String(row[start..<end])
 
+        let middleFollowed = !row[end...].allSatisfy(isGutter)
         var down: [String] = []
-        var endsRow = row[end...].allSatisfy(isGutter) && full(click.rows[click.row])
+        var downFollowed: [Bool] = []
+        var endsRow = !middleFollowed && full(click.rows[click.row])
         var next = click.row + 1
         while endsRow, down.count < wrapReach, click.rows.indices.contains(next) {
             let text = Array(click.rows[next])
@@ -168,7 +187,9 @@ extension TerminalLink {
             while stop < text.count, isLink(text[stop], set) { stop += 1 }
             guard stop > first else { break }
             down.append(String(text[first..<stop]))
-            endsRow = text[stop...].allSatisfy(isGutter) && full(click.rows[next])
+            let followed = !text[stop...].allSatisfy(isGutter)
+            downFollowed.append(followed)
+            endsRow = !followed && full(click.rows[next])
             next += 1
         }
 
@@ -187,7 +208,7 @@ extension TerminalLink {
             startsRow = text[..<first].allSatisfy(isGutter)
             previous -= 1
         }
-        return (up, middle, click.index - start, down)
+        return (up, middle, middleFollowed, click.index - start, down, downFollowed)
     }
 
     private static func isLink(_ character: Character, _ set: CharacterSet) -> Bool {

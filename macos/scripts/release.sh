@@ -253,7 +253,17 @@ if [ "$PUBLISH" = 1 ]; then
 fi
 # Build a universal binary so it runs on both Apple Silicon and Intel Macs.
 # (A single-arch build shows "app is damaged" on the other architecture.)
+#
+# In a DerivedData folder of its own. `clean` empties the whole products
+# folder, Debug included, and the Wortel a release is run from is usually a
+# Debug build out of the shared one: on 2026-11-25 it deleted the running
+# app's bundle mid-release, macOS stopped trusting the app it no longer
+# found on disk, and make-dmg.sh was refused Finder ("Not authorized to send
+# Apple events", -1743). New sessions would have missed the shell
+# integration in that bundle as well.
+DERIVED="$HOME/Library/Developer/Xcode/DerivedData/Wortel-release"
 if ! xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release \
+      -derivedDataPath "$DERIVED" \
       -onlyUsePackageVersionsFromResolvedFile \
       ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
       ${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"} \
@@ -263,16 +273,8 @@ if ! xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Release 
   exit 1
 fi
 
-# There can be several Wortel-* DerivedData folders (a git worktree gets its
-# own), and only one holds this build's Release product — so pick the newest
-# Release .app that actually exists, not just the first directory found.
-APP=""
-while IFS= read -r dir; do
-  cand="$dir/Build/Products/Release/Wortel.app"
-  [ -d "$cand" ] || continue
-  if [ -z "$APP" ] || [ "$cand" -nt "$APP" ]; then APP="$cand"; fi
-done < <(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 1 -name 'Wortel-*')
-[ -n "$APP" ] || { echo "Release .app not found (see build/xcodebuild.log)" >&2; exit 1; }
+APP="$DERIVED/Build/Products/Release/Wortel.app"
+[ -d "$APP" ] || { echo "Release .app not found at $APP (see build/xcodebuild.log)" >&2; exit 1; }
 echo "==> Built $APP"
 
 # --- Sign -------------------------------------------------------------------

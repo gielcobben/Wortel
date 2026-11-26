@@ -516,6 +516,9 @@ targets:
       # a very tall page is pictured.
       - path: Wortel/Markup/Mark.swift
       - path: Wortel/Markup/MarkStroke.swift
+      # What the pen makes of a rough shape on letting go: `MarkStroke` keeps
+      # what it recognised.
+      - path: Wortel/Markup/MarkSnap.swift
       - path: Wortel/Markup/MarkupNote.swift
       - path: Wortel/Markup/MarkupStore.swift
       - path: Wortel/Markup/WebMarkReport.swift

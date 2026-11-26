@@ -163,6 +163,81 @@ enum MarkStroke {
         return cut.isNull ? area : cut.integral.intersection(bounds)
     }
 
+    // MARK: - A rough shape made clean
+
+    /// What the pen keeps of a stroke it knew for a shape, or nil for one
+    /// it did not: the hand's own line stays then.
+    static func cleaned(_ drawn: [CGPoint]) -> (pen: MarkPen, points: [CGPoint])? {
+        MarkSnap.recognise(drawn).map(drawing)
+    }
+
+    /// A recognised shape as a drawing of a kind there already is: a box
+    /// as the box's two corners, an arrow as the arrow's two ends, a line
+    /// and an oval as the pen's own points.
+    ///
+    /// There is no oval among the pens, and it needs none. An oval kept as
+    /// the points of one is drawn, pictured, moved and resized by what the
+    /// pen's line already has, and a handle scales every point, which
+    /// keeps an oval an oval. A kind of its own would be a second copy of
+    /// each of those for the sake of a rounder name.
+    static func drawing(of snap: MarkSnap) -> (pen: MarkPen, points: [CGPoint]) {
+        switch snap {
+        case .box(let rect):
+            return (.box, [rect.origin, CGPoint(x: rect.maxX, y: rect.maxY)])
+        case .arrow(let tail, let tip):
+            return (.arrow, [tail, tip])
+        case .line(let start, let end):
+            return (.pen, levelled(start, end))
+        case .oval(let rect):
+            return (.pen, oval(in: rect))
+        }
+    }
+
+    /// How far off level or upright a line may be and still be meant so.
+    static let nearlyLevel: CGFloat = 4 * .pi / 180
+
+    /// A line from `start` to `end`, made level or upright where it nearly
+    /// is: turned about its middle, as long as it was. A line under a row
+    /// of text is drawn to be level, and one a degree off looks like a
+    /// mistake beside the text. Any other line keeps the hand's angle.
+    static func levelled(_ start: CGPoint, _ end: CGPoint) -> [CGPoint] {
+        let dx = end.x - start.x, dy = end.y - start.y
+        let length = hypot(dx, dy)
+        guard length > 0 else { return [start, end] }
+        let middle = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let quarter = CGFloat.pi / 2
+        let angle = atan2(dy, dx)
+        let square = (angle / quarter).rounded() * quarter
+        guard abs(angle - square) <= nearlyLevel else { return [start, end] }
+        let half = CGPoint(x: cos(square) * length / 2, y: sin(square) * length / 2)
+        return [CGPoint(x: middle.x - half.x, y: middle.y - half.y),
+                CGPoint(x: middle.x + half.x, y: middle.y + half.y)]
+    }
+
+    /// How many points an oval is kept as, round its whole.
+    static let ovalPoints = 96
+
+    /// The oval that fills `rect`, as points for the pen's line.
+    ///
+    /// The line through them (`path(through:)`) runs inside each corner, so
+    /// with too few points it is a smaller oval than asked for: with these
+    /// it is 0.4pt inside at 1,200pt across, and less than the eye finds at
+    /// any size. It goes round and three points further: that line leaves
+    /// its first point and reaches its last along a straight piece, and
+    /// lapped over the start those two lie on the curve, where a seam that
+    /// only met would show as a flat spot.
+    ///
+    /// It starts at the upper left, in a view counted from the top: a
+    /// mark's badge sits where its ink begins (`MarkPlacement.badge`), and
+    /// that is where a box has its own.
+    static func oval(in rect: CGRect) -> [CGPoint] {
+        let step = 2 * CGFloat.pi / CGFloat(ovalPoints)
+        return (0...(ovalPoints + 3)).map { index in
+            let angle = CGFloat(index) * step - 3 * .pi / 4
+            return CGPoint(x: rect.midX + cos(angle) * rect.width / 2, y: rect.midY + sin(angle) * rect.height / 2)
+        }
+    }
+
     // MARK: - Resizing a drawing
 
     /// A handle of a selected drawing. In the layer's coordinates, which

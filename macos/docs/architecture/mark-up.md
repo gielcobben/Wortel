@@ -70,7 +70,8 @@ All of it is in `Wortel/Markup/`.
 | For | Look in |
 | --- | --- |
 | What a mark is, where it is now, what is written down about it | `Mark.swift`: `Mark`, `MarkPen`, `MarkupTool`, `MarkPlacement`, `MarkReveal`, `MarkDetails`, `MarkText` |
-| A stroke's geometry: click or drag, each pen's points and line, its area, a drawing's handles and what dragging one does | `MarkStroke.swift` |
+| A stroke's geometry: click or drag, each pen's points and line, its area, what a recognised shape is kept as, a drawing's handles and what dragging one does | `MarkStroke.swift` |
+| Which shape a stroke of the pen is, if it is one: a line, an arrow, a box, an oval | `MarkSnap.swift` |
 | A mark drawn into a picture, a chip's colours, where a badge sits and when it is a pin, the picture of the whole | `MarkDrawing.swift`: `MarkDrawing`, `MarkBadge`, `MarkupPicture` |
 | On and off, which marks exist, the note's text, Return | `MarkupSession.swift` |
 | What is copied, and where its files go | `MarkupNote.swift`, `MarkupStore.swift` |
@@ -589,9 +590,78 @@ comes back.
   not need to be square, and a rectangle says it as well (the owner,
   2026-11-25). Resizing a box by a handle is different: there Shift keeps
   its proportions, as it does everywhere on a Mac.
-- **A mark is called by what it was drawn with**: "area 2", "box 3",
-  "arrow 4", "highlight 5", on its chip and in what is copied, and
-  `details.json` has it as `shape`.
+- **The pen makes a rough shape a clean one on letting go**, as the Sketch
+  pen of Preview does (the owner asked for it after using that one,
+  2026-11-26). `MarkSnap.recognise` says whether the stroke is a line, an
+  arrow, a box or an oval, and gives the clean shape's own measures;
+  anything else, and anything it is not sure of, stays the hand's line. A
+  wrong guess is worse than none here: a mark says "this", and a loop
+  turned into the wrong thing says something else. What a shape is kept as
+  is `MarkStroke.drawing(of:)`, and it is always a kind there already was:
+  a box is the box tool's two corners and an arrow the arrow tool's two
+  ends, so each is called, drawn, moved and resized as one drawn with that
+  tool. A line is the pen's own two points, what Shift gives, made level
+  or upright where it is within 4 degrees of it (`levelled`): a line under
+  a row of text is meant level. An oval is the pen's line through 96
+  points of it (`oval(in:)`), lapped three points over its start so the
+  line's straight ends lie on the curve; drawn through them the line is at
+  most 0.4pt inside the true oval at 1,200pt across (measured 2026-11-26),
+  and a handle scales every point, which keeps an oval an oval. There is
+  no oval kind: it would be a second copy of the drawing, the picture, the
+  handles and the resizing for the sake of a name. Its ink begins at the
+  upper left, so its badge sits where a box has its own.
+  - Only the pen: the box, the arrow and the highlighter already say what
+    is wanted. Not with Shift, which has made the line straight already.
+  - **Option keeps the hand's own line.** Preview has no way to ask for
+    that except a palette after every stroke, which is what people
+    complain of there.
+  - The clean shape is what shows from the moment of letting go: the
+    stroke that stays drawn while its mark is made (`draw`) is already it.
+  - **⌘Z after a clean shape takes the mark back**, as after any mark. It
+    does not give the hand's line back first. That was looked into on
+    2026-11-26 and not built: a step registered beside the chip's
+    insertion lands in the same undo group as the chip (one ⌘Z undid
+    both), closing that group by hand raises an exception at the end of
+    the run loop's turn, and what did give a step of its own (registering
+    it from a later dispatch) holds only by the order two things happen to
+    run in. The other way, a state beside the undo stack that ⌘Z and ⇧⌘Z
+    ask first, also has to relabel a chip in place ("box 3" becomes "area
+    3") and to know when anything else was done since: about a hundred
+    lines and three rules to keep, for a second way to say what Option
+    says. A wrong half of an undo is worse than none.
+  - **How it reads a stroke** (`MarkSnap.swift`, geometry only, no
+    model): nothing under 24pt or 8 points; the stroke is read at 64
+    evenly spaced points, so the hand's speed does not count; ends that
+    come within 15% of its length of each other make a loop, cut there so
+    an overshoot does not grow the shape. An open stroke is a line when it
+    strays no more than 5% of its length from its chord, or an arrow when
+    a straight shaft is followed by a head that turns back on itself with
+    a barb to each side. A loop is a box when it is four level and upright
+    stretches, or an oval when it turns once and lies on the ellipse of
+    its own box; both or neither, and it is left alone. Last, every point
+    as drawn must lie within 6pt, or 8% of the stroke's size, of the clean
+    shape. Apple offers no API for this (its developer forums say so).
+  - **Measured 2026-11-26 against strokes made by a program** (a hand's
+    wobble, uneven spacing, overshoot, rounded corners; 200 a case at
+    three amounts of wobble): a box was a box 197 to 199 times in 200, an
+    oval an oval 194 to 196, a line a line 200, an arrow an arrow 193 to
+    197, and the rest were left as drawn. None of 22 things that are not a
+    shape (a tick, a zigzag, a V, an L, a C, a spiral, a double loop,
+    handwriting, a question mark, a triangle, a tilted rectangle, a
+    scribble over a word and others) came back as one, at any wobble. The
+    slowest 300-point stroke took 0.39 ms in a Debug build. The tests run
+    80 a case, to keep the suite short.
+  - **Its limits, which a hand will find first**: these strokes are not a
+    person's, and the thresholds are not tuned against one until the owner
+    has drawn with it. A box drawn with very round corners came back an
+    oval about 15 times in 100, the likeliest wrong guess. A loop left
+    more than 15% open, a word circled twice, an arrow whose head is one
+    soft hook, and a long thin oval or box (61 to 89 in 100) are left as
+    drawn more often than a person would expect.
+- **A mark is called by what it is**: "area 2", "box 3", "arrow 4",
+  "highlight 5", on its chip and in what is copied, and `details.json`
+  has it as `shape`. That is what it was drawn with, except that a box or
+  an arrow the pen made clean is a box or an arrow.
 - **A click still picks an element** of a page with any pen in hand. Only a
   drag draws.
 - **A click on an element already picked makes no second mark.** Its chip
@@ -647,6 +717,16 @@ proportions and Option scaled it about its middle; Esc with a handle in
 hand put it back, the next Esc dropped the selection, the one after left
 mark-up; an arrow's tip moved and its tail did not; the handles moved with
 a 34pt scroll.
+
+Checked 2026-11-26, the same way, with a stand-in for the recogniser that
+answers one fixed shape: the pen's stroke became a box of two corners
+called "box 1", an arrow of two ends, a level line of two points, an oval
+of 100 points called "area 1"; a stroke not recognised stayed the hand's
+line; with Option or Shift held the recogniser was not asked; the
+highlighter, the box and the arrow tools were left alone; and while the
+mark was being made the stroke on screen was already the clean box. The
+clean shapes were captured as really drawn, light and dark, at about 40pt
+and at 600pt, an oval at 1,200pt, and an oval selected with the Move tool.
 
 Not built, from what tldraw does (its select tool's source, read the same
 day): rotation, handles on the sides, arrow keys to nudge (the keyboard is
@@ -750,6 +830,9 @@ looked at.
   ⌘A, and the selection moved off a chip; the solid look only with a
   window that answers `isKeyWindow` with yes, since a capture's window is
   not key.
+- The pen's clean shapes under a hand: which of a person's strokes the
+  recogniser takes for a shape and which it leaves, and whether a shape
+  that replaces the stroke at once reads as right or as a jump.
 - That Claude Code and Codex each read a picture from the cache folder
   without asking.
 

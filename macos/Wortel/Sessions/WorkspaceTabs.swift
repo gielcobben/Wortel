@@ -1,9 +1,8 @@
 import Foundation
 
-/// Where a session's tabs are: the main area's row, the side column's row,
-/// the strip under the terminal and the panes split off the main area, what's
-/// in front of each, which of the two that can hide are showing, and what ⌘⇧T
-/// can bring back.
+/// Where a session's tabs are: the main row, the side column's row, the
+/// strip's and the rows of the panes split off, what's in front of each,
+/// which of the two that can hide are showing, and what ⌘⇧T can bring back.
 ///
 /// The rules, in one pure value so they can be tested without a window:
 ///
@@ -31,27 +30,36 @@ import Foundation
 ///   Reopening prefers the last one closed in the row you're in; a terminal
 ///   comes back as a new shell (a new id) in its old place.
 ///
-/// And for the panes split off the main area (`SplitLayout` says where each
-/// is; this says what is in it):
+/// And for how the rows share the session's area (`SplitLayout` says where
+/// each is; this says what is in it):
 ///
-/// - The main area is a tree whose leaves are rows of tabs. One leaf is the
-///   main row, which is always there; every other is a pane, made by `split`
-///   around one tab.
-/// - A pane is there only while it has tabs. Taking out its last one, by
-///   closing or moving it, takes the pane out too, and its room goes to its
-///   siblings. Nothing is put into a pane that isn't there.
+/// - The area is a tree whose leaves are rows of tabs. One leaf is the main
+///   row, which is always there. Every other is there only while it has
+///   tabs: the column, the strip, and each pane made by `split` around one
+///   tab. Taking out a leaf's last tab, by closing or moving it, takes the
+///   leaf out too, and its room goes to its siblings.
+/// - The column and the strip are leaves like any other. They are split,
+///   zoomed and sized by the rules every leaf has. Two things are still
+///   theirs. They can be hidden with their tabs kept (`sideVisible`,
+///   `bottomVisible`, `hiddenLeaves`): the leaf stays in the tree and keeps
+///   its share, and takes no room until it is shown again. And they are
+///   where things open, so they have a place to appear at: the column at
+///   the outer edge of the whole area (`sideLeading` says which), the strip
+///   under the main row. Opened there, a leaf is at a guessed share until
+///   the window gives it its size (`unsized`).
+/// - Nothing is put into a pane that isn't there. A tab put in the column or
+///   the strip makes its leaf.
 /// - A pane's row follows the rules above: any tab but the session's
 ///   terminal, one in front, the neighbour or the opener coming forward. It
 ///   is never hidden while it exists.
 /// - Splitting takes a tab from wherever it is, or a new one, and gives it a
-///   pane beside the leaf asked about. Asked about the column, the strip or
-///   a pane that has gone, it splits the main row. A pane's only tab can't be
-///   split off its own pane: that would be the same pane in the same place.
-/// - One leaf can be zoomed: shown alone in the main area, the others kept
-///   as they are. Bringing a tab forward in another leaf, or splitting, ends
-///   it (a split made by `wortel split` doesn't: it waits behind the zoom);
-///   the column and the strip are beside the main area and leave it alone.
-///   A zoom is about now, so it isn't saved.
+///   pane beside the leaf asked about. Asked about a leaf that is hidden or
+///   has gone, it splits the main row. A leaf's only tab can't be split off
+///   its own leaf: that would be the same leaf in the same place.
+/// - One leaf can be zoomed: shown alone, the others kept as they are.
+///   Bringing a tab forward in another leaf, showing the column or the
+///   strip, or splitting, ends it (a split made by `wortel split` doesn't:
+///   it waits behind the zoom). A zoom is about now, so it isn't saved.
 /// - A habit that points at a pane which has gone is no habit: the kind
 ///   opens where it starts. A tab closed in a pane that has gone reopens in
 ///   the row you're in, or in the main row.
@@ -91,11 +99,50 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// The panes split off the main area, by id: the leaves of `layout`
     /// other than the main row.
     var panes: [UUID: PaneTabs] = [:]
-    /// How the main area is divided among the main row and the panes.
+    /// How the area is divided among the main row, the column, the strip
+    /// and the panes. The column is a leaf of it exactly while `side` has
+    /// tabs and the strip exactly while `bottom` has, showing or hidden.
     var layout = SplitLayout()
-    /// The leaf of the main area shown alone, the others out of sight until
-    /// it is toggled back. Not persisted.
+    /// The leaf shown alone, the others out of sight until it is toggled
+    /// back. Not persisted.
     var zoomed: TabRegion?
+    /// Which outer edge the column takes when its leaf is made: the left
+    /// one, or the right.
+    var sideLeading = false
+    /// Leaves that were put in the tree at a guessed share, for the window
+    /// to give their real size the first time it lays them out
+    /// (`markSized`). Not persisted.
+    var unsized: Set<SplitLayout.Leaf> = []
+
+    /// Made consistent as it is made: a column or a strip that has tabs has
+    /// its leaf in the tree, wherever the tabs came from.
+    init(main: [SideTab] = [.session], activeMain: SideTab? = nil,
+         side: [SideTab] = [], activeSide: SideTab? = nil, sideVisible: Bool = false,
+         bottom: [SideTab] = [], activeBottom: SideTab? = nil, bottomVisible: Bool = false,
+         closed: [ClosedTab] = [], habits: [TabKind: TabRegion] = [:],
+         openers: [SideTab: SideTab] = [:], peek: SideTab? = nil,
+         panes: [UUID: PaneTabs] = [:], layout: SplitLayout = SplitLayout(),
+         zoomed: TabRegion? = nil, sideLeading: Bool = false,
+         unsized: Set<SplitLayout.Leaf> = []) {
+        self.main = main
+        self.activeMain = activeMain
+        self.side = side
+        self.activeSide = activeSide
+        self.sideVisible = sideVisible
+        self.bottom = bottom
+        self.activeBottom = activeBottom
+        self.bottomVisible = bottomVisible
+        self.closed = closed
+        self.habits = habits
+        self.openers = openers
+        self.peek = peek
+        self.panes = panes
+        self.layout = layout
+        self.zoomed = zoomed
+        self.sideLeading = sideLeading
+        self.unsized = unsized
+        keepFixedLeaves()
+    }
 
     static let closedLimit = 25
 
@@ -127,9 +174,25 @@ struct WorkspaceTabs: Equatable, Sendable {
         return main + side + bottom + (inLayout + stray).flatMap { panes[$0]?.tabs ?? [] }
     }
 
-    /// The main area's leaves as regions, in reading order: the main row and
-    /// each pane.
+    /// The tree's leaves as regions, in reading order: the main row, each
+    /// pane, and the column and the strip while they have tabs, hidden or
+    /// not.
     var splitRegions: [TabRegion] { layout.leaves.map(TabRegion.init) }
+
+    /// The leaves that are in the tree and take no room: a column or a
+    /// strip that is hidden with its tabs kept.
+    var hiddenLeaves: Set<SplitLayout.Leaf> {
+        var hidden: Set<SplitLayout.Leaf> = []
+        if !sideVisible, layout.contains(.side) { hidden.insert(.side) }
+        if !bottomVisible, layout.contains(.bottom) { hidden.insert(.bottom) }
+        return hidden
+    }
+
+    /// How many leaves take room: what a zoom needs more than one of.
+    private var shownLeafCount: Int {
+        let hidden = hiddenLeaves
+        return layout.leaves.filter { !hidden.contains($0) }.count
+    }
 
     /// Whether `region` is a place a tab can be put: always for the three
     /// fixed rows, and for a pane only while it is there.
@@ -140,14 +203,15 @@ struct WorkspaceTabs: Equatable, Sendable {
         }
     }
 
-    /// Whether `region`'s row is on screen: the column and the strip while
-    /// they are up, a leaf of the main area unless another one is zoomed.
+    /// Whether `region`'s row is on screen: a leaf that is there, not
+    /// hidden, and not behind a zoom on another one.
     func isShowing(_ region: TabRegion) -> Bool {
+        guard zoomed == nil || zoomed == region else { return false }
         switch region {
-        case .main: return zoomed == nil || zoomed == .main
-        case .side: return sideVisible
-        case .bottom: return bottomVisible
-        case .pane(let id): return panes[id] != nil && (zoomed == nil || zoomed == region)
+        case .main: return true
+        case .side: return sideVisible && !side.isEmpty
+        case .bottom: return bottomVisible && !bottom.isEmpty
+        case .pane(let id): return panes[id] != nil
         }
     }
 
@@ -193,8 +257,8 @@ struct WorkspaceTabs: Equatable, Sendable {
     // MARK: - Taking out and putting in
 
     /// Take a tab out of whichever row holds it. What was in front moves to a
-    /// neighbour if it was this tab, a column or strip left empty hides, and
-    /// a pane left empty is gone, its room given to its siblings.
+    /// neighbour if it was this tab, and a column, a strip or a pane left
+    /// empty is gone from the tree, its room given to its siblings.
     /// Where it was, or nil if it wasn't anywhere.
     @discardableResult
     mutating func detach(_ tab: SideTab) -> (region: TabRegion, index: Int)? {
@@ -205,6 +269,7 @@ struct WorkspaceTabs: Equatable, Sendable {
             side.remove(at: index)
             if activeSide == tab { activeSide = Self.neighbour(in: side, of: index) }
             if side.isEmpty { sideVisible = false }
+            keepFixedLeaves()
             return (.side, index)
         }
         if let index = main.firstIndex(of: tab) {
@@ -220,6 +285,7 @@ struct WorkspaceTabs: Equatable, Sendable {
             bottom.remove(at: index)
             if activeBottom == tab { activeBottom = Self.neighbour(in: bottom, of: index) }
             if bottom.isEmpty { bottomVisible = false }
+            keepFixedLeaves()
             return (.bottom, index)
         }
         for (id, var pane) in panes {
@@ -242,20 +308,49 @@ struct WorkspaceTabs: Equatable, Sendable {
     private mutating func dissolve(_ id: UUID) {
         panes[id] = nil
         layout.remove(.pane(id))
-        if zoomed == .pane(id) || !layout.isSplit { zoomed = nil }
+        unsized.remove(.pane(id))
+        if zoomed == .pane(id) || shownLeafCount < 2 { zoomed = nil }
+    }
+
+    /// The column and the strip are leaves exactly while they have tabs:
+    /// put in the one that is missing, take out the one that emptied.
+    ///
+    /// A new one goes where it opens by default, at a share that is a guess
+    /// until the window has laid it out (`unsized`): the column at the outer
+    /// edge of everything, a third of the width, the strip under the main
+    /// row with three tenths of its height.
+    private mutating func keepFixedLeaves() {
+        for leaf in [SplitLayout.Leaf.side, .bottom] {
+            let has = leaf == .side ? !side.isEmpty : !bottom.isEmpty
+            if has, !layout.contains(leaf) {
+                let made = leaf == .side
+                    ? layout.insert(.side, atRootEdge: sideLeading ? .left : .right, share: 1.0 / 3)
+                    : layout.insert(.bottom, beside: .main, on: .down, share: 0.3)
+                if made { unsized.insert(leaf) }
+            } else if !has {
+                unsized.remove(leaf)
+                guard layout.remove(leaf) else { continue }
+                if zoomed == TabRegion(leaf) || shownLeafCount < 2 { zoomed = nil }
+            }
+        }
     }
 
     /// Put a tab into a row at `index` (clamped). Doesn't bring it forward: see
     /// `bringForward`. False, and nothing changes, when the tab doesn't go
     /// there, is already somewhere, or the row is a pane that isn't there
-    /// (`split` is what makes one).
+    /// (`split` is what makes one). The column's and the strip's leaf is
+    /// made by their first tab.
     @discardableResult
     mutating func place(_ tab: SideTab, in region: TabRegion, at index: Int) -> Bool {
         guard tab.fits(region), exists(region), self.region(of: tab) == nil else { return false }
         switch region {
         case .main: main.insert(tab, at: min(max(index, 0), main.count))
-        case .side: side.insert(tab, at: min(max(index, 0), side.count))
-        case .bottom: bottom.insert(tab, at: min(max(index, 0), bottom.count))
+        case .side:
+            side.insert(tab, at: min(max(index, 0), side.count))
+            keepFixedLeaves()
+        case .bottom:
+            bottom.insert(tab, at: min(max(index, 0), bottom.count))
+            keepFixedLeaves()
         case .pane(let id):
             guard var pane = panes[id] else { return false }
             pane.tabs.insert(tab, at: min(max(index, 0), pane.tabs.count))
@@ -319,8 +414,8 @@ struct WorkspaceTabs: Equatable, Sendable {
         }
         // A tab brought forward somewhere a zoom is hiding: the zoom ends,
         // or it would have come forward out of sight. The column and the
-        // strip are beside the main area, not under the zoom.
-        if let zoomed, region.isSplitLeaf, zoomed != region { self.zoomed = nil }
+        // strip are under a zoom like any other leaf.
+        if let zoomed, zoomed != region { self.zoomed = nil }
     }
 
     /// Move a tab to `region` at `index`, or reorder it within its row. The
@@ -333,9 +428,10 @@ struct WorkspaceTabs: Equatable, Sendable {
     mutating func move(_ tab: SideTab, to region: TabRegion, at index: Int,
                        recordsHabit: Bool = true) -> Bool {
         guard tab.fits(region), exists(region) else { return false }
-        // A pane's only tab, reordered in its own row: where it is already.
-        // Taking it out first would take the pane with it.
-        if case .pane = region, self.region(of: tab) == region, tabs(in: region).count == 1 {
+        // A leaf's only tab, reordered in its own row: where it is already.
+        // Taking it out first would take the leaf with it, and for the
+        // column or the strip the share it had.
+        if region != .main, self.region(of: tab) == region, tabs(in: region).count == 1 {
             if peek == tab { peek = nil }
             bringForward(tab)
             return true
@@ -355,13 +451,15 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// Make a pane beside `region`, on `edge` of it, holding `tab` in front.
     /// A tab that is already somewhere is moved there; one that isn't is
     /// new. The pane, or nil when nothing changed: the session's terminal
-    /// never leaves the main row, and a pane's only tab can't be split off
-    /// its own pane.
+    /// never leaves the main row, and a leaf's only tab can't be split off
+    /// its own leaf.
     ///
-    /// `region` is a leaf of the main area. The column, the strip and a pane
-    /// that isn't there are not, so asked about one of those it is the main
-    /// row that is split. `recordsHabit`, as for `move`: whether this is you
-    /// saying where the tab's kind belongs (a drag) or not (a command).
+    /// `region` is a leaf that is there and takes room: the main row, a
+    /// pane, or the column or the strip while it is showing. Asked about a
+    /// pane that has gone, or a column or strip that is hidden or empty, it
+    /// is the main row that is split. `recordsHabit`, as for `move`: whether
+    /// this is you saying where the tab's kind belongs (a drag) or not (a
+    /// command).
     ///
     /// `keepsZoom` is for a pane you didn't make (`wortel split`): a zoom
     /// stays as it is, and the pane is there behind it when the zoom ends.
@@ -372,11 +470,13 @@ struct WorkspaceTabs: Equatable, Sendable {
                         keepsZoom: Bool = false) -> TabRegion? {
         guard tab != .session, panes[id] == nil, !layout.contains(.pane(id)) else { return nil }
         var target = SplitLayout.Leaf.main
-        if let leaf = region.leaf, exists(region), layout.contains(leaf) { target = leaf }
-        if case .pane = target, self.region(of: tab) == TabRegion(target),
+        if exists(region), layout.contains(region.leaf), !hiddenLeaves.contains(region.leaf) {
+            target = region.leaf
+        }
+        if target != .main, self.region(of: tab) == TabRegion(target),
            tabs(in: TabRegion(target)).count == 1 { return nil }
-        // Taking the tab out can take a pane with it, when it was that
-        // pane's last. Never the one being split: that case just returned.
+        // Taking the tab out can take a leaf with it, when it was that
+        // leaf's last. Never the one being split: that case just returned.
         detach(tab)
         if !layout.insert(.pane(id), beside: target, on: edge) {
             // Only a tree that had lost its leaf, which `normalized` mends:
@@ -391,11 +491,58 @@ struct WorkspaceTabs: Equatable, Sendable {
         return .pane(id)
     }
 
-    /// Show one leaf of the main area alone, or all of them again. Only a
-    /// leaf that is there, and only while there is more than one.
+    /// Show one leaf alone, or all of them again. Only a leaf that is
+    /// there and not hidden, and only while more than one is on screen.
     mutating func toggleZoom(_ region: TabRegion) {
-        guard layout.isSplit, exists(region), let leaf = region.leaf, layout.contains(leaf) else { return }
+        guard exists(region), layout.contains(region.leaf), !hiddenLeaves.contains(region.leaf),
+              shownLeafCount > 1 else { return }
         zoomed = zoomed == region ? nil : region
+    }
+
+    // MARK: - The column and the strip
+
+    /// Show or hide the column or the strip with its tabs kept (⌥⌘B, ⌘J):
+    /// its leaf stays in the tree with the share it has. One with no tabs
+    /// has nothing to show, and stays hidden. Nothing for any other region.
+    ///
+    /// Showing one is asking to see it, so a zoom on another leaf ends, as
+    /// it does for a tab brought forward. Hiding the one that is zoomed
+    /// ends the zoom too: there would be nothing left on screen.
+    mutating func setVisible(_ visible: Bool, in region: TabRegion) {
+        let shows: Bool
+        switch region {
+        case .side:
+            sideVisible = visible && !side.isEmpty
+            shows = sideVisible
+        case .bottom:
+            bottomVisible = visible && !bottom.isEmpty
+            shows = bottomVisible
+        case .main, .pane:
+            return
+        }
+        guard let zoomed else { return }
+        // Shown behind a zoom on another leaf, hidden while it was the one
+        // zoomed, or the last thing beside the zoomed leaf going away.
+        if shows ? zoomed != region : zoomed == region { self.zoomed = nil }
+        if shownLeafCount < 2 { self.zoomed = nil }
+    }
+
+    /// Put the column on the other side: the flag for where its leaf is
+    /// made, and a leaf that is there moves to that outer edge of the whole
+    /// area, keeping the share of the width it had.
+    mutating func setSideLeading(_ leading: Bool) {
+        guard sideLeading != leading else { return }
+        sideLeading = leading
+        guard layout.contains(.side) else { return }
+        let share = layout.share(of: .side, along: .row)
+        layout.remove(.side)
+        layout.insert(.side, atRootEdge: leading ? .left : .right, share: share ?? 1.0 / 3)
+        if share == nil { unsized.insert(.side) }
+    }
+
+    /// The window has given `leaf` its real size: its share is no guess now.
+    mutating func markSized(_ leaf: SplitLayout.Leaf) {
+        unsized.remove(leaf)
     }
 
     /// Every part of every split the same size as its siblings.
@@ -569,8 +716,12 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// something the row has, and an empty column or strip hidden. For the
     /// panes: each one a leaf of the tree and each leaf a pane with tabs, a
     /// pane the tree doesn't know folded into the main row (a terminal is
-    /// never dropped for want of a place), and a zoom only on a leaf that is
-    /// there. What `SessionManager.restore` applies to whatever it read.
+    /// never dropped for want of a place). For the column and the strip: a
+    /// leaf exactly while there are tabs, so one a file from before they
+    /// were leaves has no place for is put where it opens (and is `unsized`),
+    /// and one with no tabs is taken out. And a zoom only on a leaf that is
+    /// there and on screen. What `SessionManager.restore` applies to
+    /// whatever it read.
     func normalized() -> WorkspaceTabs {
         var copy = self
         // Each tab once, in the first row that lists it (main, then the
@@ -601,10 +752,6 @@ struct WorkspaceTabs: Equatable, Sendable {
         }
         copy.panes = panes
         copy.layout = layout
-        if let zoomed = copy.zoomed,
-           !(layout.isSplit && copy.exists(zoomed) && zoomed.leaf.map(layout.contains) == true) {
-            copy.zoomed = nil
-        }
         copy.habits = copy.habits.filter { copy.exists($0.value) }
         if !copy.main.contains(.session) { copy.main.insert(.session, at: 0) }
         if let active = copy.activeMain, active == .session || !copy.main.contains(active) {
@@ -619,6 +766,14 @@ struct WorkspaceTabs: Equatable, Sendable {
         if copy.activeBottom == nil { copy.activeBottom = copy.bottom.first }
         if copy.bottom.isEmpty { copy.bottomVisible = false }
         if let peek = copy.peek, copy.region(of: peek) == nil { copy.peek = nil }
+        // The column and the strip, now that their rows are what they are.
+        copy.keepFixedLeaves()
+        copy.unsized = copy.unsized.filter { copy.layout.contains($0) }
+        if let zoomed = copy.zoomed,
+           !(copy.exists(zoomed) && copy.layout.contains(zoomed.leaf)
+             && !copy.hiddenLeaves.contains(zoomed.leaf) && copy.shownLeafCount > 1) {
+            copy.zoomed = nil
+        }
         return copy
     }
 

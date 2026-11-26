@@ -22,6 +22,9 @@ final class SplitTreeView: NSView {
     /// A leaf shown alone, filling the view. The others are hidden, not
     /// removed.
     private(set) var zoomed: SplitLayout.Leaf?
+    /// Leaves of the layout that take no room here: they have no frame, and
+    /// what is beside them shares theirs (`SplitLayout.frames`).
+    private(set) var hiddenLeaves: Set<SplitLayout.Leaf> = []
     private var leafViews: [SplitLayout.Leaf: NSView] = [:]
     private var dividerViews: [SplitDividerView] = []
 
@@ -60,23 +63,24 @@ final class SplitTreeView: NSView {
         view.removeFromSuperview()
     }
 
-    func apply(layout: SplitLayout, zoomed: SplitLayout.Leaf?) {
-        guard layout != splitLayout || zoomed != self.zoomed else { return }
+    func apply(layout: SplitLayout, zoomed: SplitLayout.Leaf?, hidden: Set<SplitLayout.Leaf> = []) {
+        guard layout != splitLayout || zoomed != self.zoomed || hidden != hiddenLeaves else { return }
         splitLayout = layout
         self.zoomed = zoomed
+        hiddenLeaves = hidden
         needsLayout = true
     }
 
     /// Where a leaf is, in this view's coordinates. nil when it isn't shown.
     func frame(of leaf: SplitLayout.Leaf) -> NSRect? {
         if let zoomed = effectiveZoom { return leaf == zoomed ? bounds : nil }
-        return splitLayout.frames(in: bounds, metrics: metrics).leaves[leaf]
+        return splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).leaves[leaf]
     }
 
     /// The leaves on screen with their frames, in reading order.
     var visibleLeaves: [(leaf: SplitLayout.Leaf, frame: NSRect)] {
         if let zoomed = effectiveZoom { return [(zoomed, bounds)] }
-        let frames = splitLayout.frames(in: bounds, metrics: metrics).leaves
+        let frames = splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).leaves
         return splitLayout.leaves.compactMap { leaf in frames[leaf].map { (leaf, $0) } }
     }
 
@@ -89,7 +93,8 @@ final class SplitTreeView: NSView {
 
     /// The zoom, when it names a leaf that is here to be shown.
     private var effectiveZoom: SplitLayout.Leaf? {
-        guard let zoomed, splitLayout.contains(zoomed), leafViews[zoomed] != nil else { return nil }
+        guard let zoomed, splitLayout.contains(zoomed), !hiddenLeaves.contains(zoomed),
+              leafViews[zoomed] != nil else { return nil }
         return zoomed
     }
 
@@ -107,7 +112,7 @@ final class SplitTreeView: NSView {
             dividerViews.forEach { $0.isHidden = true }
             return
         }
-        let frames = splitLayout.frames(in: bounds, metrics: metrics)
+        let frames = splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves)
         for (leaf, view) in leafViews {
             guard let frame = frames.leaves[leaf] else {
                 view.isHidden = true
@@ -135,10 +140,12 @@ final class SplitTreeView: NSView {
 
     #if DEBUG
     /// For `SplitProbe`: the dividers as laid out, and one of them dragged.
-    var dividerRects: [NSRect] { splitLayout.frames(in: bounds, metrics: metrics).dividers.map(\.rect) }
+    var dividerRects: [NSRect] {
+        splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).dividers.map(\.rect)
+    }
 
     func dragDivider(_ index: Int, by delta: CGFloat) {
-        let dividers = splitLayout.frames(in: bounds, metrics: metrics).dividers
+        let dividers = splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).dividers
         guard dividers.indices.contains(index) else { return }
         let divider = dividers[index]
         drag(divider, to: (divider.axis == .row ? divider.rect.minX : divider.rect.minY) + delta)
@@ -148,7 +155,7 @@ final class SplitTreeView: NSView {
 
     private func drag(_ divider: SplitLayout.Divider, to position: CGFloat) {
         guard splitLayout.moveDivider(at: divider.path, index: divider.index, to: position,
-                                 in: bounds, metrics: metrics) else { return }
+                                      in: bounds, metrics: metrics, hidden: hiddenLeaves) else { return }
         place()
         onLayoutChanged(splitLayout)
     }

@@ -58,15 +58,15 @@ final class GitPanelModel {
     /// picking one in the column still means you're in the column.
     ///
     /// Never a pane that has gone (closed, or another session's): then it is
-    /// the main area. And never a part of the main area that a zoom is
-    /// hiding: then it is the part that is zoomed.
+    /// the main area. And never a leaf that a zoom is hiding, the column
+    /// and the strip among them: then it is the leaf that is zoomed.
     var lastRegion: TabRegion {
         get {
             let region = storedRegion
             if case .pane(let id) = region, session?.paneTabs[id] == nil {
                 return session?.zoomedRegion ?? .main
             }
-            if region.isSplitLeaf, let zoomed = session?.zoomedRegion, zoomed != region { return zoomed }
+            if let zoomed = session?.zoomedRegion, zoomed != region { return zoomed }
             return region
         }
         set {
@@ -103,11 +103,19 @@ final class GitPanelModel {
     private(set) var mainFocusRequest = 0
     /// Which side the column is on.
     private(set) var columnLeading = false
-    /// Mirrors how the focused session's main area is split: the tree, each
-    /// pane's row and the one in front of it, and the part shown alone.
+    /// Mirrors how the focused session's area is divided: the tree, each
+    /// pane's row and the one in front of it, and the leaf shown alone.
     private(set) var splitLayout = SplitLayout()
     private(set) var paneTabs: [UUID: WorkspaceTabs.PaneTabs] = [:]
     private(set) var zoomedRegion: TabRegion?
+    /// The leaves of the tree that take no room: the column or the strip
+    /// while it is hidden with its tabs kept (`WorkspaceTabs.hiddenLeaves`).
+    /// What a view hands to `SplitLayout.frames` with the tree.
+    private(set) var hiddenLeaves: Set<SplitLayout.Leaf> = []
+    /// The leaves still at the share they were guessed at
+    /// (`WorkspaceTabs.unsized`): each is to be given its size by the
+    /// window the first time it is laid out (`resizeLeaf`).
+    private(set) var unsizedLeaves: Set<SplitLayout.Leaf> = []
     /// Bumped, per pane, when a terminal in that pane's row should take the
     /// keyboard. Kept for panes that have gone and for other sessions': a
     /// count that started again from nothing would read as a request to
@@ -134,15 +142,17 @@ final class GitPanelModel {
         }
     }
 
-    /// Whether `region`'s row is on screen: the column and the strip while
-    /// they are up, a part of the main area unless another one is zoomed
+    /// Whether `region`'s row is on screen: a leaf that is there, not
+    /// hidden, and not behind a zoom on another one. The column and the
+    /// strip are behind a zoom like any other leaf
     /// (`WorkspaceTabs.isShowing`, on the mirrored state).
     func isShowing(_ region: TabRegion) -> Bool {
+        guard zoomedRegion == nil || zoomedRegion == region else { return false }
         switch region {
-        case .main: return zoomedRegion == nil || zoomedRegion == .main
+        case .main: return true
         case .side: return isVisible
         case .bottom: return bottomVisible
-        case .pane(let id): return paneTabs[id] != nil && (zoomedRegion == nil || zoomedRegion == region)
+        case .pane(let id): return paneTabs[id] != nil
         }
     }
 
@@ -159,6 +169,11 @@ final class GitPanelModel {
 
     /// Whether the Files pane is on screen, in any row: the one thing the
     /// file tree's upkeep is for.
+    ///
+    /// TODO(unify): this and `needsRepo` read the column and the strip by
+    /// whether they are up, not by `isShowing`, because their own panes
+    /// still draw them beside a zoomed leaf. Once the tree's view hides
+    /// them under a zoom, both should ask `isShowing`.
     var showsFiles: Bool {
         (isVisible && activeTab == .pane(.files)) || (isShowing(.main) && activeMainTab == .pane(.files))
             || (bottomVisible && activeBottomTab == .pane(.files))
@@ -733,6 +748,10 @@ final class GitPanelModel {
         if panes != paneTabs { paneTabs = panes }
         let zoomed = session?.zoomedRegion
         if zoomed != zoomedRegion { zoomedRegion = zoomed }
+        let hidden = session?.workspace.hiddenLeaves ?? []
+        if hidden != hiddenLeaves { hiddenLeaves = hidden }
+        let unsized = session?.unsizedLeaves ?? []
+        if unsized != unsizedLeaves { unsizedLeaves = unsized }
     }
 
     /// One pane command: ⌘⌥G, ⌘⌥E, or their View-menu items.
@@ -951,14 +970,14 @@ final class GitPanelModel {
             // closes its next tab rather than, from the main area, the session.
             // (A terminal that took the tab's place takes the keyboard.)
             focusFront(of: region)
-        } else if region.isSplitLeaf {
-            // A part of the main area behind a zoom, or a pane that went
-            // while you were somewhere else: a tab that closed out of sight
-            // (its shell exited) had no keyboard to hand back.
-        } else {
-            // The column or the strip went with its last tab: back to the
-            // main area, or to what is zoomed over it.
+        } else if (region == .side && !isVisible) || (region == .bottom && !bottomVisible) {
+            // The column or the strip went with its last tab, or was hidden
+            // already: back to the main area, or to what is zoomed over it.
             focus(zoomedRegion ?? .main)
+        } else {
+            // A leaf behind a zoom, or a pane that went while you were
+            // somewhere else: a tab that closed out of sight (its shell
+            // exited) had no keyboard to hand back.
         }
     }
 
@@ -1192,18 +1211,29 @@ final class GitPanelModel {
 
     // MARK: - Panes of the main area
 
-    /// The part of the main area you're in, for a command that doesn't say
-    /// which: the row you last worked in when that is one, else the main row.
+    /// The leaf you're in, for a command that doesn't say which: the row
+    /// you last worked in, the column and the strip included, while it is
+    /// in the tree and on screen. Else the main row.
     private var currentLeaf: TabRegion {
         let region = lastRegion
-        return region.isSplitLeaf ? region : .main
+        return splitLayout.contains(region.leaf) && isShowing(region) ? region : .main
     }
 
-    /// Split a part of the main area: a new pane on `edge` of `region`, with
-    /// `tab` in it and the keyboard, if the tab takes it. The pane, or nil
-    /// when nothing was split (`WorkspaceTabs.split`).
+    /// The leaf a split asked for beside `region` is made beside: `region`
+    /// while it is in the tree and takes room, else the main row
+    /// (`WorkspaceTabs.split`).
+    private func splitTarget(_ region: TabRegion) -> TabRegion {
+        exists(region) && splitLayout.contains(region.leaf) && !hiddenLeaves.contains(region.leaf)
+            ? region : .main
+    }
+
+    /// Split a leaf: a new pane on `edge` of `region`, with `tab` in it and
+    /// the keyboard, if the tab takes it. The pane, or nil when nothing was
+    /// split (`WorkspaceTabs.split`).
     ///
-    /// `region` nil is the part you're in. `tab` nil is a new terminal; one
+    /// `region` nil is the leaf you're in, which from the column or the
+    /// strip is that one: the split is made beside it, not beside the main
+    /// row. `tab` nil is a new terminal; one
     /// that is already open is moved into the pane. `recordsHabit` is false
     /// for a command: splitting a file off once doesn't say where files go.
     @discardableResult
@@ -1214,7 +1244,7 @@ final class GitPanelModel {
         // Not where there's no room for two: a split that opens too small
         // to use is worse than none. Asked of the window, which knows the
         // sizes (and says no out loud).
-        guard allowsSplit?(target.isSplitLeaf ? target : .main, edge) != false else { return nil }
+        guard allowsSplit?(splitTarget(target), edge) != false else { return nil }
         let tab = tab ?? .terminal(UUID())
         return split(target, on: edge, placing: tab, in: session,
                      recordsHabit: recordsHabit, reports: session.workspace.region(of: tab) == nil)
@@ -1322,10 +1352,38 @@ final class GitPanelModel {
         onStateChanged?()
     }
 
-    /// Put the column on the terminal's leading or trailing side.
+    /// Give `leaf` the size it was meant to open at: `extent` points along
+    /// the split it is a part of, as the tree is laid out in `bounds`
+    /// (`SplitLayout.resize`, with what is hidden now). Its share is no
+    /// guess after that, whether or not anything had to move.
+    ///
+    /// Called from a layout pass, so nothing is saved here: the size is
+    /// saved with the next change that is (`commitSplitLayout`).
+    func resizeLeaf(_ leaf: SplitLayout.Leaf, to extent: CGFloat, in bounds: CGRect,
+                    metrics: SplitLayout.Metrics) {
+        guard let session else { return }
+        change(session) { workspace in
+            workspace.layout.resize(leaf, to: extent, in: bounds, metrics: metrics,
+                                    hidden: workspace.hiddenLeaves)
+            workspace.markSized(leaf)
+        }
+        mirror(session, animated: false)
+    }
+
+    /// `leaf` has the size it is going to have: it is no longer waiting for
+    /// the window to give it one (`WorkspaceTabs.markSized`). Not saved.
+    func markLeafSized(_ leaf: SplitLayout.Leaf) {
+        guard let session, session.unsizedLeaves.contains(leaf) else { return }
+        change(session) { $0.markSized(leaf) }
+        mirror(session, animated: false)
+    }
+
+    /// Put the column on the terminal's leading or trailing side: its leaf
+    /// moves to that outer edge of the whole area, with the share it had
+    /// (`WorkspaceTabs.setSideLeading`).
     func setColumnLeading(_ leading: Bool) {
         guard let session, session.sideColumnLeading != leading else { return }
-        session.sideColumnLeading = leading
+        change(session) { $0.setSideLeading(leading) }
         mirror(session, animated: false)
         onStateChanged?()
     }
@@ -1346,8 +1404,8 @@ final class GitPanelModel {
     func activeTab(in region: TabRegion) -> SideTab? {
         switch region {
         case .main: return isShowing(.main) ? activeMainTab ?? .session : nil
-        case .side: return isVisible ? activeTab : nil
-        case .bottom: return bottomVisible ? activeBottomTab : nil
+        case .side: return isShowing(.side) ? activeTab : nil
+        case .bottom: return isShowing(.bottom) ? activeBottomTab : nil
         case .pane(let id):
             return isShowing(region) ? paneTabs[id].flatMap { $0.active ?? $0.tabs.first } : nil
         }
@@ -1413,11 +1471,11 @@ final class GitPanelModel {
             tab = front
             if tab.terminalID != nil { mainFocusRequest += 1; return }
         case .side:
-            guard isVisible, let front = activeTab else { return }
+            guard isShowing(.side), let front = activeTab else { return }
             tab = front
             if tab.terminalID != nil { terminalFocusRequest += 1; return }
         case .bottom:
-            guard bottomVisible, let front = activeBottomTab else { return }
+            guard isShowing(.bottom), let front = activeBottomTab else { return }
             tab = front
             if tab.terminalID != nil { bottomFocusRequest += 1; return }
         case .pane:
@@ -1449,7 +1507,9 @@ final class GitPanelModel {
             openBottomTerminal()
             return
         }
-        session.bottomVisible.toggle()
+        // Through the rules: showing the strip ends a zoom on another leaf,
+        // and hiding it one on the strip.
+        change(session) { $0.setVisible(!$0.bottomVisible, in: .bottom) }
         mirror(session, animated: true)
         onStateChanged?()
         if bottomVisible {
@@ -1465,7 +1525,7 @@ final class GitPanelModel {
     /// The strip's divider was dragged shut: record it like ⌘J would.
     func bottomCollapsedByDrag() {
         guard let session, session.bottomVisible else { return }
-        session.bottomVisible = false
+        change(session) { $0.setVisible(false, in: .bottom) }
         mirror(session, animated: false)
         onStateChanged?()
         focus(.main)
@@ -1498,7 +1558,7 @@ final class GitPanelModel {
     /// Show the panel if needed and ask the changes list to take keyboard focus.
     func requestListFocus() {
         // Where a source-control or files pane is in front, else the column's.
-        let panes = splitLayout.leaves.map(TabRegion.init).filter { $0 != .main }
+        let panes = splitLayout.leaves.map(TabRegion.init).filter { $0.paneID != nil }
         var region = ([lastRegion, .main, .side, .bottom] + panes).first { activeTab(in: $0)?.pane != nil }
         if region == nil {
             open(.pane(pane))
@@ -1522,11 +1582,18 @@ final class GitPanelModel {
             }
             return
         }
-        animatesVisibilityChange = true
-        isVisible = visible
-        guard let session, session.gitPanelVisible != visible else { return }
-        session.gitPanelVisible = visible
-        onStateChanged?()
+        guard let session else {
+            animatesVisibilityChange = true
+            isVisible = visible
+            return
+        }
+        // Through the rules: showing the column ends a zoom on another leaf,
+        // and hiding it one on the column. The mirror then moves `isVisible`
+        // with what the tree hides and what is zoomed, animated as before.
+        let was = session.gitPanelVisible
+        change(session) { $0.setVisible(visible, in: .side) }
+        mirror(session, animated: true)
+        if session.gitPanelVisible != was { onStateChanged?() }
     }
 
     /// The user chose a pane — the same funnel as `setVisible`, for the same

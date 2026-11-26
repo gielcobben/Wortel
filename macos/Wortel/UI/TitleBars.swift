@@ -713,7 +713,9 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         // A plain title until the row holds more than the session's terminal,
         // and again once the main area is split: every pane then has a row of
         // its own under the titlebar, the main row's included (`PaneBar`).
-        mainBar.setShowsTabs(git.mainTabs.count > 1 && !git.splitLayout.isSplit)
+        // TODO(unify): `hasPanes`, not `isSplit`: the column and the strip are
+        // leaves of the tree now and have rows of their own already.
+        mainBar.setShowsTabs(git.mainTabs.count > 1 && !git.splitLayout.hasPanes)
         let session = home.selected
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)

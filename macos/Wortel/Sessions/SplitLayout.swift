@@ -1,10 +1,12 @@
 import CoreGraphics
 import Foundation
 
-/// How the main area is divided: a tree of rows and columns whose leaves are
-/// tab rows. One leaf is always the main row (`.main`, the session's own
-/// terminal and whatever shares its row); every other leaf is a pane the user
-/// split off, with a row of its own (`WorkspaceTabs.panes`).
+/// How a session's area is divided: a tree of rows and columns whose leaves
+/// are tab rows. One leaf is always the main row (`.main`, the session's own
+/// terminal and whatever shares its row). The side column (`.side`) and the
+/// strip (`.bottom`) are leaves while they have tabs, and every other leaf
+/// is a pane the user split off, with a row of its own
+/// (`WorkspaceTabs.panes`).
 ///
 /// A pure value, like `WorkspaceTabs`, so the rules can be tested without a
 /// window:
@@ -26,12 +28,25 @@ import Foundation
 /// - Sizes are weights, not points: a window resize keeps every pane's share.
 ///   Points only appear in `frames(in:)`, where a pane is never laid out
 ///   smaller than its minimum while there is room to avoid it.
+/// - A leaf can be hidden (`hidden`, handed to everything that measures):
+///   it takes no room and has no divider, and what is beside it shares its
+///   room. Its weight stays what it was, so shown again it has the share it
+///   had. Hiding is not this value's to remember: `WorkspaceTabs` says which
+///   leaves are.
+/// - The column and the strip come with a size of their own, so "the same
+///   size as its siblings" is about the others: one more split among equals
+///   leaves those two what they had, so does `equalize`, and a leaf removed
+///   beside one of them gives its room to the others.
 ///
 /// Geometry is in a top-left coordinate space (y grows downward), which is
 /// what the view that draws it uses: "down" is a larger y.
 struct SplitLayout: Equatable, Sendable {
     enum Leaf: Hashable, Sendable {
         case main
+        /// The side column, while it has tabs.
+        case side
+        /// The strip, while it has tabs.
+        case bottom
         case pane(UUID)
     }
 
@@ -72,13 +87,76 @@ struct SplitLayout: Equatable, Sendable {
     /// Every leaf, in reading order: left to right, top down.
     var leaves: [Leaf] { Self.leaves(of: root) }
 
-    /// Whether the main area is more than the main row.
+    /// Whether there is more than the main row: any other leaf at all, the
+    /// column and the strip among them, shown or hidden.
     var isSplit: Bool {
         if case .leaf = root { return false }
         return true
     }
 
-    func contains(_ leaf: Leaf) -> Bool { leaves.contains(leaf) }
+    /// Whether any leaf is a pane somebody split off: more than the main
+    /// row, the column and the strip.
+    var hasPanes: Bool {
+        leaves.contains { if case .pane = $0 { return true } else { return false } }
+    }
+
+    func contains(_ leaf: Leaf) -> Bool { Self.contains(leaf, in: root) }
+
+    private static func contains(_ leaf: Leaf, in node: Node) -> Bool {
+        switch node {
+        case .leaf(let own): return own == leaf
+        case .split(_, let parts): return parts.contains { contains(leaf, in: $0.node) }
+        }
+    }
+
+    /// How much of the whole `leaf` has along `axis`, by weight: its part of
+    /// every split on the way down that runs that way. Gaps, minimums and
+    /// hidden leaves are left out of it. nil when it isn't in the tree.
+    func share(of leaf: Leaf, along axis: Axis) -> Double? {
+        Self.share(of: leaf, along: axis, in: root)
+    }
+
+    private static func share(of leaf: Leaf, along axis: Axis, in node: Node) -> Double? {
+        switch node {
+        case .leaf(let own):
+            return own == leaf ? 1 : nil
+        case .split(let own, let parts):
+            let total = parts.reduce(0) { $0 + $1.weight }
+            for part in parts {
+                guard let inner = share(of: leaf, along: axis, in: part.node) else { continue }
+                return own == axis && total > 0 ? inner * part.weight / total : inner
+            }
+            return nil
+        }
+    }
+
+    /// The way down to `leaf`: an index into each split's parts. Empty when
+    /// the leaf is the root, nil when it isn't in the tree.
+    private static func path(to leaf: Leaf, in node: Node) -> [Int]? {
+        switch node {
+        case .leaf(let own):
+            return own == leaf ? [] : nil
+        case .split(_, let parts):
+            for (index, part) in parts.enumerated() {
+                if let rest = path(to: leaf, in: part.node) { return [index] + rest }
+            }
+            return nil
+        }
+    }
+
+    /// The column and the strip: a part that is one of them keeps the share
+    /// it has when its siblings are made equal.
+    private static func keepsItsShare(_ node: Node) -> Bool {
+        node == .leaf(.side) || node == .leaf(.bottom)
+    }
+
+    /// Whether `weights` are all the same share of their sum.
+    private static func isEven(_ weights: [Double]) -> Bool {
+        let total = weights.reduce(0, +)
+        guard total > 0 else { return true }
+        let share = 1 / Double(weights.count)
+        return weights.allSatisfy { abs($0 / total - share) < 0.001 }
+    }
 
     private static func leaves(of node: Node) -> [Leaf] {
         switch node {
@@ -95,40 +173,91 @@ struct SplitLayout: Equatable, Sendable {
     @discardableResult
     mutating func insert(_ new: Leaf, beside target: Leaf, on edge: Edge) -> Bool {
         guard contains(target), !contains(new) else { return false }
-        root = Self.inserting(new, beside: target, on: edge, in: root, parentAxis: nil)
+        root = Self.tidied(Self.inserting(new, beside: target, on: edge, share: nil, in: root))
+        return true
+    }
+
+    /// The same, with `new` taking exactly `share` of the room `target` had
+    /// (0…1, held to 0.05…0.95) and nobody else moving: the rule that keeps
+    /// equal siblings equal is not applied.
+    @discardableResult
+    mutating func insert(_ new: Leaf, beside target: Leaf, on edge: Edge, share: Double) -> Bool {
+        guard contains(target), !contains(new) else { return false }
+        root = Self.tidied(Self.inserting(new, beside: target, on: edge, share: Self.held(share), in: root))
+        return true
+    }
+
+    /// Put `new` at the outer edge of the whole tree, taking `share` of the
+    /// whole along that edge's axis (0…1, held to 0.05…0.95), everything
+    /// else scaled to the rest. A root that already runs that way gets one
+    /// more part, at its start or its end; any other root becomes a split of
+    /// itself and the new leaf. False, and nothing changes, when `new` is
+    /// already in the tree.
+    @discardableResult
+    mutating func insert(_ new: Leaf, atRootEdge edge: Edge, share: Double) -> Bool {
+        guard !contains(new) else { return false }
+        let share = Self.held(share)
+        let added = Part(node: .leaf(new), weight: share)
+        if case .split(let axis, let parts) = root, axis == edge.axis, !parts.isEmpty {
+            let total = parts.reduce(0) { $0 + $1.weight }
+            let rest = parts.map { part in
+                Part(node: part.node,
+                     weight: (total > 0 ? part.weight / total : 1 / Double(parts.count)) * (1 - share))
+            }
+            root = .split(axis, edge.isLeading ? [added] + rest : rest + [added])
+        } else {
+            let old = Part(node: root, weight: 1 - share)
+            root = .split(edge.axis, edge.isLeading ? [added, old] : [old, added])
+        }
         root = Self.tidied(root)
         return true
     }
 
-    private static func inserting(_ new: Leaf, beside target: Leaf, on edge: Edge,
-                                  in node: Node, parentAxis: Axis?) -> Node {
+    /// A share somebody asked for, as one that leaves both sides something.
+    private static func held(_ share: Double) -> Double {
+        share.isFinite ? min(max(share, 0.05), 0.95) : 0.5
+    }
+
+    /// `share` nil is a split somebody made: half of the target, or an equal
+    /// share among equals.
+    private static func inserting(_ new: Leaf, beside target: Leaf, on edge: Edge, share: Double?,
+                                  in node: Node) -> Node {
         switch node {
         case .leaf(let leaf):
             guard leaf == target else { return node }
             // Reached only when the parent runs the other way (or there is
             // none): the leaf becomes a split of the two.
-            let old = Part(node: node, weight: 0.5)
-            let added = Part(node: .leaf(new), weight: 0.5)
+            let taken = share ?? 0.5
+            let old = Part(node: node, weight: 1 - taken)
+            let added = Part(node: .leaf(new), weight: taken)
             return .split(edge.axis, edge.isLeading ? [added, old] : [old, added])
         case .split(let axis, var parts):
             if axis == edge.axis,
                let index = parts.firstIndex(where: { $0.node == .leaf(target) }) {
                 // A sibling. Among equals, one more equal; otherwise the two
-                // halve what the one had and nobody else moves.
-                let even = unevenness(of: .split(axis, parts.map { Part(node: .leaf(.main), weight: $0.weight) })) < 0.001
-                let half = parts[index].weight / 2
-                parts[index].weight = half
-                parts.insert(Part(node: .leaf(new), weight: half),
+                // divide what the one had and nobody else moves. The column
+                // and the strip are not among the equals: they keep the
+                // share they have, or a second split beside a column would
+                // be a quarter where it is a third without one.
+                let peers = parts.filter { !keepsItsShare($0.node) }
+                let even = share == nil && !keepsItsShare(.leaf(new)) && !keepsItsShare(parts[index].node)
+                    && isEven(peers.map(\.weight))
+                let room = peers.reduce(0) { $0 + $1.weight }
+                let taken = parts[index].weight * (share ?? 0.5)
+                parts[index].weight -= taken
+                parts.insert(Part(node: .leaf(new), weight: taken),
                              at: edge.isLeading ? index : index + 1)
                 if even {
-                    let share = 1 / Double(parts.count)
-                    for part in parts.indices { parts[part].weight = share }
+                    let each = room / Double(peers.count + 1)
+                    for part in parts.indices where !keepsItsShare(parts[part].node) {
+                        parts[part].weight = each
+                    }
                 }
                 return .split(axis, parts)
             }
             for index in parts.indices {
-                parts[index].node = inserting(new, beside: target, on: edge,
-                                              in: parts[index].node, parentAxis: axis)
+                parts[index].node = inserting(new, beside: target, on: edge, share: share,
+                                              in: parts[index].node)
             }
             return .split(axis, parts)
         }
@@ -148,34 +277,56 @@ struct SplitLayout: Equatable, Sendable {
         case .leaf(let own):
             return own == leaf ? nil : node
         case .split(let axis, let parts):
-            let kept = parts.compactMap { part -> Part? in
+            var kept = parts.compactMap { part -> Part? in
                 removing(leaf, from: part.node).map { Part(node: $0, weight: part.weight) }
             }
-            return kept.isEmpty ? nil : .split(axis, kept)
+            guard !kept.isEmpty else { return nil }
+            // The room it leaves goes to the siblings that share room among
+            // themselves, as it came from them when it was made: a pane
+            // closed beside the column leaves the column the share it had.
+            // With only the column or the strip left beside it, to those.
+            let freed = parts.reduce(0) { $0 + $1.weight } - kept.reduce(0) { $0 + $1.weight }
+            let sharing = kept.indices.filter { !keepsItsShare(kept[$0].node) }
+            let had = sharing.reduce(0) { $0 + kept[$1].weight }
+            if freed > 0, had > 0, sharing.count < kept.count {
+                for index in sharing { kept[index].weight *= (had + freed) / had }
+            }
+            return .split(axis, kept)
         }
     }
 
-    /// Every part of every split the same size as its siblings.
+    /// Every part of every split the same size as its siblings. The column
+    /// and the strip keep the share they have: it is the others that share
+    /// the rest equally.
     mutating func equalize() {
         root = Self.equalized(root)
     }
 
     private static func equalized(_ node: Node) -> Node {
         guard case .split(let axis, let parts) = node, !parts.isEmpty else { return node }
-        let weight = 1 / Double(parts.count)
-        return .split(axis, parts.map { Part(node: equalized($0.node), weight: weight) })
+        let peers = parts.filter { !keepsItsShare($0.node) }
+        guard peers.count < parts.count else {
+            let weight = 1 / Double(parts.count)
+            return .split(axis, parts.map { Part(node: equalized($0.node), weight: weight) })
+        }
+        let each = peers.isEmpty ? 0 : peers.reduce(0) { $0 + $1.weight } / Double(peers.count)
+        return .split(axis, parts.map { part in
+            Part(node: equalized(part.node), weight: keepsItsShare(part.node) ? part.weight : each)
+        })
     }
 
     /// Whether any split's parts differ in size: whether `equalize` would
     /// change anything.
     var isEqualized: Bool { Self.unevenness(of: root) < 0.001 }
 
-    /// The furthest any part's weight is from an equal share of its split.
+    /// The furthest any part's weight is from an equal share of its split,
+    /// the column and the strip left out as `equalize` leaves them.
     private static func unevenness(of node: Node) -> Double {
         guard case .split(_, let parts) = node, !parts.isEmpty else { return 0 }
-        let total = parts.reduce(0) { $0 + $1.weight }
-        let share = 1 / Double(parts.count)
-        let own = parts.map { abs((total > 0 ? $0.weight / total : share) - share) }.max() ?? 0
+        let peers = parts.filter { !keepsItsShare($0.node) }
+        let total = peers.reduce(0) { $0 + $1.weight }
+        let share = 1 / Double(max(peers.count, 1))
+        let own = peers.map { abs((total > 0 ? $0.weight / total : share) - share) }.max() ?? 0
         return max(own, parts.map { unevenness(of: $0.node) }.max() ?? 0)
     }
 
@@ -257,32 +408,55 @@ struct SplitLayout: Equatable, Sendable {
         var minimum = CGSize(width: 160, height: 100)
     }
 
-    /// Where every leaf and every divider is, in `bounds`.
-    func frames(in bounds: CGRect, metrics: Metrics = Metrics()) -> Frames {
+    /// Where every leaf and every divider is, in `bounds`. A leaf in
+    /// `hidden` has no frame, and neither has a divider beside a part with
+    /// nothing in it to show: what is on screen shares the room, in
+    /// proportion. With nothing to show at all there are no frames.
+    func frames(in bounds: CGRect, metrics: Metrics = Metrics(), hidden: Set<Leaf> = []) -> Frames {
         var frames = Frames()
-        Self.lay(root, in: bounds, path: [], metrics: metrics, into: &frames)
+        Self.lay(root, in: bounds, path: [], metrics: metrics, hidden: hidden, into: &frames)
         return frames
     }
 
+    /// Whether anything in `node` is on screen.
+    private static func isShown(_ node: Node, hidden: Set<Leaf>) -> Bool {
+        if hidden.isEmpty { return true }
+        switch node {
+        case .leaf(let leaf): return !hidden.contains(leaf)
+        case .split(_, let parts): return parts.contains { isShown($0.node, hidden: hidden) }
+        }
+    }
+
+    /// The parts of a split that are on screen, by their place in it.
+    private static func shown(_ parts: [Part], hidden: Set<Leaf>) -> [Int] {
+        hidden.isEmpty ? Array(parts.indices) : parts.indices.filter { isShown(parts[$0].node, hidden: hidden) }
+    }
+
     private static func lay(_ node: Node, in rect: CGRect, path: [Int], metrics: Metrics,
-                            into frames: inout Frames) {
+                            hidden: Set<Leaf>, into frames: inout Frames) {
         switch node {
         case .leaf(let leaf):
-            frames.leaves[leaf] = rect
+            if !hidden.contains(leaf) { frames.leaves[leaf] = rect }
         case .split(let axis, let parts):
-            let extents = extents(of: parts, axis: axis, in: rect, metrics: metrics)
+            let shown = shown(parts, hidden: hidden)
+            guard !shown.isEmpty else { return }
+            let extents = extents(of: shown.map { parts[$0] }, axis: axis, in: rect,
+                                  metrics: metrics, hidden: hidden)
             var offset = axis == .row ? rect.minX : rect.minY
-            for (index, part) in parts.enumerated() {
-                let extent = extents[index]
+            for (place, index) in shown.enumerated() {
+                let extent = extents[place]
                 let child = axis == .row
                     ? CGRect(x: offset, y: rect.minY, width: extent, height: rect.height)
                     : CGRect(x: rect.minX, y: offset, width: rect.width, height: extent)
-                lay(part.node, in: child, path: path + [index], metrics: metrics, into: &frames)
+                lay(parts[index].node, in: child, path: path + [index], metrics: metrics,
+                    hidden: hidden, into: &frames)
                 offset += extent
-                if index < parts.count - 1 {
+                if place < shown.count - 1 {
                     let divider = axis == .row
                         ? CGRect(x: offset, y: rect.minY, width: metrics.gap, height: rect.height)
                         : CGRect(x: rect.minX, y: offset, width: rect.width, height: metrics.gap)
+                    // Named for the part before it. The part after it is the
+                    // next one on screen, which need not be the next one.
                     frames.dividers.append(Divider(path: path, index: index, axis: axis, rect: divider))
                     offset += metrics.gap
                 }
@@ -292,34 +466,16 @@ struct SplitLayout: Equatable, Sendable {
 
     /// How long each part is along `axis`: its share by weight, in whole
     /// points, with nobody under their minimum while the others can spare it.
+    /// `parts` are the ones on screen; `hidden` is for what is inside them.
     private static func extents(of parts: [Part], axis: Axis, in rect: CGRect,
-                                metrics: Metrics) -> [CGFloat] {
+                                metrics: Metrics, hidden: Set<Leaf>) -> [CGFloat] {
         let total = axis == .row ? rect.width : rect.height
         let available = max(total - metrics.gap * CGFloat(parts.count - 1), 0)
-        let minimums = parts.map { part -> CGFloat in
-            let size = minimumSize(of: part.node, metrics: metrics)
-            return axis == .row ? size.width : size.height
-        }
+        let minimums = parts.map { length(of: minimumSize(of: $0.node, metrics: metrics, hidden: hidden), along: axis) }
         let weightSum = parts.reduce(0) { $0 + $1.weight }
         var extents = parts.map { available * CGFloat(weightSum > 0 ? $0.weight / weightSum : 1 / Double(parts.count)) }
         if minimums.reduce(0, +) <= available {
-            // Raise whoever is under their minimum, and take it from the rest
-            // in proportion to what they have to spare.
-            var fixed = Set<Int>()
-            for _ in parts.indices {
-                let under = parts.indices.filter { !fixed.contains($0) && extents[$0] < minimums[$0] }
-                guard !under.isEmpty else { break }
-                for index in under {
-                    extents[index] = minimums[index]
-                    fixed.insert(index)
-                }
-                let free = parts.indices.filter { !fixed.contains($0) }
-                let room = available - fixed.reduce(0) { $0 + extents[$1] }
-                let freeSum = free.reduce(0) { $0 + extents[$1] }
-                for index in free {
-                    extents[index] = freeSum > 0 ? room * extents[index] / freeSum : room / CGFloat(free.count)
-                }
-            }
+            raise(&extents, to: minimums, within: available, holding: [])
         }
         // Whole points, so two panes never share half a point and a
         // terminal's cells sit on pixels. Each part is rounded down and the
@@ -345,14 +501,41 @@ struct SplitLayout: Equatable, Sendable {
         return whole
     }
 
-    /// The least room a node needs for every leaf in it to have its minimum.
-    static func minimumSize(of node: Node, metrics: Metrics) -> CGSize {
+    /// Raise whoever is under their minimum, and take it from the rest in
+    /// proportion to what they have. `held` are parts that keep the extent
+    /// they were given, whatever the others need.
+    private static func raise(_ extents: inout [CGFloat], to minimums: [CGFloat], within available: CGFloat,
+                              holding held: Set<Int>) {
+        var fixed = held
+        for _ in extents.indices {
+            let under = extents.indices.filter { !fixed.contains($0) && extents[$0] < minimums[$0] }
+            guard !under.isEmpty else { break }
+            for index in under {
+                extents[index] = minimums[index]
+                fixed.insert(index)
+            }
+            let free = extents.indices.filter { !fixed.contains($0) }
+            let room = available - fixed.reduce(0) { $0 + extents[$1] }
+            let freeSum = free.reduce(0) { $0 + extents[$1] }
+            for index in free {
+                extents[index] = freeSum > 0 ? room * extents[index] / freeSum : room / CGFloat(free.count)
+            }
+        }
+    }
+
+    private static func length(of size: CGSize, along axis: Axis) -> CGFloat {
+        axis == .row ? size.width : size.height
+    }
+
+    /// The least room a node needs for every leaf in it that is on screen to
+    /// have its minimum. Nothing, for one with nothing on screen.
+    static func minimumSize(of node: Node, metrics: Metrics, hidden: Set<Leaf> = []) -> CGSize {
         switch node {
-        case .leaf:
-            return metrics.minimum
+        case .leaf(let leaf):
+            return hidden.contains(leaf) ? .zero : metrics.minimum
         case .split(let axis, let parts):
-            let sizes = parts.map { minimumSize(of: $0.node, metrics: metrics) }
-            let gaps = metrics.gap * CGFloat(max(parts.count - 1, 0))
+            let sizes = shown(parts, hidden: hidden).map { minimumSize(of: parts[$0].node, metrics: metrics, hidden: hidden) }
+            let gaps = metrics.gap * CGFloat(max(sizes.count - 1, 0))
             if axis == .row {
                 return CGSize(width: sizes.reduce(0) { $0 + $1.width } + gaps,
                               height: sizes.map(\.height).max() ?? 0)
@@ -362,71 +545,131 @@ struct SplitLayout: Equatable, Sendable {
         }
     }
 
+    /// Change the split at `path`, handed its parts and the room it is laid
+    /// out in. Nothing is changed when the path leads nowhere, or through a
+    /// part that isn't on screen.
+    private static func editing(_ node: Node, at path: ArraySlice<Int>, rect: CGRect, metrics: Metrics,
+                                hidden: Set<Leaf>, _ body: (Axis, inout [Part], CGRect) -> Void) -> Node {
+        guard case .split(let axis, var parts) = node else { return node }
+        guard let step = path.first else {
+            body(axis, &parts, rect)
+            return .split(axis, parts)
+        }
+        let shown = shown(parts, hidden: hidden)
+        guard let place = shown.firstIndex(of: step) else { return node }
+        let extents = extents(of: shown.map { parts[$0] }, axis: axis, in: rect, metrics: metrics, hidden: hidden)
+        var offset = axis == .row ? rect.minX : rect.minY
+        for before in 0..<place { offset += extents[before] + metrics.gap }
+        let child = axis == .row
+            ? CGRect(x: offset, y: rect.minY, width: extents[place], height: rect.height)
+            : CGRect(x: rect.minX, y: offset, width: rect.width, height: extents[place])
+        parts[step].node = editing(parts[step].node, at: path.dropFirst(), rect: child, metrics: metrics,
+                                   hidden: hidden, body)
+        return .split(axis, parts)
+    }
+
+    /// The weights of the parts on screen (`shown`, with their `extents`)
+    /// rewritten from those extents, within the weight they had between
+    /// them. So parts that were being held at their minimum keep the size
+    /// they are drawn at, and a hidden part keeps the share it had.
+    private static func setWeights(of parts: inout [Part], shown: [Int], from extents: [CGFloat]) -> Bool {
+        let available = extents.reduce(0, +)
+        let weight = shown.reduce(0) { $0 + parts[$1].weight }
+        guard available > 0, weight > 0 else { return false }
+        for (place, index) in shown.enumerated() {
+            parts[index].weight = weight * Double(extents[place] / available)
+        }
+        return true
+    }
+
     /// Move the divider after part `index` of the split at `path` so that it
     /// starts at `position` (a coordinate along the split's axis, in the space
     /// `bounds` is in), no further than either neighbour's minimum allows.
-    /// Only the two parts beside the divider change size. False when nothing
-    /// moved.
+    /// Only the two parts on screen either side of the divider change size,
+    /// and a hidden part keeps its weight. False when nothing moved.
     @discardableResult
     mutating func moveDivider(at path: [Int], index: Int, to position: CGFloat,
-                              in bounds: CGRect, metrics: Metrics = Metrics()) -> Bool {
+                              in bounds: CGRect, metrics: Metrics = Metrics(),
+                              hidden: Set<Leaf> = []) -> Bool {
         var changed = false
-        root = Self.movingDivider(in: root, rect: bounds, path: path[...], index: index,
-                                  position: position, metrics: metrics, changed: &changed)
+        root = Self.editing(root, at: path[...], rect: bounds, metrics: metrics, hidden: hidden) { axis, parts, rect in
+            let shown = Self.shown(parts, hidden: hidden)
+            guard let place = shown.firstIndex(of: index), place + 1 < shown.count else { return }
+            var extents = Self.extents(of: shown.map { parts[$0] }, axis: axis, in: rect,
+                                       metrics: metrics, hidden: hidden)
+            var start = axis == .row ? rect.minX : rect.minY
+            for before in 0..<place { start += extents[before] + metrics.gap }
+            let both = extents[place] + extents[place + 1]
+            let firstMinimum = Self.length(
+                of: Self.minimumSize(of: parts[shown[place]].node, metrics: metrics, hidden: hidden), along: axis)
+            let secondMinimum = Self.length(
+                of: Self.minimumSize(of: parts[shown[place + 1]].node, metrics: metrics, hidden: hidden), along: axis)
+            guard both > 0 else { return }
+            // Too little room for both minimums: the divider may still move, each
+            // side keeping at least a sliver, so it is never stuck.
+            let low = both >= firstMinimum + secondMinimum ? firstMinimum : min(both, 1)
+            let high = both >= firstMinimum + secondMinimum ? both - secondMinimum : max(both - 1, low)
+            let first = min(max(position - start, low), high).rounded()
+            guard abs(first - extents[place]) >= 0.5 else { return }
+            extents[place] = first
+            extents[place + 1] = both - first
+            changed = Self.setWeights(of: &parts, shown: shown, from: extents)
+        }
         return changed
     }
 
-    private static func movingDivider(in node: Node, rect: CGRect, path: ArraySlice<Int>, index: Int,
-                                      position: CGFloat, metrics: Metrics, changed: inout Bool) -> Node {
-        guard case .split(let axis, var parts) = node else { return node }
-        let extents = extents(of: parts, axis: axis, in: rect, metrics: metrics)
-        if let step = path.first {
-            guard parts.indices.contains(step) else { return node }
-            var offset = axis == .row ? rect.minX : rect.minY
-            for before in 0..<step { offset += extents[before] + metrics.gap }
-            let child = axis == .row
-                ? CGRect(x: offset, y: rect.minY, width: extents[step], height: rect.height)
-                : CGRect(x: rect.minX, y: offset, width: rect.width, height: extents[step])
-            parts[step].node = movingDivider(in: parts[step].node, rect: child, path: path.dropFirst(),
-                                             index: index, position: position, metrics: metrics,
-                                             changed: &changed)
-            return .split(axis, parts)
+    /// Make `leaf`'s own part of the split it is in `extent` points long,
+    /// along that split's axis, as laid out in `bounds`. Held so that it and
+    /// its siblings on screen keep their minimums while there is room, the
+    /// difference taken from or given to those siblings in proportion to
+    /// what they have. Hidden parts keep their weight. How a leaf that
+    /// opened at a guessed share is given the size it was meant to have.
+    ///
+    /// False when the leaf has no split to be a part of, isn't on screen,
+    /// has nobody on screen beside it, or is already that long.
+    @discardableResult
+    mutating func resize(_ leaf: Leaf, to extent: CGFloat, in bounds: CGRect,
+                         metrics: Metrics = Metrics(), hidden: Set<Leaf> = []) -> Bool {
+        guard !hidden.contains(leaf), let path = Self.path(to: leaf, in: root),
+              let index = path.last else { return false }
+        var changed = false
+        root = Self.editing(root, at: path.dropLast(), rect: bounds, metrics: metrics, hidden: hidden) { axis, parts, rect in
+            let shown = Self.shown(parts, hidden: hidden)
+            guard let place = shown.firstIndex(of: index), shown.count > 1 else { return }
+            var extents = Self.extents(of: shown.map { parts[$0] }, axis: axis, in: rect,
+                                       metrics: metrics, hidden: hidden)
+            let minimums = shown.map {
+                Self.length(of: Self.minimumSize(of: parts[$0].node, metrics: metrics, hidden: hidden), along: axis)
+            }
+            let total = extents.reduce(0, +)
+            guard total > 0 else { return }
+            let needed = minimums.reduce(0, +)
+            let roomy = total >= needed
+            let low = roomy ? minimums[place] : min(total, 1)
+            let high = roomy ? total - (needed - minimums[place]) : max(total - 1, low)
+            let own = min(max(extent, low), high).rounded()
+            guard abs(own - extents[place]) >= 0.5 else { return }
+            let had = total - extents[place]
+            let rest = total - own
+            for other in extents.indices where other != place {
+                extents[other] = had > 0 ? rest * extents[other] / had : rest / CGFloat(extents.count - 1)
+            }
+            extents[place] = own
+            if roomy { Self.raise(&extents, to: minimums, within: total, holding: [place]) }
+            changed = Self.setWeights(of: &parts, shown: shown, from: extents)
         }
-        guard index >= 0, index + 1 < parts.count else { return node }
-        var start = axis == .row ? rect.minX : rect.minY
-        for before in 0..<index { start += extents[before] + metrics.gap }
-        let both = extents[index] + extents[index + 1]
-        let firstMinimum = axis == .row ? minimumSize(of: parts[index].node, metrics: metrics).width
-                                        : minimumSize(of: parts[index].node, metrics: metrics).height
-        let secondMinimum = axis == .row ? minimumSize(of: parts[index + 1].node, metrics: metrics).width
-                                         : minimumSize(of: parts[index + 1].node, metrics: metrics).height
-        guard both > 0 else { return node }
-        // Too little room for both minimums: the divider may still move, each
-        // side keeping at least a sliver, so it is never stuck.
-        let low = both >= firstMinimum + secondMinimum ? firstMinimum : min(both, 1)
-        let high = both >= firstMinimum + secondMinimum ? both - secondMinimum : max(both - 1, low)
-        let first = min(max(position - start, low), high).rounded()
-        guard abs(first - extents[index]) >= 0.5 else { return node }
-        // The weights are rewritten from the extents on screen, so parts that
-        // were being held at their minimum keep the size they are drawn at.
-        let available = extents.reduce(0, +)
-        guard available > 0 else { return node }
-        var updated = extents
-        updated[index] = first
-        updated[index + 1] = both - first
-        for part in parts.indices { parts[part].weight = Double(updated[part] / available) }
-        changed = true
-        return .split(axis, parts)
+        return changed
     }
 
     // MARK: - Finding your way
 
     /// The leaf you get to by going from `leaf` toward `edge`: the one across
     /// that edge that lines up best with `leaf` (most shared edge), the upper
-    /// or left one on a tie. nil at the main area's own edge.
+    /// or left one on a tie. nil at the area's own edge, and for a leaf that
+    /// is hidden. A hidden leaf is nobody's neighbour.
     func neighbour(of leaf: Leaf, toward edge: Edge, in bounds: CGRect,
-                   metrics: Metrics = Metrics()) -> Leaf? {
-        let frames = frames(in: bounds, metrics: metrics).leaves
+                   metrics: Metrics = Metrics(), hidden: Set<Leaf> = []) -> Leaf? {
+        let frames = frames(in: bounds, metrics: metrics, hidden: hidden).leaves
         guard let own = frames[leaf] else { return nil }
         let slack = metrics.gap + 1
         var best: (leaf: Leaf, shared: CGFloat, start: CGFloat)?
@@ -505,6 +748,10 @@ extension SplitLayout.Leaf {
     init?(rawValue: String) {
         if rawValue == "main" {
             self = .main
+        } else if rawValue == "side" {
+            self = .side
+        } else if rawValue == "bottom" {
+            self = .bottom
         } else if let id = UUID(uuidString: rawValue) {
             self = .pane(id)
         } else {
@@ -515,6 +762,8 @@ extension SplitLayout.Leaf {
     var rawValue: String {
         switch self {
         case .main: return "main"
+        case .side: return "side"
+        case .bottom: return "bottom"
         case .pane(let id): return id.uuidString
         }
     }

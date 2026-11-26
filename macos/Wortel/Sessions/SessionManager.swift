@@ -1224,7 +1224,10 @@ final class SessionManager {
             closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)),
             habits: Dictionary(uniqueKeysWithValues: (entry.tabHabits ?? [:]).compactMap { key, value in
                 TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
-            }))
+            }),
+            // Before the tree is put right: it is the edge a column with no
+            // leaf of its own yet is given one at.
+            sideLeading: entry.sideColumnLeading ?? false)
         // The panes split off the main area. A pane whose key isn't an id is
         // dropped here; one the tree has no leaf for, a leaf with no pane and
         // a tree that couldn't be read are `normalized`'s, which never leaves
@@ -1235,7 +1238,14 @@ final class SessionManager {
                 tabs: pane.tabs.compactMap(SideTab.init(rawValue:)),
                 active: pane.active.flatMap(SideTab.init(rawValue:)))
         }
-        if let layout = entry.splitLayout { tabs.layout = layout }
+        // The tree as it was saved, or none. A file from before the column
+        // and the strip were leaves of it has their tabs and no place for
+        // them (no tree at all, or one of panes only): `normalized` puts
+        // each where it opens, to be sized by the window when it is shown.
+        tabs.layout = entry.splitLayout ?? SplitLayout()
+        // A share that was saved is not a guess, whatever making `tabs`
+        // put in the tree it had before this one.
+        tabs.unsized = []
         if entry.sideTabs == nil, session.gitPanelVisible {
             let pane = session.inspectorPane ?? GitPanelModel.defaultPane
             tabs.side = [.pane(pane)]
@@ -1246,7 +1256,6 @@ final class SessionManager {
         // column or strip hidden. See `WorkspaceTabs.normalized`.
         session.workspace = tabs.normalized()
         session.sideColumnWidth = entry.sideColumnWidth
-        session.sideColumnLeading = entry.sideColumnLeading ?? false
         // A checkout that's gone (a worktree removed since) is forgotten:
         // the panes follow the terminal again.
         session.gitCheckout = entry.gitCheckout.flatMap {
@@ -6107,8 +6116,11 @@ final class SessionManager {
             gitCheckout: session.gitCheckout,
             tabHabits: session.tabHabits.isEmpty ? nil
                 : Dictionary(uniqueKeysWithValues: session.tabHabits.map { ($0.key.rawValue, $0.value.rawValue) }),
-            // Only for a session that is split: one that isn't saves what it
-            // always has, so an older build reading the file loses nothing.
+            // Only when there is more than the main row: a session with no
+            // column, no strip and no split saves what it always has. The
+            // column and the strip are in the tree, and their tabs, whether
+            // they are up, the side and the width are still saved beside it
+            // as they were, which is all an older build reads.
             splitLayout: session.splitLayout.isSplit ? session.splitLayout : nil,
             paneTabs: session.paneTabs.isEmpty ? nil
                 : Dictionary(uniqueKeysWithValues: session.paneTabs.map { id, pane in

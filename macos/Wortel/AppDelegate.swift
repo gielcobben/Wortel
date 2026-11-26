@@ -1760,19 +1760,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if gitPanel.lastRegion != region { gitPanel.lastRegion = region }
     }
 
-    /// The areas in the order ⌘] walks them: left to right as they sit, then
-    /// the strip.
+    /// The areas in the order ⌘] walks them: the tree's leaves that are on
+    /// screen, as they read, left to right and top down. The column and the
+    /// strip are leaves of it, so each comes where it sits, and only the
+    /// zoomed leaf while one is.
     private var visibleRegions: [TabRegion] {
-        // The main area's parts as they read, left to right and top down:
-        // just the main row until it is split, and just the zoomed part
-        // while one is.
-        var regions = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { gitPanel.isShowing($0) }
-        if regions.isEmpty { regions = [.main] }
-        if gitPanel.isVisible {
-            gitPanel.columnLeading ? regions.insert(.side, at: 0) : regions.append(.side)
-        }
-        if gitPanel.bottomVisible { regions.append(.bottom) }
-        return regions
+        let regions = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { gitPanel.isShowing($0) }
+        return regions.isEmpty ? [.main] : regions
     }
 
     /// ⌘] / ⌘[. With the keyboard in a browser's page they are Forward and
@@ -1844,7 +1838,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the one you're in, then the column, the main area, the strip and the
     /// panes split off the main area.
     private var frontRegions: [TabRegion] {
-        let panes = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { $0 != .main }
+        let panes = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { $0.paneID != nil }
         return [focusedRegion(), .side, .main, .bottom] + panes
     }
 
@@ -2048,7 +2042,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return git.splitFromCommand(on: edge, placing: tab, in: session) != nil ? .made : .notMade
     }
 
-    @objc func zoomSplit(_ sender: Any?) { gitPanel.toggleZoom() }
+    @objc func zoomSplit(_ sender: Any?) {
+        // TODO(unify): the column and the strip are still drawn by panes of
+        // their own, which can't show one alone. Until the tree's view draws
+        // them, a zoom asked for from one of them is the main row's, as it
+        // was. (`toggleZoom()` with no region would zoom the leaf you're in.)
+        let here = gitPanel.lastRegion
+        gitPanel.toggleZoom(here == .side || here == .bottom ? .main : nil)
+    }
     @objc func equalizeSplits(_ sender: Any?) { gitPanel.equalizeSplits() }
 
     @objc func focusSplitLeft(_ sender: Any?) { focusArea(toward: .left) }
@@ -2573,10 +2574,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(zoomSplit(_:)) {
             menuItem.title = gitPanel.zoomedRegion == nil ? "Zoom Split" : "Show All Splits"
-            return gitPanel.splitLayout.isSplit
+            // TODO(unify): `hasPanes`, not `isSplit`, here and for Equalize:
+            // a column or a strip is a leaf now, and until the tree's view
+            // draws them a session with only those has nothing to zoom.
+            return gitPanel.splitLayout.hasPanes
         }
         if menuItem.action == #selector(equalizeSplits(_:)) {
-            return gitPanel.splitLayout.isSplit && !gitPanel.splitLayout.isEqualized
+            return gitPanel.splitLayout.hasPanes && !gitPanel.splitLayout.isEqualized
         }
         if menuItem.action == #selector(focusSplitLeft(_:)) || menuItem.action == #selector(focusSplitRight(_:))
             || menuItem.action == #selector(focusSplitUp(_:)) || menuItem.action == #selector(focusSplitDown(_:)) {

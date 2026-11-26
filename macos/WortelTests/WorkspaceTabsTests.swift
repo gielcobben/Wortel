@@ -700,19 +700,21 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertNil(TabRegion(rawValue: "top"))
     }
 
-    /// Which regions are parts of the main area's tree.
+    /// Every region is a leaf of the tree, the column and the strip too.
     func testRegionsAndLeaves() {
         let id = UUID()
         XCTAssertEqual(TabRegion.main.leaf, .main)
         XCTAssertEqual(TabRegion.pane(id).leaf, .pane(id))
-        XCTAssertNil(TabRegion.side.leaf)
-        XCTAssertNil(TabRegion.bottom.leaf)
+        XCTAssertEqual(TabRegion.side.leaf, .side)
+        XCTAssertEqual(TabRegion.bottom.leaf, .bottom)
         XCTAssertEqual(TabRegion(.main), .main)
         XCTAssertEqual(TabRegion(.pane(id)), .pane(id))
-        XCTAssertTrue(TabRegion.main.isSplitLeaf)
-        XCTAssertTrue(TabRegion.pane(id).isSplitLeaf)
-        XCTAssertFalse(TabRegion.side.isSplitLeaf)
-        XCTAssertFalse(TabRegion.bottom.isSplitLeaf)
+        XCTAssertEqual(TabRegion(.side), .side)
+        XCTAssertEqual(TabRegion(.bottom), .bottom)
+        for region in [TabRegion.main, .pane(id), .side, .bottom] {
+            XCTAssertTrue(region.isSplitLeaf, "\(region)")
+            XCTAssertEqual(TabRegion(region.leaf), region)
+        }
     }
 
     /// Anything goes in a pane but the session's own terminal.
@@ -752,12 +754,12 @@ final class WorkspaceTabsTests: XCTestCase {
         let pane = splitOff(shell, from: &tabs)
         let id = pane.paneID!
         XCTAssertEqual(tabs.panes[id], WorkspaceTabs.PaneTabs(tabs: [shell], active: shell))
-        XCTAssertEqual(tabs.layout.leaves, [.main, .pane(id)])
+        XCTAssertEqual(tabs.layout.leaves, [.main, .pane(id), .side], "between the main row and the column")
         XCTAssertEqual(tabs.region(of: shell), pane)
         XCTAssertEqual(tabs.tabs(in: pane), [shell])
         XCTAssertEqual(tabs.front(of: pane), shell)
         XCTAssertTrue(tabs.isShowing(pane))
-        XCTAssertEqual(tabs.splitRegions, [.main, pane])
+        XCTAssertEqual(tabs.splitRegions, [.main, pane, .side])
         XCTAssertEqual(tabs.main, [.session], "the main row is as it was")
     }
 
@@ -796,25 +798,32 @@ final class WorkspaceTabsTests: XCTestCase {
         let pane = splitOff(changes, from: &tabs)
         let shell = terminal()
         let under = tabs.split(pane, on: .down, placing: shell)!
-        XCTAssertEqual(tabs.splitRegions, [.main, pane, under])
-        XCTAssertEqual(tabs.layout.root, .split(.row, [
-            .init(node: .leaf(.main), weight: 0.5),
-            .init(node: .split(.column, [.init(node: .leaf(pane.leaf!), weight: 0.5),
-                                         .init(node: .leaf(under.leaf!), weight: 0.5)]), weight: 0.5),
-        ]))
+        XCTAssertEqual(tabs.splitRegions, [.main, pane, under, .side])
+        guard case .split(.row, let parts) = tabs.layout.root, parts.count == 3 else {
+            return XCTFail("not a row of three: \(tabs.layout.root)")
+        }
+        XCTAssertEqual(parts[0].node, .leaf(.main))
+        XCTAssertEqual(parts[1].node, .split(.column, [.init(node: .leaf(pane.leaf), weight: 0.5),
+                                                       .init(node: .leaf(under.leaf), weight: 0.5)]))
+        XCTAssertEqual(parts[2].node, .leaf(.side))
+        // The main row and the pane share what the main row had. The column
+        // keeps its third.
+        for part in parts { XCTAssertEqual(part.weight, 1.0 / 3, accuracy: 1e-9) }
     }
 
-    /// The column and the strip aren't parts of the main area, and a pane
-    /// that has gone isn't either: asked about one, the main row is split.
+    /// A strip with no tabs is no leaf, a column that is hidden takes no
+    /// room, and a pane that has gone isn't there: asked about one of those,
+    /// the main row is split.
     func testSplittingWhatIsNotALeafSplitsTheMainRow() {
         for region in [TabRegion.side, .bottom, .pane(UUID())] {
             var tabs = column()
+            tabs.setVisible(false, in: .side)
             let shell = terminal()
             guard let pane = tabs.split(region, on: .left, placing: shell) else {
                 XCTFail("\(region): nothing was split")
                 continue
             }
-            XCTAssertEqual(tabs.splitRegions, [pane, .main], "\(region)")
+            XCTAssertEqual(tabs.splitRegions, [pane, .main, .side], "\(region)")
             XCTAssertEqual(tabs.region(of: shell), pane)
         }
     }
@@ -860,14 +869,14 @@ final class WorkspaceTabsTests: XCTestCase {
         let first = splitOff(changes, from: &tabs)
         let shell = terminal()
         let second = tabs.split(.main, on: .down, placing: shell)!
-        XCTAssertEqual(tabs.splitRegions.count, 3)
+        XCTAssertEqual(tabs.splitRegions.count, 4, "the main row, two panes and the column")
 
         guard let third = tabs.split(second, on: .right, placing: changes) else {
             return XCTFail("nothing was split")
         }
         XCTAssertFalse(tabs.exists(first), "its last tab left, so it went")
-        XCTAssertFalse(tabs.layout.contains(first.leaf!))
-        XCTAssertEqual(tabs.splitRegions, [.main, second, third])
+        XCTAssertFalse(tabs.layout.contains(first.leaf))
+        XCTAssertEqual(tabs.splitRegions, [.main, second, third, .side])
         XCTAssertEqual(tabs.tabs(in: third), [changes])
 
         // And when the pane asked about is the one that goes, beside the
@@ -878,7 +887,7 @@ final class WorkspaceTabsTests: XCTestCase {
             return XCTFail("nothing was split")
         }
         XCTAssertFalse(other.exists(pane))
-        XCTAssertEqual(other.splitRegions, [.main, moved])
+        XCTAssertEqual(other.splitRegions, [.main, moved, .side])
     }
 
     /// A new pane is something to look at: a zoom ends.
@@ -904,7 +913,7 @@ final class WorkspaceTabsTests: XCTestCase {
         }
         XCTAssertEqual(tabs.zoomed, pane)
         XCTAssertEqual(tabs.region(of: shell), made)
-        XCTAssertTrue(tabs.layout.contains(made.leaf!))
+        XCTAssertTrue(tabs.layout.contains(made.leaf))
         XCTAssertFalse(tabs.isShowing(made))
         XCTAssertTrue(tabs.isShowing(pane))
         XCTAssertEqual(tabs, tabs.normalized(), "a layout a restart would leave as it is")
@@ -948,7 +957,11 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(from?.region, pane)
         XCTAssertEqual(from?.index, 0)
         XCTAssertNil(tabs.panes[id])
-        XCTAssertEqual(tabs.layout, SplitLayout(), "its room went back to the main row")
+        XCTAssertEqual(tabs.layout.leaves, [.main, .side])
+        XCTAssertEqual(tabs.layout.share(of: .main, along: .row) ?? 0, 2.0 / 3, accuracy: 1e-9,
+                       "its room went back to the main row")
+        XCTAssertEqual(tabs.layout.share(of: .side, along: .row) ?? 0, 1.0 / 3, accuracy: 1e-9,
+                       "and the column has what it had")
         XCTAssertFalse(tabs.exists(pane))
         XCTAssertFalse(tabs.isShowing(pane))
         XCTAssertNil(tabs.region(of: changes))
@@ -978,8 +991,8 @@ final class WorkspaceTabsTests: XCTestCase {
         // main ½, a ¼, b ¼, as after a drag.
         tabs.layout = SplitLayout(root: .split(.row, [
             .init(node: .leaf(.main), weight: 0.5),
-            .init(node: .leaf(first.leaf!), weight: 0.25),
-            .init(node: .leaf(second.leaf!), weight: 0.25),
+            .init(node: .leaf(first.leaf), weight: 0.25),
+            .init(node: .leaf(second.leaf), weight: 0.25),
         ]))
         tabs.close(a)
         guard case .split(.row, let parts) = tabs.layout.root else { return XCTFail("not a row of two") }
@@ -1002,12 +1015,27 @@ final class WorkspaceTabsTests: XCTestCase {
         tabs.detach(files)
         XCTAssertEqual(tabs.zoomed, under)
 
-        // And a zoom on the main row ends when the main row is all there is.
-        var alone = column()
-        splitOff(changes, from: &alone)
-        alone.toggleZoom(.main)
-        alone.close(changes)
-        XCTAssertNil(alone.zoomed)
+        // And a zoom on the main row ends when the main row is all there is
+        // on screen: with nothing else, or beside a column that is hidden.
+        for hidesColumn in [false, true] {
+            var alone = hidesColumn ? column() : WorkspaceTabs()
+            alone.setVisible(false, in: .side)
+            let shell = terminal()
+            splitOff(shell, from: &alone)
+            alone.toggleZoom(.main)
+            XCTAssertEqual(alone.zoomed, .main)
+            alone.close(shell)
+            XCTAssertNil(alone.zoomed, "column hidden: \(hidesColumn)")
+        }
+
+        // Beside a column that is showing it stays: there is still
+        // something the zoom is hiding.
+        var beside = column()
+        let shell = terminal()
+        splitOff(shell, from: &beside)
+        beside.toggleZoom(.main)
+        beside.close(shell)
+        XCTAssertEqual(beside.zoomed, .main)
     }
 
     // MARK: Putting a tab in a pane
@@ -1055,7 +1083,8 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertTrue(tabs.move(changes, to: .main, at: .max))
         XCTAssertEqual(tabs.main, [.session, changes])
         XCTAssertFalse(tabs.exists(pane))
-        XCTAssertFalse(tabs.layout.isSplit)
+        XCTAssertFalse(tabs.layout.hasPanes)
+        XCTAssertEqual(tabs.splitRegions, [.main, .side])
     }
 
     /// Between panes, the same: the one it left goes when that was its last.
@@ -1067,7 +1096,7 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.tabs(in: second), [changes, history])
         XCTAssertEqual(tabs.front(of: second), changes)
         XCTAssertFalse(tabs.exists(first))
-        XCTAssertEqual(tabs.splitRegions, [.main, second])
+        XCTAssertEqual(tabs.splitRegions, [.main, second, .side])
     }
 
     /// Reordering in a pane, and the one case that must not take the pane
@@ -1147,32 +1176,80 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.zoomed, pane)
     }
 
-    /// Only a leaf of the tree, and only while there is more than one.
+    /// Only a leaf of the tree that is on screen, and only while more than
+    /// one is.
     func testOnlyALeafOfASplitAreaZooms() {
-        var unsplit = column()
+        var unsplit = WorkspaceTabs()
         unsplit.toggleZoom(.main)
         XCTAssertNil(unsplit.zoomed, "nothing to zoom out of")
 
+        // A column that is hidden is nothing to zoom out of either, and
+        // can't be shown alone.
+        var hidden = column()
+        hidden.setVisible(false, in: .side)
+        hidden.toggleZoom(.main)
+        XCTAssertNil(hidden.zoomed, "the main row is all there is on screen")
+        hidden.toggleZoom(.side)
+        XCTAssertNil(hidden.zoomed, "a hidden column")
+
         var tabs = column()
         splitOff(changes, from: &tabs)
-        for region in [TabRegion.side, .bottom, .pane(UUID())] {
+        // A strip with no tabs is no leaf, and neither is a pane that has gone.
+        for region in [TabRegion.bottom, .pane(UUID())] {
             tabs.toggleZoom(region)
             XCTAssertNil(tabs.zoomed, "\(region)")
         }
     }
 
-    /// The column and the strip are beside the main area: a zoom doesn't
-    /// hide them, and they show as they always do.
-    func testZoomLeavesTheColumnAndTheStripAlone() {
+    /// The column and the strip are leaves like any other: one of them can
+    /// be the leaf shown alone, beside nothing but the main row too.
+    func testTheColumnAndTheStripZoom() {
+        var tabs = column()
+        tabs.toggleZoom(.side)
+        XCTAssertEqual(tabs.zoomed, .side)
+        XCTAssertTrue(tabs.isShowing(.side))
+        XCTAssertFalse(tabs.isShowing(.main))
+        XCTAssertFalse(tabs.showsSessionTerminal, "the session's terminal is behind the column")
+        tabs.toggleZoom(.side)
+        XCTAssertNil(tabs.zoomed)
+        XCTAssertTrue(tabs.showsSessionTerminal)
+
+        let shell = terminal()
+        tabs.place(shell, in: .bottom, at: 0)
+        tabs.bringForward(shell)
+        tabs.toggleZoom(.bottom)
+        XCTAssertEqual(tabs.zoomed, .bottom)
+        XCTAssertTrue(tabs.isShowing(.bottom))
+        XCTAssertFalse(tabs.isShowing(.side))
+        XCTAssertFalse(tabs.showsSessionTerminal)
+
+        // The main row zooms over a column, with no pane anywhere.
+        var plain = column()
+        plain.toggleZoom(.main)
+        XCTAssertEqual(plain.zoomed, .main)
+        XCTAssertFalse(plain.isShowing(.side))
+    }
+
+    /// A zoom hides the column and the strip as it hides every other leaf.
+    /// (It left them alone while they were beside the tree, not in it.)
+    func testAZoomHidesTheColumnAndTheStripToo() {
         var tabs = column()
         let pane = splitOff(terminal(), from: &tabs)
-        tabs.place(terminal(), in: .bottom, at: 0)
-        tabs.toggleZoom(pane)
+        let shell = terminal()
+        tabs.place(shell, in: .bottom, at: 0)
         XCTAssertTrue(tabs.isShowing(.side))
         XCTAssertFalse(tabs.isShowing(.bottom), "the strip is down until a tab comes forward in it")
-        tabs.bringForward(tabs.bottom[0])
+        tabs.bringForward(shell)
         XCTAssertTrue(tabs.isShowing(.bottom))
-        tabs.sideVisible = false
+
+        tabs.toggleZoom(pane)
+        XCTAssertFalse(tabs.isShowing(.side))
+        XCTAssertFalse(tabs.isShowing(.bottom))
+        XCTAssertTrue(tabs.sideVisible && tabs.bottomVisible, "behind the zoom, not hidden: they are back with it")
+        tabs.toggleZoom(pane)
+        XCTAssertTrue(tabs.isShowing(.side))
+        XCTAssertTrue(tabs.isShowing(.bottom))
+        tabs.setVisible(false, in: .side)
         XCTAssertFalse(tabs.isShowing(.side))
     }
 
@@ -1191,23 +1268,40 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertNil(tabs.zoomed)
     }
 
-    /// In the zoomed leaf itself, in the column or in the strip, it stays.
-    func testBringingForwardElsewhereKeepsTheZoom() {
+    /// In the zoomed leaf itself it stays. In the column or the strip it
+    /// ends, as in any other leaf: they are under the zoom now, and the tab
+    /// would have come forward out of sight.
+    func testBringingForwardInTheColumnOrTheStripEndsTheZoom() {
         var tabs = column()
         let pane = splitOff(changes, from: &tabs)
         tabs.place(fileA, in: pane, at: .max)
+        tabs.place(fileB, in: pane, at: .max)
         let shell = terminal()
         tabs.place(shell, in: .bottom, at: 0)
         tabs.toggleZoom(pane)
 
         tabs.bringForward(fileA)
         XCTAssertEqual(tabs.zoomed, pane, "a tab of the zoomed pane")
-        tabs.bringForward(history)
-        XCTAssertEqual(tabs.zoomed, pane, "the column is beside it")
-        tabs.bringForward(shell)
-        XCTAssertEqual(tabs.zoomed, pane, "and so is the strip")
-        tabs.bringForward(opened: files)
+        tabs.bringForward(opened: fileB)
         XCTAssertEqual(tabs.zoomed, pane)
+
+        tabs.bringForward(history)
+        XCTAssertNil(tabs.zoomed, "the column is a leaf the zoom was hiding")
+        XCTAssertTrue(tabs.isShowing(.side))
+
+        tabs.toggleZoom(pane)
+        tabs.bringForward(shell)
+        XCTAssertNil(tabs.zoomed, "and so is the strip")
+        XCTAssertTrue(tabs.isShowing(.bottom), "brought forward there, it shows, as it always did")
+
+        tabs.toggleZoom(pane)
+        tabs.bringForward(opened: files)
+        XCTAssertNil(tabs.zoomed)
+
+        // Zoomed on the column itself, a tab of the column keeps it.
+        tabs.toggleZoom(.side)
+        tabs.bringForward(history)
+        XCTAssertEqual(tabs.zoomed, .side)
     }
 
     /// A file opened into a hidden leaf ends the zoom too: opening is
@@ -1242,8 +1336,8 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertTrue(tabs.layout.isEqualized, "three splits among equals are thirds")
         tabs.layout = SplitLayout(root: .split(.row, [
             .init(node: .leaf(.main), weight: 0.5),
-            .init(node: .leaf(first.leaf!), weight: 0.25),
-            .init(node: .leaf(second.leaf!), weight: 0.25),
+            .init(node: .leaf(first.leaf), weight: 0.25),
+            .init(node: .leaf(second.leaf), weight: 0.25),
         ]))
         XCTAssertFalse(tabs.layout.isEqualized)
         let leaves = tabs.layout.leaves
@@ -1348,7 +1442,7 @@ final class WorkspaceTabsTests: XCTestCase {
         let pane = splitOff(changes, from: &tabs)
         XCTAssertEqual(tabs.close(changes), pane)
         XCTAssertFalse(tabs.exists(pane))
-        XCTAssertFalse(tabs.layout.isSplit)
+        XCTAssertFalse(tabs.layout.hasPanes)
         XCTAssertEqual(tabs.closed.last?.region, pane, "where it was, though that has gone")
     }
 
@@ -1386,7 +1480,7 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.reopen(preferring: pane), fileA)
         XCTAssertEqual(tabs.main, [.session, fileA])
         XCTAssertEqual(tabs.activeMain, fileA)
-        XCTAssertFalse(tabs.layout.isSplit, "reopening a tab doesn't remake its pane")
+        XCTAssertFalse(tabs.layout.hasPanes, "reopening a tab doesn't remake its pane")
     }
 
     /// A terminal reopened this way is a new shell, in the main row.
@@ -1513,7 +1607,8 @@ final class WorkspaceTabsTests: XCTestCase {
         let rightPane = tabs.split(.main, on: .right, placing: right)!
         tabs.place(fileA, in: rightPane, at: .max)
         let leftPane = tabs.split(.main, on: .left, placing: left)!
-        XCTAssertEqual(tabs.splitRegions, [leftPane, .main, rightPane])
+        XCTAssertEqual(tabs.splitRegions, [leftPane, .main, rightPane, .bottom, .side],
+                       "the strip under the main row's part, the column past everything")
         XCTAssertEqual(tabs.allTabs, [.session, changes, history, files, strip, left, right, fileA])
         XCTAssertEqual(Set(tabs.terminalIDs), Set([strip, right, left].compactMap(\.terminalID)))
     }
@@ -1530,9 +1625,10 @@ final class WorkspaceTabsTests: XCTestCase {
 
     func testAnUnsplitWorkspaceHasNoPanes() {
         let tabs = column()
-        XCTAssertEqual(tabs.splitRegions, [.main])
+        XCTAssertEqual(tabs.splitRegions, [.main, .side], "the column is a leaf, and no pane")
         XCTAssertTrue(tabs.panes.isEmpty)
-        XCTAssertFalse(tabs.layout.isSplit)
+        XCTAssertFalse(tabs.layout.hasPanes)
+        XCTAssertFalse(WorkspaceTabs().layout.isSplit)
         XCTAssertNil(tabs.zoomed)
         XCTAssertTrue(tabs.isShowing(.main))
         XCTAssertTrue(tabs.exists(.main) && tabs.exists(.side) && tabs.exists(.bottom))
@@ -1648,22 +1744,31 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(fixed.panes[second]?.active, fileA)
     }
 
-    /// A zoom on something that isn't a leaf of a split area is no zoom.
+    /// A zoom on something that isn't a leaf on screen is no zoom.
     func testAZoomIsOnALeafThatIsThere() {
         var tabs = column()
         let pane = splitOff(changes, from: &tabs)
-        for zoomed in [TabRegion.side, .bottom, .pane(UUID())] {
+        // A strip with no tabs, and a pane that has gone.
+        for zoomed in [TabRegion.bottom, .pane(UUID())] {
             tabs.zoomed = zoomed
             XCTAssertNil(tabs.normalized().zoomed, "\(zoomed)")
         }
-        tabs.zoomed = pane
-        XCTAssertEqual(tabs.normalized().zoomed, pane)
-        tabs.zoomed = .main
-        XCTAssertEqual(tabs.normalized().zoomed, .main)
+        for zoomed in [pane, .main, .side] {
+            tabs.zoomed = zoomed
+            XCTAssertEqual(tabs.normalized().zoomed, zoomed, "\(zoomed)")
+        }
+        // A column that is hidden can't be the one shown alone.
+        tabs.sideVisible = false
+        tabs.zoomed = .side
+        XCTAssertNil(tabs.normalized().zoomed)
 
-        var unsplit = column()
+        var unsplit = WorkspaceTabs()
         unsplit.zoomed = .main
         XCTAssertNil(unsplit.normalized().zoomed, "there is nothing to zoom out of")
+        var hidden = column()
+        hidden.sideVisible = false
+        hidden.zoomed = .main
+        XCTAssertNil(hidden.normalized().zoomed, "nor beside a column that is hidden")
     }
 
     /// A habit and a preview that point at what has gone are dropped.
@@ -1676,5 +1781,366 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertNil(tabs.normalized().peek)
         tabs.place(fileA, in: pane, at: .max)
         XCTAssertEqual(tabs.normalized().peek, fileA, "a preview in a pane is a preview")
+    }
+
+    // MARK: - The column and the strip are leaves
+
+    private let area = CGRect(x: 0, y: 0, width: 1202, height: 600)
+
+    private func share(of leaf: SplitLayout.Leaf, along axis: SplitLayout.Axis, in tabs: WorkspaceTabs) -> Double {
+        tabs.layout.share(of: leaf, along: axis) ?? -1
+    }
+
+    /// The column is a leaf of the tree exactly while it has tabs: made by
+    /// its first, at the outer edge with a third of the width, and gone with
+    /// its last. Showing or hidden makes no difference to that.
+    func testTheColumnIsALeafWhileItHasTabs() {
+        var tabs = WorkspaceTabs()
+        XCTAssertEqual(tabs.layout, SplitLayout())
+        XCTAssertTrue(tabs.place(changes, in: .side, at: 0))
+        XCTAssertEqual(tabs.layout.leaves, [.main, .side])
+        XCTAssertEqual(share(of: .side, along: .row, in: tabs), 1.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(tabs.unsized, [.side], "a guess, until the window has laid it out")
+        XCTAssertEqual(tabs.hiddenLeaves, [.side], "placed, not brought forward: there, and not showing")
+        XCTAssertFalse(tabs.isShowing(.side))
+
+        tabs.bringForward(changes)
+        XCTAssertTrue(tabs.hiddenLeaves.isEmpty)
+        XCTAssertTrue(tabs.isShowing(.side))
+
+        let one = tabs.layout
+        tabs.place(history, in: .side, at: .max)
+        XCTAssertEqual(tabs.layout, one, "one more tab is the same leaf")
+        tabs.close(history)
+        XCTAssertEqual(tabs.layout, one)
+
+        tabs.close(changes)
+        XCTAssertEqual(tabs.layout, SplitLayout(), "its last tab took it out")
+        XCTAssertTrue(tabs.unsized.isEmpty)
+        XCTAssertTrue(tabs.hiddenLeaves.isEmpty)
+        XCTAssertFalse(tabs.sideVisible)
+    }
+
+    func testTheColumnOpensOnItsSide() {
+        var trailing = WorkspaceTabs()
+        trailing.place(changes, in: .side, at: 0)
+        XCTAssertEqual(trailing.splitRegions, [.main, .side])
+
+        var leading = WorkspaceTabs(sideLeading: true)
+        leading.place(changes, in: .side, at: 0)
+        XCTAssertEqual(leading.splitRegions, [.side, .main])
+    }
+
+    /// The strip opens directly under the main row, wherever the main row
+    /// is, with three tenths of its height.
+    func testTheStripOpensUnderTheMainRow() {
+        var tabs = column()
+        let pane = splitOff(terminal(), from: &tabs)
+        let shell = terminal()
+        XCTAssertTrue(tabs.place(shell, in: .bottom, at: 0))
+        XCTAssertEqual(tabs.splitRegions, [.main, .bottom, pane, .side])
+        XCTAssertEqual(share(of: .bottom, along: .column, in: tabs), 0.3, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .main, along: .column, in: tabs), 0.7, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .bottom, along: .row, in: tabs), share(of: .main, along: .row, in: tabs),
+                       accuracy: 1e-9, "as wide as the main row, not the whole area")
+        XCTAssertEqual(share(of: pane.leaf, along: .column, in: tabs), 1, accuracy: 1e-9)
+        XCTAssertTrue(tabs.unsized.contains(.bottom))
+        XCTAssertTrue(tabs.hiddenLeaves.contains(.bottom))
+
+        tabs.detach(shell)
+        XCTAssertEqual(tabs.splitRegions, [.main, pane, .side])
+        XCTAssertEqual(share(of: .main, along: .column, in: tabs), 1, accuracy: 1e-9)
+        XCTAssertFalse(tabs.unsized.contains(.bottom))
+    }
+
+    /// The column takes the outer edge of the whole area, strip and all,
+    /// whichever of the two came first, and however the tabs got there.
+    func testTheColumnIsAtTheOuterEdgeOfEverything() {
+        let shell = terminal()
+        var tabs = WorkspaceTabs()
+        tabs.place(shell, in: .bottom, at: 0)
+        tabs.place(changes, in: .side, at: 0)
+        XCTAssertEqual(tabs.splitRegions, [.main, .bottom, .side])
+        XCTAssertEqual(share(of: .side, along: .column, in: tabs), 1, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .side, along: .row, in: tabs), 1.0 / 3, accuracy: 1e-9)
+
+        var other = WorkspaceTabs()
+        other.place(changes, in: .side, at: 0)
+        other.place(shell, in: .bottom, at: 0)
+        XCTAssertEqual(other.layout, tabs.layout)
+
+        // Made with tabs already in its rows, it has their leaves.
+        let made = WorkspaceTabs(side: [changes], activeSide: changes, bottom: [shell], activeBottom: shell)
+        XCTAssertEqual(made.layout, tabs.layout)
+        XCTAssertEqual(made.unsized, [.side, .bottom])
+        XCTAssertEqual(made.normalized(), made)
+    }
+
+    /// Every way a tab gets into the column or the strip makes the leaf.
+    func testEveryWayIntoTheColumnOrTheStripMakesItsLeaf() {
+        var moved = WorkspaceTabs()
+        moved.place(fileA, in: .main, at: .max)
+        moved.move(fileA, to: .side, at: 0)
+        XCTAssertEqual(moved.splitRegions, [.main, .side])
+        XCTAssertTrue(moved.isShowing(.side))
+
+        var dropped = WorkspaceTabs()
+        dropped.placeDropped(fileA, in: .bottom, at: 0)
+        XCTAssertEqual(dropped.splitRegions, [.main, .bottom])
+        XCTAssertTrue(dropped.isShowing(.bottom))
+
+        var peeked = WorkspaceTabs()
+        peeked.showPeek(fileA, in: .side)
+        XCTAssertEqual(peeked.splitRegions, [.main, .side])
+
+        var reopened = WorkspaceTabs()
+        reopened.place(changes, in: .side, at: 0)
+        reopened.bringForward(changes)
+        reopened.markSized(.side)
+        reopened.close(changes)
+        XCTAssertFalse(reopened.layout.contains(.side))
+        XCTAssertEqual(reopened.reopen(preferring: .side), changes)
+        XCTAssertEqual(reopened.splitRegions, [.main, .side])
+        XCTAssertEqual(reopened.unsized, [.side], "a new leaf, at a guess again")
+
+        // And the way out: a move that takes the last tab takes the leaf.
+        moved.move(fileA, to: .main, at: .max)
+        XCTAssertEqual(moved.layout, SplitLayout())
+    }
+
+    /// Hidden with its tabs kept, the leaf stays in the tree with the share
+    /// it has. That is what ⌥⌘B and ⌘J do, and what only these two can.
+    func testHidingKeepsTheLeafAndItsShare() {
+        var tabs = column()
+        let shell = terminal()
+        tabs.place(shell, in: .bottom, at: 0)
+        tabs.bringForward(shell)
+        let before = tabs.layout
+        XCTAssertTrue(tabs.hiddenLeaves.isEmpty)
+
+        tabs.setVisible(false, in: .side)
+        XCTAssertEqual(tabs.layout, before)
+        XCTAssertEqual(tabs.hiddenLeaves, [.side])
+        XCTAssertEqual(tabs.side, [changes, history, files])
+        XCTAssertFalse(tabs.isShowing(.side))
+        tabs.setVisible(false, in: .bottom)
+        XCTAssertEqual(tabs.hiddenLeaves, [.side, .bottom])
+        XCTAssertEqual(tabs.bottom, [shell])
+
+        tabs.setVisible(true, in: .side)
+        tabs.setVisible(true, in: .bottom)
+        XCTAssertTrue(tabs.hiddenLeaves.isEmpty)
+        XCTAssertEqual(tabs.layout, before)
+        XCTAssertTrue(tabs.isShowing(.side) && tabs.isShowing(.bottom))
+
+        // One with no tabs has nothing to show, and nothing else hides.
+        var empty = WorkspaceTabs()
+        empty.setVisible(true, in: .side)
+        empty.setVisible(true, in: .bottom)
+        XCTAssertEqual(empty, WorkspaceTabs())
+        let same = tabs
+        tabs.setVisible(false, in: .main)
+        tabs.setVisible(false, in: .pane(UUID()))
+        XCTAssertEqual(tabs, same)
+    }
+
+    /// Showing the column or the strip is asking to see it: a zoom on
+    /// another leaf ends. Hiding the one that is zoomed ends its zoom.
+    func testShowingAndHidingAgainstAZoom() {
+        var tabs = column()
+        let pane = splitOff(terminal(), from: &tabs)
+        tabs.setVisible(false, in: .side)
+        tabs.toggleZoom(pane)
+        tabs.setVisible(true, in: .side)
+        XCTAssertNil(tabs.zoomed)
+        XCTAssertTrue(tabs.isShowing(.side))
+
+        tabs.toggleZoom(.side)
+        XCTAssertEqual(tabs.zoomed, .side)
+        tabs.setVisible(false, in: .side)
+        XCTAssertNil(tabs.zoomed, "there would be nothing on screen")
+        XCTAssertTrue(tabs.isShowing(.main))
+
+        // Hiding a leaf the zoom was hiding anyway leaves the zoom.
+        tabs.setVisible(true, in: .side)
+        tabs.toggleZoom(pane)
+        tabs.setVisible(false, in: .side)
+        XCTAssertEqual(tabs.zoomed, pane)
+
+        // Unless it was the last thing beside the zoomed leaf.
+        var two = column()
+        two.toggleZoom(.main)
+        two.setVisible(false, in: .side)
+        XCTAssertNil(two.zoomed)
+    }
+
+    /// A split asked for beside the column is made beside the column, as
+    /// beside any leaf.
+    func testSplittingBesideTheColumnAndTheStrip() {
+        var tabs = column()
+        let shell = terminal()
+        guard let under = tabs.split(.side, on: .down, placing: shell) else { return XCTFail("nothing was split") }
+        XCTAssertEqual(tabs.splitRegions, [.main, .side, under])
+        XCTAssertEqual(tabs.side, [changes, history, files], "the column's tabs are as they were")
+        XCTAssertEqual(share(of: under.leaf, along: .row, in: tabs), 1.0 / 3, accuracy: 1e-9, "in the column's width")
+        XCTAssertEqual(share(of: .side, along: .column, in: tabs), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .main, along: .row, in: tabs), 2.0 / 3, accuracy: 1e-9, "the main row didn't move")
+
+        // A tab of the column's own, split off beside it.
+        guard let left = tabs.split(.side, on: .left, placing: history) else { return XCTFail("nothing was split") }
+        XCTAssertEqual(tabs.splitRegions, [.main, left, .side, under])
+        XCTAssertEqual(tabs.side, [changes, files])
+
+        // And beside the strip, while it is up.
+        var strip = WorkspaceTabs()
+        let first = terminal(), second = terminal()
+        strip.place(first, in: .bottom, at: 0)
+        strip.bringForward(first)
+        guard let beside = strip.split(.bottom, on: .right, placing: second) else { return XCTFail("nothing was split") }
+        XCTAssertEqual(strip.splitRegions, [.main, .bottom, beside])
+        XCTAssertEqual(share(of: .main, along: .row, in: strip), 1, accuracy: 1e-9)
+
+        // Down again, it takes no room, and the split is the main row's.
+        strip.setVisible(false, in: .bottom)
+        guard let third = strip.split(.bottom, on: .left, placing: terminal()) else { return XCTFail("nothing was split") }
+        XCTAssertEqual(strip.splitRegions, [third, .main, .bottom, beside])
+    }
+
+    /// The column's only tab can't be split off the column: that would be
+    /// the same leaf in the same place under another name.
+    func testTheColumnsOnlyTabIsNotSplitOffTheColumn() {
+        var tabs = WorkspaceTabs()
+        tabs.place(changes, in: .side, at: 0)
+        tabs.bringForward(changes)
+        let before = tabs
+        XCTAssertNil(tabs.split(.side, on: .down, placing: changes))
+        XCTAssertEqual(tabs, before)
+
+        // Off the main row it can be: the column goes, and the pane is there.
+        guard let pane = tabs.split(.main, on: .right, placing: changes) else { return XCTFail("nothing was split") }
+        XCTAssertEqual(tabs.splitRegions, [.main, pane])
+        XCTAssertFalse(tabs.sideVisible)
+    }
+
+    /// The column's only tab dropped back where it is: the leaf, and the
+    /// share somebody gave it, stay.
+    func testReorderingTheColumnsOnlyTabKeepsItsLeaf() {
+        var tabs = WorkspaceTabs()
+        tabs.place(changes, in: .side, at: 0)
+        tabs.bringForward(changes)
+        tabs.layout.resize(.side, to: 240, in: area)
+        tabs.markSized(.side)
+        let before = tabs
+        XCTAssertTrue(tabs.move(changes, to: .side, at: 1))
+        XCTAssertEqual(tabs, before)
+        XCTAssertEqual(share(of: .side, along: .row, in: tabs), 240.0 / 1201, accuracy: 1e-6)
+    }
+
+    /// The other side: the flag for where the leaf is made, and a leaf that
+    /// is there moves to that outer edge with the share of the width it had.
+    func testMovingTheColumnToTheOtherSideKeepsItsShare() {
+        var tabs = column()
+        let pane = splitOff(terminal(), from: &tabs)
+        tabs.layout.resize(.side, to: 240, in: area)
+        tabs.markSized(.side)
+        let width = share(of: .side, along: .row, in: tabs)
+        XCTAssertEqual(width, 0.2, accuracy: 1e-9)
+
+        tabs.setSideLeading(true)
+        XCTAssertTrue(tabs.sideLeading)
+        XCTAssertEqual(tabs.splitRegions, [.side, .main, pane])
+        XCTAssertEqual(share(of: .side, along: .row, in: tabs), width, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .main, along: .row, in: tabs), 0.4, accuracy: 1e-9)
+        XCTAssertEqual(share(of: pane.leaf, along: .row, in: tabs), 0.4, accuracy: 1e-9)
+        XCTAssertTrue(tabs.unsized.isEmpty, "the share it had is no guess")
+        XCTAssertEqual(tabs.side, [changes, history, files])
+
+        let leading = tabs
+        tabs.setSideLeading(true)
+        XCTAssertEqual(tabs, leading, "already there")
+        tabs.setSideLeading(false)
+        XCTAssertEqual(tabs.splitRegions, [.main, pane, .side])
+        XCTAssertEqual(share(of: .side, along: .row, in: tabs), width, accuracy: 1e-9)
+
+        // From inside the tree, where a split beside it had put it: out to
+        // the edge of everything, as wide as it was.
+        var nested = column()
+        guard let under = nested.split(.side, on: .down, placing: terminal()) else { return XCTFail("nothing was split") }
+        nested.setSideLeading(true)
+        XCTAssertEqual(nested.splitRegions, [.side, .main, under])
+        XCTAssertEqual(share(of: .side, along: .row, in: nested), 1.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .side, along: .column, in: nested), 1, accuracy: 1e-9)
+
+        // With no column there is only the flag, for when there is one.
+        var none = WorkspaceTabs()
+        none.setSideLeading(true)
+        XCTAssertEqual(none.layout, SplitLayout())
+        none.place(changes, in: .side, at: 0)
+        XCTAssertEqual(none.splitRegions, [.side, .main])
+    }
+
+    func testMarkSized() {
+        var tabs = column()
+        let shell = terminal()
+        tabs.place(shell, in: .bottom, at: 0)
+        XCTAssertEqual(tabs.unsized, [.side, .bottom])
+        tabs.markSized(.side)
+        XCTAssertEqual(tabs.unsized, [.bottom])
+        tabs.markSized(.side)
+        tabs.markSized(.pane(UUID()))
+        XCTAssertEqual(tabs.unsized, [.bottom])
+        tabs.close(shell)
+        XCTAssertTrue(tabs.unsized.isEmpty, "a leaf that has gone is waiting for nothing")
+    }
+
+    /// A file from before the column and the strip were leaves has their
+    /// tabs and no place for them in the tree: each is put where it opens.
+    func testNormalizedGivesTheColumnAndTheStripTheirLeaves() {
+        let id = UUID()
+        let shell = terminal()
+        var tabs = WorkspaceTabs()
+        tabs.side = [changes, history]
+        tabs.sideVisible = true
+        tabs.bottom = [shell]
+        tabs.panes[id] = WorkspaceTabs.PaneTabs(tabs: [fileA], active: fileA)
+        tabs.layout.insert(.pane(id), beside: .main, on: .right)
+
+        let fixed = tabs.normalized()
+        XCTAssertEqual(fixed.splitRegions, [.main, .bottom, .pane(id), .side])
+        XCTAssertEqual(fixed.unsized, [.side, .bottom])
+        XCTAssertEqual(fixed.hiddenLeaves, [.bottom])
+        XCTAssertEqual(share(of: .side, along: .row, in: fixed), 1.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .main, along: .row, in: fixed), 1.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(share(of: .bottom, along: .column, in: fixed), 0.3, accuracy: 1e-9)
+        XCTAssertEqual(fixed.normalized(), fixed)
+
+        tabs.sideLeading = true
+        XCTAssertEqual(tabs.normalized().splitRegions, [.side, .main, .bottom, .pane(id)])
+    }
+
+    /// A leaf for a column or a strip that has no tabs is taken out, and
+    /// what was waiting on a leaf that isn't there is forgotten.
+    func testNormalizedDropsAColumnOrStripLeafWithNoTabs() {
+        var tabs = WorkspaceTabs()
+        tabs.layout.insert(.side, atRootEdge: .right, share: 0.3)
+        tabs.layout.insert(.bottom, beside: .main, on: .down, share: 0.3)
+        tabs.unsized = [.side, .bottom, .pane(UUID())]
+        tabs.sideVisible = true
+        tabs.zoomed = .side
+        let fixed = tabs.normalized()
+        XCTAssertEqual(fixed.layout, SplitLayout())
+        XCTAssertTrue(fixed.unsized.isEmpty)
+        XCTAssertNil(fixed.zoomed)
+        XCTAssertFalse(fixed.sideVisible)
+    }
+
+    /// A tree that was saved with them in it is left as it was: the shares
+    /// in it are somebody's, not a guess.
+    func testNormalizedLeavesSavedSharesAlone() {
+        var tabs = column()
+        tabs.layout = SplitLayout(root: .split(.row, [.init(node: .leaf(.side), weight: 0.25),
+                                                      .init(node: .leaf(.main), weight: 0.75)]))
+        tabs.unsized = []
+        XCTAssertEqual(tabs.normalized(), tabs)
     }
 }

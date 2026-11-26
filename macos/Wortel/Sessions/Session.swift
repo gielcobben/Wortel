@@ -114,7 +114,8 @@ final class Session: Identifiable {
     var mainTabs: [SideTab] = [.session]
     var activeMainTab: SideTab?
     /// The side column on the terminal's leading side rather than its trailing
-    /// one. Persisted.
+    /// one: which outer edge its leaf is made at (`WorkspaceTabs.sideLeading`).
+    /// Persisted.
     var sideColumnLeading = false
     /// The strip under the session's terminal: its tabs in order, the one in
     /// front, and whether it's showing. Hiding keeps them, closing the last
@@ -135,14 +136,19 @@ final class Session: Identifiable {
     /// for that title; not persisted.
     var peekTab: SideTab?
     /// The panes split off the main area, each with its row of tabs and the
-    /// one in front, and how the main area is divided among them and the
-    /// main row (`WorkspaceTabs.panes`, `SplitLayout`). Persisted, and left
-    /// out of the file while there is no split.
+    /// one in front, and how the session's area is divided among them, the
+    /// main row, the column and the strip (`WorkspaceTabs.panes`,
+    /// `SplitLayout`). Persisted, and left out of the file while the main
+    /// row is all there is.
     var paneTabs: [UUID: WorkspaceTabs.PaneTabs] = [:]
     var splitLayout = SplitLayout()
-    /// The part of the main area shown alone: `WorkspaceTabs.zoomed`.
-    /// Observed for the views that hide the others; not persisted.
+    /// The leaf shown alone: `WorkspaceTabs.zoomed`. Observed for the views
+    /// that hide the others; not persisted.
     var zoomedRegion: TabRegion?
+    /// Leaves put in the tree at a guessed share, which the window gives
+    /// their real size the first time it lays them out
+    /// (`WorkspaceTabs.unsized`). Observed for that; not persisted.
+    var unsizedLeaves: Set<SplitLayout.Leaf> = []
 
     /// Every terminal tab id the session holds, wherever it sits.
     var terminalTabIDs: [UUID] { allTabs.compactMap(\.terminalID) }
@@ -163,7 +169,8 @@ final class Session: Identifiable {
                           bottom: bottomTabs, activeBottom: activeBottomTab,
                           bottomVisible: bottomVisible, closed: closedTabs, habits: tabHabits,
                           openers: tabOpeners, peek: peekTab,
-                          panes: paneTabs, layout: splitLayout, zoomed: zoomedRegion)
+                          panes: paneTabs, layout: splitLayout, zoomed: zoomedRegion,
+                          sideLeading: sideColumnLeading, unsized: unsizedLeaves)
         }
         set {
             if mainTabs != newValue.main { mainTabs = newValue.main }
@@ -181,6 +188,8 @@ final class Session: Identifiable {
             if paneTabs != newValue.panes { paneTabs = newValue.panes }
             if splitLayout != newValue.layout { splitLayout = newValue.layout }
             if zoomedRegion != newValue.zoomed { zoomedRegion = newValue.zoomed }
+            if sideColumnLeading != newValue.sideLeading { sideColumnLeading = newValue.sideLeading }
+            if unsizedLeaves != newValue.unsized { unsizedLeaves = newValue.unsized }
         }
     }
     /// Full title reported by the shell (user@host:cwd, or the running

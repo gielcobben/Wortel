@@ -107,10 +107,32 @@ final class MainAreaController: NSViewController {
 
     // MARK: Panes
 
+    /// The leaves of the tree this view doesn't lay out: the ones the model
+    /// hides, and the column and the strip whether they are up or not.
+    ///
+    /// TODO(unify): the column and the strip are leaves of the tree now, and
+    /// are still drawn by panes of their own outside this view
+    /// (`MainSplitViewController`). Until this view draws them, they take no
+    /// room here, and this is `git.hiddenLeaves` alone once it does.
+    private var hiddenLeaves: Set<SplitLayout.Leaf> { git.hiddenLeaves.union([.side, .bottom]) }
+
+    /// The zoom, as this view shows it: none for one on the column or the
+    /// strip.
+    ///
+    /// TODO(unify): those two can't be shown alone by this view yet, so a
+    /// zoom on one leaves the main area as it is. `git.zoomedRegion` once
+    /// their leaves are drawn here.
+    private var zoomedRegion: TabRegion? {
+        git.zoomedRegion.flatMap { $0 == .side || $0 == .bottom ? nil : $0 }
+    }
+
     private func syncPanes() {
         let session = home.selected
         let layout = git.splitLayout
-        let split = layout.isSplit
+        // TODO(unify): `hasPanes`, not `isSplit`: a column or a strip makes
+        // the tree more than one leaf, and the main row gets its own bar
+        // only beside a leaf this view draws.
+        let split = layout.hasPanes
         // The main row's own row, only while there is another pane to tell it
         // from. One layout change for both: the row and the frames.
         if mainBar.isHidden == split {
@@ -121,7 +143,7 @@ final class MainAreaController: NSViewController {
             mainBar.strip.update(items: git.mainTabs.map { TitleBarController.stripItem(for: $0, in: session) },
                                  active: git.activeMainTab ?? .session)
         }
-        mainBar.unzoom.isHidden = git.zoomedRegion != .main
+        mainBar.unzoom.isHidden = zoomedRegion != .main
         mainBar.strip.isKeyRow = git.keyRegion == .main
 
         var views: [SplitLayout.Leaf: NSView] = [.main: mainLeaf]
@@ -137,7 +159,7 @@ final class MainAreaController: NSViewController {
             views[.pane(id)] = panes[id]?.view
         }
         tree.setLeaves(views)
-        tree.apply(layout: layout, zoomed: git.zoomedRegion?.leaf)
+        tree.apply(layout: layout, zoomed: zoomedRegion?.leaf, hidden: hiddenLeaves)
         // A pane no session has any more is let go of. One that another
         // session of this window has stays, hidden: see `SplitPaneController`.
         let dead = panes.keys.filter { id in !manager.sessions.contains { $0.paneTabs[id] != nil } }
@@ -196,8 +218,8 @@ final class MainAreaController: NSViewController {
     private func newFrame(beside leaf: SplitLayout.Leaf, on edge: SplitLayout.Edge, in frame: NSRect) -> NSRect {
         let standIn = SplitLayout.Leaf.pane(UUID())
         var layout = git.splitLayout
-        guard git.zoomedRegion == nil, layout.insert(standIn, beside: leaf, on: edge),
-              let made = layout.frames(in: tree.bounds, metrics: tree.metrics).leaves[standIn]
+        guard zoomedRegion == nil, layout.insert(standIn, beside: leaf, on: edge),
+              let made = layout.frames(in: tree.bounds, metrics: tree.metrics, hidden: hiddenLeaves).leaves[standIn]
         else { return SplitLayout.half(of: frame, on: edge) }
         return made
     }
@@ -207,8 +229,9 @@ final class MainAreaController: NSViewController {
     /// The pane you reach from `region` by going toward `edge`, if the area
     /// has one there.
     func neighbour(of region: TabRegion, toward edge: SplitLayout.Edge) -> TabRegion? {
-        guard let leaf = region.leaf, git.zoomedRegion == nil else { return nil }
-        return git.splitLayout.neighbour(of: leaf, toward: edge, in: tree.bounds, metrics: tree.metrics)
+        guard zoomedRegion == nil else { return nil }
+        return git.splitLayout.neighbour(of: region.leaf, toward: edge, in: tree.bounds, metrics: tree.metrics,
+                                         hidden: hiddenLeaves)
             .map(TabRegion.init)
     }
 
@@ -232,7 +255,7 @@ final class MainAreaController: NSViewController {
     /// `edge`, each half keeping the least a pane is laid out at. Out of
     /// sight (zoomed away), there is nothing to measure and it may.
     func hasRoom(toSplit region: TabRegion, on edge: SplitLayout.Edge) -> Bool {
-        guard let leaf = region.leaf, let frame = tree.frame(of: leaf) else { return true }
+        guard let frame = tree.frame(of: region.leaf) else { return true }
         return hasRoom(toSplit: frame, on: edge)
     }
 
@@ -243,8 +266,10 @@ final class MainAreaController: NSViewController {
     /// differs, and it is what keeps a script from halving a session out of
     /// sight until nothing in it can be used.
     func hasRoom(toSplit region: TabRegion, on edge: SplitLayout.Edge, in layout: SplitLayout) -> Bool {
-        guard let leaf = region.leaf,
-              let frame = layout.frames(in: tree.bounds, metrics: tree.metrics).leaves[leaf] else { return true }
+        // TODO(unify): the column and the strip of that session take no room
+        // in this view, shown or hidden; its own hidden leaves once they do.
+        guard let frame = layout.frames(in: tree.bounds, metrics: tree.metrics,
+                                        hidden: [.side, .bottom]).leaves[region.leaf] else { return true }
         return hasRoom(toSplit: frame, on: edge)
     }
 
@@ -273,12 +298,16 @@ final class MainAreaController: NSViewController {
 
     // MARK: The main row
 
+    /// Whether the main row is on screen in this view: not behind a zoom
+    /// this view shows (`zoomedRegion`).
+    private var showsMainRow: Bool { zoomedRegion == nil || zoomedRegion == .main }
+
     private func sync() {
         syncPanes()
         let session = home.selected
         // Zoomed on another pane, the main row is out of sight: nothing of
         // it shows, and its terminal is treated as covered.
-        let showing = git.isShowing(.main)
+        let showing = showsMainRow
         let active = git.activeMainTab
         // A pane, a file, a web page: anything that isn't a terminal is drawn
         // by the SwiftUI cover.
@@ -304,11 +333,11 @@ final class MainAreaController: NSViewController {
     /// Out of sight behind a zoomed pane is covered too, and the keyboard
     /// goes to that pane.
     private func keepKeyboardOffCoveredTerminal() {
-        let hidden = !git.isShowing(.main)
+        let hidden = !showsMainRow
         guard git.activeMainTab != nil || hidden, let window = view.window,
               let main = home.selected?.surfaceView, window.firstResponder === main else { return }
         window.makeFirstResponder(nil)
-        git.focusFront(of: hidden ? (git.zoomedRegion ?? .main) : .main)
+        git.focusFront(of: hidden ? (zoomedRegion ?? .main) : .main)
     }
 
     override func viewDidAppear() {

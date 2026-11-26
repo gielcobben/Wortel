@@ -241,7 +241,9 @@ final class MainSplitViewController: NSSplitViewController {
             (mainArea?.rows ?? []).map { .init(strip: $0.strip, region: $0.region) }
         }
         drag.paneDrop = { [weak mainArea] point in mainArea?.paneDrop(at: point) }
-        drag.isSplit = { [weak self] in self?.git.splitLayout.isSplit ?? false }
+        // TODO(unify): `hasPanes`, not `isSplit`: a column or a strip alone
+        // leaves the main area's edges meaning what they did.
+        drag.isSplit = { [weak self] in self?.git.splitLayout.hasPanes ?? false }
         drag.hasRoom = { [weak mainArea] region, edge in mainArea?.hasRoom(toSplit: region, on: edge) ?? true }
         // ⌘D, ⇧⌘D and Split Right / Split Down in any menu: refused, with
         // the system's sound, where the split would be too small to use.
@@ -794,7 +796,8 @@ extension MainSplitViewController {
         let target: NSView?
         switch region {
         // Split, the main row is one pane among several: its own outline.
-        case .main: target = git.splitLayout.isSplit && git.zoomedRegion == nil
+        // TODO(unify): `hasPanes`, not `isSplit`, as above.
+        case .main: target = git.splitLayout.hasPanes && git.zoomedRegion == nil
             ? mainArea?.view(of: .main) : terminalAreaView
         case .side: target = git.isVisible ? columnContentView : nil
         case .bottom: target = git.bottomVisible ? bottomAreaView : nil

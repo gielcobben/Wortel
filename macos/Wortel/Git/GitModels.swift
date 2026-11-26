@@ -408,7 +408,7 @@ extension SideTab {
 enum TabRegion: Hashable, Sendable {
     case main, side, bottom
     /// A pane split off the main area, by its id: a leaf of the session's
-    /// `SplitLayout` other than the main row.
+    /// `SplitLayout` that somebody made by splitting.
     case pane(UUID)
 
     private static let panePrefix = "pane:"
@@ -435,26 +435,30 @@ enum TabRegion: Hashable, Sendable {
         }
     }
 
-    /// The leaf of the main area's tree this region is: the main row or a
-    /// pane. nil for the column and the strip, which are beside the tree,
-    /// not in it.
-    var leaf: SplitLayout.Leaf? {
+    /// The leaf of the session's tree this region is. Every region is one:
+    /// the main row, a pane, and the column and the strip, which are in the
+    /// tree while they have tabs.
+    var leaf: SplitLayout.Leaf {
         switch self {
         case .main: return .main
+        case .side: return .side
+        case .bottom: return .bottom
         case .pane(let id): return .pane(id)
-        case .side, .bottom: return nil
         }
     }
 
     init(_ leaf: SplitLayout.Leaf) {
         switch leaf {
         case .main: self = .main
+        case .side: self = .side
+        case .bottom: self = .bottom
         case .pane(let id): self = .pane(id)
         }
     }
 
-    /// Whether this is a part of the main area: the main row or a pane.
-    var isSplitLeaf: Bool { leaf != nil }
+    /// Whether this is a leaf of the tree. Every region is, since the column
+    /// and the strip became leaves like any other.
+    var isSplitLeaf: Bool { true }
 
     /// The pane's id, for a pane.
     var paneID: UUID? {

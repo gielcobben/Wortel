@@ -93,11 +93,17 @@ struct PersistedSession: Codable {
     /// `Session.tabHabits`, kind to region, raw values. nil in older files:
     /// everything opens in the column.
     let tabHabits: [String: String]?
-    /// How the session's main area is split into panes (`Session.splitLayout`,
-    /// the tree as `SplitLayout` encodes it), and each pane's tabs by the
-    /// pane id's string. Both nil while there is no split, and in older
-    /// files: the main area is the main row, and a session that was never
-    /// split saves exactly what it saved before there were panes.
+    /// How the session's area is divided (`Session.splitLayout`, the tree as
+    /// `SplitLayout` encodes it: the main row, the column, the strip and the
+    /// panes), and each pane's tabs by the pane id's string. The tree is nil
+    /// while the main row is all there is, and the panes while there are
+    /// none, so a session with neither a column, a strip nor a split saves
+    /// exactly what it saved before there was a tree.
+    ///
+    /// The column's and the strip's tabs are not in here: they are saved in
+    /// `sideTabs` and `bottomTabs` as they always were, with whether each is
+    /// up, so an older build shows them. A file from such a build has those
+    /// and no leaf for them, which `WorkspaceTabs.normalized` puts in.
     ///
     /// Read leniently (`try?`): a tree or a pane this build can't read is no
     /// split, not a file that can't be opened. `SessionManager.restore` then

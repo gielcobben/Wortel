@@ -169,9 +169,49 @@ The main area is a tree of rows and columns (`SplitLayout`, a pure value with
 its own tests, `SplitLayoutTests`) whose leaves are rows of tabs. One leaf is
 the main row, which is always there. Every other is a split, made by
 `WorkspaceTabs.split` around one tab, with a row of its own
-(`panes[id]`, `TabRegion.pane(id)`). The column and the strip are beside the
-tree, not in it, and work as they did. Unsplit, nothing here draws or saves
-anything it did not before.
+(`panes[id]`, `TabRegion.pane(id)`). Unsplit, with no column and no strip,
+nothing here draws or saves anything it did not before.
+
+**The column and the strip are leaves of the same tree** in the model
+(`SplitLayout.Leaf.side`, `.bottom`), since 2026-11-26. The views are not
+there yet: the column and the strip are still drawn by panes of their own
+(`MainSplitViewController`, `BottomStrip.swift`), and `SplitTreeView` is told
+to leave their leaves out (`MainAreaController.hiddenLeaves`). Every place
+that stands in for the missing view is marked `TODO(unify)`. Until those are
+gone, read "the tree" below as the model's, and these as true of it:
+
+- `.side` is a leaf exactly while the column has tabs and `.bottom` exactly
+  while the strip has, showing or hidden (`WorkspaceTabs.keepFixedLeaves`,
+  repaired by `normalized`). Every `TabRegion` is a leaf (`TabRegion.leaf`).
+- Two things are still theirs. ⌥⌘B and ⌘J hide them with their tabs kept
+  (`sideVisible`, `bottomVisible`, `WorkspaceTabs.setVisible`): the leaf
+  stays in the tree with its weight, and is in `hiddenLeaves`, which
+  `SplitLayout.frames`, `moveDivider`, `neighbour` and `resize` take as
+  `hidden`. A hidden leaf takes no room and has no divider, and shown again
+  it has the share it had. And they have a place to open at: the column at
+  the outer edge of the whole area (`insert(_:atRootEdge:share:)`, left when
+  `sideLeading`), a third of the width, and the strip under the main row
+  with three tenths of its height.
+- Those shares are guesses. A leaf the model put in is in `unsized` (not
+  saved) until the window gives it its size in points
+  (`GitPanelModel.resizeLeaf`, `SplitLayout.resize`) or says it has one
+  (`markLeafSized`). Nothing calls either yet, and a tree saved meanwhile
+  carries the guess as if it were a size: after a relaunch it is not in
+  `unsized`. `sideColumnWidth` is still saved beside it.
+- In everything else they are leaves: a split is made beside the one you are
+  in (⌘D in the column splits beside the column), either can be zoomed, and
+  a zoom on another leaf hides them, so a tab brought forward in one, or
+  ⌥⌘B or ⌘J showing one, ends that zoom.
+- "Equal" is about the others. One more split among equal siblings, a split
+  that is closed, and `equalize` all leave the column and the strip the
+  share they have (`SplitLayout.keepsItsShare`). Otherwise a second ⌘D beside
+  a column would make a quarter where it makes a third without one.
+
+Known gaps while the old views draw them: a zoom leaves the column and the
+strip on screen though the model counts them out of sight (keys typed in one
+then act on the zoomed leaf, and ⌘] skips it), and ⇧⌘↩ from the column or the
+strip zooms the main row as before (`AppDelegate.zoomSplit`). Not tried by
+hand.
 
 The model:
 
@@ -204,11 +244,16 @@ The model:
   `commitSplitLayout` (once, saves). `lastRegion` never answers with a split
   that has gone or that a zoom hides. `keyRegion` is the same answer, read so
   that a row follows it.
-- Saved as `splitLayout` and `paneTabs` in `sessions.json`, both left out
-  while a session isn't split, so an unsplit session's entry is what it was.
-  Both are read leniently: a tree that can't be read is no split, and
-  `WorkspaceTabs.normalized` puts the tabs of a split with no place in the
-  tree into the main row, so a terminal's shell is never left without a tab.
+- Saved as `splitLayout` and `paneTabs` in `sessions.json`. The tree is left
+  out while the main row is all there is, so a session with a column or a
+  strip writes it; `paneTabs` is left out while there are no splits. The
+  column's and the strip's tabs, whether each is up, the side and the width
+  are saved beside the tree as they always were, which is what an older
+  build reads. Both are read leniently: a tree that can't be read is no
+  split, and `WorkspaceTabs.normalized` puts the tabs of a split with no
+  place in the tree into the main row, so a terminal's shell is never left
+  without a tab. A file with no tree, or a tree without the column's or the
+  strip's leaf, gets each put where it opens, `unsized`.
 - An older build opening a newer file drops both fields and saves without
   them. A split's terminal is then a shell in the keeper that no session
   claims, which the next launch treats as any unclaimed shell
@@ -248,9 +293,10 @@ The views:
 Making one, and dropping on one:
 
 - ⌘D and ⇧⌘D (`AppDelegate.splitRight`, `splitDown`) put a new terminal in a
-  split beside the leaf you're in, which from the column or the strip is the
-  main row. They beep when `MainAreaController.hasRoom` says the leaf is not
-  two minimums and a gap wide (or high). Split Right and Split Down in a
+  split beside the leaf you're in, the column and the strip included while
+  they are up (`GitPanelModel.currentLeaf`). They beep when
+  `MainAreaController.hasRoom` says the leaf is not two minimums and a gap
+  wide (or high); the column and the strip are not measured yet. Split Right and Split Down in a
   tab's menu, in `NewTabMenu` and in the session's "…" call
   `GitPanelModel.split` and do not ask `hasRoom`. A command teaches no habit
   (`home(for:)`); a drop does.
@@ -273,8 +319,9 @@ Making one, and dropping on one:
 
 The keyboard:
 
-- ⌘] and ⌘[ walk `visibleRegions`: the leaves on screen in reading order,
-  the column on its side of them, then the strip.
+- ⌘] and ⌘[ walk `visibleRegions`: the tree's leaves that are on screen, in
+  reading order. The column and the strip come where their leaves are: the
+  strip after the main row it is under, the column first or last.
 - ⌃⌥⌘ and an arrow (`focusArea`) and ⌃⌘ and an arrow (`moveFocusedTab`) both
   ask `neighbouringArea`: the leaf across that edge that shares the most of
   it (`SplitLayout.neighbour`, the upper or left one on a tie), past the main

@@ -591,4 +591,115 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertTrue(restored.panes.isEmpty)
         XCTAssertEqual(restored.terminalIDs, [shell].compactMap(\.terminalID))
     }
+
+    // MARK: - The column and the strip in the tree
+
+    /// What `restore` does with an entry's tabs and tree, as far as the
+    /// rules go: the rows made with the side the column is on, then the
+    /// saved tree in place of the one that made, with nothing in it a guess.
+    private func restored(side: [SideTab] = [], sideVisible: Bool = false, bottom: [SideTab] = [],
+                          bottomVisible: Bool = false, leading: Bool = false, tree: SplitLayout?,
+                          panes: [UUID: WorkspaceTabs.PaneTabs] = [:]) -> WorkspaceTabs {
+        var tabs = WorkspaceTabs(side: side, sideVisible: sideVisible, bottom: bottom,
+                                 bottomVisible: bottomVisible, sideLeading: leading)
+        tabs.panes = panes
+        tabs.layout = tree ?? SplitLayout()
+        tabs.unsized = []
+        return tabs.normalized()
+    }
+
+    /// The tree is saved with the column and the strip in it, and what an
+    /// older build reads is saved beside it exactly as before: their tabs,
+    /// whether each is up, the side and the width.
+    func testATreeWithTheColumnAndTheStripRoundTrips() throws {
+        let shell = SideTab.terminal(UUID())
+        var layout = SplitLayout()
+        layout.insert(.side, atRootEdge: .left, share: 0.25)
+        layout.insert(.bottom, beside: .main, on: .down, share: 0.4)
+        let original = PersistedSession(
+            id: UUID(), name: "s", title: "shell", cwd: "/tmp",
+            selected: false, nameSource: "user", gitPanelVisible: true,
+            sideTabs: [SideTab.pane(.changes).rawValue], activeSideTab: SideTab.pane(.changes).rawValue,
+            sideColumnWidth: 512,
+            bottomTabs: [shell.rawValue], activeBottomTab: shell.rawValue, bottomVisible: false,
+            sideColumnLeading: true, splitLayout: layout)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(PersistedSession.self, from: data)
+        XCTAssertEqual(decoded.splitLayout, layout)
+        XCTAssertEqual(decoded.splitLayout?.leaves, [.side, .main, .bottom])
+        XCTAssertNil(decoded.paneTabs, "no pane, so none saved")
+        XCTAssertEqual(decoded.sideTabs, [SideTab.pane(.changes).rawValue])
+        XCTAssertEqual(decoded.gitPanelVisible, true)
+        XCTAssertEqual(decoded.bottomTabs, [shell.rawValue])
+        XCTAssertEqual(decoded.bottomVisible, false)
+        XCTAssertEqual(decoded.sideColumnLeading, true)
+        XCTAssertEqual(decoded.sideColumnWidth, 512)
+
+        // Back in a session: the tree as saved, the strip hidden in it.
+        let tabs = restored(side: [.pane(.changes)], sideVisible: true, bottom: [shell], leading: true,
+                            tree: decoded.splitLayout)
+        XCTAssertEqual(tabs.layout, layout)
+        XCTAssertTrue(tabs.unsized.isEmpty, "a saved share is nobody's guess")
+        XCTAssertEqual(tabs.hiddenLeaves, [.bottom])
+    }
+
+    /// A session with a column or a strip has more than the main row in its
+    /// tree, which is when the tree is saved. With neither, and no split, it
+    /// has the one leaf and saves what it always did.
+    func testWhenThereIsATreeToSave() {
+        XCTAssertFalse(WorkspaceTabs().layout.isSplit)
+        XCTAssertTrue(WorkspaceTabs(side: [.pane(.changes)]).layout.isSplit)
+        XCTAssertTrue(WorkspaceTabs(bottom: [.terminal(UUID())]).layout.isSplit)
+        var closed = WorkspaceTabs(side: [.pane(.changes)], sideVisible: true)
+        closed.close(.pane(.changes))
+        XCTAssertFalse(closed.layout.isSplit, "back to the one leaf with the column's last tab")
+    }
+
+    /// A file from a build before the column and the strip were leaves: the
+    /// tabs, and no tree. Each gets its leaf where it opens, to be given its
+    /// size by the window.
+    func testAnOlderFilesColumnAndStripGetTheirLeaves() throws {
+        let shell = SideTab.terminal(UUID())
+        let entry = try decode("""
+        {"id":"\(UUID())","gitPanelVisible":true,"sideTabs":["changes","history"],"activeSideTab":"history",
+         "bottomTabs":["\(shell.rawValue)"],"bottomVisible":true,"sideColumnLeading":true,"sideColumnWidth":480}
+        """)
+        XCTAssertNil(entry.splitLayout)
+        let tabs = restored(side: (entry.sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
+                            sideVisible: entry.gitPanelVisible ?? false,
+                            bottom: (entry.bottomTabs ?? []).compactMap(SideTab.init(rawValue:)),
+                            bottomVisible: entry.bottomVisible ?? false,
+                            leading: entry.sideColumnLeading ?? false, tree: entry.splitLayout)
+        XCTAssertEqual(tabs.layout.leaves, [.side, .main, .bottom])
+        XCTAssertEqual(tabs.unsized, [.side, .bottom])
+        XCTAssertTrue(tabs.hiddenLeaves.isEmpty)
+        XCTAssertEqual(tabs.side, [.pane(.changes), .pane(.history)])
+        XCTAssertEqual(tabs.bottom, [shell])
+    }
+
+    /// A tree from this branch before the column was a leaf of it: panes
+    /// only. The panes keep their places, and the column is put beside all
+    /// of them.
+    func testATreeOfPanesOnlyGetsTheColumnBesideIt() {
+        let pane = UUID()
+        var tree = SplitLayout()
+        tree.insert(.pane(pane), beside: .main, on: .down)
+        let tabs = restored(side: [.pane(.files)], sideVisible: false, tree: tree,
+                            panes: [pane: WorkspaceTabs.PaneTabs(tabs: [.file("/tmp/a.md")], active: nil)])
+        XCTAssertEqual(tabs.layout.leaves, [.main, .pane(pane), .side])
+        XCTAssertEqual(tabs.unsized, [.side])
+        XCTAssertEqual(tabs.hiddenLeaves, [.side])
+        XCTAssertEqual(tabs.layout.share(of: .pane(pane), along: .column) ?? 0, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(tabs.layout.share(of: .side, along: .column) ?? 0, 1, accuracy: 1e-9)
+    }
+
+    /// A saved leaf whose row came back empty is taken out, not shown empty.
+    func testASavedLeafWithNoTabsIsDropped() {
+        var tree = SplitLayout()
+        tree.insert(.side, atRootEdge: .right, share: 0.3)
+        tree.insert(.bottom, beside: .main, on: .down, share: 0.3)
+        let tabs = restored(tree: tree)
+        XCTAssertEqual(tabs.layout, SplitLayout())
+        XCTAssertTrue(tabs.unsized.isEmpty)
+    }
 }

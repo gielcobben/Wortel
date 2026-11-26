@@ -1801,11 +1801,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   **Settings ▸ Beta updates** is the way out, and the one row that only shows
   where it can matter (running a beta, or on the channel): a tester is a
   different person from everyone else, decided once, and a channel joined by
-  installing a file needs a visible way to leave. Leaving keeps the beta
-  installed until the next regular release passes it, since Sparkle never
-  offers an older version. A beta's note says `beta: true` and is left off
-  the changelog, its pages, the feed and the sitemap; the next regular note
-  tells everyone what it carried. The site, `Wortel-latest.*` and the site
+  installing a file needs a visible way to leave. Once there the row stays,
+  so off can be turned back on. Leaving keeps the beta installed until the
+  next regular release passes it, since Sparkle never offers an older
+  version, and a beta already downloaded still installs at the next
+  restart. A beta's note says `beta: true` and is left off the changelog,
+  its pages, the feed and the sitemap, so the update popover has no What's
+  New for a beta (its link would land on the newest regular note); the next
+  regular note tells everyone what it carried. The site, `Wortel-latest.*` and the site
   deploy are untouched by a beta. Not built: builds on every commit (Ghostty's
   "tip"), which would need signing and notarizing in CI for a handful of
   testers.

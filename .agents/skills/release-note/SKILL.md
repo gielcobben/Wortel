@@ -35,7 +35,8 @@ summary: VoiceOver and read-aloud apps can now read what's in Wortel's terminal,
 
 - **Frontmatter:** exactly `date`, `title`, `summary`, in that order, unquoted.
   A beta (`release.sh --publish --beta`) adds `beta: true` after them: the note
-  then shows only in the testers' update dialog, never on wortel.sh. The next
+  then shows in the testers' update dialog and on no list on wortel.sh (its
+  dialog fragment is still deployed, unlinked). The next
   regular release's note covers everything the betas since the last regular
   release carried, because everyone else is offered that release and none of
   the betas.

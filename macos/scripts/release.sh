@@ -219,7 +219,20 @@ case "${1:-}" in
     # that only testers are offered; a regular release marked beta would
     # vanish from it.
     if [ "$NOTES" = 1 ]; then
-      if grep -qx 'beta: true' "$NOTES_DIR/$VERSION.md"; then NOTE_BETA=1; else NOTE_BETA=0; fi
+      # The frontmatter only (between the first two `---` lines), with any
+      # trailing space or comment dropped. YAML would also read `True`, `yes`
+      # and the like, and the site would then disagree with this check, so
+      # anything but `true` or `false` is refused rather than guessed at.
+      NOTE_BETA_VALUE=$(awk 'NR == 1 { if ($0 != "---") exit; next }
+        $0 == "---" { exit }
+        /^beta[ \t]*:/ { sub(/^beta[ \t]*:[ \t]*/, ""); sub(/[ \t]*(#.*)?$/, ""); print; exit }' \
+        "$NOTES_DIR/$VERSION.md")
+      case "$NOTE_BETA_VALUE" in
+        true) NOTE_BETA=1 ;;
+        ""|false) NOTE_BETA=0 ;;
+        *) echo "✗ The note for $VERSION says \`beta: $NOTE_BETA_VALUE\`. Write \`beta: true\`, or leave the line out." >&2
+           exit 1 ;;
+      esac
       if [ "$BETA" = 1 ] && [ "$NOTE_BETA" = 0 ]; then
         echo "✗ $VERSION is a beta, but its note doesn't say so. Add \`beta: true\` to the frontmatter of" >&2
         echo "  web/src/content/releases/$VERSION.md, so the public changelog leaves it out." >&2

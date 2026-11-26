@@ -153,7 +153,8 @@ on `/updates` (the newest one in full, at the top), as an entry in
 `/updates#<version>` still works, because the app links that way: the newest
 release is on that page and any other goes to its own.
 
-A beta's note has `beta: true` in its frontmatter. It renders only as the
-update dialog's note: every public list of releases reads the collection
-through `publicRelease` (`src/content.config.ts`), and `src/data/release.ts`
-skips the appcast items tagged with a channel.
+A beta's note has `beta: true` in its frontmatter. It is on no list of
+releases: every one reads the collection through `publicRelease`
+(`src/content.config.ts`), and `src/data/release.ts` skips the appcast items
+tagged with a channel. Its update-dialog fragment, `release-notes/<version>.html`,
+is still built and deployed, unlinked, like every note's.

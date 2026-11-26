@@ -83,8 +83,12 @@ change, saving and resume, anything that big), when the maintainer wants a few
 testers on it first. Same checks as above, same version sequence. What differs:
 
 - The note's frontmatter has `beta: true` after `summary`. The script refuses a
-  beta without it, and a regular release with it. The note shows in the
-  testers' update dialog and nowhere on wortel.sh.
+  beta without it, and a regular release with it (any spelling but `true` or
+  `false` is refused). The note shows in the testers' update dialog and on
+  no list on wortel.sh: not the changelog, its pages, the feed or the
+  sitemap. Its dialog fragment, `release-notes/<version>.html`, still goes up
+  unlinked with the next site deploy. The update popover has no What's New
+  for a beta.
 - The appcast item is tagged for the beta channel, so only Macs on it are
   offered the version. The site, `Wortel-latest.dmg` and the site deploy are
   left alone.

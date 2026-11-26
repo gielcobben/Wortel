@@ -47,6 +47,13 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// offered. Regular releases still come either way. See `joinBetaOnce`
     /// for how a Mac gets here without a setting.
     private(set) var getsBetaUpdates = UserDefaults.standard.bool(forKey: Updater.betaKey)
+    /// Whether this Mac has ever been on the beta channel. Settings keeps the
+    /// row while it is, so turning betas off doesn't take away the switch
+    /// that turns them back on.
+    private(set) var hasBetaChoice = UserDefaults.standard.object(forKey: Updater.betaKey) != nil
+    /// The waiting update is a beta. Its note isn't on wortel.sh/updates, so
+    /// the update popover has no What's New for it.
+    private(set) var readyIsBeta = false
     /// A downloaded update waiting for a restart, by its version.
     private(set) var readyVersion: String? {
         didSet { if readyVersion != oldValue { onReadyVersionChange?(readyVersion) } }
@@ -173,12 +180,16 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         Bundle.main.object(forInfoDictionaryKey: "WortelUpdateChannel") as? String == betaChannel
     }
 
-    /// Turn beta updates on or off. Off leaves this build where it is:
-    /// Sparkle never offers an older version, so a Mac on a beta stays on it
-    /// until the next regular release passes it, which is days, not weeks.
+    /// Turn beta updates on or off. Off takes effect from the next check: no
+    /// beta is offered after it. It moves nothing back: Sparkle never offers
+    /// an older version, so a Mac on a beta stays on it until the next
+    /// regular release passes it, which is days, not weeks. And a beta
+    /// already downloaded and waiting still installs at the next restart,
+    /// because that session is Sparkle's and is not torn down from here.
     func setGetsBetaUpdates(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: Self.betaKey)
         getsBetaUpdates = on
+        hasBetaChoice = true
         // Turned on: look now, rather than at the next check hours away.
         guard on, let updater = controller?.updater,
               updater.automaticallyChecksForUpdates, updater.canCheckForUpdates else { return }
@@ -224,8 +235,10 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     nonisolated func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
                              immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
         let version = item.displayVersionString
+        let isBeta = item.channel != nil
         MainActor.assumeIsolated {
             self.installNow = immediateInstallHandler
+            self.readyIsBeta = isBeta
             self.readyVersion = version
             self.startNudgeClock()
         }
@@ -242,6 +255,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         MainActor.assumeIsolated {
             guard self.installNow != nil else { return }
             self.installNow = nil
+            self.readyIsBeta = false
             self.readyVersion = nil
             self.nudgeTimer?.invalidate()
             self.readySince = nil
@@ -272,6 +286,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         guard Self.isBetaBuild, defaults.object(forKey: Self.betaKey) == nil else { return }
         defaults.set(true, forKey: Self.betaKey)
         getsBetaUpdates = true
+        hasBetaChoice = true
     }
 
     /// The first launch of a new version checks again soon.

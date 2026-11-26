@@ -38,7 +38,8 @@ A row that survives gets a dated line in `docs/decisions.md`.
 The last three are the Updates tab, and are absent on a build where they can do
 nothing (a development build has no updater and never reports): absent, not
 greyed. Beta updates is absent everywhere else too: it shows only on a beta
-build (`Updater.isBetaBuild`) or a Mac already on the channel. The first
+build (`Updater.isBetaBuild`) or a Mac that has ever been on the channel
+(`Updater.hasBetaChoice`), so turning it off doesn't take the switch away. The first
 launch of a beta build turns it on, once (`Updater.joinBetaOnce`), so a tester
 is never asked to find it; it is there so they can leave. The usage-data
 switch is also in the sidebar's ⓘ, which is where the first-run notice and

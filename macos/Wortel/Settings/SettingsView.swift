@@ -217,7 +217,7 @@ private struct UpdatesRows: View {
     @State private var sharesUsageData = TelemetrySettings.isEnabledByUser
 
     private var showsBetaRow: Bool {
-        updater.isAvailable && (Updater.isBetaBuild || updater.getsBetaUpdates)
+        updater.isAvailable && (Updater.isBetaBuild || updater.hasBetaChoice)
     }
 
     var body: some View {
@@ -227,8 +227,9 @@ private struct UpdatesRows: View {
                           isOn: Binding(get: { updater.updatesAutomatically },
                                         set: { updater.setUpdatesAutomatically($0) }))
             }
-            // Only where betas reach: a Mac running a beta or on the channel.
-            // Nobody else has a beta to turn on, so for them it's absent.
+            // Only where betas reach: a Mac running a beta or ever on the
+            // channel. Nobody else has a beta to turn on, so for them it's
+            // absent; once there, it stays, so off can be turned back on.
             if showsBetaRow {
                 Hairline()
                 SwitchRow(title: "Beta updates", note: "New versions a few days before everyone else.",

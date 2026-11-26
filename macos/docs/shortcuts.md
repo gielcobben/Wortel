@@ -112,10 +112,11 @@ Three controls, and each means one thing:
   Changes, History, Files.
 - **The two split buttons** at the right end of the titlebar make a new split
   beside or under the split you're in. They are ⌘D and ⇧⌘D as buttons.
-- **"…"** beside them is the session itself: rename, pin, close and the rest
+- **"…"** at the edge is the session itself: rename, pin, close and the rest
   of what its sidebar row's menu has.
 
-The button before those three shows what the session is running.
+The button between the split buttons and "…" shows what the session is
+running.
 
 **Nothing is hidden.** A split is on screen while it holds a tab and gone when
 it holds none. Until 2026-11-26, ⌥⌘B and ⌘J hid the side column and the

@@ -379,8 +379,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   splits, and every "+" offered the two splits again. Now each control
   means one thing. **A row's "+"** adds a tab to that split and only that:
   New Terminal, New Browser, Changes, History, Files. **Two buttons at the
-  trailing end of the titlebar**, between what the session is running and
-  the "…", make a split: Split Right (⌘D) and Split Down (⇧⌘D). They send
+  trailing end of the titlebar**, before what the session is running and
+  the "…" at the edge (the owner's order: the layout's two, then the
+  session's two), make a split: Split Right (⌘D) and Split Down (⇧⌘D). They send
   the menu's own actions, so the button and the key are one thing: the
   split you are in, the same room check, the same sound when there is no
   room. **The "…"** is the session itself and nothing else, the menu its

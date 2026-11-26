@@ -316,7 +316,9 @@ final class WindowControls: NSView {
         history.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toggle)
         addSubview(history)
-        for button in [running, splitRight, splitDown, more] { trailing.addArrangedSubview(button) }
+        // The two layout buttons, then the session's two with "…" at the
+        // edge, where a "more" button usually is (the owner's order).
+        for button in [splitRight, splitDown, running, more] { trailing.addArrangedSubview(button) }
         trailing.spacing = 4
         trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(trailing)

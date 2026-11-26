@@ -34,9 +34,9 @@ one.
   Back and Forward. They are placed on every layout pass and split resize
   (the first real layout at launch sends no resize) so the arrows ride the
   sidebar's edge as it opens and closes (`WindowControls.place`).
-- **The trailing end**: four buttons. What the session is running
-  (`RunningButton`), Split Right and Split Down (`splitRight`, `splitDown`),
-  and the session's "…" menu. `TitleBarController` wires them. The two split
+- **The trailing end**: four buttons, in the owner's order: Split Right and
+  Split Down (`splitRight`, `splitDown`), then what the session is running
+  (`RunningButton`) and the session's "…" menu at the edge. `TitleBarController` wires them. The two split
   buttons send `AppDelegate.splitRight` and `splitDown`, the menu's own
   actions, so they split the split you are in with the same room check and
   the same sound as ⌘D. The "…" is `SessionActions.menu`, the sidebar row's

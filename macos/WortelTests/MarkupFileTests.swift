@@ -25,21 +25,27 @@ final class MarkupFileTests: XCTestCase {
         (1...count).map { "let line\($0) = \($0)" }
     }
 
-    /// A window with a view filling it, and the layer over that.
-    private func show<Content: View>(_ content: Content, size: NSSize = NSSize(width: 600, height: 400)) -> NSHostingView<Content> {
+    /// A window that is never shown, with `content` in it and the layer
+    /// over that.
+    private func mount(_ content: NSView, size: NSSize) {
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
                           backing: .buffered, defer: false)
         // Or closing it releases it once more than the test owns it.
         window.isReleasedWhenClosed = false
         let root = NSView(frame: NSRect(origin: .zero, size: size))
         window.contentView = root
-        let host = NSHostingView(rootView: content)
-        host.frame = root.bounds
-        host.autoresizingMask = [.width, .height]
-        root.addSubview(host)
+        root.addSubview(content)
         layer = Layer(frame: root.bounds)
         layer.autoresizingMask = [.width, .height]
         root.addSubview(layer)
+    }
+
+    /// A window with a view filling it, and the layer over that.
+    private func show<Content: View>(_ content: Content, size: NSSize = NSSize(width: 600, height: 400)) -> NSHostingView<Content> {
+        let host = NSHostingView(rootView: content)
+        host.frame = NSRect(origin: .zero, size: size)
+        host.autoresizingMask = [.width, .height]
+        mount(host, size: size)
         settle()
         return host
     }
@@ -223,58 +229,6 @@ final class MarkupFileTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * 6, accuracy: 0.5)
     }
 
-    func testAMarkOnRenderedMarkdownFindsItsBlockWhenTheFileWasRewrittenWhileMarkUpWasOff() throws {
-        // The stack as `MarkdownView` signs it in: a view as large as the
-        // blocks, in a scroll view, and each block's frame in it.
-        let size = NSSize(width: 600, height: 400)
-        window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
-                          backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        let root = NSView(frame: NSRect(origin: .zero, size: size))
-        window.contentView = root
-        let scroll = NSScrollView(frame: root.bounds)
-        let stack = Layer(frame: NSRect(x: 0, y: 0, width: 600, height: 2000))
-        scroll.documentView = stack
-        root.addSubview(scroll)
-        layer = Layer(frame: root.bounds)
-        root.addSubview(layer)
-        settle()
-
-        var texts = ["# Title", "one", "two", "three", "four", "five"]
-        func signIn() {
-            let held = texts
-            views.stack = stack
-            views.blockFrames = Dictionary(uniqueKeysWithValues: held.indices.map {
-                ($0, CGRect(x: 20, y: CGFloat($0) * 50, width: 500, height: 40))
-            })
-            views.blockKey = { held.indices.contains($0) ? held[$0].hashValue : nil }
-            views.changed()
-        }
-        signIn()
-        let surface: any MarkupSurface = BlocksMarkupSurface(views: views)
-        surface.attach(to: layer)
-        surface.activate(moved: {})
-        // On "three", the fourth block.
-        XCTAssertNotNil(tie(surface, 1, to: CGRect(x: 40, y: 155, width: 100, height: 20)))
-        let before = try XCTUnwrap(surface.placement(of: 1)).origin.y
-
-        // Off with the note kept, and two paragraphs added above it. The
-        // document says where its blocks are before the layer is back in
-        // its window, so no word of the change comes after.
-        surface.deactivate(forgetting: false)
-        texts.insert(contentsOf: ["new", "newer"], at: 1)
-        signIn()
-        surface.activate(moved: {})
-        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, before + 100, accuracy: 0.5)
-
-        // And when the paragraph itself is gone, the mark has no place.
-        surface.deactivate(forgetting: false)
-        texts.removeAll { $0 == "three" }
-        signIn()
-        surface.activate(moved: {})
-        XCTAssertNil(surface.placement(of: 1))
-    }
-
     func testAMarkGrowsWithTheText() throws {
         let host = show(diff(numbered(40)))
         let surface: any MarkupSurface = LinesMarkupSurface(views: views)
@@ -356,6 +310,53 @@ final class MarkupFileTests: XCTestCase {
         XCTAssertEqual(row(180).a, 255)
     }
 
+    // MARK: - Rendered Markdown
+
+    func testAMarkOnRenderedMarkdownFindsItsBlockWhenTheFileWasRewrittenWhileMarkUpWasOff() throws {
+        // The stack as `MarkdownView` signs it in: a view as large as the
+        // blocks, in a scroll view, and each block's frame in it.
+        let size = NSSize(width: 600, height: 400)
+        let scroll = NSScrollView(frame: NSRect(origin: .zero, size: size))
+        let stack = Layer(frame: NSRect(x: 0, y: 0, width: 600, height: 2000))
+        scroll.documentView = stack
+        mount(scroll, size: size)
+        settle()
+
+        var texts = ["# Title", "one", "two", "three", "four", "five"]
+        func signIn() {
+            let held = texts
+            views.stack = stack
+            views.blockFrames = Dictionary(uniqueKeysWithValues: held.indices.map {
+                ($0, CGRect(x: 20, y: CGFloat($0) * 50, width: 500, height: 40))
+            })
+            views.blockKey = { held.indices.contains($0) ? held[$0].hashValue : nil }
+            views.changed()
+        }
+        signIn()
+        let surface: any MarkupSurface = BlocksMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+        // On "three", the fourth block.
+        XCTAssertNotNil(tie(surface, 1, to: CGRect(x: 40, y: 155, width: 100, height: 20)))
+        let before = try XCTUnwrap(surface.placement(of: 1)).origin.y
+
+        // Off with the note kept, and two paragraphs added above it. The
+        // document says where its blocks are before the layer is back in
+        // its window, so no word of the change comes after.
+        surface.deactivate(forgetting: false)
+        texts.insert(contentsOf: ["new", "newer"], at: 1)
+        signIn()
+        surface.activate(moved: {})
+        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, before + 100, accuracy: 0.5)
+
+        // And when the paragraph itself is gone, the mark has no place.
+        surface.deactivate(forgetting: false)
+        texts.removeAll { $0 == "three" }
+        signIn()
+        surface.activate(moved: {})
+        XCTAssertNil(surface.placement(of: 1))
+    }
+
     // MARK: - An image
 
     private func picture(_ width: Int, _ height: Int) throws -> NSImage {
@@ -379,17 +380,10 @@ final class MarkupFileTests: XCTestCase {
 
     func testAMarkOnAnImageIsInThePicturesOwnPointsAndItsPictureInItsOwnPixels() throws {
         // A 400 by 200 picture in a view half that size: shown at half.
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 300), styleMask: [.borderless],
-                          backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
-        window.contentView = root
         let imageView = NSImageView(frame: NSRect(x: 50, y: 100, width: 200, height: 100))
         imageView.imageScaling = .scaleProportionallyDown
         imageView.image = try picture(400, 200)
-        root.addSubview(imageView)
-        layer = Layer(frame: root.bounds)
-        root.addSubview(layer)
+        mount(imageView, size: NSSize(width: 300, height: 300))
         views.image = imageView
 
         let surface: any MarkupSurface = ImageMarkupSurface(views: views)
@@ -424,9 +418,7 @@ final class MarkupFileTests: XCTestCase {
         imageView.frame = NSRect(x: 50, y: 100, width: 100, height: 50)
         XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).scale, 0.25)
     }
-}
 
-extension MarkupFileTests {
     func testAPictureThatDeclaresAnEnormousSizeIsNotDrawnAtIt() throws {
         // What an SVG can say of itself: 100,000 points a side. Drawn at
         // twice that it would be a bitmap of 160 GB.
@@ -435,18 +427,10 @@ extension MarkupFileTests {
             rect.fill()
             return true
         }
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 300), styleMask: [.borderless],
-                          backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
-        window.contentView = root
-        let imageView = NSImageView(frame: root.bounds)
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
         imageView.imageScaling = .scaleProportionallyDown
         imageView.image = huge
-        root.addSubview(imageView)
-        layer = Layer(frame: root.bounds)
-        root.addSubview(layer)
-        let views = MarkupViews()
+        mount(imageView, size: imageView.frame.size)
         views.image = imageView
         let surface: any MarkupSurface = ImageMarkupSurface(views: views)
         surface.attach(to: layer)
@@ -461,9 +445,7 @@ extension MarkupFileTests {
     }
 
     func testAPictureLargerThanAllowedIsMadeSmaller() throws {
-        let context = try XCTUnwrap(CGContext(data: nil, width: 6000, height: 300, bitsPerComponent: 8, bytesPerRow: 0,
-                                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let context = try XCTUnwrap(CGContext.picture(width: 6000, height: 300))
         let wide = try XCTUnwrap(context.makeImage())
         let fitted = try XCTUnwrap(ViewPicture.onBackground(wide, CGColor(gray: 1, alpha: 1)))
         XCTAssertEqual(fitted.width, ViewPicture.mostPixels)
@@ -471,28 +453,5 @@ extension MarkupFileTests {
         // One that fits is left at its size.
         let small = try XCTUnwrap(wide.cropping(to: CGRect(x: 0, y: 0, width: 80, height: 60)))
         XCTAssertEqual(ViewPicture.onBackground(small, CGColor(gray: 1, alpha: 1))?.width, 80)
-    }
-}
-
-/// A picture's pixels, counted from the top-left.
-private struct Pixels {
-    struct Colour: Equatable { let r, g, b, a: UInt8 }
-    let width: Int, height: Int
-    let data: [UInt8]
-
-    init?(_ image: CGImage) {
-        width = image.width
-        height = image.height
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        guard let context = CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        data = bytes
-    }
-
-    func at(x: Int, y: Int) -> Colour {
-        let index = (min(max(y, 0), height - 1) * width + min(max(x, 0), width - 1)) * 4
-        return Colour(r: data[index], g: data[index + 1], b: data[index + 2], a: data[index + 3])
     }
 }

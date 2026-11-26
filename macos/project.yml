@@ -526,6 +526,8 @@ targets:
       # picture cut from an image's own pixels, and a whole file pictured by
       # scrolling a table that has to be back where it was.
       - path: Wortel/Markup/MarkAnchor.swift
+      - path: Wortel/Markup/MarkupViews.swift
+      - path: Wortel/Markup/ViewPicture.swift
       - path: Wortel/Markup/LinesMarkupSurface.swift
       - path: Wortel/Markup/ImageMarkupSurface.swift
       - path: Wortel/Markup/BlocksMarkupSurface.swift

@@ -3,11 +3,11 @@ import Observation
 
 /// Mark-up for one preview: whether it is on, the marks, and the note.
 ///
-/// One per page (and, later, per file tab and preview window), beside its
-/// find. It holds no view. The layer over the preview (`MarkupOverlayView`)
-/// comes and goes with the tab; this stays, so a note is still there when
-/// the tab comes back, and when mark-up is turned on again after Esc or a
-/// copy. It ends when what it was made over goes elsewhere (`end`).
+/// One per page, file tab and preview window, beside its find. It holds no
+/// view. The layer over the preview (`MarkupOverlayView`) comes and goes
+/// with the tab; this stays, so a note is still there when the tab comes
+/// back, and when mark-up is turned on again after Esc or a copy. It ends
+/// when what it was made over goes elsewhere (`end`).
 ///
 /// **The note's text is what says which marks exist.** A mark is a chip in
 /// the text, so deleting the chip removes the mark, and undoing that brings
@@ -92,10 +92,10 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         onChange()
     }
 
-    /// Esc. A stroke being drawn is dropped first; only with nothing in
-    /// hand does it leave mark-up.
+    /// Esc. What is in hand is let go first, then a selection is dropped;
+    /// only with neither does it leave mark-up (`MarkupOverlayView.stepBack`).
     func escape() {
-        if overlay?.cancelStroke() == true { return }
+        if overlay?.stepBack() == true { return }
         turnOff()
     }
 
@@ -154,14 +154,15 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         if let overlay {
             overlay.insertChip(for: mark)
         } else {
-            text.append(MarkChip.string(for: mark, font: MarkupNoteBar.font))
+            text.append(MarkChip.string(for: mark))
         }
     }
 
     func mark(_ number: Int) -> Mark? { known[number] }
 
-    /// A drawing was moved: it is the same mark, with the same number and
-    /// chip, somewhere else. Its picture is taken again by whoever moved it.
+    /// A drawing was moved or resized: it is the same mark, with the same
+    /// number and chip, somewhere else. Its picture is taken again by
+    /// whoever moved it.
     func replace(_ mark: Mark) {
         guard known[mark.number] != nil else { return }
         var moved = mark
@@ -222,8 +223,9 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         copies += 1
         let suffix = copies > 1 ? "-\(copies)" : ""
         let appearance = overlay?.effectiveAppearance ?? NSApp.effectiveAppearance
-        var colours: [Int: CGColor] = [:]
-        for mark in marks { colours[mark.number] = MarkDrawing.resolved(mark.colour, in: appearance) }
+        let colours = marks.reduce(into: [Int: CGColor]()) {
+            $0[$1.number] = MarkDrawing.resolved($1.colour, in: appearance)
+        }
 
         let finish: (MarkupWhole?) -> Void = { [weak self] whole in
             MarkupStore.queue.async {
@@ -246,7 +248,8 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
                             details.picture = mark.picture.map { folder.appendingPathComponent($0).path }
                             if let placement = whole?.placements[mark.number] {
                                 let box = placement.box(of: mark.shape)
-                                details.bounds = [box.minX, box.minY, box.width, box.height].map { (Double($0) * 10).rounded() / 10 }
+                                details.bounds = [box.minX, box.minY, box.width, box.height]
+                                    .map { (Double($0) * 10).rounded() / 10 }
                             }
                             return details
                         })

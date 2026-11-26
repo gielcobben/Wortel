@@ -37,12 +37,8 @@ enum MarkStroke {
     /// The area a stroke stands for: its outline's box, with some room, and
     /// no further than the view it was drawn in.
     static func area(of points: [CGPoint], within bounds: CGRect) -> CGRect? {
-        guard let first = points.first else { return nil }
-        var box = CGRect(origin: first, size: .zero)
-        for point in points.dropFirst() {
-            box = box.union(CGRect(origin: point, size: .zero))
-        }
-        let roomy = box.insetBy(dx: -(room + width / 2), dy: -(room + width / 2)).intersection(bounds)
+        guard !points.isEmpty else { return nil }
+        let roomy = box(of: points).insetBy(dx: -(room + width / 2), dy: -(room + width / 2)).intersection(bounds)
         return roomy.isNull || roomy.width < 1 || roomy.height < 1 ? nil : roomy.integral
     }
 
@@ -111,6 +107,27 @@ enum MarkStroke {
             }
             return path
         }
+    }
+
+    /// The line through a stroke's points: straight to the first midpoint,
+    /// then a curve through each point to the next midpoint, so a hand's
+    /// corners come out round and the line still passes where it was drawn.
+    static func path(through points: [CGPoint]) -> CGPath {
+        let path = CGMutablePath()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        guard points.count > 2 else {
+            for point in points.dropFirst() { path.addLine(to: point) }
+            // A dot: one point still has to draw (a round cap does the rest).
+            if points.count == 1 { path.addLine(to: first) }
+            return path
+        }
+        for index in 1..<(points.count - 1) {
+            let point = points[index], next = points[index + 1]
+            path.addQuadCurve(to: CGPoint(x: (point.x + next.x) / 2, y: (point.y + next.y) / 2), control: point)
+        }
+        path.addLine(to: points[points.count - 1])
+        return path
     }
 
     /// The area a mark drawn with a pen stands for: its line's box with
@@ -306,25 +323,13 @@ enum MarkStroke {
         for point in points.dropFirst() { box = box.union(CGRect(origin: point, size: .zero)) }
         return box
     }
+}
 
-    /// The line through a stroke's points: straight to the first midpoint,
-    /// then a curve through each point to the next midpoint, so a hand's
-    /// corners come out round and the line still passes where it was drawn.
-    static func path(through points: [CGPoint]) -> CGPath {
-        let path = CGMutablePath()
-        guard let first = points.first else { return path }
-        path.move(to: first)
-        guard points.count > 2 else {
-            for point in points.dropFirst() { path.addLine(to: point) }
-            // A dot: one point still has to draw (a round cap does the rest).
-            if points.count == 1 { path.addLine(to: first) }
-            return path
-        }
-        for index in 1..<(points.count - 1) {
-            let point = points[index], next = points[index + 1]
-            path.addQuadCurve(to: CGPoint(x: (point.x + next.x) / 2, y: (point.y + next.y) / 2), control: point)
-        }
-        path.addLine(to: points[points.count - 1])
-        return path
+extension CGPoint {
+    /// The nearest point that is inside `rect` and `inset` from its edges.
+    /// In a rect too small for that, its near edge wins.
+    func held(in rect: CGRect, inset: CGFloat = 0) -> CGPoint {
+        CGPoint(x: min(max(x, rect.minX + inset), max(rect.maxX - inset, rect.minX + inset)),
+                y: min(max(y, rect.minY + inset), max(rect.maxY - inset, rect.minY + inset)))
     }
 }

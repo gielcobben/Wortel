@@ -32,9 +32,22 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(MarkColour.of(0), .teal)
     }
 
-    func testAnAreaIsCalledByItsNumberAndAnElementByItsName() {
+    func testADrawingIsCalledByWhatItWasDrawnWithAndAnElementByItsName() {
         XCTAssertEqual(mark(2, area: true).reference, "area 2")
         XCTAssertEqual(mark(1).reference, "button \"Download\"")
+        var box = mark(3, area: true)
+        box.pen = .box
+        XCTAssertEqual(box.reference, "box 3")
+        var arrow = mark(4, area: true)
+        arrow.pen = .arrow
+        XCTAssertEqual(arrow.reference, "arrow 4")
+        var marker = mark(5, area: true)
+        marker.pen = .highlighter
+        XCTAssertEqual(marker.reference, "highlight 5")
+        // A picked element has its own name, whatever pen was in hand.
+        var picked = mark(1)
+        picked.pen = .box
+        XCTAssertEqual(picked.reference, "button \"Download\"")
     }
 
     func testAnAreaMovesAndZoomsWithWhatItIsTiedTo() {
@@ -43,6 +56,18 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(placement.box(of: .thing), CGRect(x: 100, y: 200, width: 400, height: 300))
         XCTAssertEqual(placement.box(of: mark(1, area: true).shape), CGRect(x: 115, y: 230, width: 150, height: 75))
         XCTAssertEqual(placement.point(CGPoint(x: 12, y: 24)), CGPoint(x: 118, y: 236))
+        // And the other way: what is drawn in the view is kept in the
+        // units of what it is tied to.
+        XCTAssertEqual(placement.shape(of: CGRect(x: 115, y: 230, width: 150, height: 75), ink: [CGPoint(x: 118, y: 236)]),
+                       mark(1, area: true).shape)
+    }
+
+    func testTheBoxIsWhatIsInHandFirstAndIsDrawnWithTheInksLine() {
+        XCTAssertEqual(MarkupTool.allCases.first, .box)
+        // A solid line as wide as the pen's: a dashed 2pt box was tried for
+        // a day and taken back.
+        XCTAssertEqual(MarkPen.box.width, MarkStroke.width)
+        XCTAssertEqual(MarkPen.box.opacity, 1)
     }
 
     // MARK: - Bringing a mark into view
@@ -125,87 +150,6 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(thinned.last, points.last)
     }
 
-    func testAStrokesAreaHasRoomAndStaysInTheView() {
-        let bounds = CGRect(x: 0, y: 0, width: 300, height: 200)
-        let area = MarkStroke.area(of: [CGPoint(x: 100, y: 100), CGPoint(x: 140, y: 120)], within: bounds)
-        // The ink's box, half its width, and 8 points of room: 9.5 a side,
-        // out to whole points.
-        XCTAssertEqual(area, CGRect(x: 90, y: 90, width: 60, height: 40))
-        // At the corner the room is cut where the view ends.
-        let corner = MarkStroke.area(of: [CGPoint(x: 2, y: 3), CGPoint(x: 30, y: 30)], within: bounds)
-        XCTAssertEqual(corner?.minX, 0)
-        XCTAssertEqual(corner?.minY, 0)
-        XCTAssertNil(MarkStroke.area(of: [], within: bounds))
-    }
-
-    func testALineIsDrawnThroughOnePointAndThroughMany() {
-        XCTAssertFalse(MarkStroke.path(through: [CGPoint(x: 1, y: 1)]).isEmpty)
-        let path = MarkStroke.path(through: [CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10), CGPoint(x: 20, y: 0)])
-        XCTAssertEqual(path.currentPoint, CGPoint(x: 20, y: 0))
-        XCTAssertTrue(MarkStroke.path(through: []).isEmpty)
-    }
-
-    // MARK: - The other pens
-
-    func testAMarkIsCalledByWhatItWasDrawnWith() {
-        var box = mark(3, area: true)
-        box.pen = .box
-        XCTAssertEqual(box.reference, "box 3")
-        var arrow = mark(4, area: true)
-        arrow.pen = .arrow
-        XCTAssertEqual(arrow.reference, "arrow 4")
-        var marker = mark(5, area: true)
-        marker.pen = .highlighter
-        XCTAssertEqual(marker.reference, "highlight 5")
-        // A picked element has its own name, whatever pen was in hand.
-        var picked = mark(1)
-        picked.pen = .box
-        XCTAssertEqual(picked.reference, "button \"Download\"")
-    }
-
-    func testTheBoxIsWhatIsInHandFirstAndIsDrawnWithTheInksLine() {
-        XCTAssertEqual(MarkupTool.allCases.first, .box)
-        // A solid line as wide as the pen's: a dashed 2pt box was tried for
-        // a day and taken back.
-        XCTAssertEqual(MarkPen.box.width, MarkStroke.width)
-        XCTAssertEqual(MarkPen.box.opacity, 1)
-    }
-
-    func testABadgeIsACircleOnItsMarkAndAPinOnceTheMarkHasLeft() {
-        let clip = CGRect(x: 0, y: 0, width: 400, height: 300)
-        let inset = MarkBadge.reach + MarkBadge.margin
-        // In view: on its corner, a circle.
-        let seen = MarkBadge.spot(for: CGPoint(x: 100, y: 100), of: CGRect(x: 100, y: 100, width: 80, height: 40), in: clip)
-        XCTAssertEqual(seen, MarkBadge.Spot(centre: CGPoint(x: 100, y: 100), toward: nil))
-        // Its top scrolled out, the rest showing: held at the edge, still a circle.
-        let cut = MarkBadge.spot(for: CGPoint(x: 100, y: -20), of: CGRect(x: 100, y: -20, width: 80, height: 40), in: clip)
-        XCTAssertEqual(cut, MarkBadge.Spot(centre: CGPoint(x: 100, y: MarkDrawing.badge / 2), toward: nil))
-        // Gone above: a pin, far enough in for its point, pointing straight up.
-        let above = MarkBadge.spot(for: CGPoint(x: 100, y: -200), of: CGRect(x: 100, y: -200, width: 80, height: 40), in: clip)
-        XCTAssertEqual(above.centre, CGPoint(x: 100, y: inset))
-        XCTAssertEqual(try XCTUnwrap(above.toward), -.pi / 2, accuracy: 0.001)
-        // Gone below, and wide: still straight down, not toward its corner.
-        let below = MarkBadge.spot(for: CGPoint(x: 40, y: 500), of: CGRect(x: 40, y: 500, width: 300, height: 40), in: clip)
-        XCTAssertEqual(below.centre, CGPoint(x: 40, y: 300 - inset))
-        XCTAssertEqual(try XCTUnwrap(below.toward), .pi / 2, accuracy: 0.001)
-        // The note bar begins at 220: the pin is above it, not under it.
-        let overBar = MarkBadge.spot(for: CGPoint(x: 40, y: 500), of: CGRect(x: 40, y: 500, width: 300, height: 40),
-                                     in: clip, above: 220)
-        XCTAssertEqual(overBar.centre, CGPoint(x: 40, y: 220 - inset))
-        // A circle on a mark that shows is left where its mark is.
-        let low = MarkBadge.spot(for: CGPoint(x: 40, y: 250), of: CGRect(x: 40, y: 250, width: 80, height: 40),
-                                 in: clip, above: 220)
-        XCTAssertEqual(low, MarkBadge.Spot(centre: CGPoint(x: 40, y: 250), toward: nil))
-        // Gone to the side inside a box that scrolls sideways: toward that side.
-        let beside = MarkBadge.spot(for: CGPoint(x: 600, y: 100), of: CGRect(x: 600, y: 100, width: 80, height: 40), in: clip)
-        XCTAssertEqual(beside.centre.x, 400 - inset)
-        XCTAssertEqual(try XCTUnwrap(beside.toward), 0, accuracy: 0.001)
-        // The point reaches as far as it says and no further.
-        let path = MarkBadge.point(at: CGPoint(x: 50, y: 50), toward: -.pi / 2)
-        XCTAssertEqual(path.boundingBoxOfPath.minY, 50 - MarkBadge.reach, accuracy: 0.01)
-        XCTAssertLessThanOrEqual(path.boundingBoxOfPath.width, MarkDrawing.badge)
-    }
-
     func testEachPenKeepsWhatItNeedsOfADrag() {
         let drag = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 18), CGPoint(x: 60, y: 22), CGPoint(x: 90, y: 40)]
         // The pen keeps the hand's line; a box its corners; an arrow its ends.
@@ -217,7 +161,7 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(MarkStroke.points(for: .box, drawn: [drag[0]], straight: true), [drag[0]])
     }
 
-    func testShiftStraightens() {
+    func testShiftStraightensALineAndLeavesABoxAsItWasDrawn() {
         let start = CGPoint(x: 100, y: 100)
         // Nearly level: level, and as long as it was drawn.
         let level = MarkStroke.snapped(CGPoint(x: 200, y: 108), from: start)
@@ -242,6 +186,13 @@ final class MarkupTests: XCTestCase {
                        [start, CGPoint(x: 40, y: 130)])
     }
 
+    func testALineIsDrawnThroughOnePointAndThroughMany() {
+        XCTAssertFalse(MarkStroke.path(through: [CGPoint(x: 1, y: 1)]).isEmpty)
+        let path = MarkStroke.path(through: [CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10), CGPoint(x: 20, y: 0)])
+        XCTAssertEqual(path.currentPoint, CGPoint(x: 20, y: 0))
+        XCTAssertTrue(MarkStroke.path(through: []).isEmpty)
+    }
+
     func testABoxIsItsCornersAndAnArrowHasAHead() {
         let box = MarkStroke.path(for: .box, through: [CGPoint(x: 50, y: 40), CGPoint(x: 10, y: 10)])
         XCTAssertEqual(box.boundingBoxOfPath, CGRect(x: 10, y: 10, width: 40, height: 30))
@@ -257,6 +208,19 @@ final class MarkupTests: XCTestCase {
         XCTAssertLessThan(short.boundingBoxOfPath.height, 4)
     }
 
+    func testAStrokesAreaHasRoomAndStaysInTheView() {
+        let bounds = CGRect(x: 0, y: 0, width: 300, height: 200)
+        let area = MarkStroke.area(of: [CGPoint(x: 100, y: 100), CGPoint(x: 140, y: 120)], within: bounds)
+        // The ink's box, half its width, and 8 points of room: 9.5 a side,
+        // out to whole points.
+        XCTAssertEqual(area, CGRect(x: 90, y: 90, width: 60, height: 40))
+        // At the corner the room is cut where the view ends.
+        let corner = MarkStroke.area(of: [CGPoint(x: 2, y: 3), CGPoint(x: 30, y: 30)], within: bounds)
+        XCTAssertEqual(corner?.minX, 0)
+        XCTAssertEqual(corner?.minY, 0)
+        XCTAssertNil(MarkStroke.area(of: [], within: bounds))
+    }
+
     func testAHighlightersAreaIsAsWideAsItsStroke() {
         let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
         let line = [CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)]
@@ -266,103 +230,22 @@ final class MarkupTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(marker).height, try XCTUnwrap(pen).height + 8)
     }
 
-    func testEachPenIsDrawnOnAPicture() throws {
-        let placement = MarkPlacement(origin: .zero, size: .zero, scale: 1, clip: .infinite)
-        func drawn(_ pen: MarkPen, _ ink: [CGPoint]) throws -> Pixels {
-            let context = try XCTUnwrap(CGContext(data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
-                                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-            context.setFillColor(CGColor(gray: 1, alpha: 1))
-            context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
-            var mark = Mark(number: 1, shape: .area(box: .zero, ink: ink), name: pen.word, picture: nil, details: MarkDetails())
-            mark.pen = pen
-            MarkDrawing.draw(mark, at: placement, colour: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1),
-                             in: context, height: 100, badge: false)
-            return try XCTUnwrap(Pixels(try XCTUnwrap(context.makeImage())))
-        }
-        let blue = Pixels.Colour(r: 0, g: 0, b: 255), white = Pixels.Colour(r: 255, g: 255, b: 255)
-        // A box: its edge is one solid line, its middle is not drawn.
-        let box = try drawn(.box, [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 60)])
-        for x in 26...74 { XCTAssertEqual(box.at(x: x, y: 20), blue, "a gap in the box's top edge at x \(x)") }
-        XCTAssertEqual(box.at(x: 50, y: 40), white)
-        // An arrow: its line.
-        XCTAssertEqual(try drawn(.arrow, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)]).at(x: 40, y: 50), blue)
-        // A highlighter: wide, and what is under it shows through.
-        let marker = try drawn(.highlighter, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)])
-        let through = marker.at(x: 50, y: 45)
-        XCTAssertEqual(through.b, 255)
-        XCTAssertGreaterThan(through.r, 120)
-        XCTAssertLessThan(through.r, 200)
-        XCTAssertEqual(marker.at(x: 50, y: 30), white)
-    }
-
-    // MARK: - A chip
-
-    /// A colour as it is in an appearance, laid over `ground` where it is
-    /// not opaque.
-    private func rgb(_ colour: NSColor, in appearance: NSAppearance, over ground: CGColor? = nil) -> CGColor {
-        var parts: [CGFloat] = [0, 0, 0, 1]
-        appearance.performAsCurrentDrawingAppearance {
-            let srgb = colour.usingColorSpace(.sRGB)!
-            parts = [srgb.redComponent, srgb.greenComponent, srgb.blueComponent, srgb.alphaComponent]
-        }
-        if let ground, let under = ground.components, under.count >= 3 {
-            let alpha = parts[3]
-            for index in 0..<3 { parts[index] = parts[index] * alpha + under[index] * (1 - alpha) }
-            parts[3] = 1
-        }
-        return CGColor(srgbRed: parts[0], green: parts[1], blue: parts[2], alpha: parts[3])
-    }
-
-    func testASelectedChipIsSolidInItsColourWithWordsThatCanBeRead() throws {
-        for name in [NSAppearance.Name.aqua, .darkAqua] {
-            let appearance = try XCTUnwrap(NSAppearance(named: name))
-            // What the note is read against: the page's raised colour.
-            let ground = rgb(Chrome.raised, in: appearance)
-            for colour in MarkColour.allCases {
-                let ink = rgb(MarkDrawing.color(colour), in: appearance)
-                let what = "\(colour.name) in \(name.rawValue)"
-
-                // At rest: a tint, the number in the mark's colour.
-                let rest = MarkDrawing.chip(colour, selected: false, emphasised: true)
-                XCTAssertEqual(rgb(rest.fill, in: appearance).alpha, 0.15, accuracy: 0.001, what)
-                XCTAssertEqual(rgb(rest.number, in: appearance), ink, what)
-
-                // Selected: solid in the mark's colour, and its number and
-                // name readable on it.
-                let solid = MarkDrawing.chip(colour, selected: true, emphasised: true)
-                XCTAssertEqual(rgb(solid.fill, in: appearance), ink, what)
-                for words in [solid.number, solid.name] {
-                    let on = rgb(words, in: appearance, over: ink)
-                    XCTAssertGreaterThanOrEqual(MarkDrawing.contrast(on, ink), MarkDrawing.leastContrast, what)
-                }
-
-                // Selected with the keyboard elsewhere: still clearly more
-                // than at rest, less than solid, and readable over the bar.
-                let dimmed = MarkDrawing.chip(colour, selected: true, emphasised: false)
-                let alpha = rgb(dimmed.fill, in: appearance).alpha
-                XCTAssertGreaterThan(alpha, 0.3, what)
-                XCTAssertLessThan(alpha, 1, what)
-                let fill = rgb(dimmed.fill, in: appearance, over: ground)
-                for words in [dimmed.number, dimmed.name] {
-                    XCTAssertGreaterThanOrEqual(MarkDrawing.contrast(rgb(words, in: appearance, over: fill), fill), 4.5, what)
-                }
-            }
-        }
-    }
-
-    func testWhiteIsOnTheChipsWhereItCanBeReadAndBlackWhereItCannot() throws {
-        let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
-        for name in [NSAppearance.Name.aqua, .darkAqua] {
-            let appearance = try XCTUnwrap(NSAppearance(named: name))
-            for colour in MarkColour.allCases {
-                let words = rgb(MarkDrawing.chip(colour, selected: true, emphasised: true).name, in: appearance)
-                // Measured on macOS 27: white is 3.2 to 4.2 on these, and
-                // 1.9 to 2.3 on orange, green and teal.
-                let light = [MarkColour.red, .blue, .purple, .pink].contains(colour)
-                XCTAssertEqual(words == white, light, "\(colour.name) in \(name.rawValue)")
-            }
-        }
+    func testAnAreasPictureShowsWhatIsAroundIt() {
+        let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+        // A loop on one word: 60 by 30. The picture is the least it may be,
+        // centred on the loop.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 370, y: 285, width: 60, height: 30), within: bounds),
+                       CGRect(x: 220, y: 220, width: 360, height: 160))
+        // A large area has 32 points more a side.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 100, y: 100, width: 500, height: 300), within: bounds),
+                       CGRect(x: 68, y: 68, width: 564, height: 364))
+        // At the view's corner it keeps its size by moving in.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 0, y: 0, width: 40, height: 40), within: bounds),
+                       CGRect(x: 0, y: 0, width: 360, height: 160))
+        // In a view smaller than the least, it is the view.
+        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 10, y: 10, width: 40, height: 40),
+                                           within: CGRect(x: 0, y: 0, width: 260, height: 120)),
+                       CGRect(x: 0, y: 0, width: 260, height: 120))
     }
 
     // MARK: - Resizing a drawing
@@ -489,6 +372,113 @@ final class MarkupTests: XCTestCase {
                      [.zero, CGPoint(x: hypot(CGFloat(100), CGFloat(10)), y: 0)])
     }
 
+    // MARK: - A badge and its pin
+
+    func testABadgeIsACircleOnItsMarkAndAPinOnceTheMarkHasLeft() {
+        let clip = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let inset = MarkBadge.reach + MarkBadge.margin
+        // In view: on its corner, a circle.
+        let seen = MarkBadge.spot(for: CGPoint(x: 100, y: 100), of: CGRect(x: 100, y: 100, width: 80, height: 40), in: clip)
+        XCTAssertEqual(seen, MarkBadge.Spot(centre: CGPoint(x: 100, y: 100), toward: nil))
+        // Its top scrolled out, the rest showing: held at the edge, still a circle.
+        let cut = MarkBadge.spot(for: CGPoint(x: 100, y: -20), of: CGRect(x: 100, y: -20, width: 80, height: 40), in: clip)
+        XCTAssertEqual(cut, MarkBadge.Spot(centre: CGPoint(x: 100, y: MarkDrawing.badge / 2), toward: nil))
+        // Gone above: a pin, far enough in for its point, pointing straight up.
+        let above = MarkBadge.spot(for: CGPoint(x: 100, y: -200), of: CGRect(x: 100, y: -200, width: 80, height: 40), in: clip)
+        XCTAssertEqual(above.centre, CGPoint(x: 100, y: inset))
+        XCTAssertEqual(try XCTUnwrap(above.toward), -.pi / 2, accuracy: 0.001)
+        // Gone below, and wide: still straight down, not toward its corner.
+        let below = MarkBadge.spot(for: CGPoint(x: 40, y: 500), of: CGRect(x: 40, y: 500, width: 300, height: 40), in: clip)
+        XCTAssertEqual(below.centre, CGPoint(x: 40, y: 300 - inset))
+        XCTAssertEqual(try XCTUnwrap(below.toward), .pi / 2, accuracy: 0.001)
+        // The note bar begins at 220: the pin is above it, not under it.
+        let overBar = MarkBadge.spot(for: CGPoint(x: 40, y: 500), of: CGRect(x: 40, y: 500, width: 300, height: 40),
+                                     in: clip, above: 220)
+        XCTAssertEqual(overBar.centre, CGPoint(x: 40, y: 220 - inset))
+        // A circle on a mark that shows is left where its mark is.
+        let low = MarkBadge.spot(for: CGPoint(x: 40, y: 250), of: CGRect(x: 40, y: 250, width: 80, height: 40),
+                                 in: clip, above: 220)
+        XCTAssertEqual(low, MarkBadge.Spot(centre: CGPoint(x: 40, y: 250), toward: nil))
+        // Gone to the side inside a box that scrolls sideways: toward that side.
+        let beside = MarkBadge.spot(for: CGPoint(x: 600, y: 100), of: CGRect(x: 600, y: 100, width: 80, height: 40), in: clip)
+        XCTAssertEqual(beside.centre.x, 400 - inset)
+        XCTAssertEqual(try XCTUnwrap(beside.toward), 0, accuracy: 0.001)
+        // The point reaches as far as it says and no further.
+        let path = MarkBadge.point(at: CGPoint(x: 50, y: 50), toward: -.pi / 2)
+        XCTAssertEqual(path.boundingBoxOfPath.minY, 50 - MarkBadge.reach, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(path.boundingBoxOfPath.width, MarkDrawing.badge)
+    }
+
+    // MARK: - A chip
+
+    /// A colour as it is in an appearance, laid over `ground` where it is
+    /// not opaque.
+    private func rgb(_ colour: NSColor, in appearance: NSAppearance, over ground: CGColor? = nil) -> CGColor {
+        var parts: [CGFloat] = [0, 0, 0, 1]
+        appearance.performAsCurrentDrawingAppearance {
+            let srgb = colour.usingColorSpace(.sRGB)!
+            parts = [srgb.redComponent, srgb.greenComponent, srgb.blueComponent, srgb.alphaComponent]
+        }
+        if let ground, let under = ground.components, under.count >= 3 {
+            let alpha = parts[3]
+            for index in 0..<3 { parts[index] = parts[index] * alpha + under[index] * (1 - alpha) }
+            parts[3] = 1
+        }
+        return CGColor(srgbRed: parts[0], green: parts[1], blue: parts[2], alpha: parts[3])
+    }
+
+    @MainActor
+    func testASelectedChipIsSolidInItsColourWithWordsThatCanBeRead() throws {
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            // What the note is read against: the page's raised colour.
+            let ground = rgb(Chrome.raised, in: appearance)
+            for colour in MarkColour.allCases {
+                let ink = rgb(MarkDrawing.color(colour), in: appearance)
+                let what = "\(colour.name) in \(name.rawValue)"
+
+                // At rest: a tint, the number in the mark's colour.
+                let rest = MarkDrawing.chip(colour, selected: false, emphasised: true)
+                XCTAssertEqual(rgb(rest.fill, in: appearance).alpha, 0.15, accuracy: 0.001, what)
+                XCTAssertEqual(rgb(rest.number, in: appearance), ink, what)
+
+                // Selected: solid in the mark's colour, and its number and
+                // name readable on it.
+                let solid = MarkDrawing.chip(colour, selected: true, emphasised: true)
+                XCTAssertEqual(rgb(solid.fill, in: appearance), ink, what)
+                for words in [solid.number, solid.name] {
+                    let on = rgb(words, in: appearance, over: ink)
+                    XCTAssertGreaterThanOrEqual(MarkDrawing.contrast(on, ink), MarkDrawing.leastContrast, what)
+                }
+
+                // Selected with the keyboard elsewhere: still clearly more
+                // than at rest, less than solid, and readable over the bar.
+                let dimmed = MarkDrawing.chip(colour, selected: true, emphasised: false)
+                let alpha = rgb(dimmed.fill, in: appearance).alpha
+                XCTAssertGreaterThan(alpha, 0.3, what)
+                XCTAssertLessThan(alpha, 1, what)
+                let fill = rgb(dimmed.fill, in: appearance, over: ground)
+                for words in [dimmed.number, dimmed.name] {
+                    XCTAssertGreaterThanOrEqual(MarkDrawing.contrast(rgb(words, in: appearance, over: fill), fill), 4.5, what)
+                }
+            }
+        }
+    }
+
+    func testWhiteIsOnTheChipsWhereItCanBeReadAndBlackWhereItCannot() throws {
+        let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            for colour in MarkColour.allCases {
+                let words = rgb(MarkDrawing.chip(colour, selected: true, emphasised: true).name, in: appearance)
+                // Measured on macOS 27: white is 3.2 to 4.2 on these, and
+                // 1.9 to 2.3 on orange, green and teal.
+                let light = [MarkColour.red, .blue, .purple, .pink].contains(colour)
+                XCTAssertEqual(words == white, light, "\(colour.name) in \(name.rawValue)")
+            }
+        }
+    }
+
     // MARK: - A mark's row in a file that was rewritten
 
     /// A file as code is: three functions whose last lines read the same.
@@ -584,6 +574,203 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(anchor.index, 4)
     }
 
+    // MARK: - What a page reports
+
+    private func report(marks: [[Double]] = [[1, 100, 200, 50, 40, 0, 0, 800, 600, 0]],
+                        scroll: (Double, Double) = (0, 150)) -> [Any] {
+        ([scroll.0, scroll.1, 800, 600, 800, 6000] + marks.flatMap { $0 }).map { NSNumber(value: $0) }
+    }
+
+    func testAReportIsRead() throws {
+        let read = try XCTUnwrap(WebMarkReport(report()))
+        XCTAssertEqual(read.scroll, CGPoint(x: 0, y: 150))
+        XCTAssertEqual(read.page, CGSize(width: 800, height: 6000))
+        XCTAssertEqual(read.marks[1]?.rect, CGRect(x: 100, y: 200, width: 50, height: 40))
+        XCTAssertEqual(read.marks[1]?.lost, false)
+        // No marks is a report too.
+        XCTAssertEqual(WebMarkReport(report(marks: []))?.marks.count, 0)
+    }
+
+    func testAReportThatIsNotWhatItShouldBeIsRefusedWhole() {
+        XCTAssertNil(WebMarkReport("hello"))
+        XCTAssertNil(WebMarkReport([NSNumber(value: 1)]))
+        // A mark cut short.
+        XCTAssertNil(WebMarkReport(Array(report().dropLast())))
+        // Something that is not a number among the numbers.
+        var mixed = report()
+        mixed[3] = "600"
+        XCTAssertNil(WebMarkReport(mixed))
+        // Not finite, or absurd.
+        XCTAssertNil(WebMarkReport(report(marks: [[1, .nan, 0, 1, 1, 0, 0, 1, 1, 0]])))
+        XCTAssertNil(WebMarkReport(report(marks: [[1, .infinity, 0, 1, 1, 0, 0, 1, 1, 0]])))
+        XCTAssertNil(WebMarkReport(report(marks: [[1, 1e12, 0, 1, 1, 0, 0, 1, 1, 0]])))
+        // A mark with no number, or half of one.
+        XCTAssertNil(WebMarkReport(report(marks: [[0, 0, 0, 1, 1, 0, 0, 1, 1, 0]])))
+        XCTAssertNil(WebMarkReport(report(marks: [[1.5, 0, 0, 1, 1, 0, 0, 1, 1, 0]])))
+        // More marks than anyone draws.
+        let many = (1...(WebMarkReport.most + 1)).map { [Double($0), 0, 0, 1, 1, 0, 0, 1, 1, 0] }
+        XCTAssertNil(WebMarkReport(report(marks: many)))
+    }
+
+    func testAMarkIsWhereThePageSaysTimesTheZoom() throws {
+        let read = try XCTUnwrap(WebMarkReport(report()))
+        // Measured: CSS 100, 200 is at 150, 300 in the view at zoom 1.5.
+        let placement = try XCTUnwrap(read.placement(of: 1, zoom: 1.5))
+        XCTAssertEqual(placement.origin, CGPoint(x: 150, y: 300))
+        XCTAssertEqual(placement.size, CGSize(width: 75, height: 60))
+        XCTAssertEqual(placement.scale, 1.5)
+        XCTAssertEqual(placement.clip, CGRect(x: 0, y: 0, width: 1200, height: 900))
+        XCTAssertNil(read.placement(of: 2, zoom: 1))
+    }
+
+    func testAMarkWhoseElementIsGoneHasNoPlace() throws {
+        let read = try XCTUnwrap(WebMarkReport(report(marks: [[1, 0, 0, 0, 0, 0, 0, 0, 0, 1]])))
+        XCTAssertNil(read.placement(of: 1, zoom: 1))
+        XCTAssertNil(read.placementInPage(of: 1))
+    }
+
+    func testInTheWholePageAMarkIsDownByTheScrollUnlessItStaysPut() throws {
+        let read = try XCTUnwrap(WebMarkReport(report(marks: [
+            [1, 100, 200, 50, 40, 0, 0, 800, 600, 0],
+            [2, 0, 0, 800, 30, 0, 0, 800, 600, 2],
+        ])))
+        XCTAssertEqual(read.placementInPage(of: 1)?.origin, CGPoint(x: 100, y: 350))
+        // A fixed header is at the top of a picture of the whole page.
+        XCTAssertEqual(read.placementInPage(of: 2)?.origin, .zero)
+    }
+
+    func testAScrollAtThePagesEndMovesNothing() throws {
+        let top = try XCTUnwrap(WebMarkReport(report(marks: [], scroll: (0, 0))))
+        XCTAssertFalse(top.wouldScroll(deltaX: 0, deltaY: 12))
+        XCTAssertTrue(top.wouldScroll(deltaX: 0, deltaY: -12))
+        XCTAssertFalse(top.wouldScroll(deltaX: -5, deltaY: 0))
+        let bottom = try XCTUnwrap(WebMarkReport(report(marks: [], scroll: (0, 5400))))
+        XCTAssertFalse(bottom.wouldScroll(deltaX: 0, deltaY: -12))
+        XCTAssertTrue(bottom.wouldScroll(deltaX: 0, deltaY: 12))
+    }
+
+    // MARK: - Pictures
+
+    func testEachPenIsDrawnOnAPicture() throws {
+        let placement = MarkPlacement(origin: .zero, size: .zero, scale: 1, clip: .infinite)
+        func drawn(_ pen: MarkPen, _ ink: [CGPoint]) throws -> Pixels {
+            let context = try XCTUnwrap(CGContext.picture(width: 100, height: 100))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+            var mark = Mark(number: 1, shape: .area(box: .zero, ink: ink), name: pen.word, picture: nil, details: MarkDetails())
+            mark.pen = pen
+            MarkDrawing.draw(mark, at: placement, colour: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1),
+                             in: context, height: 100, badge: false)
+            return try XCTUnwrap(Pixels(try XCTUnwrap(context.makeImage())))
+        }
+        let blue = Pixels.Colour(r: 0, g: 0, b: 255), white = Pixels.Colour(r: 255, g: 255, b: 255)
+        // A box: its edge is one solid line, its middle is not drawn.
+        let box = try drawn(.box, [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 60)])
+        for x in 26...74 { XCTAssertEqual(box.at(x: x, y: 20), blue, "a gap in the box's top edge at x \(x)") }
+        XCTAssertEqual(box.at(x: 50, y: 40), white)
+        // An arrow: its line.
+        XCTAssertEqual(try drawn(.arrow, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)]).at(x: 40, y: 50), blue)
+        // A highlighter: wide, and what is under it shows through.
+        let marker = try drawn(.highlighter, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)])
+        let through = marker.at(x: 50, y: 45)
+        XCTAssertEqual(through.b, 255)
+        XCTAssertGreaterThan(through.r, 120)
+        XCTAssertLessThan(through.r, 200)
+        XCTAssertEqual(marker.at(x: 50, y: 30), white)
+    }
+
+    func testInkIsDrawnOnAnAreasPictureWhereItWasDrawn() throws {
+        let context = try XCTUnwrap(CGContext.picture(width: 120, height: 80))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+        let clean = try XCTUnwrap(context.makeImage())
+        // The picture shows 60 by 40 points of the view from (200, 300), at 2x.
+        let showing = CGRect(x: 200, y: 300, width: 60, height: 40)
+        let placement = MarkPlacement(origin: CGPoint(x: 190, y: 290), size: .zero, scale: 1, clip: .infinite)
+        let area = Mark(number: 1, shape: .area(box: CGRect(x: 10, y: 10, width: 60, height: 40),
+                                                ink: [CGPoint(x: 20, y: 20), CGPoint(x: 60, y: 20)]),
+                        name: "area", picture: nil, details: MarkDetails())
+        let inked = MarkupPicture.inked(clean, showing: showing, mark: area, at: placement,
+                                        colour: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        let pixels = try XCTUnwrap(Pixels(inked))
+        // The ink runs from view (210, 310) to (250, 310): 10 points down the picture.
+        XCTAssertEqual(pixels.at(x: 60, y: 20), .init(r: 0, g: 0, b: 255))
+        XCTAssertEqual(pixels.at(x: 60, y: 60), .init(r: 255, g: 255, b: 255))
+    }
+
+    func testAPageOfAFewScreensIsPicturedWhole() {
+        let size = CGSize(width: 800, height: 6000)
+        let part = MarkupPicture.part(of: size, screen: 600, marks: [CGRect(x: 0, y: 5000, width: 10, height: 10)])
+        XCTAssertEqual(part.rect, CGRect(origin: .zero, size: size))
+        XCTAssertFalse(part.isPart)
+    }
+
+    func testAVeryTallPageIsPicturedAroundItsMarks() {
+        let size = CGSize(width: 800, height: 60_000)
+        let part = MarkupPicture.part(of: size, screen: 600, marks: [
+            CGRect(x: 10, y: 20_000, width: 50, height: 40),
+            CGRect(x: 10, y: 21_000, width: 50, height: 40),
+        ])
+        XCTAssertTrue(part.isPart)
+        XCTAssertEqual(part.rect, CGRect(x: 0, y: 19_400, width: 800, height: 2240))
+        // Near the top there is no screen above to add.
+        let top = MarkupPicture.part(of: size, screen: 600, marks: [CGRect(x: 0, y: 100, width: 10, height: 10)])
+        XCTAssertEqual(top.rect.minY, 0)
+        // With no mark placed there is nothing to be around.
+        XCTAssertFalse(MarkupPicture.part(of: size, screen: 600, marks: []).isPart)
+    }
+
+    func testAPictureIsNeverWiderOrTallerThanAllowed() {
+        XCTAssertEqual(MarkupPicture.density(for: CGSize(width: 800, height: 6000)), 2)
+        XCTAssertEqual(MarkupPicture.density(for: CGSize(width: 1600, height: 900)), 1)
+        XCTAssertEqual(MarkupPicture.density(for: CGSize(width: 800, height: 32_000)), 0.5)
+    }
+
+    func testEveryMarkIsDrawnOnTheWhole() throws {
+        // A white page 100 by 200, a red element outlined and an area inked.
+        let whole = MarkupWhole(draw: { _ in }, size: CGSize(width: 100, height: 200),
+                                visible: CGRect(x: 0, y: 0, width: 100, height: 100),
+                                placements: [
+                                    1: MarkPlacement(origin: CGPoint(x: 20, y: 30), size: CGSize(width: 40, height: 20),
+                                                     scale: 1, clip: .infinite),
+                                    2: MarkPlacement(origin: CGPoint(x: 0, y: 100), size: CGSize(width: 100, height: 100),
+                                                     scale: 1, clip: .infinite),
+                                ])
+        let area = Mark(number: 2, shape: .area(box: CGRect(x: 10, y: 10, width: 60, height: 40),
+                                                ink: [CGPoint(x: 20, y: 30), CGPoint(x: 60, y: 30)]),
+                        name: "area", picture: nil, details: MarkDetails())
+        let red = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), blue = CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)
+        let picture = try XCTUnwrap(MarkupPicture.whole(whole, marks: [mark(1), area], colours: [1: red, 2: blue]))
+        XCTAssertEqual(picture.kind, .all)
+        XCTAssertEqual(picture.missing, [])
+        XCTAssertEqual(picture.image.width, 200)
+        XCTAssertEqual(picture.image.height, 400)
+        let pixels = try XCTUnwrap(Pixels(picture.image))
+        // The outline's top edge, a point above the element: red.
+        XCTAssertEqual(pixels.at(x: 80, y: 58), .init(r: 255, g: 0, b: 0))
+        // Inside the element nothing is drawn.
+        XCTAssertEqual(pixels.at(x: 80, y: 80), .init(r: 255, g: 255, b: 255))
+        // The ink, 130 down the page: blue.
+        XCTAssertEqual(pixels.at(x: 80, y: 260), .init(r: 0, g: 0, b: 255))
+    }
+
+    func testAMarkOutsideWhatIsPicturedIsSaidToBeMissing() throws {
+        // Two marks 30,000 apart in something 60,000 tall: the stretch
+        // pictured is cut at 24 screens, and the second mark is past it.
+        let whole = MarkupWhole(draw: { _ in }, size: CGSize(width: 400, height: 60_000),
+                                visible: CGRect(x: 0, y: 0, width: 400, height: 300),
+                                placements: [
+                                    1: MarkPlacement(origin: CGPoint(x: 10, y: 1000), size: CGSize(width: 50, height: 20),
+                                                     scale: 1, clip: .infinite),
+                                    2: MarkPlacement(origin: CGPoint(x: 10, y: 31_000), size: CGSize(width: 50, height: 20),
+                                                     scale: 1, clip: .infinite),
+                                ])
+        let picture = try XCTUnwrap(MarkupPicture.whole(whole, marks: [mark(1), mark(2), mark(3)], colours: [:]))
+        XCTAssertEqual(picture.kind, .part)
+        // The second is out of the stretch, the third has no place at all.
+        XCTAssertEqual(picture.missing, [2, 3])
+    }
+
     // MARK: - What is copied
 
     private let references: [Int: MarkupNote.Reference] = [
@@ -622,6 +809,12 @@ final class MarkupTests: XCTestCase {
                        "button \"Download\" (/m/1.png) area 2 (/m/2.png)")
         // A mark nobody knows is left out, not printed as a number.
         XCTAssertEqual(sentence([.text("a "), .mark(9), .text("b")]), "a b")
+    }
+
+    func testANoteKeepsItsLines() {
+        let copied = MarkupNote.copied(pieces: [.text("one \n two"), .mark(1)], marks: references,
+                                       subject: .page("x"), whole: nil, details: nil)
+        XCTAssertTrue(copied.hasPrefix("one\ntwo button \"Download\" (/m/1.png)\n\nPage: x"))
     }
 
     func testWhatAPageCallsAnElementCannotCarryAnInstruction() {
@@ -672,47 +865,6 @@ final class MarkupTests: XCTestCase {
                        "The whole (button \"Download\" and area 2 are not in it): /w.png")
         // A mark nobody knows has no name to give.
         XCTAssertEqual(line(.init(path: "/w.png", kind: .view, missing: [9])), "What was in view: /w.png")
-    }
-
-    func testAnAreasPictureShowsWhatIsAroundIt() {
-        let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
-        // A loop on one word: 60 by 30. The picture is the least it may be,
-        // centred on the loop.
-        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 370, y: 285, width: 60, height: 30), within: bounds),
-                       CGRect(x: 220, y: 220, width: 360, height: 160))
-        // A large area has 32 points more a side.
-        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 100, y: 100, width: 500, height: 300), within: bounds),
-                       CGRect(x: 68, y: 68, width: 564, height: 364))
-        // At the view's corner it keeps its size by moving in.
-        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 0, y: 0, width: 40, height: 40), within: bounds),
-                       CGRect(x: 0, y: 0, width: 360, height: 160))
-        // In a view smaller than the least, it is the view.
-        XCTAssertEqual(MarkStroke.pictured(CGRect(x: 10, y: 10, width: 40, height: 40),
-                                           within: CGRect(x: 0, y: 0, width: 260, height: 120)),
-                       CGRect(x: 0, y: 0, width: 260, height: 120))
-    }
-
-    func testAMarkOutsideWhatIsPicturedIsSaidToBeMissing() throws {
-        // Two marks 30,000 apart in something 60,000 tall: the stretch
-        // pictured is cut at 24 screens, and the second mark is past it.
-        let whole = MarkupWhole(draw: { _ in }, size: CGSize(width: 400, height: 60_000),
-                                visible: CGRect(x: 0, y: 0, width: 400, height: 300),
-                                placements: [
-                                    1: MarkPlacement(origin: CGPoint(x: 10, y: 1000), size: CGSize(width: 50, height: 20),
-                                                     scale: 1, clip: .infinite),
-                                    2: MarkPlacement(origin: CGPoint(x: 10, y: 31_000), size: CGSize(width: 50, height: 20),
-                                                     scale: 1, clip: .infinite),
-                                ])
-        let picture = try XCTUnwrap(MarkupPicture.whole(whole, marks: [mark(1), mark(2), mark(3)], colours: [:]))
-        XCTAssertEqual(picture.kind, .part)
-        // The second is out of the stretch, the third has no place at all.
-        XCTAssertEqual(picture.missing, [2, 3])
-    }
-
-    func testANoteKeepsItsLines() {
-        let copied = MarkupNote.copied(pieces: [.text("one \n two"), .mark(1)], marks: references,
-                                       subject: .page("x"), whole: nil, details: nil)
-        XCTAssertTrue(copied.hasPrefix("one\ntwo button \"Download\" (/m/1.png)\n\nPage: x"))
     }
 
     func testTheDetailsFileSaysWhatWasMarkedAndLeavesOutWhatItHasNot() throws {
@@ -790,173 +942,22 @@ final class MarkupTests: XCTestCase {
     }
 
     func testAPictureIsWrittenAsAPNG() throws {
-        let context = try XCTUnwrap(CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
-                                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let context = try XCTUnwrap(CGContext.picture(width: 4, height: 4))
         let url = folder.appendingPathComponent("1.png")
         XCTAssertTrue(MarkupStore.write(try XCTUnwrap(context.makeImage()), to: url))
         let data = try Data(contentsOf: url)
         XCTAssertEqual(Array(data.prefix(4)), [0x89, 0x50, 0x4E, 0x47])
     }
-
-    // MARK: - What a page reports
-
-    private func report(marks: [[Double]] = [[1, 100, 200, 50, 40, 0, 0, 800, 600, 0]],
-                        scroll: (Double, Double) = (0, 150)) -> [Any] {
-        ([scroll.0, scroll.1, 800, 600, 800, 6000] + marks.flatMap { $0 }).map { NSNumber(value: $0) }
-    }
-
-    func testAReportIsRead() throws {
-        let read = try XCTUnwrap(WebMarkReport(report()))
-        XCTAssertEqual(read.scroll, CGPoint(x: 0, y: 150))
-        XCTAssertEqual(read.page, CGSize(width: 800, height: 6000))
-        XCTAssertEqual(read.marks[1]?.rect, CGRect(x: 100, y: 200, width: 50, height: 40))
-        XCTAssertEqual(read.marks[1]?.lost, false)
-        // No marks is a report too.
-        XCTAssertEqual(WebMarkReport(report(marks: []))?.marks.count, 0)
-    }
-
-    func testAReportThatIsNotWhatItShouldBeIsRefusedWhole() {
-        XCTAssertNil(WebMarkReport("hello"))
-        XCTAssertNil(WebMarkReport([NSNumber(value: 1)]))
-        // A mark cut short.
-        XCTAssertNil(WebMarkReport(Array(report().dropLast())))
-        // Something that is not a number among the numbers.
-        var mixed = report()
-        mixed[3] = "600"
-        XCTAssertNil(WebMarkReport(mixed))
-        // Not finite, or absurd.
-        XCTAssertNil(WebMarkReport(report(marks: [[1, .nan, 0, 1, 1, 0, 0, 1, 1, 0]])))
-        XCTAssertNil(WebMarkReport(report(marks: [[1, .infinity, 0, 1, 1, 0, 0, 1, 1, 0]])))
-        XCTAssertNil(WebMarkReport(report(marks: [[1, 1e12, 0, 1, 1, 0, 0, 1, 1, 0]])))
-        // A mark with no number, or half of one.
-        XCTAssertNil(WebMarkReport(report(marks: [[0, 0, 0, 1, 1, 0, 0, 1, 1, 0]])))
-        XCTAssertNil(WebMarkReport(report(marks: [[1.5, 0, 0, 1, 1, 0, 0, 1, 1, 0]])))
-        // More marks than anyone draws.
-        let many = (1...(WebMarkReport.most + 1)).map { [Double($0), 0, 0, 1, 1, 0, 0, 1, 1, 0] }
-        XCTAssertNil(WebMarkReport(report(marks: many)))
-    }
-
-    func testAMarkIsWhereThePageSaysTimesTheZoom() throws {
-        let read = try XCTUnwrap(WebMarkReport(report()))
-        // Measured: CSS 100, 200 is at 150, 300 in the view at zoom 1.5.
-        let placement = try XCTUnwrap(read.placement(of: 1, zoom: 1.5))
-        XCTAssertEqual(placement.origin, CGPoint(x: 150, y: 300))
-        XCTAssertEqual(placement.size, CGSize(width: 75, height: 60))
-        XCTAssertEqual(placement.scale, 1.5)
-        XCTAssertEqual(placement.clip, CGRect(x: 0, y: 0, width: 1200, height: 900))
-        XCTAssertNil(read.placement(of: 2, zoom: 1))
-    }
-
-    func testAMarkWhoseElementIsGoneHasNoPlace() throws {
-        let read = try XCTUnwrap(WebMarkReport(report(marks: [[1, 0, 0, 0, 0, 0, 0, 0, 0, 1]])))
-        XCTAssertNil(read.placement(of: 1, zoom: 1))
-        XCTAssertNil(read.placementInPage(of: 1))
-    }
-
-    func testInTheWholePageAMarkIsDownByTheScrollUnlessItStaysPut() throws {
-        let read = try XCTUnwrap(WebMarkReport(report(marks: [
-            [1, 100, 200, 50, 40, 0, 0, 800, 600, 0],
-            [2, 0, 0, 800, 30, 0, 0, 800, 600, 2],
-        ])))
-        XCTAssertEqual(read.placementInPage(of: 1)?.origin, CGPoint(x: 100, y: 350))
-        // A fixed header is at the top of a picture of the whole page.
-        XCTAssertEqual(read.placementInPage(of: 2)?.origin, .zero)
-    }
-
-    func testAScrollAtThePagesEndMovesNothing() throws {
-        let top = try XCTUnwrap(WebMarkReport(report(marks: [], scroll: (0, 0))))
-        XCTAssertFalse(top.wouldScroll(deltaX: 0, deltaY: 12))
-        XCTAssertTrue(top.wouldScroll(deltaX: 0, deltaY: -12))
-        XCTAssertFalse(top.wouldScroll(deltaX: -5, deltaY: 0))
-        let bottom = try XCTUnwrap(WebMarkReport(report(marks: [], scroll: (0, 5400))))
-        XCTAssertFalse(bottom.wouldScroll(deltaX: 0, deltaY: -12))
-        XCTAssertTrue(bottom.wouldScroll(deltaX: 0, deltaY: 12))
-    }
-
-    // MARK: - The picture of the whole
-
-    func testAPageOfAFewScreensIsPicturedWhole() {
-        let size = CGSize(width: 800, height: 6000)
-        let part = MarkupPicture.part(of: size, screen: 600, marks: [CGRect(x: 0, y: 5000, width: 10, height: 10)])
-        XCTAssertEqual(part.rect, CGRect(origin: .zero, size: size))
-        XCTAssertFalse(part.isPart)
-    }
-
-    func testAVeryTallPageIsPicturedAroundItsMarks() {
-        let size = CGSize(width: 800, height: 60_000)
-        let part = MarkupPicture.part(of: size, screen: 600, marks: [
-            CGRect(x: 10, y: 20_000, width: 50, height: 40),
-            CGRect(x: 10, y: 21_000, width: 50, height: 40),
-        ])
-        XCTAssertTrue(part.isPart)
-        XCTAssertEqual(part.rect, CGRect(x: 0, y: 19_400, width: 800, height: 2240))
-        // Near the top there is no screen above to add.
-        let top = MarkupPicture.part(of: size, screen: 600, marks: [CGRect(x: 0, y: 100, width: 10, height: 10)])
-        XCTAssertEqual(top.rect.minY, 0)
-        // With no mark placed there is nothing to be around.
-        XCTAssertFalse(MarkupPicture.part(of: size, screen: 600, marks: []).isPart)
-    }
-
-    func testAPictureIsNeverWiderOrTallerThanAllowed() {
-        XCTAssertEqual(MarkupPicture.density(for: CGSize(width: 800, height: 6000)), 2)
-        XCTAssertEqual(MarkupPicture.density(for: CGSize(width: 1600, height: 900)), 1)
-        XCTAssertEqual(MarkupPicture.density(for: CGSize(width: 800, height: 32_000)), 0.5)
-    }
-
-    func testEveryMarkIsDrawnOnTheWhole() throws {
-        // A white page 100 by 200, a red element outlined and an area inked.
-        let whole = MarkupWhole(draw: { _ in }, size: CGSize(width: 100, height: 200),
-                                visible: CGRect(x: 0, y: 0, width: 100, height: 100),
-                                placements: [
-                                    1: MarkPlacement(origin: CGPoint(x: 20, y: 30), size: CGSize(width: 40, height: 20),
-                                                     scale: 1, clip: .infinite),
-                                    2: MarkPlacement(origin: CGPoint(x: 0, y: 100), size: CGSize(width: 100, height: 100),
-                                                     scale: 1, clip: .infinite),
-                                ])
-        let area = Mark(number: 2, shape: .area(box: CGRect(x: 10, y: 10, width: 60, height: 40),
-                                                ink: [CGPoint(x: 20, y: 30), CGPoint(x: 60, y: 30)]),
-                        name: "area", picture: nil, details: MarkDetails())
-        let red = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), blue = CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)
-        let picture = try XCTUnwrap(MarkupPicture.whole(whole, marks: [mark(1), area], colours: [1: red, 2: blue]))
-        XCTAssertEqual(picture.kind, .all)
-        XCTAssertEqual(picture.missing, [])
-        XCTAssertEqual(picture.image.width, 200)
-        XCTAssertEqual(picture.image.height, 400)
-        let pixels = try XCTUnwrap(Pixels(picture.image))
-        // The outline's top edge, a point above the element: red.
-        XCTAssertEqual(pixels.at(x: 80, y: 58), .init(r: 255, g: 0, b: 0))
-        // Inside the element nothing is drawn.
-        XCTAssertEqual(pixels.at(x: 80, y: 80), .init(r: 255, g: 255, b: 255))
-        // The ink, 130 down the page: blue.
-        XCTAssertEqual(pixels.at(x: 80, y: 260), .init(r: 0, g: 0, b: 255))
-    }
-
-    func testInkIsDrawnOnAnAreasPictureWhereItWasDrawn() throws {
-        let context = try XCTUnwrap(CGContext(data: nil, width: 120, height: 80, bitsPerComponent: 8, bytesPerRow: 0,
-                                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
-        let clean = try XCTUnwrap(context.makeImage())
-        // The picture shows 60 by 40 points of the view from (200, 300), at 2x.
-        let showing = CGRect(x: 200, y: 300, width: 60, height: 40)
-        let placement = MarkPlacement(origin: CGPoint(x: 190, y: 290), size: .zero, scale: 1, clip: .infinite)
-        let area = Mark(number: 1, shape: .area(box: CGRect(x: 10, y: 10, width: 60, height: 40),
-                                                ink: [CGPoint(x: 20, y: 20), CGPoint(x: 60, y: 20)]),
-                        name: "area", picture: nil, details: MarkDetails())
-        let inked = MarkupPicture.inked(clean, showing: showing, mark: area, at: placement,
-                                        colour: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
-        let pixels = try XCTUnwrap(Pixels(inked))
-        // The ink runs from view (210, 310) to (250, 310): 10 points down the picture.
-        XCTAssertEqual(pixels.at(x: 60, y: 20), .init(r: 0, g: 0, b: 255))
-        XCTAssertEqual(pixels.at(x: 60, y: 60), .init(r: 255, g: 255, b: 255))
-    }
 }
 
-/// A picture's pixels, counted from the top-left.
-private struct Pixels {
-    struct Colour: Equatable { let r, g, b: UInt8 }
+/// A picture's pixels, counted from the top-left. For both files of mark-up
+/// tests.
+struct Pixels {
+    struct Colour: Equatable {
+        let r, g, b: UInt8
+        var a: UInt8 = 255
+    }
+
     let width: Int, height: Int
     let data: [UInt8]
 
@@ -971,8 +972,9 @@ private struct Pixels {
         data = bytes
     }
 
+    /// The pixel at a point, or the nearest one there is.
     func at(x: Int, y: Int) -> Colour {
-        let index = (y * width + x) * 4
-        return Colour(r: data[index], g: data[index + 1], b: data[index + 2])
+        let index = (min(max(y, 0), height - 1) * width + min(max(x, 0), width - 1)) * 4
+        return Colour(r: data[index], g: data[index + 1], b: data[index + 2], a: data[index + 3])
     }
 }

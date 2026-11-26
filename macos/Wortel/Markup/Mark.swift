@@ -160,6 +160,19 @@ struct MarkPlacement: Equatable {
     func point(_ point: CGPoint) -> CGPoint {
         CGPoint(x: origin.x + point.x * scale, y: origin.y + point.y * scale)
     }
+
+    /// A drawn area and its ink, both in the view, as a shape in the units
+    /// of what is placed here, from its origin: the other way from
+    /// `box(of:)` and `point`. That is what lets a drawing move and zoom
+    /// with what it is tied to.
+    func shape(of area: CGRect, ink: [CGPoint]) -> Mark.Shape {
+        func own(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: (point.x - origin.x) / scale, y: (point.y - origin.y) / scale)
+        }
+        return .area(box: CGRect(origin: own(area.origin),
+                                 size: CGSize(width: area.width / scale, height: area.height / scale)),
+                     ink: ink.map(own))
+    }
 }
 
 /// Where a mark has to go for its chip's click to show it.

@@ -21,8 +21,7 @@ final class BlocksMarkupSurface: MarkupSurface {
     private let views: MarkupViews
     private weak var layer: NSView?
     private var moved: (() -> Void)?
-    private var observers: [NSObjectProtocol] = []
-    private weak var observed: NSView?
+    private let watch = ViewWatch()
 
     private struct Tie {
         /// The block, and what it and the blocks around it held.
@@ -39,6 +38,17 @@ final class BlocksMarkupSurface: MarkupSurface {
     /// changed.
     private static let reach = 60
 
+    /// A mark on its way into view, waiting for its block to be built.
+    private struct Revealing {
+        let mark: Mark
+        let covered: CGFloat
+        let until: Date
+    }
+    private var revealing: Revealing?
+    /// How long a mark waits for its block. Past that, a frame reported is
+    /// the reader scrolling on, and is not to be pulled back.
+    private static let landing: TimeInterval = 1
+
     init(views: MarkupViews) {
         self.views = views
     }
@@ -50,6 +60,16 @@ final class BlocksMarkupSurface: MarkupSurface {
     var picksThings: Bool { false }
     /// A code block or a wide table scrolls sideways inside the document.
     var scrollsInside: Bool { true }
+
+    /// The column the document is read in: every block is as wide as the
+    /// measure, so any built block gives it.
+    var readingColumn: CGRect? {
+        guard let frame = views.blockFrames.values.min(by: { $0.width < $1.width }),
+              let origin = toLayer(frame.origin) else { return nil }
+        return CGRect(x: origin.x, y: 0, width: frame.width, height: 0)
+    }
+
+    // MARK: - On and off
 
     func attach(to layer: NSView) { self.layer = layer }
 
@@ -69,27 +89,14 @@ final class BlocksMarkupSurface: MarkupSurface {
     func deactivate(forgetting: Bool) {
         moved = nil
         views.onChange = {}
-        stopObserving()
+        watch.stop()
         if forgetting { ties = [:] }
     }
 
+    /// Watch the clip view that is there now: the document is rebuilt with
+    /// its tab, and the new one has a clip view of its own.
     private func observe() {
-        guard let clip = scroll?.contentView, clip !== observed else { return }
-        stopObserving()
-        observed = clip
-        clip.postsBoundsChangedNotifications = true
-        clip.postsFrameChangedNotifications = true
-        for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: clip, queue: nil) {
-                [weak self] _ in MainActor.assumeIsolated { self?.moved?() }
-            })
-        }
-    }
-
-    private func stopObserving() {
-        observers.forEach(NotificationCenter.default.removeObserver)
-        observers = []
-        observed = nil
+        watch.watch(scroll?.contentView, scrolling: true) { [weak self] in self?.moved?() }
     }
 
     /// Blocks were built, measured or replaced. A mark whose block now
@@ -157,12 +164,14 @@ final class BlocksMarkupSurface: MarkupSurface {
 
     func placement(of number: Int) -> MarkPlacement? {
         guard let tie = ties[number], !tie.lost, let frame = views.blockFrames[tie.block],
-              let origin = toLayer(frame.origin), let layer, let clip = scroll?.contentView else { return nil }
+              let origin = toLayer(frame.origin), let layer, let scroll else { return nil }
         return MarkPlacement(origin: origin, size: frame.size, scale: views.blockScale / tie.scale,
-                             clip: layer.convert(clip.bounds, from: clip).intersection(layer.bounds))
+                             clip: scroll.clip(in: layer).intersection(layer.bounds))
     }
 
     func forget(_ number: Int) { ties[number] = nil }
+
+    // MARK: - Scrolling
 
     /// A mark whose block is built is moved into view here, by its own box.
     /// One whose block is not has no frame to scroll to: the document's
@@ -173,27 +182,16 @@ final class BlocksMarkupSurface: MarkupSurface {
     func reveal(_ mark: Mark, coveredBelow covered: CGFloat) {
         guard let tie = ties[mark.number], !tie.lost else { return }
         revealing = nil
-        if place(mark, coveredBelow: covered) { return }
+        if show(mark, coveredBelow: covered) { return }
         revealing = Revealing(mark: mark, covered: covered, until: Date().addingTimeInterval(Self.landing))
         views.revealBlock(tie.block)
     }
 
-    /// A mark on its way into view, waiting for its block to be built.
-    private struct Revealing {
-        let mark: Mark
-        let covered: CGFloat
-        let until: Date
-    }
-    private var revealing: Revealing?
-    /// How long a mark waits for its block. Past that, a frame reported is
-    /// the reader scrolling on, and is not to be pulled back.
-    private static let landing: TimeInterval = 1
-
     /// Into the room the note bar leaves, when the mark has a place.
-    private func place(_ mark: Mark, coveredBelow covered: CGFloat, moving: Bool = false) -> Bool {
+    private func show(_ mark: Mark, coveredBelow covered: CGFloat, moving: Bool = false) -> Bool {
         guard let layer, let scroll, let placement = placement(of: mark.number) else { return false }
-        let room = MarkReveal.room(layer.bounds.size, coveredBelow: covered).intersection(placement.clip)
-        scroll.slide(by: MarkReveal.shift(placement.box(of: mark.shape), into: room, moving: moving), measuredIn: layer)
+        scroll.reveal(placement.box(of: mark.shape), within: placement.clip, of: layer, coveredBelow: covered,
+                      moving: moving)
         return true
     }
 
@@ -209,28 +207,19 @@ final class BlocksMarkupSurface: MarkupSurface {
         // Not inside SwiftUI's report of the frames: a scroll from there
         // changes the stack while it is being laid out.
         DispatchQueue.main.async { [weak self] in
-            _ = self?.place(waiting.mark, coveredBelow: waiting.covered, moving: true)
+            _ = self?.show(waiting.mark, coveredBelow: waiting.covered, moving: true)
         }
     }
 
-    /// The column the document is read in: every block is as wide as the
-    /// measure, so any built block gives it.
-    var readingColumn: CGRect? {
-        guard let frame = views.blockFrames.values.min(by: { $0.width < $1.width }),
-              let origin = toLayer(frame.origin) else { return nil }
-        return CGRect(x: origin.x, y: 0, width: frame.width, height: 0)
-    }
+    /// A document's marks move in the frame its blocks do. Nothing is ever
+    /// owed.
     func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool { false }
 
     // MARK: - Pictures
 
     func capture(_ rect: CGRect, reply: @escaping (MarkCapture?) -> Void) {
-        guard let layer, let clip = scroll?.contentView else { return reply(nil) }
-        let shown = layer.convert(clip.bounds, from: clip).intersection(rect).integral
-        guard !shown.isNull, let image = ViewPicture.capture(clip, rect: clip.convert(shown, from: layer)) else {
-            return reply(nil)
-        }
-        reply(MarkCapture(image: image, showing: shown))
+        guard let layer, let scroll else { return reply(nil) }
+        reply(ViewPicture.capture(rect, of: scroll, under: layer))
     }
 
     /// The document as it is in view, with the marks that are in view.

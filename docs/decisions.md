@@ -2828,6 +2828,29 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   below is kept above the note bar. And a press on a pin brings its mark
   into view, as its chip's click does: a thing that points somewhere is
   pressed to go there.
+- **2026-11-26. The pen makes a rough shape a clean one on letting go.**
+  The owner used Preview's Sketch pen, which does this, and asked what
+  could be learned from it. Taken: one pen that does most things, so a
+  word is circled, a line is put under a row and an arrow is drawn with
+  no change of tool. Not taken: how sure it is. Preview replaces what it
+  recognises and offers the hand's line back in a palette after every
+  stroke, with no way to turn it off, and that palette is what people
+  complain of. Here a mark says "this", so a wrong guess changes what was
+  said: the recogniser answers only when every point of the stroke lies
+  near the clean shape, and otherwise the hand's line stays. Four shapes
+  (a line, an arrow, a box, an oval) and no star or speech bubble: a mark
+  points, it does not decorate. No palette: Option held keeps the hand's
+  line, and ⌘Z takes the mark back as it does any mark. ⌘Z giving the
+  hand's line back first was looked into and left out
+  (`macos/docs/architecture/mark-up.md`, "The tools": the note's undo
+  stack has no place for a step of its own beside a chip's insertion that
+  does not rest on timing). No oval kind: an oval is the pen's line
+  through the points of one, so nothing that draws, pictures, moves or
+  resizes a mark had to learn a shape. The other tools stay: a box drawn
+  with the box is exact where the pen's is a guess. Apple offers no API
+  for this (its forums say so), so the recogniser is our own geometry, and
+  its thresholds are untuned against a hand until the owner has drawn
+  with it.
 - **2026-11-26. The mark-up adapters' protocol has no extension with
   defaults.** A default in an extension is what a call through
   `any MarkupSurface` runs whatever the adapter implements, which is how

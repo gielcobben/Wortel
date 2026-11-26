@@ -488,6 +488,14 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
                                           fromMainFrame: fromMainFrame, toMainFrame: toMainFrame) {
         case .load:
             // A link that says it is for saving (`<a download>`).
+            //
+            // FIXME(review, 2026-11-26): fix in the next whole-main review.
+            // This skips the rule the response path keeps
+            // (`BrowserDownloadName.saves`): a frame from another site can
+            // put a file in Downloads by clicking an `<a download>` from
+            // script, no person involved. Save it only from the main frame,
+            // or from a frame on the page's own host; cancel otherwise.
+            // Found by a security review of the push of bf68e13.
             decisionHandler(action.shouldPerformDownload ? .download : .allow)
         case .ask:
             decisionHandler(.cancel)

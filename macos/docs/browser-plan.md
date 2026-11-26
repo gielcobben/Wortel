@@ -167,7 +167,10 @@ skill), a review, and the owner's hand check.
 Find in page, downloads that save, and `.html` files as pages. What it does
 is in `architecture/workspace-tabs.md` and `../../docs/decisions.md`. One
 check is still owed, by hand: whether 1Password fills a sign-in form in the
-tab.
+tab. One fix is owed, for the next review of the whole of `main`: an
+`<a download>` clicked from a frame on another site is saved, which the rule
+for a download response forbids (the `FIXME(review)` in
+`BrowserTabs.swift`).
 
 ### 2. Mark-up, everywhere, as pictures
 

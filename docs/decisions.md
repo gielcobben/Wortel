@@ -2817,6 +2817,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   wider. So it is the column and the bar's own padding more either side:
   the note's words start under the document's, which is the alignment that
   can be seen, and the card stands proud of the text.
+- **2026-11-26. A mark that has left the view leaves a pin, and the pin can
+  be pressed.** A badge was already held at the edge its mark scrolled out
+  by, as a circle. The owner asked for a drop there, a pin. It is one only
+  once none of the mark shows, with its point toward the mark, so the
+  shape says something a circle did not: which way, and that the mark is
+  gone and not cut off. Two things were added that were not asked for,
+  because a pin is otherwise wrong in the two commonest cases: pins that
+  would sit on one another are lined up side by side, and a pin for a mark
+  below is kept above the note bar. And a press on a pin brings its mark
+  into view, as its chip's click does: a thing that points somewhere is
+  pressed to go there.
 - **2026-11-25. In rendered Markdown the picture of the whole is what is in
   view.** A page and a file's source are pictured whole, as decided above:
   a page by its PDF, a table by scrolling it a screen at a time inside one

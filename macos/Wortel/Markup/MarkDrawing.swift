@@ -174,6 +174,96 @@ enum MarkDrawing {
     }
 }
 
+/// Where a mark's badge is, and whether it is a pin.
+///
+/// A badge sits on its mark's corner. When the mark is scrolled out of what
+/// it may show in, the badge stays behind at the edge it left by, so the
+/// mark is not lost: and there it is a pin, a drop whose point is toward
+/// the mark. A circle at the edge said a mark was somewhere; the point says
+/// where, and tells a mark that has left from one cut off at the edge.
+enum MarkBadge {
+    /// How far a pin's point is from its middle: a drop a little over one
+    /// and a quarter times as long as it is wide.
+    static let reach: CGFloat = 15.5
+    /// The room between a pin's point and the edge it points at.
+    static let margin: CGFloat = 3
+
+    struct Spot: Equatable {
+        /// The badge's middle.
+        var centre: CGPoint
+        /// The way a pin points, as an angle in the view's own coordinates.
+        /// Nil for a badge on its mark, which is a circle.
+        var toward: CGFloat?
+    }
+
+    /// `corner` is where the badge belongs, `box` the mark, `clip` what the
+    /// mark may show in, all in one view's points. `floor` is where the
+    /// note bar begins: a pin is kept above it, since the bar floats over
+    /// the foot of the preview and a pin under it points at nothing anyone
+    /// can see. A circle is not: it is on its mark, wherever that is.
+    static func spot(for corner: CGPoint, of box: CGRect, in clip: CGRect, above floor: CGFloat = .infinity) -> Spot {
+        func held(_ point: CGPoint, _ inset: CGFloat, in clip: CGRect) -> CGPoint {
+            CGPoint(x: min(max(point.x, clip.minX + inset), max(clip.maxX - inset, clip.minX + inset)),
+                    y: min(max(point.y, clip.minY + inset), max(clip.maxY - inset, clip.minY + inset)))
+        }
+        let shown = box.intersection(clip)
+        // Any of the mark still showing: the badge on its corner, or as
+        // near as the edge lets it, a circle as ever.
+        if !shown.isNull, shown.width > 0.5, shown.height > 0.5 {
+            return Spot(centre: held(corner, MarkDrawing.badge / 2, in: clip), toward: nil)
+        }
+        // Far enough in for the point to show. Toward the nearest of the
+        // mark and not its corner: a mark straight above is pointed
+        // straight up at, however wide it is.
+        var room = clip
+        // Only where that leaves room for a pin at all: a box that scrolls
+        // inside the page may be wholly under the bar.
+        if floor < room.maxY, floor - room.minY >= (reach + margin) * 2 { room.size.height = floor - room.minY }
+        let centre = held(corner, reach + margin, in: room)
+        let nearest = CGPoint(x: min(max(centre.x, box.minX), box.maxX), y: min(max(centre.y, box.minY), box.maxY))
+        guard nearest != centre else { return Spot(centre: centre, toward: nil) }
+        return Spot(centre: centre, toward: atan2(nearest.y - centre.y, nearest.x - centre.x))
+    }
+
+    /// The pin's point: from either side of the badge's circle out to the
+    /// tip. Each side leaves the circle along the circle's own direction
+    /// there, so there is no shoulder where they meet, and comes to the tip
+    /// a little full, as a drop's side is. The circle itself is the badge,
+    /// drawn over this.
+    static func point(at centre: CGPoint, toward angle: CGFloat) -> CGPath {
+        let radius = MarkDrawing.badge / 2
+        // How far round from the tip's side each side leaves the circle:
+        // nearly at its widest, which is what makes it a drop and not a
+        // circle with a spike.
+        let spread: CGFloat = 1.3
+        func on(_ turn: CGFloat, _ distance: CGFloat) -> CGPoint {
+            CGPoint(x: centre.x + cos(turn) * distance, y: centre.y + sin(turn) * distance)
+        }
+        let tip = on(angle, reach)
+        func side(_ way: CGFloat) -> (from: CGPoint, first: CGPoint, second: CGPoint) {
+            let turn = angle + way * spread
+            let from = on(turn, radius)
+            // Along the circle, toward the tip.
+            let along = CGPoint(x: sin(turn) * way, y: -cos(turn) * way)
+            let first = CGPoint(x: from.x + along.x * radius * 0.45, y: from.y + along.y * radius * 0.45)
+            // Back from the tip and out to this side: the side arrives at
+            // the tip from outside the straight line to it, which is what
+            // keeps it full. From nearer the middle it came in hollow, and
+            // the drop was a flame.
+            let back = angle + .pi - way * 0.66
+            let second = CGPoint(x: tip.x + cos(back) * radius * 0.5, y: tip.y + sin(back) * radius * 0.5)
+            return (from, first, second)
+        }
+        let left = side(-1), right = side(1)
+        let path = CGMutablePath()
+        path.move(to: left.from)
+        path.addCurve(to: tip, control1: left.first, control2: left.second)
+        path.addCurve(to: right.from, control1: right.second, control2: right.first)
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// The pictures a note is copied with.
 enum MarkupPicture {
     /// The widest a picture of the whole is, in pixels, and the tallest. A

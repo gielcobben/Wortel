@@ -66,8 +66,9 @@ enum MarkDrawing {
         case .area(_, let ink):
             context.setLineWidth(mark.pen.width * unit)
             context.setAlpha(mark.pen.opacity)
-            // A marker's ends are cut square.
-            if mark.pen == .highlighter { context.setLineCap(.butt) }
+            // A marker's ends are cut square, and so are a box's dashes.
+            if mark.pen == .highlighter || mark.pen.dash != nil { context.setLineCap(.butt) }
+            if let dash = mark.pen.dash { context.setLineDash(phase: 0, lengths: dash.map { $0 * unit }) }
             context.addPath(MarkStroke.path(for: mark.pen, through: ink.map { turned(placement.point($0)) },
                                             unit: unit))
             context.strokePath()

@@ -100,6 +100,12 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(picked.reference, "button \"Download\"")
     }
 
+    func testTheBoxIsWhatIsInHandFirstAndOnlyItIsDashed() {
+        XCTAssertEqual(MarkupTool.allCases.first, .box)
+        XCTAssertNotNil(MarkPen.box.dash)
+        for pen in [MarkPen.pen, .arrow, .highlighter] { XCTAssertNil(pen.dash) }
+    }
+
     func testEachPenKeepsWhatItNeedsOfADrag() {
         let drag = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 18), CGPoint(x: 60, y: 22), CGPoint(x: 90, y: 40)]
         // The pen keeps the hand's line; a box its corners; an arrow its ends.
@@ -172,9 +178,11 @@ final class MarkupTests: XCTestCase {
             return try XCTUnwrap(Pixels(try XCTUnwrap(context.makeImage())))
         }
         let blue = Pixels.Colour(r: 0, g: 0, b: 255), white = Pixels.Colour(r: 255, g: 255, b: 255)
-        // A box: its edge is drawn, its middle is not.
+        // A box: its edge is drawn in dashes, its middle is not drawn.
         let box = try drawn(.box, [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 60)])
-        XCTAssertEqual(box.at(x: 50, y: 20), blue)
+        let along = (26...74).map { box.at(x: $0, y: 20) }
+        XCTAssertTrue(along.contains(blue), "no dash on the box's top edge")
+        XCTAssertTrue(along.contains(white), "the box's top edge is one solid line")
         XCTAssertEqual(box.at(x: 50, y: 40), white)
         // An arrow: its line.
         XCTAssertEqual(try drawn(.arrow, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)]).at(x: 40, y: 50), blue)
@@ -287,13 +295,16 @@ final class MarkupTests: XCTestCase {
 
     func testABoxsCornerMovesAndTheOtherStays() {
         let box = [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 30)]
-        // The top-left handle, half a line out from (10, 10), taken to
-        // (-1.5, 3.5): that corner is at (0, 5), the other where it was.
-        assertPoints(MarkStroke.resized(box, pen: .box, moving: .topLeft, to: CGPoint(x: -1.5, y: 3.5), proportional: false),
+        // A handle is half a line out from its corner, whatever the box's
+        // line is. The top-left one taken to where the corner (0, 5) puts
+        // it: that corner is at (0, 5), the other where it was.
+        let out = MarkPen.box.width / 2
+        assertPoints(MarkStroke.resized(box, pen: .box, moving: .topLeft, to: CGPoint(x: -out, y: 5 - out),
+                                        proportional: false),
                      [CGPoint(x: 0, y: 5), CGPoint(x: 50, y: 30)])
         // A box drawn with no height gets one.
         assertPoints(MarkStroke.resized([CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 10)], pen: .box, moving: .bottomRight,
-                                        to: CGPoint(x: 51.5, y: 31.5), proportional: false),
+                                        to: CGPoint(x: 50 + out, y: 30 + out), proportional: false),
                      [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 30)])
     }
 

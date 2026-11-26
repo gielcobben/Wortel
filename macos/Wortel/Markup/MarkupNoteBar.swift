@@ -319,7 +319,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     /// How far the bar floats from the preview's edges.
     static let margin: CGFloat = 16
     private static let mostLines: CGFloat = 6
-    private static let padding = NSSize(width: 16, height: 14)
+    private static let padding = NSSize(width: inset, height: 14)
 
     static var attributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -335,21 +335,30 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     }
 
     private let session: MarkupSession
-    /// What the bar is made of: the system's glass where there is glass
-    /// (macOS 26 on), and before it the popover material with an edge and a
-    /// shadow of the bar's own, which glass draws for itself.
-    private let backdrop: NSView
-    /// Everything in the bar. Inside the glass's content view: only what is
-    /// there is promised to sit in the glass (`NSGlassEffectView.h`).
+    /// What the bar is made of: the popover material, a ground over it for
+    /// the words, one hairline for an edge and a shadow under it. It was
+    /// the system's glass for a day (docs/decisions.md, 2026-11-25): its
+    /// rim is soft by design, and the owner wanted an edge.
+    private let material = NSVisualEffectView()
+    /// The card: what is cut to the bar's shape, and carries its edge.
+    private let card = FlippedView()
+    /// Everything in the bar.
     private let content = FlippedView()
     /// What the words are read against: the page's raised colour, nearly
-    /// opaque. Glass alone lets a page's text through as a smear behind
-    /// the note's own (tried clear, and tinted toward this colour: both
-    /// unreadable over a paragraph). The glass keeps the edge and the
-    /// shadow; this keeps the sentence legible over anything.
+    /// opaque. A material alone lets a page's text through as a smear
+    /// behind the note's own; this keeps the sentence legible over
+    /// anything, and lets a little of the page through to say it floats.
     private let ground = FilledView(color: Chrome.raised.withAlphaComponent(MarkupNoteBar.groundAlpha))
     private static let groundAlpha: CGFloat = 0.86
-    private let edge = CAShapeLayer()
+    /// The edge: black or white at 16%, a step past the chrome's strongest
+    /// hairline (12%), because this line is the only thing that says where
+    /// the bar ends over a page of any colour.
+    private static let edge = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.16) : NSColor.black.withAlphaComponent(0.16)
+    }
+    /// The bar's own padding either side of its words.
+    static let inset: CGFloat = 16
     private let clear = HoverFillButton.glyph("trash", "Clear Note")
     private let scroll = NSScrollView()
     private let textLayout = NSLayoutManager()
@@ -381,44 +390,31 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         textLayout.addTextContainer(container)
         session.text.addLayoutManager(textLayout)
         textView = NoteTextView(frame: .zero, textContainer: container)
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = Self.corner
-            glass.contentView = content
-            backdrop = glass
-        } else {
-            let material = NSVisualEffectView()
-            material.material = .popover
-            material.blendingMode = .withinWindow
-            material.state = .active
-            material.maskImage = Self.mask(radius: Self.corner)
-            backdrop = material
-        }
+        material.material = .popover
+        material.blendingMode = .withinWindow
+        material.state = .active
         super.init(frame: .zero)
 
         wantsLayer = true
-        addSubview(backdrop)
-        ground.layer?.cornerRadius = Self.corner
-        ground.layer?.cornerCurve = .continuous
-        ground.layer?.masksToBounds = true
-        content.addSubview(ground)
-        if #available(macOS 26.0, *) {
-            // Glass draws its own edge and its own shadow, and deepens the
-            // shadow over text. A border and a shadow added on top fight it.
-        } else {
-            // Through the view, not the layer: AppKit owns a view's layer
-            // and sets its shadow back to none. The first bar had its
-            // shadow on the layer, and so no shadow at all.
-            let shadow = NSShadow()
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
-            shadow.shadowBlurRadius = 24
-            shadow.shadowOffset = NSSize(width: 0, height: -8)
-            self.shadow = shadow
-            addSubview(content)
-            edge.fillColor = nil
-            edge.lineWidth = 1
-            layer?.addSublayer(edge)
-        }
+        // Through the view, not the layer: AppKit owns a view's layer and
+        // sets its shadow back to none. The first bar had its shadow on
+        // the layer, and so no shadow at all.
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+        shadow.shadowBlurRadius = 20
+        shadow.shadowOffset = NSSize(width: 0, height: -6)
+        self.shadow = shadow
+
+        // One shape cuts everything in the card and carries its edge, so
+        // the material, the ground and the line all end on the same pixel.
+        card.wantsLayer = true
+        card.layer?.cornerRadius = Self.corner
+        card.layer?.cornerCurve = .continuous
+        card.layer?.masksToBounds = true
+        addSubview(card)
+        card.addSubview(material)
+        card.addSubview(ground)
+        card.addSubview(content)
 
         textView.delegate = self
         textView.placeholders = placeholders
@@ -450,6 +446,12 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         textView.onHoverMark = { [weak self] in self?.onHoverMark($0) }
         textView.onPickMark = { [weak self] in self?.onPickMark($0) }
         textView.setAccessibilityLabel("Note")
+        // At the end of a note that is come back to. A text view made anew
+        // has its caret at the start, and the next mark's chip goes where
+        // the caret is: after Esc and back, every new mark landed before
+        // the sentence (found by a run over a page, an image and Markdown,
+        // 2026-11-25).
+        textView.setSelectedRange(NSRange(location: session.text.length, length: 0))
 
         scroll.documentView = textView
         scroll.drawsBackground = false
@@ -466,10 +468,6 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         button.action = #selector(copyNote)
         button.setAccessibilityLabel("Copy")
         button.toolTip = "Copy the note (\u{21A9})"
-        if #available(macOS 26.0, *) {
-            // The one thing on the bar that is tinted: what Return does.
-            button.tintProminence = .primary
-        }
         content.addSubview(button)
 
         for tool in MarkupTool.allCases {
@@ -527,6 +525,12 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         update()
         onHeightChange()
         focus()
+    }
+
+    /// The arrow over the bar and its buttons. The preview around it has
+    /// the crosshair, and a button has no pointer of its own to put back.
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)
     }
 
     /// A press on the bar itself, beside the text: the keyboard to the note.
@@ -601,12 +605,13 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
 
     override func layout() {
         super.layout()
-        backdrop.frame = bounds
-        content.frame = bounds
+        card.frame = bounds
+        material.frame = bounds
         ground.frame = bounds
-        edge.frame = bounds
-        edge.path = CGPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
-                           cornerWidth: Self.corner, cornerHeight: Self.corner, transform: nil)
+        content.frame = bounds
+        // One pixel of the screen it is on, whatever its scale: a line of
+        // one point is two pixels on most Macs, and reads as soft.
+        card.layer?.borderWidth = 1 / (window?.backingScaleFactor ?? 2)
         // The row of tools along the bottom, Copy at its far end.
         let row = NSRect(x: 0, y: bounds.height - 10 - Self.toolRow, width: bounds.width, height: Self.toolRow)
         let size = buttonSize
@@ -645,7 +650,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
 
     private func colour() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            edge.strokeColor = NSColor.separatorColor.cgColor
+            card.layer?.borderColor = Self.edge.cgColor
         }
     }
 

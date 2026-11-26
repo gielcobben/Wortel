@@ -2787,6 +2787,30 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   own. What Messages' own compose field measures was looked for and is
   published nowhere; nothing here is copied from it by number. Before
   macOS 26 the bar is the popover material with an edge and a shadow.
+- **2026-11-25. The note bar is not glass after all: a card with a ground,
+  a hairline and a shadow.** The entry above held for a day. On glass the
+  owner could not read the note over a README (the page's text came
+  through behind it), and after a near-opaque ground was put inside the
+  glass, still found the bar's edges soft. Glass's rim is a lit, blurred
+  edge by design, and nothing public sharpens it. So the bar is the
+  popover material, a ground of the page's raised colour at 86%, one line
+  of one screen pixel at 16% and a shadow, all cut by one shape. What was
+  kept from the glass day: the larger size, the 16pt corners, Copy as the
+  one tinted thing.
+- **2026-11-25. The box is the tool in hand to begin with, and it is
+  dashed.** The pen was first because a freehand drag was all there was
+  before there were tools. Asked by the owner whether the box should be:
+  yes. Most marks say "this area", a box says it exactly, and a picture of
+  a rectangle is easier for an agent to read than a loop. Dashed, the
+  owner's idea, which also settles something that was wrong before: a
+  picked element is outlined solid, and a drawn box in a solid line looked
+  the same. The pen is one click away, second in the row.
+- **2026-11-25. Over rendered Markdown the note bar is a little wider than
+  the text.** First built as exactly the reading column. The owner saw it
+  wider (a bug: it took the column only at the first scroll) and liked it
+  wider. So it is the column and the bar's own padding more either side:
+  the note's words start under the document's, which is the alignment that
+  can be seen, and the card stands proud of the text.
 - **2026-11-25. In rendered Markdown the picture of the whole is what is in
   view.** A page and a file's source are pictured whole, as decided above:
   a page by its PDF, a table by scrolling it a screen at a time inside one

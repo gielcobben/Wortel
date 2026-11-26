@@ -131,6 +131,10 @@ final class MarkupOverlayView: NSView {
         session.overlay = self
         surface.attach(to: self)
         surface.activate(moved: { [weak self] in self?.moved() })
+        // Once more when everything around has its place: SwiftUI puts this
+        // view in its window before it has finished placing its neighbours,
+        // and the bar is laid out against them.
+        DispatchQueue.main.async { [weak self] in self?.needsLayout = true }
         marksChanged()
         // The keyboard to the note: mark-up is pointing and then typing.
         DispatchQueue.main.async { [weak self] in
@@ -192,20 +196,9 @@ final class MarkupOverlayView: NSView {
     override func layout() {
         super.layout()
         marksLayer.frame = bounds
-        // Closer to the edges where there is little width to give away.
-        let margin = bounds.width < 420 ? 12 : MarkupNoteBar.margin
-        var width = max(min(bounds.width - margin * 2, MarkupNoteBar.widest), 120)
-        var x = ((bounds.width - width) / 2).rounded()
-        // Where the preview is read in a column of its own (rendered
-        // Markdown), the bar is that column: the same edges as the text it
-        // is about, at whatever size the text is.
-        column = surface.readingColumn
-        if let column, column.width >= 200, column.minX >= margin, column.maxX <= bounds.width - margin {
-            x = column.minX.rounded()
-            width = column.width.rounded()
-        }
-        let height = noteBar.height(forWidth: width)
-        noteBar.frame = NSRect(x: x, y: bounds.height - margin - height, width: width, height: height)
+        let span = barSpan()
+        let height = noteBar.height(forWidth: span.width)
+        noteBar.frame = NSRect(x: span.x, y: bounds.height - span.margin - height, width: span.width, height: height)
         window?.invalidateCursorRects(for: self)
         place()
     }
@@ -263,13 +256,37 @@ final class MarkupOverlayView: NSView {
         CATransaction.commit()
     }
 
-    /// The reading column the bar was last laid out to.
-    private var column: CGRect?
+    /// Where the bar starts and how wide it is.
+    ///
+    /// Centred, 640pt at most. Where the preview is read in a column of
+    /// its own (rendered Markdown), the bar is that column and its own
+    /// padding more either side, so the note's words start under the
+    /// document's and the bar stands a little proud of the text.
+    private func barSpan() -> (x: CGFloat, width: CGFloat, margin: CGFloat) {
+        // Closer to the edges where there is little width to give away.
+        let margin: CGFloat = bounds.width < 420 ? 12 : MarkupNoteBar.margin
+        let room = bounds.width - margin * 2
+        var width = max(min(room, MarkupNoteBar.widest), 120)
+        if let column = surface.readingColumn, column.width >= 200 {
+            let wanted = column.insetBy(dx: -MarkupNoteBar.inset, dy: 0)
+            if wanted.minX >= margin, wanted.maxX <= bounds.width - margin {
+                return (wanted.minX.rounded(), wanted.width.rounded(), margin)
+            }
+            // A window too narrow for that: as much of the width as there is.
+            width = max(min(room, wanted.width), 120)
+        }
+        return (((bounds.width - width) / 2).rounded(), width, margin)
+    }
 
     private func moved() {
         // The column is known once the document has said where its blocks
-        // are, a moment after the layer appears, and moves with ⌘+.
-        if surface.readingColumn != column { needsLayout = true }
+        // are, which may be a moment after the layer appears, and it moves
+        // with ⌘+. Asked each time and compared with where the bar is: the
+        // first version compared the column with the one it was laid out
+        // to, which was the stale one, and the bar jumped to its place at
+        // the first scroll.
+        let span = barSpan()
+        if span.x != noteBar.frame.minX || span.width != noteBar.frame.width { needsLayout = true }
         awaiting = false
         behind?.cancel()
         behind = nil
@@ -538,7 +555,8 @@ final class MarkupOverlayView: NSView {
         strokeLayer.strokeColor = MarkDrawing.resolved(colour, in: effectiveAppearance)
         strokeLayer.lineWidth = pen.width
         strokeLayer.opacity = Float(pen.opacity)
-        strokeLayer.lineCap = pen == .highlighter ? .butt : .round
+        strokeLayer.lineCap = pen == .highlighter || pen.dash != nil ? .butt : .round
+        strokeLayer.lineDashPattern = pen.dash?.map { NSNumber(value: $0) }
         strokeLayer.path = MarkStroke.path(for: pen, through: points)
         strokeLayer.isHidden = false
         CATransaction.commit()
@@ -825,8 +843,9 @@ private final class MarkLayer: CALayer {
         if case .area = mark.shape {
             shape.lineWidth = mark.pen.width
             shape.opacity = Float(mark.pen.opacity)
-            // A marker's ends are cut square.
-            if mark.pen == .highlighter { shape.lineCap = .butt }
+            // A marker's ends are cut square, and so are a box's dashes.
+            if mark.pen == .highlighter || mark.pen.dash != nil { shape.lineCap = .butt }
+            shape.lineDashPattern = mark.pen.dash?.map { NSNumber(value: $0) }
         } else {
             shape.lineWidth = MarkDrawing.outline
         }

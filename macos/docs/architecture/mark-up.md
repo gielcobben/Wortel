@@ -233,31 +233,50 @@ layer comes and goes with the tab, the session stays.
 that brings both back (`textStorage(_:didProcessEditing:…)`), with nothing
 kept in step by hand. A number is never reused while a note lives.
 
-**What the bar is made of.** On macOS 26 and later, the system's glass
-(`NSGlassEffectView`, the regular style, 16pt corners), with everything in
-the bar inside its `contentView`: the header promises nothing about other
-subviews. Glass draws its own edge and its own shadow and deepens the
-shadow over text, so the bar adds neither. The tools on it are plain glyph
-buttons and not glass ones (Apple: "always avoid glass on glass"), and one
-thing is tinted, Copy, which is what Return does. Before macOS 26 it is the
-`.popover` material with a 1pt separator edge and a shadow of its own, set
-through the view's `shadow`: AppKit owns a view's layer and puts a shadow
-set on the layer back to none, which is why the first bar had no shadow at
-all. It floats 16pt from the preview's edges (12 in a column under 420pt),
-640pt wide at most.
+**What the bar is made of.** One card (`MarkupNoteBar.card`): the
+`.popover` material, over it a ground of the page's raised colour at 86%,
+one hairline for an edge and a shadow under it. The card's layer is what
+cuts all of it to the bar's shape (16pt continuous corners) and carries the
+edge as its border, so the material, the ground and the line end on the
+same pixel. The edge is one pixel of the screen it is on (`1 /
+backingScaleFactor`), black or white at 16%. The shadow is set through the
+view's `shadow`: AppKit owns a view's layer and puts a shadow set on the
+layer back to none, which is why the first bar had no shadow at all. Copy
+is the system's default button. The bar floats 16pt from the preview's
+edges (12 in a column under 420pt), 640pt wide at most.
 
-**The words are read against a ground, not against the glass.** Inside the
-glass's content view, under everything, is a fill of the page's raised
-colour at 86%. Glass alone lets a page's text through as a smear behind the
-note's own: seen by the owner over a README, and again in a capture with a
-paragraph under the bar. Clear glass and glass tinted toward the same
-colour were both tried and both unreadable. The glass still gives the edge
-and the shadow.
+It was the system's glass (`NSGlassEffectView`) for a day, and is not any
+more (`docs/decisions.md`, 2026-11-25): glass let a page's text through as
+a smear behind the note's own, and its rim is soft by design where the
+owner wanted an edge.
 
-**Over rendered Markdown the bar is the reading column**: the same left
-and right edges as the text it is about, at whatever size the text is
-(`MarkupSurface.readingColumn`, which only the Markdown adapter answers,
-from any built block's frame). Elsewhere it is centred, 640pt at most.
+**The words are read against the ground, not against the material.** A
+material alone lets a page's text through: seen by the owner over a README,
+and again in a capture with a paragraph under the bar. At 86% a little of
+the page still shows, which is what says the bar floats.
+
+**The pointer over the bar is the arrow** (a cursor rect over the whole
+bar; the text keeps its I-beam). The preview around it has the crosshair,
+and a button has no pointer of its own to put back.
+
+**Over rendered Markdown the bar lines up with the reading column**: the
+column and the bar's own 16pt padding more either side, so the note's
+words start under the document's and the bar stands a little proud of the
+text (`MarkupSurface.readingColumn`, which only the Markdown adapter
+answers, from any built block's frame; `MarkupOverlayView.barSpan`). In a
+window too narrow for that it is centred. Elsewhere it is centred, 640pt
+at most. The column is asked for on every report from the adapter and
+compared with where the bar is. The first version compared it with the
+column the bar was last laid out to, which was the stale one, so the bar
+took its place only at the first scroll. Measured in the real Markdown
+mount at 380, 640, 900 and 1,300pt on 2026-11-25: in place from the first
+look, and unmoved by a scroll.
+
+**The caret of a note come back to is at its end.** A layer made anew has
+a text view made anew, whose caret is at the start, and a new mark's chip
+goes where the caret is: after Esc and back, or a tab come back from
+behind another, every new mark landed before the sentence (found by a run
+over a page, an image and Markdown, 2026-11-25).
 
 **A chip can be clicked.** It is selected as one character is (⌫ removes
 it, typing replaces it), and its mark is brought into view if it is not
@@ -300,8 +319,10 @@ would put a chip in the text with no mark behind it, or take one out.
 ## The tools
 
 Five, in a row along the bottom of the note bar with Copy at its other end
-(`MarkupTool`, `MarkupNoteBar`): the pen, a box, an arrow, a highlighter,
-and after a divider the one that moves a drawing. They are the chrome's own
+(`MarkupTool`, `MarkupNoteBar`): a box, the pen, an arrow, a highlighter,
+and after a divider the one that moves a drawing. The box is first and is
+what is in hand to begin with: most marks say "this area", and a box says
+it exactly where a hand's loop is rough. They are the chrome's own
 glyph buttons (`HoverFillButton`: 28pt, 8pt corners, a 14pt glyph), the one
 in hand lit. The tool is the session's, so it is still in hand when a tab
 comes back.
@@ -311,7 +332,11 @@ comes back.
   line, a box its two corners, an arrow its two ends
   (`MarkStroke.points(for:drawn:straight:)`), and `MarkStroke.path(for:through:)`
   makes the line of them, for the layer on screen and for every picture
-  alike. A highlighter is 14pt wide at 35%, its ends cut square.
+  alike. A highlighter is 14pt wide at 35%, its ends cut square. A box is
+  a 2pt dashed line (6 on, 4 off, `MarkPen.dash`), on screen and in every
+  picture: a picked element is outlined solid, and a drawn box in a solid
+  line was the same rectangle, with nothing to say which of the two is
+  tied to an element.
 - **Shift straightens** whichever is in hand: a line in steps of 45 degrees
   with the pen, the highlighter and the arrow, a square with the box.
 - **A mark is called by what it was drawn with**: "area 2", "box 3",
@@ -431,10 +456,11 @@ There is no repeating timer anywhere in it.
 - The crosshair over a page that sets cursors of its own, and that the
   page stops lighting what the pointer passes.
 - Return while an input method is composing (Japanese, Pinyin).
-- The note bar's material and shadow, and its default button's accent. The
-  bar and the marks were rendered off screen and looked at, light and dark,
-  at 260, 384 and 640pt; such a render draws an inactive window, so it shows
-  the content and not the material.
+- The note bar's default button's accent, its caret and the pointer over
+  it: each needs a key window or a real pointer. The bar and the marks were
+  captured as really drawn on macOS 27 over a paragraph, light and dark, at
+  260, 384 and 640pt, and its corner looked at enlarged; such a capture is
+  of an inactive window.
 - That Claude Code and Codex each read a picture from the cache folder
   without asking.
 

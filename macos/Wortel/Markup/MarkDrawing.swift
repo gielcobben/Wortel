@@ -41,6 +41,71 @@ enum MarkDrawing {
         return resolved
     }
 
+    /// The colours of a mark's chip in the note.
+    struct Chip {
+        var fill: NSColor
+        var number: NSColor
+        var name: NSColor
+    }
+
+    /// How a chip is coloured. At rest, a tint of its mark's colour with the
+    /// number in that colour. Selected, solid in it with its words on top,
+    /// as a token in Mail or an `NSTokenField` is selected: the system's
+    /// selection behind a chip was a block taller and wider than the
+    /// capsule, with the capsule floating in it (the owner, 2026-11-25).
+    /// Selected in a window that is not key, or with the keyboard elsewhere,
+    /// the fill is at 40% and the words are the label's colour, as the
+    /// system dims a selection it is not acting on. 40 and not half: at
+    /// half, white words on orange, green and teal in the dark were under
+    /// 4.5:1 over the bar.
+    static func chip(_ colour: MarkColour, selected: Bool, emphasised: Bool) -> Chip {
+        let ink = color(colour)
+        guard selected else { return Chip(fill: ink.withAlphaComponent(0.15), number: ink, name: .labelColor) }
+        guard emphasised else {
+            return Chip(fill: ink.withAlphaComponent(0.4), number: .labelColor, name: .labelColor)
+        }
+        let words = onSolid(colour)
+        return Chip(fill: ink, number: words, name: words)
+    }
+
+    /// The least contrast white has to have on a solid chip to be used:
+    /// 3:1, WCAG's floor for bold or large text and for a control. No mark
+    /// colour reaches the 4.5 of body text with white (measured on macOS
+    /// 27): red, blue, purple and pink are 3.2 to 4.2 light and dark, and
+    /// get white; orange, green and teal are 1.9 to 2.3, and get black,
+    /// which is over 9 on them.
+    static let leastContrast: CGFloat = 3
+
+    /// The words on a solid chip: white where white can be read on the
+    /// mark's colour, black where it cannot. Worked out for the appearance
+    /// it is drawn in, since the system's colours are lighter in the dark.
+    static func onSolid(_ colour: MarkColour) -> NSColor {
+        NSColor(name: nil) { appearance in
+            var fill = CGColor(gray: 0, alpha: 1)
+            appearance.performAsCurrentDrawingAppearance {
+                fill = color(colour).usingColorSpace(.sRGB)?.cgColor ?? fill
+            }
+            return contrast(CGColor(gray: 1, alpha: 1), fill) >= leastContrast
+                ? .white : NSColor.black.withAlphaComponent(0.85)
+        }
+    }
+
+    /// The contrast of two opaque colours, as WCAG measures it: 1 to 21.
+    static func contrast(_ one: CGColor, _ other: CGColor) -> CGFloat {
+        func luminance(_ colour: CGColor) -> CGFloat {
+            let srgb = colour.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent,
+                                        options: nil) ?? colour
+            let parts = srgb.components ?? [0, 0, 0]
+            let (r, g, b) = parts.count >= 3 ? (parts[0], parts[1], parts[2]) : (parts[0], parts[0], parts[0])
+            func linear(_ value: CGFloat) -> CGFloat {
+                value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+        }
+        let a = luminance(one), b = luminance(other)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
     /// Draw one mark. `placement` is where it is, in units counted from the
     /// top-left of something `height` units tall; `unit` is how many of
     /// those one drawn point should be, so a picture shrunk to fit keeps a
@@ -66,9 +131,8 @@ enum MarkDrawing {
         case .area(_, let ink):
             context.setLineWidth(mark.pen.width * unit)
             context.setAlpha(mark.pen.opacity)
-            // A marker's ends are cut square, and so are a box's dashes.
-            if mark.pen == .highlighter || mark.pen.dash != nil { context.setLineCap(.butt) }
-            if let dash = mark.pen.dash { context.setLineDash(phase: 0, lengths: dash.map { $0 * unit }) }
+            // A marker's ends are cut square.
+            if mark.pen == .highlighter { context.setLineCap(.butt) }
             context.addPath(MarkStroke.path(for: mark.pen, through: ink.map { turned(placement.point($0)) },
                                             unit: unit))
             context.strokePath()

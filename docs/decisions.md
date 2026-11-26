@@ -2805,6 +2805,40 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   owner's idea, which also settles something that was wrong before: a
   picked element is outlined solid, and a drawn box in a solid line looked
   the same. The pen is one click away, second in the row.
+- **2026-11-25. A box is a solid line again.** The dashes held for a day.
+  The owner tried the dashed box and preferred the solid line it was
+  before, having seen both. So a box is the pen's 3pt solid line again; it
+  is still first in the row and in hand to begin with. The cost is what
+  the dashes were for: a drawn box and a picked element are both solid
+  rounded rectangles in the mark's colour. What still tells them apart, in
+  how each is drawn: an element's outline is 2pt and hugs the element from
+  just outside it, with its badge on the element's top-left corner; a box
+  is 3pt, where the hand put it, with its badge where the drag began. And
+  the chip says which: an element by its name, a box by the word "box".
+- **2026-11-25. Shift does not square a box.** Shift while drawing a box
+  made it a square. The owner: holding Shift for an area has no purpose, a
+  rectangle is fine. It now does nothing to a box being drawn, and still
+  straightens the pen, the highlighter and the arrow. Resizing a box by a
+  handle is not drawing one: there Shift still keeps the proportions,
+  which is the system's convention for resizing.
+- **2026-11-25. A click on an element already picked selects its chip.**
+  A second click on the same element made a second mark with a second
+  number on top of the first. It now makes no mark and uses no number;
+  the mark's chip is selected in the note, as a click on the chip would
+  select it, without bringing anything into view (it was just clicked).
+  Only a mark made by picking counts: an element a drawing is tied to can
+  still be picked, since the drawing says "this area" and the pick "this
+  element". A picked mark whose chip was deleted does not count.
+- **2026-11-25. A selected chip is drawn as a selected token, and the
+  pointer over it is the arrow.** A chip was selected as a character is,
+  and the system painted its selection block behind it, taller and wider
+  than the capsule. The owner did not like it. A selected chip is now
+  solid in its mark's colour with its words on it, as Mail's address
+  tokens are, with no selection behind it; words around it keep the
+  system's highlight. White words where white has 3:1 on the colour, black
+  where it does not (orange, green and teal, light and dark). What
+  selection means is unchanged. Over a chip the pointer is the arrow, the
+  owner's call: a chip is clicked, not edited.
 - **2026-11-25. Over rendered Markdown the note bar is a little wider than
   the text.** First built as exactly the reading column. The owner saw it
   wider (a bug: it took the column only at the first scroll) and liked it

@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 /// Mark-up, the parts with no window in them.
@@ -162,10 +163,12 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(picked.reference, "button \"Download\"")
     }
 
-    func testTheBoxIsWhatIsInHandFirstAndOnlyItIsDashed() {
+    func testTheBoxIsWhatIsInHandFirstAndIsDrawnWithTheInksLine() {
         XCTAssertEqual(MarkupTool.allCases.first, .box)
-        XCTAssertNotNil(MarkPen.box.dash)
-        for pen in [MarkPen.pen, .arrow, .highlighter] { XCTAssertNil(pen.dash) }
+        // A solid line as wide as the pen's: a dashed 2pt box was tried for
+        // a day and taken back.
+        XCTAssertEqual(MarkPen.box.width, MarkStroke.width)
+        XCTAssertEqual(MarkPen.box.opacity, 1)
     }
 
     func testEachPenKeepsWhatItNeedsOfADrag() {
@@ -194,11 +197,14 @@ final class MarkupTests: XCTestCase {
         // The pen and the highlighter: one straight line.
         XCTAssertEqual(MarkStroke.points(for: .highlighter, drawn: drag, straight: true).count, 2)
         XCTAssertEqual(MarkStroke.points(for: .pen, drawn: drag, straight: true)[1].y, 100, accuracy: 0.001)
-        // The box: a square, towards where the drag went.
+        // The arrow: level, from where it began.
+        XCTAssertEqual(MarkStroke.points(for: .arrow, drawn: drag, straight: true)[1].y, 100, accuracy: 0.001)
+        // The box takes no notice: a rectangle is what was drawn, and all
+        // an area needs.
         XCTAssertEqual(MarkStroke.points(for: .box, drawn: [start, CGPoint(x: 160, y: 130)], straight: true),
-                       [start, CGPoint(x: 160, y: 160)])
+                       [start, CGPoint(x: 160, y: 130)])
         XCTAssertEqual(MarkStroke.points(for: .box, drawn: [start, CGPoint(x: 40, y: 130)], straight: true),
-                       [start, CGPoint(x: 40, y: 160)])
+                       [start, CGPoint(x: 40, y: 130)])
     }
 
     func testABoxIsItsCornersAndAnArrowHasAHead() {
@@ -240,11 +246,9 @@ final class MarkupTests: XCTestCase {
             return try XCTUnwrap(Pixels(try XCTUnwrap(context.makeImage())))
         }
         let blue = Pixels.Colour(r: 0, g: 0, b: 255), white = Pixels.Colour(r: 255, g: 255, b: 255)
-        // A box: its edge is drawn in dashes, its middle is not drawn.
+        // A box: its edge is one solid line, its middle is not drawn.
         let box = try drawn(.box, [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 60)])
-        let along = (26...74).map { box.at(x: $0, y: 20) }
-        XCTAssertTrue(along.contains(blue), "no dash on the box's top edge")
-        XCTAssertTrue(along.contains(white), "the box's top edge is one solid line")
+        for x in 26...74 { XCTAssertEqual(box.at(x: x, y: 20), blue, "a gap in the box's top edge at x \(x)") }
         XCTAssertEqual(box.at(x: 50, y: 40), white)
         // An arrow: its line.
         XCTAssertEqual(try drawn(.arrow, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)]).at(x: 40, y: 50), blue)
@@ -255,6 +259,75 @@ final class MarkupTests: XCTestCase {
         XCTAssertGreaterThan(through.r, 120)
         XCTAssertLessThan(through.r, 200)
         XCTAssertEqual(marker.at(x: 50, y: 30), white)
+    }
+
+    // MARK: - A chip
+
+    /// A colour as it is in an appearance, laid over `ground` where it is
+    /// not opaque.
+    private func rgb(_ colour: NSColor, in appearance: NSAppearance, over ground: CGColor? = nil) -> CGColor {
+        var parts: [CGFloat] = [0, 0, 0, 1]
+        appearance.performAsCurrentDrawingAppearance {
+            let srgb = colour.usingColorSpace(.sRGB)!
+            parts = [srgb.redComponent, srgb.greenComponent, srgb.blueComponent, srgb.alphaComponent]
+        }
+        if let ground, let under = ground.components, under.count >= 3 {
+            let alpha = parts[3]
+            for index in 0..<3 { parts[index] = parts[index] * alpha + under[index] * (1 - alpha) }
+            parts[3] = 1
+        }
+        return CGColor(srgbRed: parts[0], green: parts[1], blue: parts[2], alpha: parts[3])
+    }
+
+    func testASelectedChipIsSolidInItsColourWithWordsThatCanBeRead() throws {
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            // What the note is read against: the page's raised colour.
+            let ground = rgb(Chrome.raised, in: appearance)
+            for colour in MarkColour.allCases {
+                let ink = rgb(MarkDrawing.color(colour), in: appearance)
+                let what = "\(colour.name) in \(name.rawValue)"
+
+                // At rest: a tint, the number in the mark's colour.
+                let rest = MarkDrawing.chip(colour, selected: false, emphasised: true)
+                XCTAssertEqual(rgb(rest.fill, in: appearance).alpha, 0.15, accuracy: 0.001, what)
+                XCTAssertEqual(rgb(rest.number, in: appearance), ink, what)
+
+                // Selected: solid in the mark's colour, and its number and
+                // name readable on it.
+                let solid = MarkDrawing.chip(colour, selected: true, emphasised: true)
+                XCTAssertEqual(rgb(solid.fill, in: appearance), ink, what)
+                for words in [solid.number, solid.name] {
+                    let on = rgb(words, in: appearance, over: ink)
+                    XCTAssertGreaterThanOrEqual(MarkDrawing.contrast(on, ink), MarkDrawing.leastContrast, what)
+                }
+
+                // Selected with the keyboard elsewhere: still clearly more
+                // than at rest, less than solid, and readable over the bar.
+                let dimmed = MarkDrawing.chip(colour, selected: true, emphasised: false)
+                let alpha = rgb(dimmed.fill, in: appearance).alpha
+                XCTAssertGreaterThan(alpha, 0.3, what)
+                XCTAssertLessThan(alpha, 1, what)
+                let fill = rgb(dimmed.fill, in: appearance, over: ground)
+                for words in [dimmed.number, dimmed.name] {
+                    XCTAssertGreaterThanOrEqual(MarkDrawing.contrast(rgb(words, in: appearance, over: fill), fill), 4.5, what)
+                }
+            }
+        }
+    }
+
+    func testWhiteIsOnTheChipsWhereItCanBeReadAndBlackWhereItCannot() throws {
+        let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            for colour in MarkColour.allCases {
+                let words = rgb(MarkDrawing.chip(colour, selected: true, emphasised: true).name, in: appearance)
+                // Measured on macOS 27: white is 3.2 to 4.2 on these, and
+                // 1.9 to 2.3 on orange, green and teal.
+                let light = [MarkColour.red, .blue, .purple, .pink].contains(colour)
+                XCTAssertEqual(words == white, light, "\(colour.name) in \(name.rawValue)")
+            }
+        }
     }
 
     // MARK: - Resizing a drawing

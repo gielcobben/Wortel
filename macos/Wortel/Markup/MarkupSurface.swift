@@ -52,8 +52,10 @@ protocol MarkupSurface: AnyObject {
 
     /// What a click at `point` would pick, to outline it. Nil for nothing.
     func probe(at point: CGPoint, reply: @escaping (CGRect?) -> Void)
-    /// Tie mark `number` to the thing at `point`.
-    func pick(_ number: Int, at point: CGPoint, reply: @escaping (MarkTie?) -> Void)
+    /// Tie mark `number` to the thing at `point`, unless that thing is
+    /// already one of `picked`: the marks made by picking whose chips are
+    /// in the note. Then the answer is that mark, and `number` is not used.
+    func pick(_ number: Int, at point: CGPoint, unless picked: [Int], reply: @escaping (MarkPick?) -> Void)
     /// Tie mark `number` to what lies under `box`.
     func tie(_ number: Int, to box: CGRect, reply: @escaping (MarkTie?) -> Void)
     /// Where a mark is now, or nil when what it was tied to is gone or has
@@ -138,6 +140,15 @@ struct MarkTie {
     /// What it is called, when it has a name of its own.
     var name: String?
     var details: MarkDetails
+}
+
+/// What a click on a thing came to.
+enum MarkPick {
+    /// A new mark, tied to it.
+    case tied(MarkTie)
+    /// The thing is already this mark, picked before: a second mark on it
+    /// would be two numbers for one thing, so its chip is selected instead.
+    case already(Int)
 }
 
 /// The whole of what is previewed, to draw every mark on.

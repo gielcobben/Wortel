@@ -560,8 +560,7 @@ final class MarkupOverlayView: NSView {
         strokeLayer.strokeColor = MarkDrawing.resolved(colour, in: effectiveAppearance)
         strokeLayer.lineWidth = pen.width
         strokeLayer.opacity = Float(pen.opacity)
-        strokeLayer.lineCap = pen == .highlighter || pen.dash != nil ? .butt : .round
-        strokeLayer.lineDashPattern = pen.dash?.map { NSNumber(value: $0) }
+        strokeLayer.lineCap = pen == .highlighter ? .butt : .round
         strokeLayer.path = MarkStroke.path(for: pen, through: points)
         strokeLayer.isHidden = false
         CATransaction.commit()
@@ -580,10 +579,21 @@ final class MarkupOverlayView: NSView {
 
     private func pick(at point: CGPoint) {
         let number = session.takeNumber()
-        surface.pick(number, at: point) { [weak self] tie in
-            guard let self, self.session.isOn, let tie else {
+        let picked = session.marks.filter { $0.shape == .thing }.map(\.number)
+        surface.pick(number, at: point, unless: picked) { [weak self] answer in
+            guard let self, self.session.isOn, let answer else {
                 self?.session.giveBack(number)
                 return
+            }
+            let tie: MarkTie
+            switch answer {
+            case .tied(let made):
+                tie = made
+            case .already(let mark):
+                // Clicked again: its chip, as a click on the chip would,
+                // and no reveal, since it was just clicked where it is.
+                self.session.giveBack(number)
+                return self.noteBar.selectChip(mark)
             }
             var details = tie.details
             details.kind = "element"
@@ -848,9 +858,8 @@ private final class MarkLayer: CALayer {
         if case .area = mark.shape {
             shape.lineWidth = mark.pen.width
             shape.opacity = Float(mark.pen.opacity)
-            // A marker's ends are cut square, and so are a box's dashes.
-            if mark.pen == .highlighter || mark.pen.dash != nil { shape.lineCap = .butt }
-            shape.lineDashPattern = mark.pen.dash?.map { NSNumber(value: $0) }
+            // A marker's ends are cut square.
+            if mark.pen == .highlighter { shape.lineCap = .butt }
         } else {
             shape.lineWidth = MarkDrawing.outline
         }

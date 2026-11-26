@@ -522,9 +522,17 @@ enum WebMarkupScript {
           var el = deepest(x, y);
           return isRoot(el) ? null : rectOf(el);
         },
-        pick: function (number, x, y) {
+        // An element picked before is that mark again, not a second one.
+        // Only the marks named in `picked` count: a drawing is tied to an
+        // element too, and that element can still be picked.
+        pick: function (number, x, y, picked) {
           var el = deepest(x, y);
           if (isRoot(el)) { return null; }
+          for (var i = 0; picked && i < picked.length; i++) {
+            var was = marks.get(picked[i]);
+            if (was && !was.el.isConnected) { rebind(was); }
+            if (was && was.el === el) { return {already: picked[i]}; }
+          }
           var out = answer(keep(number, el));
           out.details = detailsOf(el);
           return out;

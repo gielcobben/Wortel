@@ -53,7 +53,10 @@ enum MarkStroke {
     /// arrow its two ends.
     ///
     /// `straight` is Shift: a straight line in steps of 45 degrees with the
-    /// pen, the highlighter and the arrow, and a square with the box.
+    /// pen, the highlighter and the arrow. A box takes no notice of it: it
+    /// marks an area, and a square says nothing there a rectangle does not
+    /// (the owner's call, 2026-11-25). Resizing one is another matter:
+    /// Shift keeps its proportions there, as it does everywhere on a Mac.
     static func points(for pen: MarkPen, drawn: [CGPoint], straight: Bool) -> [CGPoint] {
         guard let start = drawn.first, let end = drawn.last, drawn.count > 1 else { return drawn }
         switch pen {
@@ -62,10 +65,7 @@ enum MarkStroke {
         case .arrow:
             return [start, straight ? snapped(end, from: start) : end]
         case .box:
-            guard straight else { return [start, end] }
-            let side = max(abs(end.x - start.x), abs(end.y - start.y))
-            return [start, CGPoint(x: start.x + (end.x < start.x ? -side : side),
-                                   y: start.y + (end.y < start.y ? -side : side))]
+            return [start, end]
         }
     }
 

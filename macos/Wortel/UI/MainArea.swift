@@ -339,29 +339,50 @@ final class MainAreaController: NSViewController {
     }
 
     /// The split under a point in window coordinates, and what a tab let go
-    /// there asks for: a split on one of its edges (with the frame the new
-    /// one would take, in window coordinates), or nil for the split itself.
-    func paneDrop(at point: NSPoint) -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? {
+    /// there asks for: a split on one of its edges, or nil for the split
+    /// itself. With an edge comes the half of the split on that side, in
+    /// window coordinates, for the drag to light up: the half of what is
+    /// under the pointer, as every app with splits shows it, which never
+    /// reaches across a divider. (It was the exact frame the new split would
+    /// end up with for a morning, a third among equals: true, and it lay
+    /// across two splits, which read as a mistake.) An edge with no half is
+    /// one where dropping `tab` would change nothing.
+    func paneDrop(at point: NSPoint, dragging tab: SideTab? = nil)
+        -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? {
         guard view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return nil }
         let local = tree.convert(point, from: nil)
         guard let hit = tree.visibleLeaves.first(where: { $0.frame.contains(local) }) else { return nil }
         let edge = SplitLayout.dropEdge(at: local, in: hit.frame)
-        let half = edge.map { tree.convert(newFrame(beside: hit.leaf, on: $0, in: hit.frame), to: nil) }
+        let half = edge.flatMap { edge -> NSRect? in
+            guard changesSomething(tab, beside: hit.leaf, on: edge) else { return nil }
+            return tree.convert(SplitLayout.half(of: hit.frame, on: edge), to: nil)
+        }
         return (TabRegion(hit.leaf), tree.convert(hit.frame, to: nil), edge, half)
     }
 
-    /// Where a split made on `edge` of `leaf` would be, in the tree's
-    /// coordinates: the layout asked, with a stand-in for the new split, so
-    /// the drag lights up what the drop makes (a third among two equals, not
-    /// half of the one it was dropped on). Half of `frame` when the layout
-    /// can't say, which is while one split is zoomed.
-    private func newFrame(beside leaf: SplitLayout.Leaf, on edge: SplitLayout.Edge, in frame: NSRect) -> NSRect {
-        let standIn = SplitLayout.Leaf.pane(UUID())
-        var layout = git.splitLayout
-        guard git.zoomedRegion == nil, layout.insert(standIn, beside: leaf, on: edge),
-              let made = layout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves[standIn]
-        else { return SplitLayout.half(of: frame, on: edge) }
-        return made
+    /// Whether dropping `tab` on `edge` of `leaf` would move anything. It
+    /// would not when the tab is its split's only one and that split already
+    /// sits on that edge: the split it leaves closes, the one it makes takes
+    /// its place, and every frame is what it was. Asked of the rules
+    /// themselves, on a copy.
+    private func changesSomething(_ tab: SideTab?, beside leaf: SplitLayout.Leaf, on edge: SplitLayout.Edge) -> Bool {
+        guard let tab, let session = git.session, git.zoomedRegion == nil else { return true }
+        let now = session.workspace
+        guard let from = now.region(of: tab), now.tabs(in: from).count == 1 else { return true }
+        var after = now
+        guard let made = after.split(TabRegion(leaf), on: edge, placing: tab, recordsHabit: false) else { return false }
+        let bounds = tree.bounds
+        let before = now.layout.frames(in: bounds, metrics: tree.metrics, hidden: now.hiddenLeaves).leaves
+        let then = after.layout.frames(in: bounds, metrics: tree.metrics, hidden: after.hiddenLeaves).leaves
+        func same(_ a: NSRect, _ b: NSRect) -> Bool {
+            abs(a.minX - b.minX) < 1.5 && abs(a.minY - b.minY) < 1.5
+                && abs(a.width - b.width) < 1.5 && abs(a.height - b.height) < 1.5
+        }
+        guard let was = before[from.leaf], let will = then[made.leaf], same(was, will) else { return true }
+        for (other, frame) in then where other != made.leaf {
+            guard let old = before[other], same(old, frame) else { return true }
+        }
+        return false
     }
 
     func isOnDivider(_ point: NSPoint) -> Bool { tree.isOnDivider(point) }

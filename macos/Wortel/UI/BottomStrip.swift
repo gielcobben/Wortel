@@ -232,7 +232,7 @@ final class TabDragController {
     var paneStrips: () -> [StripTarget] = { [] }
     /// The pane of the main area under a point in window coordinates, and
     /// what a drop there asks for (`MainAreaController.paneDrop`).
-    var paneDrop: (NSPoint) -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? = { _ in nil }
+    var paneDrop: (NSPoint, SideTab?) -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? = { _, _ in nil }
     /// Whether a pane has the room on screen to be split in two on an edge
     /// (`MainAreaController.hasRoom`).
     var hasRoom: (TabRegion, SplitLayout.Edge) -> Bool = { _, _ in true }
@@ -475,11 +475,11 @@ final class TabDragController {
             overlay.marker = overlay.convert(marker, from: nil)
             overlay.zone = nil
         case .zone(_, let area):
-            // The split lights up and says nothing: a tab let go on a split
-            // goes into it, and "Move Here" over the tint only said so twice.
+            // No words on any of these: where it lights up is where the tab
+            // goes, and "Move Here" or "Split Right" over it only said so
+            // twice.
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
-            overlay.zoneLabel = ""
             overlay.zoneEdge = nil
         case .split(_, let edge, let area):
             overlay.marker = nil
@@ -487,25 +487,16 @@ final class TabDragController {
             // The line is on the side of the new pane that meets the old one.
             // The overlay's coordinates are AppKit's: up is a larger y.
             switch edge {
-            case .right:
-                overlay.zoneLabel = draggingFile ? "Open to the Right" : "Split Right"
-                overlay.zoneEdge = .minX
-            case .left:
-                overlay.zoneLabel = draggingFile ? "Open to the Left" : "Split Left"
-                overlay.zoneEdge = .maxX
-            case .down:
-                overlay.zoneLabel = draggingFile ? "Open Below" : "Split Down"
-                overlay.zoneEdge = .maxY
-            case .up:
-                overlay.zoneLabel = draggingFile ? "Open Above" : "Split Up"
-                overlay.zoneEdge = .minY
+            case .right: overlay.zoneEdge = .minX
+            case .left: overlay.zoneEdge = .maxX
+            case .down: overlay.zoneEdge = .maxY
+            case .up: overlay.zoneEdge = .minY
             }
         case .swap(let leading, let area):
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
             // Only the session's own tab lands here: its terminal trades
             // sides with the side split.
-            overlay.zoneLabel = leading ? "Move Terminal to the Right" : "Move Terminal to the Left"
             overlay.zoneEdge = leading ? .minX : .maxX
         case .tearOff, .otherWindow, nil:
             overlay.marker = nil
@@ -550,7 +541,7 @@ final class TabDragController {
     }
 
     private func zoneLanding(tab: SideTab, point: NSPoint) -> Target? {
-        guard let hit = paneDrop(point) else { return nil }
+        guard let hit = paneDrop(point, tab) else { return nil }
         // The session's own tab never goes into another split's row and is
         // never split off: it is the main row's anchor, as the chat is in
         // the ChatGPT app. Dropped on the side split (its row or its page),
@@ -568,6 +559,9 @@ final class TabDragController {
         guard tab.fits(hit.region) || (hit.edge != nil && tab != .session) else { return nil }
         // A pane too small to be two has no edges to split on: all of it is
         // its middle.
+        // An edge where a split would leave everything where it is has
+        // nothing to offer (`MainAreaController.paneDrop`), its middle neither.
+        if hit.edge != nil, hit.half == nil { return nil }
         if let edge = hit.edge, let half = hit.half, hasRoom(hit.region, edge) {
             // A pane split from its own only tab would be the same pane.
             if regionOf(tab) == hit.region, tabCount(hit.region) <= 1 { return nil }
@@ -668,7 +662,6 @@ private final class TabDragOverlay: NSView {
     var pointer = NSPoint.zero
     var marker: NSRect?
     var zone: NSRect?
-    var zoneLabel = ""
     var zoneEdge: NSRectEdge? = .maxY
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -712,14 +705,6 @@ private final class TabDragOverlay: NSView {
             case .minY: NSRect(x: zone.minX, y: zone.minY, width: zone.width, height: 1).fill()
             default: break
             }
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-            let text = zoneLabel as NSString
-            let size = text.size(withAttributes: attributes)
-            text.draw(at: NSPoint(x: zone.midX - size.width / 2, y: zone.midY - size.height / 2),
-                      withAttributes: attributes)
         }
         if let marker {
             accent.setFill()

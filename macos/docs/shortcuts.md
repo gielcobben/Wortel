@@ -192,7 +192,7 @@ area stood for the side column and its lower quarter for the strip. They no
 longer do: to put a tab in the side column, drop it on the side column, or on
 its row. While the side column is hidden, a tab's right-click menu (Move to
 Side Column) or ⌃⌘ and an arrow puts it there. A split too small to be two has no edges, only a middle. A file
-dragged out of Changes or Files lands the same way (an edge says "Open to the Right" and so on), except over a terminal, which takes its path. The session's own
+dragged out of Changes or Files lands the same way, except over a terminal, which takes its path. The session's own
 tab goes nowhere but its own row. Dropped on the side column, it trades
 sides with it.
 

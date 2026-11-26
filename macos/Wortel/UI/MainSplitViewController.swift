@@ -155,7 +155,7 @@ final class MainSplitViewController: NSSplitViewController {
         drag.paneStrips = { [weak mainArea] in
             (mainArea?.rows ?? []).map { .init(strip: $0.strip, region: $0.region) }
         }
-        drag.paneDrop = { [weak mainArea] point in mainArea?.paneDrop(at: point) }
+        drag.paneDrop = { [weak mainArea] point, tab in mainArea?.paneDrop(at: point, dragging: tab) }
         drag.hasRoom = { [weak mainArea] region, edge in mainArea?.hasRoom(toSplit: region, on: edge) ?? true }
         drag.tabCount = { [weak self] region in self?.git.tabs(in: region).count ?? 0 }
         drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }

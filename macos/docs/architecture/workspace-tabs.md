@@ -421,9 +421,13 @@ Making one, and dropping on one:
   then the splits (`zoneLanding`, `paneLanding`). `SplitLayout.dropEdge`
   gives each edge of a leaf a band a quarter of it deep, 32pt at least,
   160pt at most and never over a third. In a band the drop is a new split on
-  that edge, lit as the frame it would take. In the middle it moves into the
-  leaf, which lights up with no label (an edge has one: "Split Right", or
-  "Open to the Right" for a file).
+  that edge, and what lights up is the half of the leaf on that side with a
+  line where the two will meet (`MainAreaController.paneDrop`). In the
+  middle it moves into the leaf, and the whole leaf lights up. No words on
+  either: the owner tried "Move Here" and "Split Right" over the tint and
+  found the tint and the line enough (2026-11-26). The half is not the
+  frame the split ends up with (a third among two equals): that was shown
+  for a morning and lay across two splits, which read as a mistake.
 - That holds for every leaf. Until 2026-11-26 the area's own edges stood for
   "open the column", "move the column over" and "open the strip", each with
   a label of its own. Those zones are gone. One special case is left: the
@@ -432,8 +436,11 @@ Making one, and dropping on one:
   (`.swap`).
 - A leaf too small to be two has no edges, only a middle. A split's only tab
   dropped on its own edge lands nowhere, and so does a tab let go on the top
-  edge of its own split.
-- A file out of Changes or Files lands the same way ("Open to the Right"),
+  edge of its own split. Nor does a drop that would move nothing: a split's
+  only tab on the edge of a neighbour that it already sits against closes
+  its split and makes one in the same place, so nothing lights up
+  (`changesSomething`, which asks `WorkspaceTabs.split` on a copy).
+- A file out of Changes or Files lands the same way,
   the first file making the split and the rest opening in it. Over a
   terminal the drop stays the terminal's, which types the path.
 

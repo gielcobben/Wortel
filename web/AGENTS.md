@@ -152,3 +152,8 @@ on `/updates` (the newest one in full, at the top), as an entry in
 `/feed.xml`, and as the note in the app's update dialog.
 `/updates#<version>` still works, because the app links that way: the newest
 release is on that page and any other goes to its own.
+
+A beta's note has `beta: true` in its frontmatter. It renders only as the
+update dialog's note: every public list of releases reads the collection
+through `publicRelease` (`src/content.config.ts`), and `src/data/release.ts`
+skips the appcast items tagged with a channel.

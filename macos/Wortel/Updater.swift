@@ -42,6 +42,11 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// Settings row follows a change made anywhere. False on a development
     /// build, which has no updater.
     private(set) var updatesAutomatically = false
+    /// Settings ▸ Beta updates: also take the versions published to the beta
+    /// channel (`release.sh --publish --beta`), which everyone else is never
+    /// offered. Regular releases still come either way. See `joinBetaOnce`
+    /// for how a Mac gets here without a setting.
+    private(set) var getsBetaUpdates = UserDefaults.standard.bool(forKey: Updater.betaKey)
     /// A downloaded update waiting for a restart, by its version.
     private(set) var readyVersion: String? {
         didSet { if readyVersion != oldValue { onReadyVersionChange?(readyVersion) } }
@@ -68,6 +73,11 @@ final class Updater: NSObject, SPUUpdaterDelegate {
 
     private static let migratedKey = "WortelAutomaticUpdatesOn1"
     private static let lastRunVersionKey = "WortelLastRunVersion"
+    /// Absent until a beta build first runs here; then true, and false only
+    /// when it's turned off in Settings.
+    private static let betaKey = "WortelBetaUpdates"
+    /// The Sparkle channel a beta is published on.
+    private static let betaChannel = "beta"
     /// How long an update may wait before the one notification.
     private static let nudgeAfter: TimeInterval = 24 * 60 * 60
 
@@ -87,6 +97,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
             startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil)
         self.controller = controller
         turnOnAutomaticUpdatesOnce()
+        joinBetaOnce()
         controller.startUpdater()
         cancellable = controller.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: RunLoop.main)
@@ -155,6 +166,25 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         updatesAutomatically = on
     }
 
+    /// Whether this build was published as a beta (Info.plist's
+    /// `WortelUpdateChannel`, stamped by release.sh). Settings shows the beta
+    /// row for it, so someone handed a beta can always find the way out.
+    static var isBetaBuild: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "WortelUpdateChannel") as? String == betaChannel
+    }
+
+    /// Turn beta updates on or off. Off leaves this build where it is:
+    /// Sparkle never offers an older version, so a Mac on a beta stays on it
+    /// until the next regular release passes it, which is days, not weeks.
+    func setGetsBetaUpdates(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Self.betaKey)
+        getsBetaUpdates = on
+        // Turned on: look now, rather than at the next check hours away.
+        guard on, let updater = controller?.updater,
+              updater.automaticallyChecksForUpdates, updater.canCheckForUpdates else { return }
+        updater.checkForUpdatesInBackground()
+    }
+
     // MARK: - Sparkle
 
     /// Both delegate methods below are optional Objective-C requirements, and
@@ -167,13 +197,25 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     private static let sparkleCallbacks: [Selector] = [
         #selector(SPUUpdaterDelegate.updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)),
         #selector(SPUUpdaterDelegate.updater(_:didFinishUpdateCycleFor:error:)),
+        #selector(SPUUpdaterDelegate.allowedChannels(for:)),
     ]
 
-    /// Never called: it compiles only while this class implements the two
+    /// Never called: it compiles only while this class implements the
     /// callbacks under Sparkle's own names.
     private func checkCallbacksAreOurs() {
         _ = updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)
         _ = updater(_:didFinishUpdateCycleFor:error:)
+        _ = allowedChannels(for:)
+    }
+
+    /// The channels this Mac is offered besides the default one, whose items
+    /// carry no channel and are offered to everyone. A beta is an appcast item
+    /// tagged `<sparkle:channel>beta</sparkle:channel>`: every Sparkle Wortel
+    /// has shipped (2.9 and later) leaves it out unless it is named here.
+    /// Read from the defaults on each check, so a change in Settings counts
+    /// at the next one.
+    nonisolated func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        UserDefaults.standard.bool(forKey: Self.betaKey) ? [Self.betaChannel] : []
     }
 
     /// An update is downloaded and would install on quit. Take it over, so it
@@ -218,6 +260,18 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         guard !defaults.bool(forKey: Self.migratedKey) else { return }
         defaults.set(true, forKey: Self.migratedKey)
         setUpdatesAutomatically(true)
+    }
+
+    /// The first launch of a beta build puts this Mac on the beta channel, so
+    /// handing someone a beta DMG is the whole invitation: no setting to find.
+    /// Once only: the key is set from then on, so a Mac that turned betas off
+    /// stays off through every later beta it is on, and a regular release
+    /// replacing the beta doesn't take it off the channel either.
+    private func joinBetaOnce() {
+        let defaults = UserDefaults.standard
+        guard Self.isBetaBuild, defaults.object(forKey: Self.betaKey) == nil else { return }
+        defaults.set(true, forKey: Self.betaKey)
+        getsBetaUpdates = true
     }
 
     /// The first launch of a new version checks again soon.

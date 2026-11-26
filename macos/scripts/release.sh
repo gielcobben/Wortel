@@ -19,6 +19,17 @@
 #   ./scripts/release.sh --publish --no-install   publish, but leave the
 #                                         installed app alone
 #   ./scripts/release.sh --publish --no-notes     publish without a release note
+#   ./scripts/release.sh --publish --beta  publish a beta: offered only to
+#                                         Macs on the beta channel. Its
+#                                         appcast <item> is tagged
+#                                         <sparkle:channel>beta, its note
+#                                         says `beta: true` (kept off the
+#                                         public changelog), and the website,
+#                                         Wortel-latest.* and the site deploy
+#                                         are left alone. The versioned DMG is
+#                                         the link to hand a tester: the first
+#                                         launch of a beta build puts that Mac
+#                                         on the channel (Updater.swift).
 #   ./scripts/release.sh --publish 2026.33.1 --republish
 #                                       replace the version already published,
 #                                         same bytes-key, same appcast <item>.
@@ -87,6 +98,7 @@ NOTES=1
 REPUBLISH=0
 ALLOW_DIRTY=0
 RUN_TESTS=1
+BETA=0
 VERSION=""
 BUILD_FILE="$RELEASES_DIR/BUILD"        # tracked record: last published version string
 # Lift the flags out of the argument list before the positional parse below, so
@@ -99,10 +111,16 @@ for arg in "$@"; do
     --republish) REPUBLISH=1 ;;
     --allow-dirty) ALLOW_DIRTY=1 ;;
     --no-tests) RUN_TESTS=0 ;;
+    --beta) BETA=1 ;;
     *) ARGS+=("$arg") ;;
   esac
 done
 set -- ${ARGS[@]+"${ARGS[@]}"}
+# A beta is a channel on the feed, so it only means something when publishing.
+if [ "$BETA" = 1 ] && [ "${1:-}" != "--publish" ]; then
+  echo "✗ --beta goes with --publish: $0 --publish --beta" >&2
+  exit 1
+fi
 case "${1:-}" in
   --notarize) NOTARIZE=1 ;;
   --publish)
@@ -196,7 +214,27 @@ case "${1:-}" in
       echo "  To publish without one anyway: $0 --publish --no-notes" >&2
       exit 1
     fi
-    echo "==> Publishing $VERSION"
+    # The note says which channel it is for, and has to agree with the flag.
+    # A beta note left unmarked would put a version on the public changelog
+    # that only testers are offered; a regular release marked beta would
+    # vanish from it.
+    if [ "$NOTES" = 1 ]; then
+      if grep -qx 'beta: true' "$NOTES_DIR/$VERSION.md"; then NOTE_BETA=1; else NOTE_BETA=0; fi
+      if [ "$BETA" = 1 ] && [ "$NOTE_BETA" = 0 ]; then
+        echo "✗ $VERSION is a beta, but its note doesn't say so. Add \`beta: true\` to the frontmatter of" >&2
+        echo "  web/src/content/releases/$VERSION.md, so the public changelog leaves it out." >&2
+        exit 1
+      fi
+      if [ "$BETA" = 0 ] && [ "$NOTE_BETA" = 1 ]; then
+        echo "✗ The note for $VERSION says \`beta: true\`. Publish it with --beta, or take that line out." >&2
+        exit 1
+      fi
+    fi
+    if [ "$BETA" = 1 ]; then
+      echo "==> Publishing $VERSION as a beta"
+    else
+      echo "==> Publishing $VERSION"
+    fi
     ;;
   "") ;;
   *) echo "Unknown argument: $1" >&2; exit 1 ;;
@@ -250,6 +288,9 @@ fi
 VERSION_ARGS=()
 if [ "$PUBLISH" = 1 ]; then
   VERSION_ARGS=(MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION")
+  # A beta build knows it is one (Info.plist's WortelUpdateChannel), which is
+  # what puts the Mac it first runs on onto the beta channel.
+  if [ "$BETA" = 1 ]; then VERSION_ARGS+=(WORTEL_UPDATE_CHANNEL=beta); fi
 fi
 # Build a universal binary so it runs on both Apple Silicon and Intel Macs.
 # (A single-arch build shows "app is damaged" on the other architecture.)
@@ -347,6 +388,11 @@ if [ "$PUBLISH" = 1 ]; then
   # Confirm the build actually picked up the version we stamped.
   BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
   [ "$BUILT" = "$VERSION" ] || { echo "✗ Built version ($BUILT) ≠ requested ($VERSION)" >&2; exit 1; }
+  # And the channel: a beta that doesn't know it would never join a tester's
+  # Mac to the channel, and a regular build stamped beta would join everyone's.
+  BUILT_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :WortelUpdateChannel' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+  WANT_CHANNEL=$([ "$BETA" = 1 ] && echo beta || true)
+  [ "$BUILT_CHANNEL" = "$WANT_CHANNEL" ] || { echo "✗ Built channel (${BUILT_CHANNEL:-none}) ≠ requested (${WANT_CHANNEL:-none})" >&2; exit 1; }
 
   # Keep this build's dSYMs. The app reports a crash as an offset into its own
   # binary and nothing else (see Telemetry/CrashReport.swift), so turning that
@@ -405,8 +451,18 @@ if [ "$PUBLISH" = 1 ]; then
   # single full zip and the appcast stays plain (one <item> per release, no
   # <sparkle:deltas> blocks). Deltas produced an O(n²) pile of tiny patch files
   # in the bucket for negligible benefit on a small app — we don't want them.
+  #
+  # A beta's <item> gets <sparkle:channel>beta</sparkle:channel>, which every
+  # Sparkle Wortel has shipped (2.9 and later) leaves out unless the app asks
+  # for that channel. --channel only tags the items this run adds; the items
+  # already in the appcast keep theirs (verified 2026-11-26 with throwaway
+  # archives: a beta stayed tagged through a regular release and another beta
+  # generated after it).
+  CHANNEL_ARGS=()
+  if [ "$BETA" = 1 ]; then CHANNEL_ARGS=(--channel beta); fi
   echo "==> Generating appcast"
-  "$SPARKLE_BIN/generate_appcast" --maximum-deltas 0 --download-url-prefix "$FEED_BASE/" "$RELEASES_DIR"
+  "$SPARKLE_BIN/generate_appcast" --maximum-deltas 0 ${CHANNEL_ARGS[@]+"${CHANNEL_ARGS[@]}"} \
+    --download-url-prefix "$FEED_BASE/" "$RELEASES_DIR"
 
   # Upload to R2. --remote is REQUIRED — without it wrangler writes to the local
   # simulator and the custom domain serves nothing (silent 404). Only the full
@@ -431,17 +487,21 @@ if [ "$PUBLISH" = 1 ]; then
   [ -f "$DMG" ] || { echo "✗ $DMG is missing; the notarize step should have made it." >&2; exit 1; }
   "$WRANGLER" r2 object put "$BUCKET/Wortel-${VERSION}.dmg" --file "$DMG" \
     --content-type application/x-apple-diskimage --remote
-  "$WRANGLER" r2 object put "$BUCKET/Wortel-latest.dmg" --file "$DMG" \
-    --content-type application/x-apple-diskimage \
-    --content-disposition 'attachment; filename="Wortel.dmg"' \
-    --cache-control 'public, max-age=300' --remote
+  # The moving links are the website's, so a beta never goes there: the
+  # versioned DMG above is the one a tester is handed.
+  if [ "$BETA" = 0 ]; then
+    "$WRANGLER" r2 object put "$BUCKET/Wortel-latest.dmg" --file "$DMG" \
+      --content-type application/x-apple-diskimage \
+      --content-disposition 'attachment; filename="Wortel.dmg"' \
+      --cache-control 'public, max-age=300' --remote
 
-  # The old stable link, a zip, from before the website moved to the DMG. Kept
-  # current because it is pasted in places nobody can edit.
-  "$WRANGLER" r2 object put "$BUCKET/Wortel-latest.zip" --file "$ZIP" \
-    --content-type application/zip \
-    --content-disposition 'attachment; filename="Wortel.zip"' \
-    --cache-control 'public, max-age=300' --remote
+    # The old stable link, a zip, from before the website moved to the DMG. Kept
+    # current because it is pasted in places nobody can edit.
+    "$WRANGLER" r2 object put "$BUCKET/Wortel-latest.zip" --file "$ZIP" \
+      --content-type application/zip \
+      --content-disposition 'attachment; filename="Wortel.zip"' \
+      --cache-control 'public, max-age=300' --remote
+  fi
 
   # Record the version only after every upload succeeded, so a failed run
   # doesn't advance the record. Commit this file alongside appcast.xml.
@@ -464,7 +524,7 @@ if [ "$PUBLISH" = 1 ]; then
     PH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
       "https://eu.posthog.com/api/projects/$PH_PROJECT/annotations/" \
       -H "Authorization: Bearer $PH_KEY" -H 'Content-Type: application/json' \
-      -d "{\"content\":\"Wortel $VERSION\",\"date_marker\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scope\":\"project\"}" \
+      -d "{\"content\":\"Wortel $VERSION$([ "$BETA" = 1 ] && echo ' (beta)')\",\"date_marker\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scope\":\"project\"}" \
       || echo 000)"
     case "$PH_STATUS" in
       2??) echo "==> Annotated $VERSION in PostHog" ;;
@@ -485,7 +545,11 @@ if [ "$PUBLISH" = 1 ]; then
   # are already live and users are being offered the update. Exiting would skip
   # the install below and imply the publish came apart, which isn't true — so
   # say loudly what's wrong and carry on.
-  if [ -d "$WEB" ]; then
+  # A beta changes nothing the site shows: it skips the beta's <item> and
+  # leaves its note off the changelog, so there is nothing to deploy.
+  if [ "$BETA" = 1 ]; then
+    echo "==> Beta: the website is left as it is."
+  elif [ -d "$WEB" ]; then
     echo "==> Deploying the website (wortel.sh)"
     (
       cd "$WEB"
@@ -500,10 +564,17 @@ if [ "$PUBLISH" = 1 ]; then
     echo "!  No web/ directory beside macos/ — skipping the website deploy." >&2
   fi
 
-  echo "==> Published $VERSION"
-  echo "    Appcast:         $FEED_BASE/appcast.xml"
-  echo "    Latest download: $FEED_BASE/Wortel-latest.dmg"
-  echo "    Website:         https://wortel.sh"
+  if [ "$BETA" = 1 ]; then
+    echo "==> Published $VERSION as a beta"
+    echo "    Appcast:         $FEED_BASE/appcast.xml (channel beta)"
+    echo "    For testers:     $FEED_BASE/Wortel-${VERSION}.dmg"
+    echo "                     Its first launch puts that Mac on the beta channel."
+  else
+    echo "==> Published $VERSION"
+    echo "    Appcast:         $FEED_BASE/appcast.xml"
+    echo "    Latest download: $FEED_BASE/Wortel-latest.dmg"
+    echo "    Website:         https://wortel.sh"
+  fi
 fi
 
 # --- Install + launch -------------------------------------------------------

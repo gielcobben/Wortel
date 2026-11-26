@@ -72,6 +72,33 @@ regenerates the appcast, uploads the zip, the DMG and the appcast to the
 `wortel-updates` bucket and redeploys wortel.sh, whose Download button is the
 DMG.
 
+### A beta
+
+```sh
+./scripts/release.sh --publish --beta --no-install
+```
+
+For a change that can't be taken back once it is out (a keeper protocol
+change, saving and resume, anything that big), when the maintainer wants a few
+testers on it first. Same checks as above, same version sequence. What differs:
+
+- The note's frontmatter has `beta: true` after `summary`. The script refuses a
+  beta without it, and a regular release with it. The note shows in the
+  testers' update dialog and nowhere on wortel.sh.
+- The appcast item is tagged for the beta channel, so only Macs on it are
+  offered the version. The site, `Wortel-latest.dmg` and the site deploy are
+  left alone.
+- The output ends `==> Published <version> as a beta` and prints
+  `https://updates.wortel.sh/Wortel-<version>.dmg`. That link is what the
+  maintainer hands a tester. Installing it once puts their Mac on the channel;
+  Settings ▸ Beta updates takes it off.
+- The maintainer's own Mac, taking the update in-app because of
+  `--no-install`, is offered the beta only once it is on the channel too. The
+  maintainer runs this once, in their own shell:
+  `defaults write com.gielcobben.Wortel WortelBetaUpdates -bool true`.
+- The next regular release's note covers what the betas since the last
+  regular one carried: everyone else never saw those notes.
+
 **Always `--no-install` when you are inside Wortel**, which is nearly always.
 The install step removes `/Applications/Wortel.app` and copies the new one in.
 The running keeper, which holds every session's shell, executes out of that

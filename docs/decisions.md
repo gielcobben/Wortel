@@ -1787,6 +1787,28 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   because the old link is pasted in places nobody can edit. The site's build
   links the zip (and its steps) until a HEAD finds the DMG, so a deploy before
   the first release that uploads one can't put a 404 behind the button.
+- **2026-11-26. A beta channel, cut by hand, for changes that can't be taken
+  back.** Regular releases stay fast and go to everyone; a keeper protocol
+  change or anything as risky goes to a few testers first, with
+  `release.sh --publish --beta`. One feed: the beta's `<item>` is tagged
+  `<sparkle:channel>beta</sparkle:channel>`, which every Sparkle Wortel has
+  shipped (2.9) leaves out unless the app names the channel
+  (`allowedChannels(for:)`). Testers get the regular releases too. A beta
+  takes the next number in the week like any release, so the derivation is
+  unchanged. Joining is installing a beta's DMG: the build carries
+  `WortelUpdateChannel = beta` and its first launch puts the Mac on the
+  channel, as Ghostty's update channel follows the build that is running.
+  **Settings ▸ Beta updates** is the way out, and the one row that only shows
+  where it can matter (running a beta, or on the channel): a tester is a
+  different person from everyone else, decided once, and a channel joined by
+  installing a file needs a visible way to leave. Leaving keeps the beta
+  installed until the next regular release passes it, since Sparkle never
+  offers an older version. A beta's note says `beta: true` and is left off
+  the changelog, its pages, the feed and the sitemap; the next regular note
+  tells everyone what it carried. The site, `Wortel-latest.*` and the site
+  deploy are untouched by a beta. Not built: builds on every commit (Ghostty's
+  "tip"), which would need signing and notarizing in CI for a handful of
+  testers.
 
 ## Telemetry and privacy
 

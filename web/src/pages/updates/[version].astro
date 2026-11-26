@@ -5,14 +5,14 @@
 import Layout from '../../layouts/Layout.astro';
 import ReleaseStamp from '../../components/ReleaseStamp.astro';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
-import { compareVersions } from '../../content.config';
+import { compareVersions, publicRelease } from '../../content.config';
 import { SITE } from '../../data/site';
 
 type Release = CollectionEntry<'releases'>;
 interface Props { entry: Release; newer: Release | null; older: Release | null; count: number }
 
 export async function getStaticPaths() {
-  const entries = (await getCollection('releases')).sort((a, b) => compareVersions(b.id, a.id));
+  const entries = (await getCollection('releases', publicRelease)).sort((a, b) => compareVersions(b.id, a.id));
   return entries.map((entry, i) => ({
     params: { version: entry.id },
     props: { entry, newer: entries[i - 1] ?? null, older: entries[i + 1] ?? null, count: entries.length },

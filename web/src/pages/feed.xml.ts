@@ -3,7 +3,7 @@
 // its feed. Built from the same Markdown files as /updates.
 import type { APIRoute } from 'astro';
 import { getCollection } from 'astro:content';
-import { compareVersions } from '../content.config';
+import { compareVersions, publicRelease } from '../content.config';
 import { SITE } from '../data/site';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -12,7 +12,7 @@ const abs = (p: string) => new URL(p, SITE.url).href;
 const stamp = (d: Date) => `${d.toISOString().slice(0, 10)}T12:00:00Z`;
 
 export const GET: APIRoute = async () => {
-  const releases = (await getCollection('releases')).sort((a, b) => compareVersions(b.id, a.id));
+  const releases = (await getCollection('releases', publicRelease)).sort((a, b) => compareVersions(b.id, a.id));
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>${esc(SITE.name)} changelog</title>

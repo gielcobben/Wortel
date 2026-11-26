@@ -92,5 +92,7 @@
 	<string>+IarWSgiwu1pxk25kk/8Rcl9Mf/AXwH/Z2qFoOYXEGI=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>14400</integer>
+	<key>WortelUpdateChannel</key>
+	<string>$(WORTEL_UPDATE_CHANNEL)</string>
 </dict>
 </plist>

@@ -216,12 +216,24 @@ private struct UpdatesRows: View {
     /// view is made and again whenever a window becomes key.
     @State private var sharesUsageData = TelemetrySettings.isEnabledByUser
 
+    private var showsBetaRow: Bool {
+        updater.isAvailable && (Updater.isBetaBuild || updater.getsBetaUpdates)
+    }
+
     var body: some View {
         SettingsBox {
             if updater.isAvailable {
                 SwitchRow(title: "Update automatically", note: "New versions install when you quit.",
                           isOn: Binding(get: { updater.updatesAutomatically },
                                         set: { updater.setUpdatesAutomatically($0) }))
+            }
+            // Only where betas reach: a Mac running a beta or on the channel.
+            // Nobody else has a beta to turn on, so for them it's absent.
+            if showsBetaRow {
+                Hairline()
+                SwitchRow(title: "Beta updates", note: "New versions a few days before everyone else.",
+                          isOn: Binding(get: { updater.getsBetaUpdates },
+                                        set: { updater.setGetsBetaUpdates($0) }))
             }
             if updater.isAvailable, TelemetrySettings.isSwitchable { Hairline() }
             if TelemetrySettings.isSwitchable {

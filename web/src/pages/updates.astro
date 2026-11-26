@@ -9,10 +9,10 @@ import Layout from '../layouts/Layout.astro';
 import ReleaseStamp from '../components/ReleaseStamp.astro';
 import ReleaseRow from '../components/ReleaseRow.astro';
 import { getCollection, render } from 'astro:content';
-import { compareVersions } from '../content.config';
+import { compareVersions, publicRelease } from '../content.config';
 import { SITE } from '../data/site';
 
-const releases = (await getCollection('releases')).sort((a, b) => compareVersions(b.id, a.id));
+const releases = (await getCollection('releases', publicRelease)).sort((a, b) => compareVersions(b.id, a.id));
 const oldest = releases[releases.length - 1];
 /** The newest release, in full at the top: it is what "What's new" leads to. */
 const latest = releases[0] && { entry: releases[0], Content: (await render(releases[0])).Content };

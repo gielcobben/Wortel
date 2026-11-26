@@ -34,6 +34,11 @@ summary: VoiceOver and read-aloud apps can now read what's in Wortel's terminal,
 ```
 
 - **Frontmatter:** exactly `date`, `title`, `summary`, in that order, unquoted.
+  A beta (`release.sh --publish --beta`) adds `beta: true` after them: the note
+  then shows only in the testers' update dialog, never on wortel.sh. The next
+  regular release's note covers everything the betas since the last regular
+  release carried, because everyone else is offered that release and none of
+  the betas.
   The build fails when `date` is not a date or `title` is missing. `summary` is
   optional to the schema and not to us: it leads the update dialog.
 - **Title:** sentence case, no full stop. The headline outcome, or two joined

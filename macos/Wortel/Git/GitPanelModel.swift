@@ -1278,13 +1278,16 @@ final class GitPanelModel {
         guard let session else { return }
         let target = region ?? currentLeaf
         let before = session.zoomedRegion
+        // Read while the zoom is still on: it answers with the zoomed part
+        // then, whatever a click on the titlebar or the sidebar last wrote.
+        let here = lastRegion
         change(session) { $0.toggleZoom(target) }
         guard session.zoomedRegion != before else { return }
         mirror(session, animated: false)
         // A pane that was showing a repo may be out of sight now, or back.
         resolveCurrent()
         // Zoomed in, that is where you are. Zoomed out, you stay where you were.
-        if session.zoomedRegion != nil { lastRegion = target }
+        lastRegion = session.zoomedRegion != nil ? target : here
         focusFront(of: lastRegion)
     }
 

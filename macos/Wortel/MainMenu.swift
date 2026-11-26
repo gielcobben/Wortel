@@ -687,8 +687,8 @@ enum MainMenu {
         for (title, action, key) in [
             ("Left", #selector(AppDelegate.moveTabLeft(_:)), NSLeftArrowFunctionKey),
             ("Right", #selector(AppDelegate.moveTabRight(_:)), NSRightArrowFunctionKey),
-            ("Down to Bottom Strip", #selector(AppDelegate.moveTabDown(_:)), NSDownArrowFunctionKey),
-            ("Up to Main Area", #selector(AppDelegate.moveTabUp(_:)), NSUpArrowFunctionKey),
+            ("Down", #selector(AppDelegate.moveTabDown(_:)), NSDownArrowFunctionKey),
+            ("Up", #selector(AppDelegate.moveTabUp(_:)), NSUpArrowFunctionKey),
         ] {
             let item = moveMenu.addItem(withTitle: title, action: action, keyEquivalent: arrow(key))
             item.keyEquivalentModifierMask = [.control, .command]

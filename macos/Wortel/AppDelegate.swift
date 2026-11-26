@@ -655,6 +655,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.openPreview(url, placement: .dropped(region, index: index == .max ? .max : index + offset))
             }
         }
+        // Dropped on an edge of the main area: the first file makes the
+        // split, as any dropped file is opened (so it shows its diff), and
+        // the rest join it there.
+        controller.split.openSplitFiles = { [weak self] urls, region, edge in
+            guard let self, let first = urls.first else { return }
+            self.openPreview(first, placement: .split(region, edge))
+            let tab = SideTab.file(first.resolvingSymlinksInPath().standardizedFileURL.path)
+            let made = self.manager.selected?.workspace.region(of: tab)
+            for (offset, url) in urls.dropFirst().enumerated() {
+                // A file outside the repo is looked up first and has no
+                // split yet: the rest go where files go.
+                self.openPreview(url, placement: made.map { .dropped($0, index: offset + 1) } ?? .home(elsewhere: false))
+            }
+        }
         fileTree.onOpenPreview = { [weak self] url in self?.openPreview(url) }
         gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
             self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
@@ -745,11 +759,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 gitPanel.focusFront(of: gitPanel.lastRegion)
             }
         }
-        gitPanel.onFocusMainTerminal = { [weak window, weak gitPanel, weak home] in
+        gitPanel.onFocusMainTerminal = { [weak window, weak gitPanel, weak home, weak controller] in
             // Not while a tab in the main area's row covers the terminal.
             guard let window, let gitPanel, gitPanel.activeMainTab == nil,
-                  let view = home?.selected?.surfaceView,
-                  view.window === window, !view.isHiddenOrHasHiddenAncestor else { return }
+                  let view = home?.selected?.surfaceView, view.window === window else { return }
+            // Out of sight behind a zoomed split that this same change has
+            // just ended: the main area lays out a turn later, and until
+            // then the terminal looks hidden and would be refused.
+            if view.isHiddenOrHasHiddenAncestor, gitPanel.isShowing(.main) {
+                controller?.split.mainArea?.applyNow()
+            }
+            guard !view.isHiddenOrHasHiddenAncestor else { return }
             window.makeFirstResponder(view)
         }
 
@@ -1392,6 +1412,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private enum FilePlacement {
         case home(elsewhere: Bool)
         case dropped(TabRegion, index: Int)
+        /// Let go on an edge of a part of the main area: a split there.
+        case split(TabRegion, SplitLayout.Edge)
         /// The preview tab, looked at from the list in this pane tab. Only
         /// while `generation` is the latest: a file outside the panel's repo
         /// is looked up first, and a lookup finishing after a newer click
@@ -1562,6 +1584,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Opened on purpose: the preview tab showing it stays.
             gitPanel.keep(tab)
         case .dropped(let region, let index): gitPanel.openDropped(tab, in: region, at: index)
+        case .split(let region, let edge):
+            gitPanel.splitDropped(tab, beside: region, on: edge,
+                                  isNew: manager.selected?.workspace.region(of: tab) == nil)
         case .peek(let list, let generation):
             guard generation == peekGeneration else { return }
             gitPanel.showPeek(tab, from: list)
@@ -1944,8 +1969,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func moveFocusedTab(_ direction: SplitLayout.Edge) {
         let from = focusedRegion()
         guard let tab = gitPanel.activeTab(in: from) else { return }
-        // Down from the column is the strip, as it was before the main area
-        // could be split; every other move goes to what is there.
+        // Down from the column is the strip, and sideways from the strip is
+        // nowhere, as both were before the main area could be split; every
+        // other move goes to what is there.
+        if from == .bottom, direction.axis == .row { return }
         let target = from == .side && direction == .down ? .bottom
             : neighbouringArea(of: from, toward: direction, showingOnly: false)
         guard let target else { return }

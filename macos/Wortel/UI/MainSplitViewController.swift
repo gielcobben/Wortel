@@ -247,15 +247,7 @@ final class MainSplitViewController: NSSplitViewController {
         drag.onSplit = { [weak self] tab, region, edge in
             self?.git.splitDropped(tab, beside: region, on: edge, isNew: false)
         }
-        drag.onFileSplit = { [weak self] urls, region, edge in
-            guard let self, let first = urls.first else { return }
-            // The first file makes the pane; then all of them are opened in
-            // it the way dropped files are, which decides what each shows.
-            let tab = SideTab.file(first.resolvingSymlinksInPath().standardizedFileURL.path)
-            self.git.splitDropped(tab, beside: region, on: edge, isNew: true)
-            guard let pane = self.git.session?.workspace.region(of: tab) else { return }
-            self.openDroppedFiles(urls, pane, 0)
-        }
+        drag.onFileSplit = { [weak self] urls, region, edge in self?.openSplitFiles(urls, region, edge) }
         drag.bottomArea = { [weak self, weak bottomPane] in
             guard let self, self.git.bottomVisible, let view = bottomPane?.view,
                   view.window != nil, !view.isHiddenOrHasHiddenAncestor,
@@ -373,6 +365,9 @@ final class MainSplitViewController: NSSplitViewController {
     /// Open files dropped on a row or an area, from `index` in that row: set by
     /// AppDelegate, which decides what each file's tab shows (its diff).
     var openDroppedFiles: ([URL], TabRegion, Int) -> Void = { _, _, _ in }
+    /// Open files dropped on an edge of a part of the main area, in a split
+    /// made there: set by AppDelegate, as `openDroppedFiles` is.
+    var openSplitFiles: ([URL], TabRegion, SplitLayout.Edge) -> Void = { _, _, _ in }
 
     /// The autosave restore above happens before the split view has a width, and
     /// it restores one column width for every session. Take the column back on
@@ -855,6 +850,9 @@ extension MainSplitViewController {
         if let inspectorItem, !inspectorItem.isCollapsed, contains(inspectorItem.viewController.view) {
             return .side
         }
+        // A divider between two splits is nobody's area: a press on it
+        // drags it, and you stay where you were.
+        if mainArea?.isOnDivider(point) == true { return nil }
         if git.bottomVisible, contains(bottomAreaView) { return .bottom }
         // A pane of the main area, if the point is in one, so ⌘W and ⌘T act
         // there; the titlebar row above them is the main row's.

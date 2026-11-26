@@ -143,8 +143,14 @@ final class MainAreaController: NSViewController {
         let dead = panes.keys.filter { id in !manager.sessions.contains { $0.paneTabs[id] != nil } }
         for id in dead {
             guard let pane = panes.removeValue(forKey: id) else { continue }
-            tree.discard(pane.view)
-            pane.removeFromParent()
+            // Hidden now (`setLeaves`), out of the window a little later: a
+            // terminal moved out of it as its last tab is still in its host
+            // until the row it went to has shown it, which is another
+            // observer's turn, and it must not leave the window on the way.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.tree.discard(pane.view)
+                pane.removeFromParent()
+            }
         }
         if made || !dead.isEmpty { onRowsChanged() }
     }
@@ -178,9 +184,25 @@ final class MainAreaController: NSViewController {
         let local = tree.convert(point, from: nil)
         guard let hit = tree.visibleLeaves.first(where: { $0.frame.contains(local) }) else { return nil }
         let edge = SplitLayout.dropEdge(at: local, in: hit.frame)
-        let half = edge.map { tree.convert(SplitLayout.half(of: hit.frame, on: $0), to: nil) }
+        let half = edge.map { tree.convert(newFrame(beside: hit.leaf, on: $0, in: hit.frame), to: nil) }
         return (TabRegion(hit.leaf), tree.convert(hit.frame, to: nil), edge, half)
     }
+
+    /// Where a split made on `edge` of `leaf` would be, in the tree's
+    /// coordinates: the layout asked, with a stand-in for the new split, so
+    /// the drag lights up what the drop makes (a third among two equals, not
+    /// half of the one it was dropped on). Half of `frame` when the layout
+    /// can't say, which is while one split is zoomed.
+    private func newFrame(beside leaf: SplitLayout.Leaf, on edge: SplitLayout.Edge, in frame: NSRect) -> NSRect {
+        let standIn = SplitLayout.Leaf.pane(UUID())
+        var layout = git.splitLayout
+        guard git.zoomedRegion == nil, layout.insert(standIn, beside: leaf, on: edge),
+              let made = layout.frames(in: tree.bounds, metrics: tree.metrics).leaves[standIn]
+        else { return SplitLayout.half(of: frame, on: edge) }
+        return made
+    }
+
+    func isOnDivider(_ point: NSPoint) -> Bool { tree.isOnDivider(point) }
 
     /// The pane you reach from `region` by going toward `edge`, if the area
     /// has one there.

@@ -80,6 +80,13 @@ final class SplitTreeView: NSView {
         return splitLayout.leaves.compactMap { leaf in frames[leaf].map { (leaf, $0) } }
     }
 
+    /// Whether a point in window coordinates is on a divider, its reach
+    /// included.
+    func isOnDivider(_ point: NSPoint) -> Bool {
+        let local = convert(point, from: nil)
+        return dividerViews.contains { !$0.isHidden && $0.frame.contains(local) }
+    }
+
     /// The zoom, when it names a leaf that is here to be shown.
     private var effectiveZoom: SplitLayout.Leaf? {
         guard let zoomed, splitLayout.contains(zoomed), leafViews[zoomed] != nil else { return nil }

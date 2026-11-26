@@ -32,6 +32,8 @@ final class TerminalHostViewController: NSViewController {
         guard let currentView, currentView.superview === view else { return nil }
         return currentView
     }
+    /// Whether `viewDidAppear` has run before: see there.
+    private var hasAppeared = false
     /// Resizes are held while a terminal wakes (`holdForWake`).
     private var holdsForWake = false
     /// Waking, to be shown as soon as its screen has been written back.
@@ -194,15 +196,16 @@ final class TerminalHostViewController: NSViewController {
     /// terminal that draws but does not take a keystroke.
     override func viewDidAppear() {
         super.viewDidAppear()
-        // Only when nobody has the keyboard, which is how a window starts.
-        // This also runs when the terminal's area comes back from being
-        // hidden (a split of the main area was zoomed, and then all of them
-        // shown again), and the keyboard is then in the split you were in:
-        // taking it from there put you in a terminal you hadn't gone to.
-        let window = view.window
-        if let currentView = ownCurrentView, window?.firstResponder == nil || window?.firstResponder === window {
-            focusTerminal(currentView)
-        }
+        // The first time only, which is the window starting. This also runs
+        // each time the terminal's area comes back from being hidden (a
+        // split of the main area was zoomed, and then all of them shown
+        // again), and the keyboard is then wherever the split you were in
+        // has it, or with nobody when that split shows a file: taking it
+        // here put you in a terminal you hadn't gone to, and ⌘W closed the
+        // session. Whoever ends a zoom says where the keyboard goes
+        // (`GitPanelModel.toggleZoom`, `onFocusMainTerminal`).
+        if !hasAppeared, let currentView = ownCurrentView { focusTerminal(currentView) }
+        hasAppeared = true
         SurfaceView.settleSoon("the window appeared")
     }
 

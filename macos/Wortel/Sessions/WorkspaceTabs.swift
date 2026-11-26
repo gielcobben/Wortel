@@ -509,7 +509,11 @@ struct WorkspaceTabs: Equatable, Sendable {
         let opener = front(of: region) == tab
             ? openers[tab].flatMap { self.region(of: $0) == region ? $0 : nil } : nil
         guard let from = detach(tab) else { return nil }
+        // Going back to the opener is housekeeping in that row, not you
+        // going there: a zoom on another part of the main area stays.
+        let zoom = zoomed
         if let opener { show(opener) }
+        if zoomed != zoom { zoomed = zoom }
         openers[tab] = nil
         openers = openers.filter { $0.value != tab }
         closed.append(ClosedTab(tab: tab, region: from.region, index: from.index))

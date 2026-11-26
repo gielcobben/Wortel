@@ -771,6 +771,10 @@ final class TabDragController {
         if let edge = hit.edge, let half = hit.half, hasRoom(hit.region, edge) {
             // A pane split from its own only tab would be the same pane.
             if regionOf(tab) == hit.region, tabCount(hit.region) <= 1 { return nil }
+            // Nor upward from its own row: that band starts right under the
+            // row the tab was picked up from, and letting go there is how a
+            // drag is abandoned.
+            if regionOf(tab) == hit.region, edge == .up { return nil }
             return .split(hit.region, edge, area: half)
         }
         guard tab.fits(hit.region) else { return nil }

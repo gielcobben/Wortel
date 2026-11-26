@@ -197,6 +197,7 @@ final class SideTabStrip: NSView {
         view.onSplit = { [weak self] edge in self?.onSplit(item.tab, edge) }
         view.isOnPage = { [weak self] in self?.isOnPage ?? false }
         view.isKeyRow = { [weak self] in self?.isKeyRow ?? true }
+        view.tabCount = { [weak self] in self?.tabViews.count ?? 0 }
         view.onKeep = { [weak self] in self?.onKeep(item.tab) }
         view.onDrag = { [weak self, weak view] phase, point in
             guard let self, let view else { return }
@@ -430,6 +431,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
     var onSplit: (SplitLayout.Edge) -> Void = { _ in }
     var isOnPage: () -> Bool = { false }
     var isKeyRow: () -> Bool = { true }
+    var tabCount: () -> Int = { 0 }
 
     func refreshState() { applyState() }
     var onKeep: () -> Void = {}
@@ -672,12 +674,13 @@ private final class SideTabView: NSControl, TabTitleProviding {
         menu.addItem(ClosureMenuItem(title: "Close Tab") { [weak self] in self?.onClose() })
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })
         // Into a pane of its own, beside the one it is in. Other panes are
-        // reached by dragging: a menu would have to name them.
-        menu.addItem(.separator())
-        let right = ClosureMenuItem(title: "Split Right") { [weak self] in self?.onSplit(.right) }
-        menu.addItem(right)
-        let down = ClosureMenuItem(title: "Split Down") { [weak self] in self?.onSplit(.down) }
-        menu.addItem(down)
+        // reached by dragging: a menu would have to name them. Not for a
+        // pane's only tab, which would be split from itself.
+        if stripRegion().paneID == nil || tabCount() > 1 {
+            menu.addItem(.separator())
+            menu.addItem(ClosureMenuItem(title: "Split Right") { [weak self] in self?.onSplit(.right) })
+            menu.addItem(ClosureMenuItem(title: "Split Down") { [weak self] in self?.onSplit(.down) })
+        }
         // Every other area this tab may go to. In a pane's own row
         // `stripRegion()` is that pane, so all three are offered.
         let destinations: [(TabRegion, String)] = [

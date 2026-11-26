@@ -21,7 +21,9 @@ import AppKit
 /// of the area you're in), `focus-left` `focus-right` `focus-up`
 /// `focus-down`, `move-left` `move-right` `move-up` `move-down` (the tab in
 /// front), `zoom`, `equalize`, `tab` (a terminal tab here), `close` (the tab
-/// in front here), `column`, `strip`, `sidebar` (hide or show it), `swap`
+/// in front here), `select:<n>` (the nth tab of the row you're in to the
+/// front), `trace-tab` `trace-blank` `trace-close` (a tab added or closed,
+/// with the row's motion sampled every 20ms), `column`, `strip`, `sidebar` (hide or show it), `swap`
 /// (the side split to the other side), `next` (the next session), `wide`
 /// (drag the first divider 80 points), `resize:<w>x<h>` (the window to that
 /// size in points, in twenty steps), `light` and `dark` (the copy's
@@ -96,6 +98,11 @@ enum SplitProbe {
             case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
             case "wide":
                 treeView(in: controller)?.dragDivider(0, by: 80)
+            case let pick where pick.hasPrefix("select:"):
+                // The nth tab of the row you're in to the front, as ⌥⌘ and
+                // its number does: for a close from the middle of a row.
+                guard let number = Int(pick.dropFirst("select:".count)) else { continue }
+                git.selectTab(number: number, in: git.lastRegion)
             case let size where size.hasPrefix("resize:"):
                 // The window to this size in twenty steps over a second, as
                 // a drag by its corner would.

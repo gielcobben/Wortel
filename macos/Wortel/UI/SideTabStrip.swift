@@ -289,6 +289,26 @@ final class SideTabStrip: NSView {
     /// a window resize) can put the tab in front out of view.
     private var laidOutWidth: CGFloat = 0
 
+    /// How wide the content is going to be: `content`'s own width, except
+    /// through a slide after a close, when the view is left as wide as it
+    /// was until the tabs have arrived (the clip view keeps its place
+    /// inside the document, so a row scrolled past the new end jumps the
+    /// moment the view narrows). How far the row can scroll and which edge
+    /// fades are asked of this, never of the view. Asked of the view,
+    /// closing a tab measured as:
+    ///
+    /// - with room for every tab, and the last one coming forward, the
+    ///   whole row scrolled 20 points to "reveal" it (the fade's room
+    ///   beside it, allowed because the content still looked 98 points
+    ///   wider than the row), both edges faded, and 180ms later it all
+    ///   jumped back as the content narrowed;
+    /// - in a row scrolled to its end, nothing scrolled while the tabs
+    ///   slid, and then the row jumped 69 points when the content narrowed
+    ///   under it;
+    /// - the trailing edge stayed faded over the last tab until the slide
+    ///   was over, in a row that had come to fit.
+    private var settledContentWidth: CGFloat = 0
+
     override func layout() {
         super.layout()
         let plan = plan()
@@ -299,8 +319,8 @@ final class SideTabStrip: NSView {
             }
         }
         scroll.frame = NSRect(x: 0, y: 0, width: plan.visibleWidth, height: bounds.height)
-        content.frame = NSRect(x: 0, y: 0, width: max(plan.contentWidth, plan.visibleWidth),
-                               height: bounds.height)
+        settledContentWidth = max(plan.contentWidth, plan.visibleWidth)
+        content.frame = NSRect(x: 0, y: 0, width: settledContentWidth, height: bounds.height)
         for (view, frame) in zip(tabViews, plan.tabs) { view.frame = frame }
         for (view, hugs) in zip(tabViews, plan.hugging) { view.isHugging = hugs }
         if let frame = plan.accessory { trailingAccessory?.frame = frame }
@@ -311,7 +331,8 @@ final class SideTabStrip: NSView {
     /// curve: ChatGPT's tabs do the same over 150 to 180ms.
     private func slideIntoPlace(fadingIn inserted: [SideTabView]) {
         let plan = plan()
-        content.frame.size.width = max(plan.contentWidth, plan.visibleWidth, content.frame.width)
+        settledContentWidth = max(plan.contentWidth, plan.visibleWidth)
+        content.frame.size.width = max(settledContentWidth, content.frame.width)
         for (view, frame) in zip(tabViews, plan.tabs) where inserted.contains(where: { $0 === view }) {
             view.frame = frame
             view.alphaValue = 0
@@ -359,11 +380,19 @@ final class SideTabStrip: NSView {
         let clipX = clip.layer?.presentation()?.bounds.origin.x ?? clip.bounds.origin.x
         let tabs = tabViews.map { view -> String in
             let frame = shown(view)
-            return String(format: "%.0f+%.0f/%.1f", frame.minX, frame.width,
-                          view.layer?.presentation()?.opacity ?? Float(view.alphaValue))
+            return String(format: "%@%.0f+%.0f/%.1f%@ t%.0f", view.tab == active ? "*" : "",
+                          frame.minX, frame.width,
+                          view.layer?.presentation()?.opacity ?? Float(view.alphaValue),
+                          view.isHugging ? "h" : "", view.shownTitleWidth)
         }
         let plus = trailingAccessory.map { shown($0).minX } ?? -1
-        return String(format: "clip %.0f scroll %.0f plus %.0f | ", clipX, shown(scroll).width, plus)
+        // Which edges are faded: the first and last stops of the mask.
+        var fade = "-"
+        if let colors = (scroll.layer?.mask as? CAGradientLayer)?.colors as? [CGColor], colors.count == 4 {
+            fade = (colors[0].alpha < 0.5 ? "L" : "") + (colors[3].alpha < 0.5 ? "T" : "")
+        }
+        return String(format: "clip %.0f scroll %.0f content %.0f plus %.0f fade %@ | ", clipX,
+                      shown(scroll).width, shown(content).width, plus, fade)
             + tabs.joined(separator: "  ")
     }
     #endif
@@ -382,7 +411,7 @@ final class SideTabStrip: NSView {
         } else if wanted.maxX > visible.maxX {
             x = wanted.maxX - visible.width
         }
-        x = min(max(0, x), max(0, content.frame.width - visible.width))
+        x = min(max(0, x), max(0, settledContentWidth - visible.width))
         guard abs(x - visible.origin.x) > 0.5 else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { context in
@@ -403,7 +432,7 @@ final class SideTabStrip: NSView {
     private func updateFade() {
         let clip = scroll.contentView.bounds
         let hiddenLeading = clip.minX > 0.5
-        let hiddenTrailing = clip.maxX < content.frame.width - 0.5
+        let hiddenTrailing = clip.maxX < settledContentWidth - 0.5
         guard hiddenLeading || hiddenTrailing, scroll.bounds.width > Self.fade * 2 else {
             scroll.layer?.mask = nil
             return
@@ -700,6 +729,10 @@ private final class SideTabView: NSControl, TabTitleProviding {
     var preview: () -> TabPreview? = { nil }
 
     var title: String { label.stringValue }
+    #if DEBUG
+    /// For the row's `motionSample`: how wide the title is drawn right now.
+    var shownTitleWidth: CGFloat { (label.layer?.presentation()?.frame ?? label.frame).width }
+    #endif
     /// Whether the title is cut short where it is.
     var isTitleTruncated: Bool { titleWidth > label.frame.width + 0.5 }
 

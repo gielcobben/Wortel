@@ -104,11 +104,13 @@ final class LinesMarkupSurface: MarkupSurface {
     private weak var observed: NSView?
 
     private struct Tie {
-        var row: Int
-        let key: Int?
+        /// The row, and what it and the rows around it held.
+        var anchor: MarkAnchor
         /// The row height the mark was drawn at: its unit.
         let rowHeight: CGFloat
         var lost = false
+
+        var row: Int { anchor.index }
     }
     private var ties: [Int: Tie] = [:]
 
@@ -131,6 +133,12 @@ final class LinesMarkupSurface: MarkupSurface {
         self.moved = moved
         views.onChange = { [weak self] in self?.changed() }
         observe()
+        // The file may have been rewritten while nothing was listening:
+        // after a copy mark-up is off, and the agent that was handed the
+        // note edits this very file. Measured 2026-11-25: three lines added
+        // above a mark while mark-up was off, and turned on again the mark
+        // was three rows above its line, for good.
+        find()
     }
 
     func deactivate(forgetting: Bool) {
@@ -165,28 +173,16 @@ final class LinesMarkupSurface: MarkupSurface {
     /// made anew. Each mark finds its row again, or has none.
     private func changed() {
         observe()
-        let count = table?.numberOfRows ?? 0
-        for (number, tie) in ties {
-            guard let key = tie.key else { continue }
-            if tie.row < count, views.rowKey(tie.row) == key {
-                ties[number]?.lost = false
-                continue
-            }
-            var found: Int?
-            for distance in 1...Self.reach {
-                if tie.row - distance >= 0, tie.row - distance < count, views.rowKey(tie.row - distance) == key {
-                    found = tie.row - distance
-                    break
-                }
-                if tie.row + distance < count, views.rowKey(tie.row + distance) == key {
-                    found = tie.row + distance
-                    break
-                }
-            }
-            if let found { ties[number]?.row = found }
-            ties[number]?.lost = found == nil
-        }
+        find()
         moved?()
+    }
+
+    private func find() {
+        for number in Array(ties.keys) {
+            guard var tie = ties[number] else { continue }
+            tie.lost = !tie.anchor.find(within: Self.reach, keyAt: views.rowKey)
+            ties[number] = tie
+        }
     }
 
     // MARK: - Marks
@@ -200,7 +196,7 @@ final class LinesMarkupSurface: MarkupSurface {
         var row = table.row(at: NSPoint(x: max(inTable.x, 0), y: inTable.y))
         // Above the first row or below the last: the nearest one.
         if row < 0 { row = inTable.y < 0 ? 0 : table.numberOfRows - 1 }
-        ties[number] = Tie(row: row, key: views.rowKey(row), rowHeight: max(table.rowHeight, 1))
+        ties[number] = Tie(anchor: MarkAnchor(at: row, keyAt: views.rowKey), rowHeight: max(table.rowHeight, 1))
         guard let placement = placement(of: number) else { return reply(nil) }
         reply(MarkTie(placement: placement, name: nil, details: MarkDetails()))
     }

@@ -319,6 +319,101 @@ final class MarkupTests: XCTestCase {
                      [.zero, CGPoint(x: hypot(CGFloat(100), CGFloat(10)), y: 0)])
     }
 
+    // MARK: - A mark's row in a file that was rewritten
+
+    /// A file as code is: three functions whose last lines read the same.
+    private let code = ["func a() {", "    return 1", "}", "",
+                        "func b() {", "    return 2", "}", "",
+                        "func c() {", "    return 3", "}", ""]
+
+    private func rows(_ lines: [String]) -> (Int) -> Int? {
+        { lines.indices.contains($0) ? lines[$0].hashValue : nil }
+    }
+
+    func testAmongRowsThatReadTheSameARowIsKnownByItsNeighbours() {
+        // On the brace that closes `b`.
+        var anchor = MarkAnchor(at: 6, keyAt: rows(code))
+        // Three lines added above: the nearest brace is now `a`'s, one row
+        // up, and the mark's own is three rows down.
+        let added = ["// one", "// two", "// three"] + code
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(added)))
+        XCTAssertEqual(anchor.index, 9)
+        // `a` removed: its own is five rows up, and `c`'s brace is nearer
+        // to where it was.
+        let removed = Array(added[7...])
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(removed)))
+        XCTAssertEqual(anchor.index, 2)
+        // Nothing changed: it stays.
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(removed)))
+        XCTAssertEqual(anchor.index, 2)
+    }
+
+    func testARowLikeNoOtherIsFoundWhateverIsAroundIt() {
+        let lines = (1...40).map { "let line\($0) = \($0)" }
+        var anchor = MarkAnchor(at: 9, keyAt: rows(lines))
+        var moved = lines
+        moved.remove(at: 9)
+        XCTAssertFalse(anchor.find(within: 400, keyAt: rows(moved)))
+        // Gone, it keeps what it knew, and has its place when the row is back.
+        XCTAssertEqual(anchor.index, 9)
+        moved.insert("let line10 = 10", at: 30)
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(moved)))
+        XCTAssertEqual(anchor.index, 30)
+        // And not past how far it looks.
+        var near = MarkAnchor(at: 2, keyAt: rows(lines))
+        var far = lines
+        far.remove(at: 2)
+        far.insert("let line3 = 3", at: 30)
+        XCTAssertFalse(near.find(within: 20, keyAt: rows(far)))
+        XCTAssertTrue(near.find(within: 28, keyAt: rows(far)))
+    }
+
+    func testARowAmongManyAlikeWithNoNeighbourLeftIsNotGuessed() {
+        var anchor = MarkAnchor(at: 6, keyAt: rows(code))
+        // Every function written anew: braces everywhere, none with a line
+        // beside it that was there before.
+        let other = ["struct X {", "    var x = 0", "    var y = 0", "}", "// -", "struct Y {", "}", "// -",
+                     "enum Z {", "    case z", "    case y", "    case w", "}", "// -"]
+        XCTAssertFalse(anchor.find(within: 400, keyAt: rows(other)))
+        // The file as it was: its row again.
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(code)))
+        XCTAssertEqual(anchor.index, 6)
+    }
+
+    func testAFileCaughtHalfWrittenDoesNotMoveAMarkForGood() {
+        var anchor = MarkAnchor(at: 6, keyAt: rows(code))
+        // Only the first function has been written so far. Its brace is
+        // the one row that reads the same.
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(Array(code[..<4]))))
+        XCTAssertEqual(anchor.index, 2)
+        // The rest arrives: the mark is on its own brace, not on the one it
+        // stood on meanwhile.
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(code)))
+        XCTAssertEqual(anchor.index, 6)
+    }
+
+    func testAMarkLearnsWhatIsAroundItNow() {
+        let more = code + ["func x() {", "    return 7", "}", "", "func y() {", "    return 8", "}", ""]
+        var anchor = MarkAnchor(at: 6, keyAt: rows(more))
+        // What follows it is rewritten: half of what was around the mark
+        // is still there.
+        var edited = more
+        edited.replaceSubrange(7...10, with: ["// x", "let d = 4", "let e = 5", "let g = 6"])
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(edited)))
+        XCTAssertEqual(anchor.index, 6)
+        // Then what comes before it. Known only by what was around it at
+        // first, it would now go to another function's brace.
+        edited.replaceSubrange(2...5, with: ["// y", "let h = 7", "let i = 8", "let j = 9"])
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(edited)))
+        XCTAssertEqual(anchor.index, 6)
+    }
+
+    func testWithNothingToTellRowsByAMarkStaysOnItsRow() {
+        var anchor = MarkAnchor(at: 4, keyAt: { _ in nil })
+        XCTAssertTrue(anchor.find(within: 400, keyAt: rows(code)))
+        XCTAssertEqual(anchor.index, 4)
+    }
+
     // MARK: - What is copied
 
     private let references: [Int: MarkupNote.Reference] = [

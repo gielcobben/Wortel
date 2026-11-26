@@ -25,11 +25,13 @@ final class BlocksMarkupSurface: MarkupSurface {
     private weak var observed: NSView?
 
     private struct Tie {
-        var block: Int
-        let key: Int?
+        /// The block, and what it and the blocks around it held.
+        var anchor: MarkAnchor
         /// The document's type scale the mark was drawn at: its unit.
         let scale: CGFloat
         var lost = false
+
+        var block: Int { anchor.index }
     }
     private var ties: [Int: Tie] = [:]
 
@@ -55,6 +57,13 @@ final class BlocksMarkupSurface: MarkupSurface {
         self.moved = moved
         views.onChange = { [weak self] in self?.changed() }
         observe()
+        // The file may have been rewritten while nothing was listening,
+        // and the document says where its blocks are before this layer is
+        // in its window, so no word of the change comes after. Measured
+        // 2026-11-25: three paragraphs added above two marks while mark-up
+        // was off, and turned on again they were 226 and 395pt above their
+        // paragraphs, for good.
+        find()
     }
 
     func deactivate(forgetting: Bool) {
@@ -87,27 +96,16 @@ final class BlocksMarkupSurface: MarkupSurface {
     /// holds something else looks for its own nearby.
     private func changed() {
         observe()
-        for (number, tie) in ties {
-            guard let key = tie.key else { continue }
-            if views.blockKey(tie.block) == key {
-                ties[number]?.lost = false
-                continue
-            }
-            var found: Int?
-            for distance in 1...Self.reach {
-                if tie.block - distance >= 0, views.blockKey(tie.block - distance) == key {
-                    found = tie.block - distance
-                    break
-                }
-                if views.blockKey(tie.block + distance) == key {
-                    found = tie.block + distance
-                    break
-                }
-            }
-            if let found { ties[number]?.block = found }
-            ties[number]?.lost = found == nil
-        }
+        find()
         moved?()
+    }
+
+    private func find() {
+        for number in Array(ties.keys) {
+            guard var tie = ties[number] else { continue }
+            tie.lost = !tie.anchor.find(within: Self.reach, keyAt: views.blockKey)
+            ties[number] = tie
+        }
     }
 
     // MARK: - The stack's coordinates
@@ -151,7 +149,7 @@ final class BlocksMarkupSurface: MarkupSurface {
         guard let block = views.blockFrames.min(by: { distance($0.value) < distance($1.value) })?.key else {
             return reply(nil)
         }
-        ties[number] = Tie(block: block, key: views.blockKey(block), scale: max(views.blockScale, 0.01))
+        ties[number] = Tie(anchor: MarkAnchor(at: block, keyAt: views.blockKey), scale: max(views.blockScale, 0.01))
         guard let placement = placement(of: number) else { return reply(nil) }
         reply(MarkTie(placement: placement, name: nil, details: MarkDetails()))
     }

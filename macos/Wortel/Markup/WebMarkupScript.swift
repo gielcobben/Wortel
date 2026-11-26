@@ -13,6 +13,17 @@ import Foundation
 /// changed (a scroll anywhere in the page, a resize, the page changing
 /// itself). It listens only between `start` and `stop`, and posts nothing
 /// while there are no marks.
+///
+/// **A page moves things without changing itself.** A transition or an
+/// animation runs for its length with no event a step, a picture that
+/// arrives pushes down what is under it, and neither is a scroll, a resize
+/// or a mutation. So whatever starts or ends such a move starts a look
+/// every frame (`follow`), which goes on while something still moves and
+/// for a moment after, and then stops: nothing runs on a page that is
+/// still. Measured 2026-11-25, each with the mark left there for good
+/// until the next scroll: a fixed header sliding away over 300 ms, 30pt;
+/// a button moved 50px by a CSS animation or by a script's, 50pt; mark-up
+/// turned on 60 ms into the header's slide, 10pt.
 enum WebMarkupScript {
     static let handler = "wortelMarkup"
 
@@ -25,6 +36,16 @@ enum WebMarkupScript {
       var watched = [];
       var mutations = null;
       var sizes = null;
+      var looking = false;
+      var lastPosted = '';
+      var lastMoved = 0;
+      // What begins or ends a move that no scroll, resize or mutation
+      // tells of. `load` is a picture, a frame or a stylesheet arriving.
+      var moves = ['transitionrun', 'transitionstart', 'transitionend', 'transitioncancel',
+                   'animationstart', 'animationiteration', 'animationend', 'animationcancel', 'load'];
+      // How long after the last move the look goes on, in ms: past an
+      // easing's slow end, and past a frame or two that were dropped.
+      var patience = 400;
 
       // Where a document inside a frame sits in the top page's view.
       function offsetOf(el) {
@@ -74,6 +95,65 @@ enum WebMarkupScript {
 
       function isRoot(el) {
         return !el || el === el.ownerDocument.documentElement || el === el.ownerDocument.body;
+      }
+
+      // What an element is inside: its parent, the host of its shadow root,
+      // or the frame its document is in.
+      function above(el) {
+        if (el.parentElement) { return el.parentElement; }
+        var root = el.getRootNode ? el.getRootNode() : null;
+        if (root && root.host) { return root.host; }
+        var frame = null;
+        try { frame = el.ownerDocument.defaultView.frameElement; } catch (e) {}
+        return frame;
+      }
+
+      // Whether `el` is `top` or inside it, through shadow roots and frames.
+      function isInside(el, top) {
+        for (var guard = 0; el && guard < 400; guard++) {
+          if (el === top) { return true; }
+          el = above(el);
+        }
+        return false;
+      }
+
+      function cuts(el) {
+        if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') { return true; }
+        if (isRoot(el)) { return false; }
+        var style = el.ownerDocument.defaultView.getComputedStyle(el);
+        return /(auto|scroll|hidden|clip)/.test(style.overflowX + ' ' + style.overflowY);
+      }
+
+      var solid = /^(img|svg|video|canvas|picture|iframe|object|embed|input|button|select|textarea)$/i;
+
+      // What a drawn area is on, to follow: the block under its middle.
+      // Not `within`, the element that holds all of it, which is often the
+      // whole column: text added above a paragraph moves the paragraph in
+      // its column and leaves the column where it was (measured 2026-11-25:
+      // a paragraph added above two areas tied to the column, and both
+      // stayed 76pt above their words). But never something inside a box
+      // that cuts off and that the area reaches out of: the area would be
+      // cut off with it.
+      function blockUnder(under, within) {
+        var on = under;
+        for (var guard = 0; guard < 400 && on !== within; guard++) {
+          var style = on.ownerDocument.defaultView.getComputedStyle(on), box = on.getBoundingClientRect();
+          // A picture in a line of text has a box of its own; a link or a
+          // word in bold is a run of the line, which breaks where it wraps.
+          var boxed = (style.display !== 'inline' && style.display !== 'contents') || solid.test(on.tagName);
+          if (boxed && box.width >= 1 && box.height >= 1) { break; }
+          var up = above(on);
+          if (!up) { break; }
+          on = up;
+        }
+        var node = on;
+        for (var limit = 0; limit < 400 && node !== within; limit++) {
+          var out = above(node);
+          if (!out || out === within) { break; }
+          if (cuts(out)) { on = out; }
+          node = out;
+        }
+        return on;
       }
 
       // What cuts an element off: every scrolling or clipping box around it,
@@ -234,20 +314,23 @@ enum WebMarkupScript {
 
       function watch(doc) {
         if (!listening || watched.indexOf(doc) >= 0) { return; }
-        doc.addEventListener('scroll', post, {capture: true, passive: true});
+        doc.addEventListener('scroll', scrolled, {capture: true, passive: true});
+        moves.forEach(function (name) { doc.addEventListener(name, follow, {capture: true, passive: true}); });
         watched.push(doc);
       }
 
       function keep(number, el) {
         // Tied again (a drawing that was moved): let go of what it was on.
         var was = marks.get(number);
-        if (was && sizes && was.el.isConnected && was.el !== el) { sizes.unobserve(was.el); }
+        if (was && sizes && was.el.isConnected && was.el !== el && !isRoot(was.el)) { sizes.unobserve(was.el); }
         var around = chainOf(el);
         var mark = {el: el, chain: around.chain, fixed: around.fixed,
                     selector: el.ownerDocument === document ? selectorOf(el) : null};
         marks.set(number, mark);
         watch(el.ownerDocument);
         if (sizes) { sizes.observe(el); }
+        // It may be on its way somewhere: a part of the page still coming in.
+        follow();
         return mark;
       }
 
@@ -288,9 +371,53 @@ enum WebMarkupScript {
         return out;
       }
 
+      function send(out) {
+        lastPosted = out.join();
+        try { webkit.messageHandlers.wortelMarkup.postMessage(out); } catch (e) {}
+      }
+
       function post() {
         if (!listening || marks.size === 0) { return; }
-        try { webkit.messageHandlers.wortelMarkup.postMessage(report()); } catch (e) {}
+        send(report());
+      }
+
+      // Every scroll is answered at once, moved or not: the app is waiting
+      // to hear. And a scroll is what most often sets a page moving (a
+      // part that comes in as it is reached, by a script's own animation,
+      // which has no event to hear), so the look begins too.
+      function scrolled() {
+        post();
+        follow();
+      }
+
+      // Whether an animation with an end is running on the page's own
+      // clock. One without an end (a spinner) would keep the look going
+      // for as long as mark-up is on, and one on a scroll's timeline only
+      // moves when the page scrolls, which is heard anyway.
+      function moving() {
+        try {
+          var all = document.getAnimations();
+          for (var i = 0; i < all.length; i++) {
+            var one = all[i];
+            if (one.playState !== 'running' || !one.effect || one.timeline !== document.timeline) { continue; }
+            if (isFinite(one.effect.getComputedTiming().endTime)) { return true; }
+          }
+        } catch (e) {}
+        return false;
+      }
+
+      // Look every frame, and say so when a mark's place changed, until
+      // nothing has moved for a while.
+      function follow() {
+        lastMoved = performance.now();
+        if (looking || !listening || marks.size === 0) { return; }
+        looking = true;
+        requestAnimationFrame(function step() {
+          if (!listening || marks.size === 0) { looking = false; return; }
+          var out = report(), now = performance.now();
+          if (out.join() !== lastPosted) { send(out); lastMoved = now; }
+          if (now - lastMoved < patience || moving()) { requestAnimationFrame(step); } else { looking = false; }
+        });
       }
 
       function later() {
@@ -310,13 +437,24 @@ enum WebMarkupScript {
                                                      attributeFilter: ['class', 'style', 'hidden', 'open']});
         sizes = new ResizeObserver(later);
         marks.forEach(function (mark) { if (mark.el.isConnected) { sizes.observe(mark.el); } });
+        // The page growing or shrinking is how something that arrived late
+        // and pushed the rest down is heard of when no mark is on it.
+        sizes.observe(document.documentElement);
+        if (document.body) { sizes.observe(document.body); }
+        // Turned on while something is on its way (a header sliding in
+        // after the scroll that came before): the first report is of where
+        // it was passing.
+        follow();
         return 1;
       }
 
       function stop() {
         if (!listening) { return 1; }
         listening = false;
-        watched.forEach(function (doc) { doc.removeEventListener('scroll', post, {capture: true}); });
+        watched.forEach(function (doc) {
+          doc.removeEventListener('scroll', scrolled, {capture: true});
+          moves.forEach(function (name) { doc.removeEventListener(name, follow, {capture: true}); });
+        });
         watched = [];
         window.removeEventListener('resize', later);
         if (mutations) { mutations.disconnect(); mutations = null; }
@@ -340,22 +478,26 @@ enum WebMarkupScript {
           return out;
         },
         tie: function (number, l, t, w, h) {
-          var el = deepest(l + w / 2, t + h / 2) || document.body || document.documentElement;
+          var under = deepest(l + w / 2, t + h / 2) || document.body || document.documentElement;
+          // What holds all of the area: that is what is said about it.
+          var el = under;
           for (var guard = 0; guard < 400; guard++) {
             var r = rectOf(el);
             if (r[0] <= l + 0.5 && r[1] <= t + 0.5 && r[0] + r[2] >= l + w - 0.5 && r[1] + r[3] >= t + h - 0.5) { break; }
-            var up = el.parentElement;
-            if (!up) {
-              var root = el.getRootNode ? el.getRootNode() : null;
-              if (root && root.host) { up = root.host; }
-            }
-            if (!up) {
-              try { up = el.ownerDocument.defaultView.frameElement; } catch (e) {}
-            }
+            var up = above(el);
             if (!up) { break; }
             el = up;
           }
-          var out = answer(keep(number, el));
+          // The middle of an area around a few paragraphs is as likely
+          // between two of them as on one: then a quarter of the way in,
+          // from each side in turn.
+          var on = blockUnder(under, el);
+          var tries = [[0.5, 0.25], [0.5, 0.75], [0.25, 0.5], [0.75, 0.5]];
+          for (var i = 0; i < tries.length && on === el; i++) {
+            var hit = deepest(l + w * tries[i][0], t + h * tries[i][1]);
+            if (hit && isInside(hit, el)) { on = blockUnder(hit, el); }
+          }
+          var out = answer(keep(number, on));
           out.details = {tag: el.tagName.toLowerCase(), selector: selectorOf(el), frame: frameOf(el),
                          elements: inside(el, l, t, w, h)};
           return out;
@@ -372,7 +514,7 @@ enum WebMarkupScript {
         },
         forget: function (number) {
           var mark = marks.get(number);
-          if (mark && sizes && mark.el.isConnected) { sizes.unobserve(mark.el); }
+          if (mark && sizes && mark.el.isConnected && !isRoot(mark.el)) { sizes.unobserve(mark.el); }
           marks.delete(number);
           return 1;
         },

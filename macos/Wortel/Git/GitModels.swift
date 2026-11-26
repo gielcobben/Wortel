@@ -320,7 +320,13 @@ enum SideTab: Hashable, Sendable {
     /// the same address or none yet; where each one is lives on the session
     /// (`Session.browserAddresses`) and its live page in `BrowserTabs`.
     case browser(UUID)
+    /// An empty tab, not anything yet: its page offers what it can become
+    /// (`NewTabPage`), and choosing puts that in its place. A row's "+"
+    /// opens one. A build from before it reads `"new:…"` as no tab and
+    /// drops it, which is right for a tab that holds nothing.
+    case blank(UUID)
 
+    private static let blankPrefix = "new:"
     private static let terminalPrefix = "terminal:"
     private static let filePrefix = "file:"
     private static let browserPrefix = "browser:"
@@ -336,6 +342,9 @@ enum SideTab: Hashable, Sendable {
         } else if rawValue.hasPrefix(Self.browserPrefix),
                   let id = UUID(uuidString: String(rawValue.dropFirst(Self.browserPrefix.count))) {
             self = .browser(id)
+        } else if rawValue.hasPrefix(Self.blankPrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.blankPrefix.count))) {
+            self = .blank(id)
         } else if rawValue == "session" {
             self = .session
         } else {
@@ -350,7 +359,13 @@ enum SideTab: Hashable, Sendable {
         case .session: return "session"
         case .file(let path): return Self.filePrefix + path
         case .browser(let id): return Self.browserPrefix + id.uuidString
+        case .blank(let id): return Self.blankPrefix + id.uuidString
         }
+    }
+
+    var isBlank: Bool {
+        if case .blank = self { return true }
+        return false
     }
 
     var filePath: String? {

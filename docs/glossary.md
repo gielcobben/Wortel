@@ -45,7 +45,9 @@ released app it is a fixed place that ⌥⌘B hides and shows. The code also say
 the height you last chose. Also only a default place now, and a split like any
 other. In the released app ⌘J hides and shows it.
 
-**Tab.** One thing in a split's row: a terminal, a pane, a file, a browser.
+**Tab.** One thing in a split's row: a terminal, a pane, a file, a browser,
+or an **empty tab**, which is none of those yet. A row's "+" opens an empty
+tab, and its page lists what it can become.
 The session's own terminal is a tab too, named after the session, in the main
 row. It has no close button. The terminal engine has no tabs and no splits of
 its own. These are Wortel's.

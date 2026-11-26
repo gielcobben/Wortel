@@ -56,7 +56,8 @@ extension TabOpenedKind {
         case .browser: self = .browser
         case .file: self = .file
         case .pane: self = .pane
-        case .session: return nil
+        // An empty tab is nothing opened yet; what it becomes is counted.
+        case .session, .blank: return nil
         }
     }
 }

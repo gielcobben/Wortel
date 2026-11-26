@@ -588,6 +588,8 @@ struct TabContent: View {
                 EmptyView()
             case .browser(let id)?:
                 BrowserTab(page: BrowserTabs.shared.page(for: id))
+            case .blank?:
+                if let tab { NewTabPage(git: git, tab: tab, region: region).id(tab) }
             case .pane(.files)?:
                 FileTreePanel(model: files, focusRequest: git.listFocusRequest(in: region))
             case .pane(let pane)?:

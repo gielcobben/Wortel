@@ -216,11 +216,13 @@ tab (`putAway`; until 2026-11-26 that hid the whole column). It is the same
 rule wherever the pane is, since later that day: before, a pane in the main
 row was swapped for the session's terminal with its tab kept, and one in a
 made split only ever came forward. `activateHides` is the rule read without
-acting, for the menu's Show or Hide. The three buttons at the trailing end
-of the titlebar send the same commands: `isOpen` lights a button while its
-pane is a tab in any split, and `activateHides` picks its tooltip, Show or
-Close. A lit button that did nothing, or two kinds of off, is why the rule
-could not differ by place.
+acting, for the menu's Show or Hide. The rule was made one when the panes
+had buttons at the trailing end of the titlebar, for a few hours that day
+(`b4b7710`): three answers to one key, by where the pane happened to be,
+could not be a button. The buttons went and the rule stayed. A pane is also
+opened from an empty tab's page (`GitPanelModel.fill`,
+`workspace-tabs.md`), which puts it in that tab's split and moves it there
+when it is open somewhere else.
 
 **How wide** the column opens is per *session* and the same for every tab in
 it (`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width

@@ -76,6 +76,15 @@ enum SplitProbe {
             case "zoom": send(#selector(AppDelegate.zoomSplit(_:)))
             case "equalize": send(#selector(AppDelegate.equalizeSplits(_:)))
             case "tab": send(#selector(AppDelegate.newTerminalHere(_:)))
+            // The "+" of the row you're in, the split buttons, and a pick
+            // on the empty tab's page.
+            case "blank": git.openBlank(in: git.lastRegion)
+            case "blank-right": send(#selector(AppDelegate.newSplitRight(_:)))
+            case "blank-down": send(#selector(AppDelegate.newSplitDown(_:)))
+            case "pick-terminal", "pick-changes":
+                if let blank = git.tabs(in: git.lastRegion).first(where: \.isBlank) {
+                    git.fill(blank, with: step == "pick-terminal" ? .terminal : .pane(.changes))
+                }
             case "close": send(#selector(AppDelegate.closeSession(_:)))
             case "column": send(#selector(AppDelegate.toggleSideColumn(_:)))
             case "strip": send(#selector(AppDelegate.toggleBottomStrip(_:)))

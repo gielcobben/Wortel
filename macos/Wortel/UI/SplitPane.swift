@@ -17,7 +17,7 @@ import SwiftUI
 @MainActor
 final class PaneBar: ChromeBarView, LeafBar {
     let strip = SideTabStrip()
-    let add = HoverFillButton.glyph("plus", "New Terminal")
+    let add = HoverFillButton.glyph("plus", "New Tab")
     let unzoom = ZoomedButton()
     private var stripLeading: NSLayoutConstraint!
     private var stripTrailing: NSLayoutConstraint!
@@ -75,11 +75,6 @@ final class PaneBar: ChromeBarView, LeafBar {
         strip.preview = { [weak home] tab in TitleBarController.preview(for: tab, in: home?.selected) }
         add.target = self
         add.action = #selector(addTab(_:))
-        // The rest of what can be a tab here, for a right-click: a pane or a
-        // browser in this split and no other. Filled when it opens.
-        let menu = NSMenu()
-        menu.delegate = self
-        add.menu = menu
         self.git = git
         self.region = region
     }
@@ -87,20 +82,12 @@ final class PaneBar: ChromeBarView, LeafBar {
     private weak var git: GitPanelModel?
     private var region: TabRegion = .main
 
-    /// One click, one terminal, in this split. Until 2026-11-26 the "+"
-    /// opened a menu of everything a tab can be, so each was two clicks; the
-    /// panes and the browser have buttons in the titlebar now
-    /// (`WindowControls`).
+    /// An empty tab in this split, whose page offers what it can become
+    /// (`NewTabPage`): the first click gives the place, the second says
+    /// what goes in it. It was a menu until 2026-11-26, two clicks with
+    /// nothing on screen in between.
     @objc private func addTab(_ sender: NSView) {
-        git?.open(.terminal(UUID()), in: region)
-    }
-}
-
-extension PaneBar: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        guard let git else { return }
-        NewTabMenu.fill(menu, git: git, region: region)
+        git?.openBlank(in: region)
     }
 }
 

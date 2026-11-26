@@ -339,6 +339,35 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertNil(SideTab(rawValue: "browser:localhost"))
     }
 
+    /// An empty tab is saved as itself, takes no habit, and is a page (its
+    /// own, not a terminal's).
+    func testAnEmptyTabRoundTripsAndIsAPage() {
+        let id = UUID()
+        let blank = SideTab.blank(id)
+        XCTAssertEqual(blank.rawValue, "new:\(id.uuidString)")
+        XCTAssertEqual(SideTab(rawValue: blank.rawValue), blank)
+        XCTAssertNil(SideTab(rawValue: "new:nothing"))
+        XCTAssertTrue(blank.isBlank)
+        XCTAssertTrue(blank.isPage)
+        XCTAssertNil(blank.kind)
+    }
+
+    /// The last tab of a split made by hand is its empty one: choosing puts
+    /// the new tab in before the empty one goes, so the split stays.
+    func testAnEmptyTabHoldsItsSplitUntilItIsReplaced() {
+        var tabs = WorkspaceTabs(main: [.session])
+        let blank = SideTab.blank(UUID())
+        let pane = tabs.split(.main, on: .right, placing: blank)
+        XCTAssertNotNil(pane)
+        guard let pane else { return }
+        XCTAssertEqual(tabs.tabs(in: pane), [blank])
+        let terminal = SideTab.terminal(UUID())
+        tabs.place(terminal, in: pane, at: .max)
+        _ = tabs.close(blank)
+        XCTAssertEqual(tabs.tabs(in: pane), [terminal])
+        XCTAssertTrue(tabs.exists(pane))
+    }
+
     /// A browser, unlike a terminal, comes back as itself: its address is
     /// kept under its id.
     func testAReopenedBrowserKeepsItsID() {

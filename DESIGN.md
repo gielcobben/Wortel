@@ -261,9 +261,9 @@ own because macOS 26 and later put every toolbar item on a glass capsule, and
 there is no switch for that.
 
 **Every split's row is the same thing** (`PaneBar`): its tabs, a "+" right
-after the last one, and nothing else. The "+" is one click: a new terminal in
-that split. A right-click on it lists the rest of what a tab can be there,
-and Split Right and Split Down. No row has a button of its own. The
+after the last one, and nothing else. The "+" opens an empty tab in that
+split, whose page asks what it should be (below). It has no menu. No row has
+a button of its own. The
 one exception is temporary: a zoomed split has one button at the end of its
 row, to show the others again. The main row is no different. The session's
 own terminal is a tab named after the session, pinned: it has no close
@@ -273,11 +273,9 @@ its terminal shows that one tab, never a bare title.
 **The titlebar has two ends, and they are the window's, not a row's**
 (`WindowControls`, one overlay over the whole titlebar). At the leading end,
 by the traffic lights: the sidebar's toggle, then Back and Forward, which
-ride the sidebar's edge. At the trailing end, six, in two groups. First what
-a session opens beside its terminal, one click each: Changes, History, Files
-and a new browser. Then, after a wider gap, what the session is running, and
-the session's "…" menu at the edge, where a "more" button usually is. They
-stay in their corners whatever the splits do. The row under each end makes
+ride the sidebar's edge. At the trailing end, four: Split Right, Split Down,
+what the session is running, and the session's "…" menu at the edge, where a
+"more" button usually is. They stay in their corners whatever the splits do. The row under each end makes
 room for it: the leftmost titlebar row for the leading end, the rightmost
 for the trailing one. What the session is running and its "…" were on the
 main row until 2026-11-26, which put them in the middle of the window as
@@ -289,28 +287,44 @@ trailing corner for an hour and was taken out: with every split movable
 there is no side column to show or hide, only Changes and Files, which ⌥⌘B
 opens and closes (`docs/decisions.md`).
 
-**One click for what you open.** A pane's button is that pane's command
-(⌃⌘1, ⌃⌘2, ⌃⌘3) and follows one rule wherever the pane is: not open, it opens
-beside the terminal; open behind another tab or behind a zoom, it comes
-forward; on screen, it closes. The button is lit (`selectedFill`) while the
-pane is a tab anywhere in the session, and its tooltip says Show or Close.
-The globe opens a new browser where a browser opens by itself, beside the
-work and not over the tab you are in. The "…" is the session itself: rename,
-pin, close, what its sidebar row's menu has.
+**A button asks, a key does not.** A split button makes a split beside or
+under the one you are in with an empty tab in it. The "+" does the same in
+the split it belongs to. The keys go straight there: ⌘D and ⇧⌘D put a
+terminal in the new split, ⌘T a terminal in this one, ⌃⌘1 opens Changes. A
+key says what it wants. A button is pressed by someone still deciding, so it
+gives the place first and then the choice, on a page that is already there.
+The "…" is the session itself: rename, pin, close, what its sidebar row's
+menu has.
 
-What was tried and went, all on 2026-11-26. A "+" that listed everything a
-tab can be: two clicks for Changes, which had been one. The "…" repeating
-what "+" opens. Split Right and Split Down as buttons in this corner: with
-the six they made eight, and eight left no room for two named tabs in
-the row under them. A split has no button now. It is ⌘D and ⇧⌘D, a tab let
-go on an edge, or a right-click on a tab or on a "+".
+**The empty tab's page** (`NewTabPage`). A column of five rows in the middle
+of the page: Terminal, Browser, Changes, History, Files.
+
+| | |
+| --- | --- |
+| The column | As wide as the split, at most 320pt, 12pt from each side |
+| A row | 34pt, 2pt apart, corners 8pt (`controlRadius`), 10pt inside each end |
+| Glyph | 14pt, in a 20pt slot, 10pt before the title |
+| Title | 14pt, the label colour |
+| Count (Changes only) | 12pt, tabular digits, secondary |
+| Shortcut | 12pt, tertiary, at the row's end. Dropped when the split is too narrow for title and shortcut |
+| Under the pointer, or reached by an arrow | `hoverFill` |
+
+No heading, no caption, no border. The tab is titled "New Tab". ↑ and ↓ move
+through the rows, Return picks, Escape closes the tab.
+
+What was tried and went, all on 2026-11-26. A "+" that opened a menu of
+everything a tab can be: two clicks, with nothing on screen in between. The
+"…" repeating what "+" opens. Changes, History, Files and a browser as
+buttons in this corner, lit while open, in place of the split buttons: one
+click, but they opened a thing in one place when anything can be anywhere,
+and six buttons left the row under them short (with the split buttons too
+it was eight, and two named tabs no longer fitted).
 
 **The corner is paid for by the row under it**, so every point there counts.
-The six buttons sit 2pt apart, with 8pt between the two groups. The row
-clears them, the 8pt to the window's edge, and 4pt before its own "+". A
-row's zoom button takes no room while it is hidden. Before adding a button
-here, render Changes and Files in a split at the 440pt they open at and
-check both tabs still show their names.
+The row clears the buttons, the 8pt to the window's edge, and 4pt before its
+own "+". A row's zoom button takes no room while it is hidden. Before adding
+a button here, render Changes and Files in a split at the 440pt they open at
+and check both tabs still show their names.
 
 A split's row has one of two looks, by where it is (`SplitLeafView`):
 

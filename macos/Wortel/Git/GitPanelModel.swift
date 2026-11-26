@@ -760,14 +760,6 @@ final class GitPanelModel {
         return isShowing(region) && activeTab(in: region) == tab
     }
 
-    /// Whether `pane` is a tab of this session, in any split: what its
-    /// button in the titlebar is lit by.
-    func isOpen(_ pane: InspectorPane) -> Bool {
-        let tab = SideTab.pane(pane)
-        return tabs.contains(tab) || mainTabs.contains(tab) || bottomTabs.contains(tab)
-            || paneTabs.values.contains { $0.tabs.contains(tab) }
-    }
-
     /// One rule, wherever the pane is: not open, it opens (in the split
     /// Changes and Files open in); open behind another tab or a zoom, it
     /// comes forward; on screen, it closes. A pane holds nothing a close
@@ -775,8 +767,7 @@ final class GitPanelModel {
     ///
     /// Until 2026-11-26 a pane in the main row was swapped for the terminal
     /// with its tab kept, and one in a split made by hand only ever came
-    /// forward. Its button in the titlebar is lit while it is open, and a
-    /// lit button that did nothing, or two kinds of off, was not a button.
+    /// forward: three answers to one key, by where the pane happened to be.
     func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
         let tab = SideTab.pane(requested)
         guard let region = session?.workspace.region(of: tab) else { return show(requested, via: origin) }
@@ -892,6 +883,9 @@ final class GitPanelModel {
             lastRegion = region
             if tab == .session { onFocusMainTerminal?() }
             else if tab.terminalID != nil { requestTerminalFocus(in: region) }
+            // Its page takes the keyboard when it appears; until then the
+            // terminal it now covers must not keep it.
+            else if tab.isBlank { onClearKeyboard?() }
         }
         if isStop { onTabBroughtForward?(tab, session) } else { onTabReplaced?(tab, session) }
     }
@@ -1079,6 +1073,38 @@ final class GitPanelModel {
             }
         }
         settle(tab, in: session)
+    }
+
+    // MARK: - The empty tab
+
+    /// A row's "+": an empty tab at the end of `region`'s row, in front,
+    /// whose page offers what it can become. One a row already has is
+    /// brought forward instead: two of nothing is one too many.
+    func openBlank(in region: TabRegion) {
+        if let blank = tabs(in: region).first(where: \.isBlank) { return bringForward(blank, in: region) }
+        open(.blank(UUID()), in: region)
+    }
+
+    /// What an empty tab's page offers.
+    enum NewTabChoice {
+        case terminal, browser
+        case pane(InspectorPane)
+    }
+
+    /// The empty tab `blank` becomes `choice`, in its split: the new tab is
+    /// opened there, in front, and the empty one goes. A pane that is open
+    /// somewhere else is moved here, as by its row's menu before.
+    func fill(_ blank: SideTab, with choice: NewTabChoice) {
+        guard let session, let region = session.workspace.region(of: blank) else { return }
+        // The split you're in, whichever you were in when you clicked.
+        lastRegion = region
+        switch choice {
+        case .terminal: open(.terminal(UUID()), in: region)
+        case .browser: openBrowser(at: nil, in: region)
+        case .pane(let pane): open(.pane(pane), in: region)
+        }
+        close(blank)
+        focusFront(of: region)
     }
 
     /// A tab dragged in from outside the rows (a file out of a list) and dropped

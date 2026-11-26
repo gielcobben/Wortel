@@ -30,9 +30,11 @@ beside the main area. The window is still arranged that way. It is no longer
 built that way, and since the same day every row is the same row (`PaneBar`,
 below).
 
-Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
-a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened blank from "+" or
-on a server from the running-jobs popover. A browser's address lives on its
+Besides panes and terminals, a tab can be a previewed file (`SideTab.file`),
+a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened with no address
+from an empty tab's page or ⇧⌘L, or on a server from the running-jobs
+popover, or an **empty tab** (`SideTab.blank(id)`, **The empty tab**, below),
+which is none of them yet. A browser's address lives on its
 session (`browserAddresses`, persisted) and its live web view in
 `BrowserTabs`, not in the view, so moving the tab doesn't reload it.
 
@@ -227,8 +229,7 @@ with it the one state a leaf could be in that a made split could not.
   closes them (`putAway`), and the keyboard goes back to the main row, or
   stays in the split when something else is left in it. `toggleCloses` is
   what the menu item reads for its title.
-- **⌃⌘1, ⌃⌘2, ⌃⌘3, ⌃⇧G** are `activate`, and so are the three pane buttons
-  in the titlebar. One rule, wherever the pane is: not open, it opens in the
+- **⌃⌘1, ⌃⌘2, ⌃⌘3, ⌃⇧G** are `activate`. One rule, wherever the pane is: not open, it opens in the
   column's row; open behind another tab or behind a zoom, it comes forward
   where it is; on screen, it is closed by `putAway`, where the whole column
   used to hide (`git-panel.md`). Until later on 2026-11-26 a pane in the
@@ -377,13 +378,10 @@ The views:
   class conforms, `PaneBar`: the tabs, "+" right after the last, and
   nothing else but the button that shows while its split is zoomed. That
   button takes no room while it is hidden (`ZoomedButton`: its width is 0
-  then, and the strip runs to the row's end). The "+" is one click
-  (`PaneBar.addTab`): a new terminal in that row. Its right-click is
-  `NewTabMenu.fill`, built as it opens: New Terminal, New Browser, Changes,
-  History and Files, each into that row, then Split Right and Split Down
-  for a terminal in a split beside or under that row's split. Until
-  2026-11-26 a click on "+" opened that list, which made everything in it
-  two clicks. Every leaf has one, wired the same way
+  then, and the strip runs to the row's end). The "+" (`PaneBar.addTab`)
+  opens an empty tab in that row (`GitPanelModel.openBlank`). It has no
+  menu and no right-click menu: `NewTabMenu` is deleted. Every leaf has
+  one, wired the same way
   (`PaneBar.wire(to:home:region:)`). There were four until 2026-11-26:
   `MainBar` showed the session's name as a plain title until the row held
   more than the terminal and carried the session's "…", what it runs and
@@ -412,8 +410,33 @@ The views:
   together, down to 130pt or their title, whichever is less. Only then does
   the row scroll, with "+" pinned past the visible end. The first step is
   from 2026-11-26: it is what lets Changes and Files both keep their names
-  in a 440pt split under the window's six buttons. The session's own tab
+  in a 440pt split under the window's buttons (there were six that day). The session's own tab
   never keeps that room at all, since it is never closed (`b7675b2`).
+- **The empty tab** (`SideTab.blank(id)`, `Wortel/UI/NewTabPage.swift`,
+  since 2026-11-26). A tab that is nothing yet, titled "New Tab". A row's
+  "+" opens one at the end of its row, in front (`openBlank`), and a row
+  that already has one brings it forward instead of making a second. The
+  titlebar's split buttons make a split around one. Its page is
+  `NewTabPage`, drawn by `TabContent` like any page that is not a
+  terminal: five rows, Terminal, Browser, Changes, History, Files, each
+  with the key that opens the same thing without asking, Changes with its
+  count. A click on a row, or the arrows and Return, calls
+  `GitPanelModel.fill(_:with:)`: the split becomes the one you are in, the
+  new tab is opened there in front (`NewTabChoice`; a pane that is open in
+  another split is moved, as `open(_:in:)` does), then the empty tab is
+  closed, then the front tab is focused. In that order on purpose: closing
+  first would take a split whose only tab was the empty one out of the
+  tree before there was anything to put in it. Escape closes the empty tab
+  (`requestClose`). The page takes the keyboard when it appears in the
+  split you are in, and `settle` takes it from a terminal the empty tab
+  covers (`onClearKeyboard`), so nothing is typed into a terminal that
+  cannot be seen. It is in no row's habits (`kind` is nil) and is not
+  counted as a tab opened (`TabOpenedKind`): what it becomes is. It is
+  saved as `"new:<uuid>"` with the other tabs, so it is back after a
+  relaunch, and a build from before it reads that as no tab and drops it.
+  Why it exists is in `../../../docs/decisions.md`: a menu on "+" was two
+  clicks with nothing on screen between them, and buttons in the titlebar
+  for each thing opened it in one place only.
 - **The row has two looks, by where the tree put the leaf.**
   `MainAreaController.placed` runs after every layout and sets
   `SplitLeafView.isAtTop` for each leaf on screen (its frame starts at the
@@ -498,13 +521,13 @@ Making one, and dropping on one:
 
 - ⌘D and ⇧⌘D (`AppDelegate.splitRight`, `splitDown`) put a new terminal in a
   split beside the leaf you're in (`GitPanelModel.currentLeaf`). From Changes
-  that is a split beside Changes, from the strip one beside the strip. Split
-  Right and Split Down in the right-click of a row's "+" (`NewTabMenu.fill`)
-  do the same for that row's split. In a tab's own menu they move that tab
-  into a split (`SideTabStrip.onSplit`). There is no split button: two sat
-  at the trailing end of the titlebar for a few hours on 2026-11-26 and
-  went when the pane buttons came, and the session's "…" has had no split
-  items since the same day. All of them go through the same
+  that is a split beside Changes, from the strip one beside the strip. The
+  two buttons at the trailing end of the titlebar (`AppDelegate.newSplitRight`,
+  `newSplitDown`) make the same split with an empty tab in it, where the
+  keys put a terminal: a key says what it wants, and a button is pressed by
+  someone still deciding. Split Right and Split Down in a tab's own menu
+  move that tab into a split (`SideTabStrip.onSplit`). The session's "…"
+  and a row's "+" have no split items. All of them go through the same
   `GitPanelModel.split`, which asks the window
   where the room comes from (`roomToSplit`, `MainAreaController.room`). A
   leaf that is two minimums and a gap wide (or high) is halved. One that is

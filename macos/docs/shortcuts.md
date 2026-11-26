@@ -106,25 +106,34 @@ the right edge, ⌘J under the terminal.
 Every split's row is the same: its tabs, then "+". The session's own terminal
 is a tab too, named after the session, with no close button.
 
-What you open is one click:
+**"+" in a row opens an empty tab in that split**, titled New Tab. Its page
+lists what the tab can become, each with the key that opens the same thing
+without asking:
 
-- **"+" in a row** is a new terminal in that split. A right-click on it lists
-  the rest of what a tab can be there (New Terminal, New Browser, Changes,
-  History, Files), and Split Right and Split Down.
-- **Changes, History and Files** each have a button at the right end of the
-  titlebar. A button is its pane's key (⌃⌘1, ⌃⌘2, ⌃⌘3) and is lit while that
-  pane is open anywhere in the session. Its tooltip says what a click does
-  next, Show or Close.
-- **The globe** beside them opens a new browser next to your terminal, where
-  browsers open by themselves, not over the tab you are in. ⇧⌘L opens one in
-  the split you're in.
-- After a gap come the button that shows what the session is running, and
-  **"…"** at the edge, which is the session itself: rename, pin, close and
-  the rest of what its sidebar row's menu has.
+| On the page | Key that skips the page |
+|---|---|
+| Terminal | ⌘T |
+| Browser | ⇧⌘L |
+| Changes | ⌃⌘1 |
+| History | ⌃⌘2 |
+| Files | ⌃⌘3 |
 
-There is no split button. For a few hours on 2026-11-26 there were two, and
-with the six above they left the row under them no room for two named tabs.
-How to split is under Tabs.
+Click a row, or use ↑ and ↓ and Return, and that takes the tab's place. Esc
+closes the empty tab. Changes, History or Files that are open in another
+split move to this one. A row keeps one empty tab at most: "+" again brings
+it forward. It works the same in every split, since anything can be opened
+anywhere.
+
+At the right end of the titlebar are four buttons: Split Right, Split Down,
+what the session is running, and **"…"** at the edge, which is the session
+itself (rename, pin, close and the rest of what its sidebar row's menu has).
+A split button makes a split beside or under the one you're in, with an
+empty tab in it. ⌘D and ⇧⌘D make the same split with a terminal in it: a key
+does not ask.
+
+For a few hours on 2026-11-26 the "+" was a new terminal and Changes,
+History, Files and a browser were buttons in that corner. Before that the
+"+" was a menu. Both are gone.
 
 **Nothing is hidden.** A split is on screen while it holds a tab and gone when
 it holds none. Until 2026-11-26, ⌥⌘B and ⌘J hid the side column and the
@@ -186,7 +195,8 @@ Splits were added on 2026-11-26 and are not in a release yet.
 One rule, wherever the pane is. Not open, it opens in a split at the right
 edge, beside your terminal. Open but behind another tab, or behind a zoomed
 split, it comes forward. On screen, it closes: closing a pane loses nothing.
-The buttons at the right end of the titlebar are these same commands. (Until
+An empty tab's page offers the same panes, and puts the one you pick in that
+split. (Until
 2026-11-26 a pane that shared a row with your session's terminal went behind
 the terminal with its tab kept, and one you had dragged into a split of its
 own only ever came forward.)
@@ -230,16 +240,16 @@ How to split:
 
 - ⌘D and ⇧⌘D, also in the Tab menu: a new terminal in a split beside or under
   the one you're in.
-- A right-click on a row's "+", then Split Right or Split Down: the same,
-  beside or under that row's split.
+- The two split buttons at the right end of the titlebar: the same split,
+  with an empty tab in it that asks what goes there.
 - A right-click on a tab, then Split Right or Split Down: that tab moves into
   a new split.
 - Let go of a tab, or a file out of Changes or Files, on the edge of a split.
 - `wortel split`, from a script or an agent.
 - Changes, History and Files make a split at the right edge when there is
-  none, from their button or their key.
+  none, from their key.
 
-The ones that open a terminal beep the same way when there is no room. The
+The keys and the buttons beep the same way when there is no room. The
 session's "…" has no split items: it is only about the session. The session's
 own terminal stays in the main row and can't be split off.
 

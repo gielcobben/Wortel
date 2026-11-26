@@ -373,7 +373,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   one test new for `showHidden`. Not looked at by eye. **Three controls,
   three meanings, and nothing said twice.** (This arrangement lasted a few
   hours. The split buttons went and the "+" changed in "One click", the
-  next part, which is the rule now. Kept as what was tried.) The owner,
+  next part, and came back in "An empty tab", the part after it, which is
+  the rule now. Kept as what was tried.) The owner,
   right after: "New
   Terminal, or Terminal below are just splits right? So maybe we should
   show split icons in the toolbar and not in the ellipses menu". They then
@@ -404,7 +405,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (2026-11-26, a throwaway copy): the app builds, and `try-splits.sh
   --picture column focus-left right down` ran with 0 faults, the picture
   showing the four controls in the corner. The unit tests were not run
-  again for this: it changes no rule. **One click for what you open.** The
+  again for this: it changes no rule. **One click for what you open.** (This
+  one lasted a few hours too. The four buttons it added are gone and the
+  "+" is no longer a terminal: "An empty tab", next. What stands of it is
+  the one rule for a pane's command, and how a short row makes room.) The
   owner, after living with it: "I really don't like i have to click twice
   for changes, files, browser, or history. Can we make that one simple
   click?" A row's "+" had become one list of everything a tab can be, so
@@ -461,7 +465,57 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   column`: 0 faults. `try-switch.sh --side --widths`: 0 of 72 wrong. Not
   verified, since each needs a pointer: a click on any of the buttons or
   on a "+", the right-click menu, and the close button on hover over a
-  tab that gave up its room.
+  tab that gave up its room. **An empty tab asks what it should be.** The
+  owner, on the six buttons: "no no no, i dont like it." Then, with a
+  picture of the Claude app's side panel, which opens empty and lists on
+  its page what it can show, each with its key: "it's still two clicks but
+  since the panel already shows on one click the one other click feels
+  simpler? Maybe we could try something like that? ... And it should be on
+  every window right? Because you can potentially open everything
+  everywhere?" That last sentence is what the six buttons got wrong. A
+  button in the corner opened Changes in one place, the default one, in a
+  window where anything can be anywhere, and six of them crowded the row
+  under them. And it says what was wrong with the menu before them: two
+  clicks with nothing on screen in between. So there is a new kind of tab,
+  the empty tab (`SideTab.blank`, titled "New Tab"). **A row's "+" opens
+  one in that split**, in every split. The first click gives you the
+  place, and the tab's page asks what goes in it (`NewTabPage`): Terminal,
+  Browser, Changes, History, Files, each with the key that opens the same
+  thing without asking (⌘T, ⇧⌘L, ⌃⌘1, ⌃⌘2, ⌃⌘3), Changes with its count. A
+  click on a row, or the arrows and Return, puts that in the tab's place.
+  Escape closes the empty tab. A pane that is open in another split is
+  moved here. A row that already has an empty tab brings it forward, not a
+  second one. The "+" has no menu and no right-click menu any more
+  (`NewTabMenu` is deleted). **The corner is four buttons again**, in the
+  owner's order from earlier: Split Right, Split Down, what the session is
+  running, "…". A split button makes the split with an empty tab in it.
+  **The keys do not ask.** ⌘D and ⇧⌘D still put a terminal in the new
+  split, ⌘T a terminal in this one, ⌃⌘1 opens Changes. A key says what it
+  wants, and a button is pressed by someone still deciding. That is why
+  the page prints the keys: it is also where they are learned. Changes,
+  History, Files and the globe are no longer buttons. What stays from "One
+  click": one rule for a pane's command wherever the pane is, a row's zoom
+  button taking no room while hidden, and tabs behind the front one giving
+  up their close button's room when the row is short. Small rules that
+  came with it. The new tab is opened before the empty one is closed, so a
+  split whose only tab was the empty one is still there to be filled. The
+  empty tab takes the keyboard from a terminal it covers. It is saved
+  (`"new:<id>"`), so it is back after a relaunch, and a build from before
+  it reads it as no tab and drops it, which loses nothing. An empty tab is
+  not counted as a tab opened: what it becomes is. The cost: opening
+  Changes by the mouse is two clicks, where it was one button away before
+  the splits and the six buttons had it at one. The owner chose that,
+  for the second click being on a page that is already there. Verified
+  (2026-11-26, throwaway copies): the app builds. WortelTests, 1934 tests,
+  0 failures, two of them new (the empty tab's saved form, and that it
+  holds its split until it is replaced). Renders were looked at of the
+  page in a split made by a split button, in a split under the main row,
+  and of the rows after picking Changes and Terminal. `try-splits.sh blank
+  close blank-right zoom zoom close column blank pick-terminal blank-down
+  pick-changes equalize next next --relaunch`: 0 faults, and after the
+  relaunch too. Not verified, since each takes a pointer or a real key: a
+  click on a row of the page, on a "+" or on a split button; the arrows,
+  Return and Escape on the page; and where the keyboard is after a pick.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -479,10 +533,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   "The product". **The rules.** A split is a part of the window beside the
   sidebar with a tab row of its own (in this first version: a part of the
   main area that was split off). It is made by ⌘D or ⇧⌘D, by Split
-  Right or Split Down in a tab's menu (that tab moves into it), from a
-  right-click on a row's "+" (in this first version they were items in a
-  row's "+" and in the session's "…", and for a few hours buttons at the
-  end of the titlebar: the entry above, at its end), or by letting go of a
+  Right or Split Down in a tab's menu (that tab moves into it), by the two
+  split buttons at the end of the titlebar (which make it with an empty tab
+  in it; in this first version the two were items in a row's "+" and in
+  the session's "…": the entry above, at its end), or by letting go of a
   tab or a file on an edge.
   It is there only while it has tabs: closing its last one takes it away
   and its siblings take the room. Sizes are shares, so a window resize
@@ -1306,9 +1360,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   moves, the arrows ride the sidebar's edge and stop beside the toggle, and
   the rows to the right are pushed along by the same number every frame.
   **Since 2026-11-26** on the branch `flexible-panes` the same overlay is
-  `WindowControls` and has a trailing end as well: Changes, History, Files
-  and a new browser, what the session is running, and its "…" (the first
-  entry of "Window, terminal and keys").
+  `WindowControls` and has a trailing end as well: Split Right and Split
+  Down, what the session is running, and its "…" (the first entry of
+  "Window, terminal and keys").
 - **2026-11-18. A new session at the top level goes on top.** It went after
   the selected row, so in a list nobody arranges a new row turned up in the
   middle. Now that list reads newest first, as a list of chats does. In a

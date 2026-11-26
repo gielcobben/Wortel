@@ -1830,16 +1830,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.openBrowser(at: nil, in: focusedRegion())
     }
 
-    /// The titlebar's globe: a new browser where a browser opens by itself
-    /// (beside the terminal, in the split Changes and Files open in, until
-    /// you have moved one somewhere else), not over the tab you are in. A
-    /// button is pressed to see a page next to the work, not in place of it.
-    @objc func newBrowserBeside(_ sender: Any?) {
-        focusMainWindow()
-        guard let session = manager.selected else { return }
-        gitPanel.openBrowser(at: nil, in: session.workspace.home(for: .browser(UUID())))
-    }
-
     /// ⌘L: the address field of the browser in front, the area you're in
     /// first.
     @objc func openBrowserLocation(_ sender: Any?) {
@@ -2012,10 +2002,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func splitRight(_ sender: Any?) { split(.right) }
     @objc func splitDown(_ sender: Any?) { split(.down) }
 
-    private func split(_ edge: SplitLayout.Edge) {
+    /// The titlebar's two buttons: the same split, with an empty tab in it
+    /// that asks what goes there. A key says what it wants (a terminal); a
+    /// button is pressed by someone still deciding.
+    @objc func newSplitRight(_ sender: Any?) { split(.right, with: .blank(UUID())) }
+    @objc func newSplitDown(_ sender: Any?) { split(.down, with: .blank(UUID())) }
+
+    private func split(_ edge: SplitLayout.Edge, with tab: SideTab? = nil) {
         focusMainWindow()
         guard manager.selected != nil else { return }
-        gitPanel.split(on: edge)
+        gitPanel.split(on: edge, with: tab)
     }
 
     /// `wortel split`: a split on `edge` of `session`'s main row, holding
@@ -2381,16 +2377,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// The pane ⌃⌘1, ⌃⌘2 or ⌃⌘3 opens, for the menu titles.
-    /// The command that shows `pane`: the menu's, so a button sending it is
-    /// the key.
-    static func action(showing pane: InspectorPane) -> Selector {
-        switch pane {
-        case .changes: return #selector(showChanges(_:))
-        case .history: return #selector(showHistory(_:))
-        case .files: return #selector(toggleFileTree(_:))
-        }
-    }
-
     private static func pane(toggledBy action: Selector?) -> InspectorPane? {
         switch action {
         case #selector(showChanges(_:)): return .changes

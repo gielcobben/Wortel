@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 /// One image in a rendered document.
@@ -64,21 +65,60 @@ struct MarkdownImageView: View {
     @ViewBuilder
     private var content: some View {
         if let loaded, loaded.size.width > 0, loaded.size.height > 0 {
-            // Sized here rather than by the layout around it. A resizable image
-            // has no size of its own to offer, and this row asks its contents
-            // what size they are — left to negotiate, a screenshot comes out as
-            // whatever SwiftUI's default for "no opinion" happens to be.
-            let factor = min(1, maxWidth / loaded.size.width)
             Image(nsImage: loaded)
                 .resizable()
-                // Never scaled *up*: a 16pt badge stretched across the column is
-                // a wall of blur, and the picture's own size is information.
-                .frame(width: (loaded.size.width * factor).rounded(),
-                       height: (loaded.size.height * factor).rounded())
+                .frame(width: fitted(loaded.size).width, height: fitted(loaded.size).height)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        } else if let file, let size = Self.size(of: file) {
+            // The room the picture will take, before it is read. The stack is
+            // lazy: this block is built again each time it comes back into
+            // view, and scrolling up it is built above the reader. Grown there
+            // from a chip a turn later, it pushed everything in view down by
+            // the picture's height (measured: 324pt in one frame); a block that
+            // is the right height when built moves nothing.
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.25))
+                .frame(width: fitted(size).width, height: fitted(size).height)
         } else {
             chip
         }
+    }
+
+    /// Sized here rather than by the layout around it. A resizable image has no
+    /// size of its own to offer, and this row asks its contents what size they
+    /// are: left to negotiate, a screenshot comes out as whatever SwiftUI's
+    /// default for "no opinion" happens to be. Never scaled *up*: a 16pt badge
+    /// stretched across the column is a wall of blur, and the picture's own
+    /// size is information.
+    private func fitted(_ size: CGSize) -> CGSize {
+        let factor = min(1, maxWidth / size.width)
+        return CGSize(width: (size.width * factor).rounded(), height: (size.height * factor).rounded())
+    }
+
+    /// Each picture's size in points, as `NSImage` will give it once read.
+    /// Kept for the run of the app: a size is a few bytes, and it is what lets
+    /// a picture's block come back at its own height.
+    @MainActor private static var sizes: [URL: CGSize] = [:]
+
+    /// The header alone, the first time a file is seen: its pixels and the
+    /// density they were saved at, which is all `NSImage` makes its size from.
+    /// Nil for a file ImageIO cannot size (an SVG), which keeps the chip.
+    @MainActor private static func size(of file: URL) -> CGSize? {
+        if let known = sizes[file] { return known.width > 0 ? known : nil }
+        var size = CGSize.zero
+        if let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(
+            source, 0, [kCGImageSourceShouldCache: false] as CFDictionary) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+           let height = properties[kCGImagePropertyPixelHeight] as? CGFloat,
+           width > 0, height > 0 {
+            let dpiX = properties[kCGImagePropertyDPIWidth] as? CGFloat ?? 72
+            let dpiY = properties[kCGImagePropertyDPIHeight] as? CGFloat ?? 72
+            size = CGSize(width: width * 72 / (dpiX > 0 ? dpiX : 72),
+                          height: height * 72 / (dpiY > 0 ? dpiY : 72))
+        }
+        sizes[file] = size
+        return size.width > 0 ? size : nil
     }
 
     /// What stands in for a picture that isn't here: its alt text, which is what
@@ -116,6 +156,9 @@ struct MarkdownImageView: View {
             return
         }
         loaded = NSImage(data: data)
+        // What was read wins over the header: the file may have been
+        // rewritten since, and the next build should be this size.
+        if let loaded, loaded.size.width > 0 { Self.sizes[file] = loaded.size }
     }
 }
 

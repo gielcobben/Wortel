@@ -107,6 +107,46 @@ final class MarkupFileTests: XCTestCase {
         XCTAssertNil(surface.placement(of: 1))
     }
 
+    /// A chip's click brings its mark's own box into what the note bar
+    /// leaves showing, not the row it is tied to into the view.
+    func testAClickedChipBringsItsMarkOutFromUnderTheNoteBar() throws {
+        _ = show(diff(numbered(200)))
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+        let table = try XCTUnwrap(views.table)
+        let scroll = try XCTUnwrap(table.enclosingScrollView)
+        let height = table.rowHeight
+        let covered: CGFloat = 98
+        let room = MarkReveal.room(layer.bounds.size, coveredBelow: covered)
+
+        // Eight rows tall, its first row in view and the rest under the bar.
+        let box = CGRect(x: 80, y: 2, width: 120, height: height * 8)
+        XCTAssertNotNil(tie(surface, 1, to: CGRect(x: 80, y: height * 40 + 2, width: 120, height: height * 8)))
+        let mark = Mark(number: 1, shape: .area(box: box, ink: []), name: "box", details: MarkDetails())
+        func shown() throws -> CGRect { try XCTUnwrap(surface.placement(of: 1)).box(of: mark.shape) }
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: height * 40 - (room.maxY - 2 * height)))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        let under = try shown()
+        XCTAssertTrue(layer.bounds.intersects(under) && !room.contains(under), "\(under)")
+
+        surface.reveal(mark, coveredBelow: covered)
+        let revealed = try shown()
+        XCTAssertTrue(room.contains(revealed), "\(revealed) is not in \(room)")
+        XCTAssertEqual(revealed.midY, room.midY, accuracy: 1)
+
+        // Clicked again, where it is now: it stays.
+        let before = try shown()
+        surface.reveal(mark, coveredBelow: covered)
+        XCTAssertEqual(try shown(), before)
+
+        // From far away.
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: height * 150))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        surface.reveal(mark, coveredBelow: covered)
+        XCTAssertEqual(try shown().midY, room.midY, accuracy: 1)
+    }
+
     func testAMarkFindsItsLineAgainWhenTheFileIsRewrittenAndHasNoPlaceWhenItIsGone() throws {
         var texts = numbered(60)
         let host = show(diff(texts))

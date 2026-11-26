@@ -37,8 +37,11 @@ protocol MarkupSurface: AnyObject {
     /// itself (rendered Markdown): the note bar lines up with it. Nil for
     /// a preview that is read edge to edge.
     var readingColumn: CGRect? { get }
-    /// Bring a mark into view, if it is not: its chip was clicked.
-    func reveal(_ number: Int)
+    /// Bring a mark's own box into the part of `view` that shows, if it is
+    /// not wholly there: its chip was clicked. The bottom `covered` points
+    /// are under the note bar and do not count as shown. Where it goes is
+    /// `MarkReveal.shift`.
+    func reveal(_ mark: Mark, coveredBelow covered: CGFloat)
 
     /// Start telling where the marks are. `moved` is called whenever a
     /// placement may have changed.
@@ -113,7 +116,9 @@ final class MarkupViews {
     /// The document's type scale: ⌘+ moves it, and a mark with it.
     var blockScale: CGFloat = 1
     /// Scroll a block into the middle of the view. Only the document's own
-    /// scroll reader can: a block that is not built has no frame to scroll to.
+    /// scroll reader can: a block that is not built has no frame to scroll
+    /// to. It lands near, not exactly: the mark is placed once the block
+    /// has its frame (`BlocksMarkupSurface.reveal`).
     var revealBlock: (Int) -> Void = { _ in }
 
     // An image, or an SVG's picture (`ImagePreview`).

@@ -462,6 +462,58 @@ enum WebMarkupScript {
         return 1;
       }
 
+      // How far a box has to move to show in a room: `MarkReveal.shift`,
+      // the same rule in the page's own units. Nothing when it is inside;
+      // to the middle where it fits; its start to the room's where not.
+      function shift(box, room) {
+        function along(start, length, roomStart, roomLength) {
+          if (start >= roomStart - 0.5 && start + length <= roomStart + roomLength + 0.5) { return 0; }
+          if (length <= roomLength) { return (roomStart + roomLength / 2) - (start + length / 2); }
+          return roomStart - start;
+        }
+        if (room[2] <= 0 || room[3] <= 0) { return [0, 0]; }
+        return [along(box[0], box[2], room[0], room[2]), along(box[1], box[3], room[1], room[3])];
+      }
+
+      // Scroll a box's holder so the box moves by `d`, as far as the holder
+      // goes, and say where the box is then. Worked out and not read back:
+      // an eased scroll has not moved yet when the next holder is measured.
+      function slide(scroller, box, d, how) {
+        if (!d[0] && !d[1]) { return box; }
+        var left = scroller.scrollLeft, top = scroller.scrollTop;
+        var toLeft = Math.max(0, Math.min(left - d[0], scroller.scrollWidth - scroller.clientWidth));
+        var toTop = Math.max(0, Math.min(top - d[1], scroller.scrollHeight - scroller.clientHeight));
+        scroller.scrollTo({left: toLeft, top: toTop, behavior: how});
+        return [box[0] - (toLeft - left), box[1] - (toTop - top), box[2], box[3]];
+      }
+
+      // How far down from the top, and up to where from `bottom`, the view
+      // shows the page: a fixed or sticky header or footer that the mark
+      // is not inside covers what is under it.
+      function covered(mark, bottom) {
+        function over(x, y) {
+          var el = document.elementFromPoint(x, y);
+          for (var guard = 0; el && guard < 60; guard++, el = el.parentElement) {
+            var position = getComputedStyle(el).position;
+            if (position !== 'fixed' && position !== 'sticky') { continue; }
+            if (el.contains(mark.el)) { return null; }
+            var r = el.getBoundingClientRect();
+            return r.height < window.innerHeight / 2 ? r : null;
+          }
+          return null;
+        }
+        var top = 0, end = bottom, w = window.innerWidth;
+        [0.2, 0.5, 0.8].forEach(function (f) {
+          var high = over(w * f, 1);
+          if (high && high.top <= 1) { top = Math.max(top, high.bottom); }
+          var low = over(w * f, window.innerHeight - 1);
+          if (low && low.bottom >= window.innerHeight - 1) { end = Math.min(end, low.top); }
+        });
+        // A page that covers nearly all of itself (a cookie wall) would
+        // leave no room to show anything in: then the covers are ignored.
+        return end - top < 80 ? [0, bottom] : [top, end];
+      }
+
       window.__wortelMarkup = {
         start: start,
         stop: stop,
@@ -502,14 +554,39 @@ enum WebMarkupScript {
                          elements: inside(el, l, t, w, h)};
           return out;
         },
-        // Into the middle of the view, eased, and only when some of it is
-        // out of view: a mark already whole on screen should not move.
-        reveal: function (number) {
+        // The mark's own box (`part`, from its element's corner, or the
+        // whole element) into what shows: each scrolling box it is inside,
+        // then the window less the note bar (`below`) and what the page
+        // keeps over its own edges. Not `scrollIntoView`: that centres the
+        // element, which for a drawn box is whatever holds all of it, and
+        // it counts what the note bar and a fixed header cover as shown.
+        reveal: function (number, part, below, smooth) {
           var mark = marks.get(number);
           if (!mark || !mark.el.isConnected) { return 0; }
           var r = rectOf(mark.el);
-          var inside = r[1] >= 0 && r[0] >= 0 && r[1] + r[3] <= window.innerHeight && r[0] + r[2] <= window.innerWidth;
-          if (!inside) { mark.el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'}); }
+          var box = part ? [r[0] + part[0], r[1] + part[1], part[2], part[3]] : r;
+          var how = smooth ? 'smooth' : 'instant';
+          for (var i = 0; i < mark.chain.length; i++) {
+            var holder = mark.chain[i], scroller = holder;
+            if (!holder.isConnected) { continue; }
+            if (holder.tagName === 'IFRAME' || holder.tagName === 'FRAME') {
+              scroller = null;
+              try { scroller = holder.contentDocument.scrollingElement; } catch (e) {}
+            } else {
+              var style = holder.ownerDocument.defaultView.getComputedStyle(holder);
+              if (!/(auto|scroll)/.test(style.overflowX + ' ' + style.overflowY)) { scroller = null; }
+            }
+            if (!scroller) { continue; }
+            var h = rectOf(holder);
+            box = slide(scroller, box, shift(box, [h[0] + holder.clientLeft, h[1] + holder.clientTop,
+                                                   holder.clientWidth, holder.clientHeight]), how);
+          }
+          if (mark.fixed) { return 1; }
+          var edges = covered(mark, Math.max(0, window.innerHeight - (below || 0)));
+          var d = shift(box, [0, edges[0], window.innerWidth, Math.max(0, edges[1] - edges[0])]);
+          if (d[0] || d[1]) {
+            window.scrollTo({left: window.scrollX - d[0], top: window.scrollY - d[1], behavior: how});
+          }
           return 1;
         },
         forget: function (number) {

@@ -211,8 +211,17 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         latest.wouldScroll(deltaX: deltaX, deltaY: deltaY)
     }
 
-    func reveal(_ number: Int) {
-        call("if (window.__wortelMarkup) { window.__wortelMarkup.reveal(n) } return 1", arguments: ["n": number]) { _ in }
+    /// Measured by the page itself, at the moment it scrolls: the last
+    /// report may be a resize or a scroll behind.
+    func reveal(_ mark: Mark, coveredBelow covered: CGFloat) {
+        // A drawn area's box is in CSS pixels from its element's corner.
+        var part: Any = NSNull()
+        if case .area(let box, _) = mark.shape {
+            part = [Double(box.minX), Double(box.minY), Double(box.width), Double(box.height)]
+        }
+        call("if (window.__wortelMarkup) { window.__wortelMarkup.reveal(n, part, below, smooth) } return 1",
+             arguments: ["n": mark.number, "part": part, "below": Double(covered / zoom),
+                         "smooth": !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion]) { _ in }
     }
 
     func forget(_ number: Int) {

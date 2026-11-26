@@ -90,7 +90,12 @@ final class MarkupOverlayView: NSView {
         strokeLayer.lineJoin = .round
         noteBar.onHeightChange = { [weak self] in self?.needsLayout = true }
         noteBar.onHoverMark = { [weak self] in self?.pointOut($0) }
-        noteBar.onPickMark = { [weak self] in self?.surface.reveal($0) }
+        noteBar.onPickMark = { [weak self] number in
+            guard let self, let mark = self.session.mark(number) else { return }
+            // What the bar covers, from its top down: the strip under it is
+            // too thin to show a mark in.
+            self.surface.reveal(mark, coveredBelow: max(self.bounds.height - self.noteBar.frame.minY, 0))
+        }
         addSubview(noteBar)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)

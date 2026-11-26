@@ -382,13 +382,50 @@ over a page, an image and Markdown, 2026-11-25).
 
 **A chip can be clicked.** It is selected as one character is (⌫ removes
 it, typing replaces it), and its mark is brought into view if it is not
-(`MarkupSurface.reveal`): a page eases its element to the middle, a table
-puts the row a third of the way down, and Markdown asks the document's own
-scroll reader for the block, which is the only thing that can scroll to a
-block not yet built (`MarkupViews.revealBlock`). A new mark's chip goes in
-after what is selected, never in place of it: a drawing is not typing, and
-with a chip selected it would otherwise delete the mark that chip stood
-for (found by the first trial of the click, 2026-11-25).
+(`MarkupSurface.reveal`). A new mark's chip goes in after what is
+selected, never in place of it: a drawing is not typing, and with a chip
+selected it would otherwise delete the mark that chip stood for (found by
+the first trial of the click, 2026-11-25).
+
+What is brought into view is **the mark's own box, into the part of the
+preview the note bar leaves showing** (`MarkReveal`): the layer passes how
+much of the bottom the bar covers, from the bar's top down. A mark wholly
+there already does not move. One that is not is centred in that part; one
+larger than it shows its top-left. A page does this in its script, in each
+scrolling box and same-site frame around the mark and then the window,
+eased (at once with Reduce Motion), and counts a fixed or sticky header or
+footer the mark is not inside as covering what is under it. A table and a
+document scroll at once. A Markdown block that is not built has no frame:
+the document's scroll reader takes it to the middle
+(`MarkupViews.revealBlock`, not eased), and the mark is placed exactly when
+the block reports its frame, within a second of the click.
+
+The first version brought the thing a mark is tied to into the whole
+view: a page `scrollIntoView` on the element, a table the row a third of
+the way down, Markdown the block to the middle. Measured with the real
+views and a real mouse-down on the chip (2026-11-25), that failed in four
+ways. A box drawn on a page is tied to the element that holds all of it,
+here a 3,512pt article, and centring that left the box 350 to 1,300pt
+above the view, even when it had been in view. A mark under the note bar,
+or under a page's fixed header, was inside the view and nothing scrolled
+(a paragraph 10pt under a 48pt header; a line's mark wholly under the bar).
+A table's mark over eight lines whose first line showed was left with the
+rest under the bar, and Markdown centred a 1,262pt code block with the
+mark near its foot 300pt below the view. And a page's element hidden in
+its scrolling box or frame while the box was on screen counted as in view.
+Not causes, measured the same day: a resize (the page is measured at the
+click), page zoom 1.5, a second click while the first scroll eases, and
+the click itself (a chip is hit at both edges, on any line of the note).
+An eased `scrollTo` for an unbuilt block was tried and dropped: it went on
+past the exact placing and left the mark 130pt lower.
+
+After the change, over a page (a fixed header, a scrolling panel, a frame,
+800 and 420pt wide, zoom 1 and 1.5), a source table and rendered Markdown
+(700 and 460pt), every mark ended inside that part, centred within 2pt
+where it moved, and a mark already there did not move. A Markdown block
+not built was in place 8 ms after the click. Those are off-screen
+windows with events handed to the views; how the eased page scroll looks
+under a hand was not seen.
 
 A chip has 3pt of clear room either side, as part of itself, so two chips
 or a chip and a word do not touch. The text is lifted to the middle of its
@@ -586,6 +623,9 @@ looked at.
   when the page loses focus cannot be marked open.
 - A mark on content that scrolls under a sticky header draws over the
   header.
+- A chip's click cannot bring a mark into view inside a frame from another
+  site, or past the side of a view that does not scroll sideways (a box
+  drawn in a wider window): it is moved up or down only.
 - The last of a page sits under the note bar when scrolled to its end.
 - A script's own animation that nothing announces (started by a timer:
   no scroll, no change to the page, no event) is followed from the next

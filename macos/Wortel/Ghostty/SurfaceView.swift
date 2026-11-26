@@ -500,8 +500,6 @@ final class SurfaceView: NSView {
     var isStarting: Bool { startWatch != nil }
     /// When the start now covered began, on `ProcessInfo.systemUptime`.
     var startBegan: TimeInterval? { startWatch?.began }
-    /// The start is over, however it went: the page comes off. Main thread.
-    var onStartSettled: (() -> Void)?
 
     /// Cover this terminal's start: called by the runtime for a session made
     /// with a line to run, once the keeper has typed it and before anything
@@ -518,7 +516,6 @@ final class SurfaceView: NSView {
             let waiting = self.startWaiters
             self.startWaiters = []
             waiting.forEach { $0(end) }
-            self.onStartSettled?()
         }
         startWatch = watch
         feed.watchStart { [weak watch] events, time in

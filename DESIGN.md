@@ -337,8 +337,10 @@ outline around the one that now has the keyboard.
   and Back and Forward ride the sidebar's edge.
 - The sidebar never re-sorts under the pointer.
 - A long name scrolls after resting a second, slowly, with faded edges.
-- Reduce Motion stills the dots and the wave. The flash around a session that
-  starts wanting you still fades out, without its fade in.
+- Reduce Motion stills the dots and the wave. The start spinner is the
+  system's, and turns as it does everywhere else on the Mac. The flash
+  around a session that starts wanting you still fades out, without its
+  fade in.
 
 ## Which surface for what
 

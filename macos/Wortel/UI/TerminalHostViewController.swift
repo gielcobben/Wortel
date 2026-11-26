@@ -65,7 +65,6 @@ final class TerminalHostViewController: NSViewController {
         startSpinner.isIndeterminate = true
         startSpinner.isDisplayedWhenStopped = false
         startSpinner.sizeToFit()
-        startSpinner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
         startCover.addSubview(startSpinner)
     }
 
@@ -76,15 +75,14 @@ final class TerminalHostViewController: NSViewController {
             startCover.isHidden = true
             return
         }
-        surfaceView.onStartSettled = { [weak self, weak surfaceView] in
-            guard let self, let surfaceView, self.ownCurrentView === surfaceView else { return }
-            self.hideStartSpinner()
-            self.startCover.isHidden = true
+        // A list, not one callback: a session moved to another window while
+        // it starts is covered there too, and both pages come off.
+        surfaceView.afterStart { [weak self] _ in
+            guard let self else { return }
+            self.coverStart(of: self.ownCurrentView)
         }
         startCover.frame = view.bounds
-        let size = startSpinner.frame.size
-        startSpinner.setFrameOrigin(NSPoint(x: ((view.bounds.width - size.width) / 2).rounded(),
-                                            y: ((view.bounds.height - size.height) / 2).rounded()))
+        centreStartSpinner()
         // In front of every terminal, the one just added included.
         view.addSubview(startCover, positioned: .above, relativeTo: nil)
         startCover.isHidden = false
@@ -100,6 +98,15 @@ final class TerminalHostViewController: NSViewController {
         }
         spinnerTimer = item
         DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: item)
+    }
+
+    /// In the middle of the page, on whole points. Again on every layout:
+    /// a session restored at launch is covered before its window has a size.
+    private func centreStartSpinner() {
+        let size = startSpinner.frame.size
+        let bounds = startCover.bounds
+        startSpinner.setFrameOrigin(NSPoint(x: ((bounds.width - size.width) / 2).rounded(),
+                                            y: ((bounds.height - size.height) / 2).rounded()))
     }
 
     private func hideStartSpinner() {
@@ -240,6 +247,7 @@ final class TerminalHostViewController: NSViewController {
     override func viewDidLayout() {
         super.viewDidLayout()
         ownCurrentView?.reconcileSize("its area was laid out")
+        if !startCover.isHidden { centreStartSpinner() }
     }
 
     /// Make the terminal first responder so keystrokes land.

@@ -4,48 +4,6 @@ import SwiftUI
 
 // MARK: - The strip
 
-/// The strip's own row: its tabs with "+" right after the last one (the
-/// column's menu, NewTabMenu), and at the trailing end the button that tucks
-/// the strip away. Under the main row, where the strip opens, it is a row on
-/// a faint band over the page; along the top of the window (zoomed, or
-/// dragged there) it is a titlebar row like any split's (`SplitLeafView`).
-@MainActor
-final class BottomBar: ChromeBarView, LeafBar {
-    let strip = SideTabStrip()
-    let unzoom = ZoomedButton()
-    let add = HoverFillButton.glyph("plus", "New Tab")
-    let hide = HoverFillButton.glyph("chevron.down", "Hide Bottom Strip")
-    private var stripLeading: NSLayoutConstraint!
-    var leadingClearance: CGFloat = 0 {
-        didSet {
-            let constant = max(6, leadingClearance)
-            if abs(stripLeading.constant - constant) > 0.01 { stripLeading.constant = constant }
-        }
-    }
-
-    override init() {
-        super.init()
-        strip.region = .bottom
-        strip.translatesAutoresizingMaskIntoConstraints = false
-        strip.trailingAccessory = add
-        let trailing = NSStackView(views: [unzoom, hide])
-        trailing.spacing = 4
-        trailing.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(strip)
-        addSubview(trailing)
-        stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6)
-        NSLayoutConstraint.activate([
-            stripLeading,
-            strip.topAnchor.constraint(equalTo: topAnchor),
-            strip.bottomAnchor.constraint(equalTo: bottomAnchor),
-            strip.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -8),
-            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-}
-
 /// The strip: a host for its terminals that works exactly like the side
 /// split's, and in front of that the pane or file when one of those is the
 /// tab in front. Its row is `bar`; `leaf` is the two together, a split of
@@ -71,7 +29,7 @@ final class BottomPaneController: NSViewController {
         }
     }
 
-    let bar = BottomBar()
+    let bar = PaneBar(region: .bottom)
     private(set) lazy var leaf = SplitLeafView(bar: bar, body: view)
     private let host = SideTerminalHostController()
     private let paneHost: NSHostingController<BottomAreaPane>
@@ -108,25 +66,10 @@ final class BottomPaneController: NSViewController {
         }
         view = root
 
-        bar.add.target = self
-        bar.add.action = #selector(addTab(_:))
-        bar.hide.target = self
-        bar.hide.action = #selector(hideStrip)
-        let strip = bar.strip
-        strip.onSelect = { [weak self] tab in self?.git.selectBottom(tab) }
-        strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
-        strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
-        strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        strip.onSplit = { [weak self] tab, edge in self?.git.split(.bottom, on: edge, with: tab) }
-        strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.home.selected) }
+        bar.wire(to: git, home: home, region: .bottom)
         observe()
     }
 
-    @objc private func addTab(_ sender: NSView) {
-        NewTabMenu.popUp(from: sender, git: git, region: .bottom)
-    }
-    @objc private func hideStrip() { git.toggleBottom() }
 
     /// The strip as the selected session has it, applied now rather than a
     /// turn later by the observer (`MainSplitViewController.show`).

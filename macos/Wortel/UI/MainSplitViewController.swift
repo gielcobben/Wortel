@@ -146,12 +146,6 @@ final class MainSplitViewController: NSSplitViewController {
 
         // Tab drags: every row, and every split a tab can be dropped on.
         let drag = TabDragController()
-        drag.strips = [
-            // The main row's, which shows the session's title rather than a
-            // row of one tab and is still where a tab dragged up there goes.
-            .init(strip: titleBars.mainBar.strip, region: .main,
-                  whenHidden: { [weak titleBars] in titleBars?.mainBar.dropSlot() }),
-        ]
         drag.paneStrips = { [weak mainArea] in
             (mainArea?.rows ?? []).map { .init(strip: $0.strip, region: $0.region) }
         }
@@ -327,13 +321,13 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// Where the sidebar's controls go, and how much room the row under them
     /// has to make. They are one set laid over the whole titlebar
-    /// (`SidebarControls`): the toggle stays beside the traffic lights and
+    /// (`WindowControls`): the toggle stays beside the traffic lights and
     /// the arrows ride the sidebar's edge. Whichever titlebar row starts
     /// under them makes room by its `leadingClearance`: the leftmost split
     /// along the top, whatever it holds.
     private func updateLeadingInsets() {
         guard let sidebarItem, let contentItem else { return }
-        let controls = titleBars.sidebarControls
+        let controls = titleBars.windowControls
         // Not before the controls and the panes share a window (viewDidLoad
         // runs before BackdropController adds the controls): converting
         // between unrelated views gives nothing meaningful.
@@ -346,10 +340,16 @@ final class MainSplitViewController: NSSplitViewController {
             ? max(0, controls.convert(content.bounds, from: content).minX - splitView.dividerThickness)
             : controls.bounds.width
         let clearsTo = controls.place(sidebarEdge: edge, collapsed: sidebarItem.isCollapsed) + 8
+        // And at the other end: the session's controls, over the end of
+        // whichever row reaches under them.
+        let sessionControls = controls.bounds.width - controls.trailingWidth
         for row in mainArea?.titlebarRows ?? [] {
             let minX = controls.convert(NSPoint(x: row.minX, y: 0), from: nil).x
+            let maxX = controls.convert(NSPoint(x: row.maxX, y: 0), from: nil).x
             let clearance = max(0, clearsTo - minX)
             if abs(row.bar.leadingClearance - clearance) > 0.01 { row.bar.leadingClearance = clearance }
+            let trailing = max(0, maxX - sessionControls)
+            if abs(row.bar.trailingClearance - trailing) > 0.01 { row.bar.trailingClearance = trailing }
         }
     }
 

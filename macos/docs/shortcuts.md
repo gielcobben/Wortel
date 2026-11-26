@@ -104,6 +104,11 @@ those for you, the side column at the outer edge and the strip under the
 terminal, each at the size you last gave it. Any other split you make
 yourself (⌘D and ⇧⌘D, under Tabs).
 
+Every split's row is the same: its tabs, then "+". The session's own terminal
+is a tab too, named after the session, with no close button. What belongs to
+the session and the window is at the right end of the titlebar: what the
+session is running, its "…" menu, and the side column's button.
+
 ⌥⌘B and ⌘J put the side column and the strip away and bring them back with
 the same tabs and the same share of the window. A split you made has no such key: it is
 there while it has tabs. The two slide open and shut on those keys, as they

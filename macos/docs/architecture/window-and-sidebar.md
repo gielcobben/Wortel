@@ -18,18 +18,40 @@ Wortel's own (`TitleBars.swift`): the window keeps an *empty* toolbar only for
 its height and the centred traffic lights, the titlebar is transparent, and the
 sidebar and each split along the top of the window draw their row of a flat
 grey band (the ChatGPT app's look). A split lower down has a row on its page
-instead (`SplitLeafView`). The sidebar
-toggle and Back/Forward are the exception: one set laid over all the rows
-(`SidebarControls`, in `BackdropController`), placed on every layout pass and
-split resize (the first real layout at launch sends no resize) so
-the arrows ride the sidebar's edge as it opens and closes and the row to the
-right clears them (`leadingClearance`). Which row that is, is the tree's to
-say: `MainAreaController.titlebarRows` lists the rows along the top with where
-each starts, `updateLeadingInsets` gives each the room it needs, and only the
-leftmost needs any. It is the main row's as a rule, the side column's when
-that is on the left, and a made split's when one was dropped there. It runs
-again after every layout of the tree (`onPlaced`), since a split that moves
-changes which row is leftmost. The reason for the own titlebar is
+instead (`SplitLeafView`). Every one of those rows is a `PaneBar`: tabs and
+a "+", no buttons of its own.
+
+What is not a row's is the window's: one overlay laid over all the rows
+(`WindowControls`, in `BackdropController`; it was `SidebarControls` until
+2026-11-26, when it had only the leading end). Only its buttons take clicks.
+The rest falls through to the row under it, which moves the window.
+
+- **The leading end**: the sidebar's toggle beside the traffic lights, and
+  Back and Forward. They are placed on every layout pass and split resize
+  (the first real layout at launch sends no resize) so the arrows ride the
+  sidebar's edge as it opens and closes (`WindowControls.place`).
+- **The trailing end**: what the session is running (`RunningButton`), the
+  session's "…" menu, and the side column's toggle. `TitleBarController`
+  wires them and keeps the toggle's tooltip in step. Until 2026-11-26 they
+  were on the main row (`MainBar`) and the side column's row
+  (`SideColumnBar`), and the strip's row (`BottomBar`) had a chevron to hide
+  it. All three classes are gone. With splits, those rows can be anywhere,
+  and their buttons were in the middle of the window.
+
+Who clears what is the tree's to say. `MainAreaController.titlebarRows` lists
+the rows along the top with where each starts and ends, and
+`MainSplitViewController.updateLeadingInsets` gives each row two numbers: a
+`leadingClearance`, how far the leading controls reach into it, and a
+`trailingClearance`, how far the trailing ones do
+(`WindowControls.trailingWidth`). Only the leftmost row gets any of the
+first and only the rightmost any of the second. Which rows those are changes
+with the splits: the main row and the side column as a rule, the other way
+round when the column is on the left, one row for both when a split is
+zoomed, a made split when one was dropped at an end. It runs on every layout
+pass here and again after every layout of the tree (`onPlaced`). A row that
+is not along the top has neither (`SplitLeafView.dress`).
+
+The reason for the own titlebar is
 that on macOS 26+ every toolbar item, custom views included, sits on a Liquid
 Glass capsule, and AppKit has no switch to stop that. The window's vibrancy is
 one behind-window material under everything (`BackdropController`); only the

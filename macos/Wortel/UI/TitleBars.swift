@@ -232,7 +232,7 @@ final class ChromeSplitView: NSSplitView {
 // MARK: - The three rows
 
 /// Over the sidebar: the traffic lights, and under the sidebar toggle and
-/// Back and Forward, which are not this row's but `SidebarControls`', laid
+/// Back and Forward, which are not this row's but `WindowControls`', laid
 /// over every row. A new session is ⌘N or the sidebar's own "+".
 @MainActor
 final class SidebarBar: ChromeBarView {
@@ -277,10 +277,26 @@ final class SidebarBar: ChromeBarView {
 /// the split, which a collapse animation makes every frame, so it moves in
 /// step with the sidebar.
 @MainActor
-final class SidebarControls: NSView {
+final class WindowControls: NSView {
     let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
     let history = HistoryButtons()
     private var historyLeading: NSLayoutConstraint!
+
+    // The trailing end, the session's own: what it is running, its "…"
+    // menu, and the side column's toggle, the sidebar toggle's mirror. They
+    // were on the main row and the side column's row, which was right while
+    // those two were the window's fixed places and put them in the middle
+    // of the window once any split could sit beside any other. A row is a
+    // split's tabs and its "+" and nothing else; what belongs to the session
+    // or the window is here, where it stays whatever the splits do.
+    let running = RunningButton()
+    let more = HoverFillButton.glyph("ellipsis", "Session")
+    let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
+    private let trailing = NSStackView()
+
+    /// How much of the titlebar's trailing end the session's controls take,
+    /// for the row under them to clear (`LeafBar.trailingClearance`).
+    var trailingWidth: CGFloat { trailing.fittingSize.width + 8 }
 
     /// Where the arrows start when the sidebar is shut: past the toggle.
     private static let restingX = Chrome.trafficLightInset + Chrome.controlSize + 8
@@ -291,12 +307,18 @@ final class SidebarControls: NSView {
         history.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toggle)
         addSubview(history)
+        for button in [running, more, sideToggle] { trailing.addArrangedSubview(button) }
+        trailing.spacing = 4
+        trailing.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(trailing)
         historyLeading = history.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.restingX)
         NSLayoutConstraint.activate([
             toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
             historyLeading,
             history.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -328,148 +350,10 @@ final class SidebarControls: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
-/// Over the main area, laid out like the ChatGPT app's conversation header: the
-/// session's name as a plain title, and at the trailing end its "…" menu and
-/// what it's running. Only once something else has been put in the main area's
-/// row does the title become that row's tabs. The column's toggle sits at the
-/// far end while the column is hidden, as ChatGPT's pane toggle does; with the
-/// sidebar collapsed the row also makes room for the traffic lights and the
-/// sidebar's controls (`leadingClearance`).
-///
-/// Everything else (a new terminal here, the bottom strip) is in the "…" menu
-/// and on the keyboard, not on the row: a titlebar full of glyphs is a titlebar
-/// nobody can read.
-@MainActor
-final class MainBar: ChromeBarView, LeafBar {
-    let title = PassthroughLabel(labelWithString: "")
-    let strip = SideTabStrip()
-    let unzoom = ZoomedButton()
-    let more = HoverFillButton.glyph("ellipsis", "Session")
-    let running = RunningButton()
-    let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
-    private let sideDivider = ToolbarDivider()
-    private var leading: NSLayoutConstraint!
-    /// How far from the row's leading edge its content has to start to clear
-    /// the sidebar's controls laid over it: 0 while they're over the sidebar.
-    var leadingClearance: CGFloat = 0 {
-        didSet { if leadingClearance != oldValue { updateLeading() } }
-    }
-
-    /// While the row shows the title rather than tabs: the row, as a place to
-    /// drop a tab, and where the marker goes, just after the title's text (the
-    /// session's tab it will sit beside), in window coordinates.
-    func dropSlot() -> (area: NSRect, markerX: CGFloat)? {
-        guard window != nil, strip.isHidden, !isHiddenOrHasHiddenAncestor else { return nil }
-        let textWidth = min(title.intrinsicContentSize.width, title.bounds.width)
-        let end = title.convert(NSPoint(x: textWidth + 6, y: 0), to: nil).x
-        return (convert(bounds, to: nil), end)
-    }
-
-    override init() {
-        super.init()
-
-        title.font = .systemFont(ofSize: 13, weight: .medium)
-        title.textColor = .labelColor
-        title.lineBreakMode = .byTruncatingTail
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        title.setContentHuggingPriority(.init(1), for: .horizontal)
-
-        strip.region = .main
-        strip.isHidden = true
-        strip.setContentHuggingPriority(.init(1), for: .horizontal)
-        strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
-
-        let trailing = NSStackView(views: [unzoom, more, running, sideDivider, sideToggle])
-        trailing.spacing = 4
-        let row = NSStackView(views: [title, strip, trailing])
-        row.spacing = 8
-        row.alignment = .centerY
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16)
-        NSLayoutConstraint.activate([
-            // The full row, as the other two rows' strips: a strip of a fixed
-            // height centred in a row whose height is measured at launch sat
-            // half a point off whenever the two differed by an odd amount.
-            // Here, not where the strip is set up: a constraint between views
-            // that don't share a superview yet throws, and at launch that
-            // left the app with no window.
-            strip.heightAnchor.constraint(equalTo: heightAnchor),
-            leading,
-            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            row.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
-    private func updateLeading() {
-        let own: CGFloat = strip.isHidden ? 16 : 8
-        let constant = max(own, leadingClearance)
-        if abs(leading.constant - constant) > 0.01 { leading.constant = constant }
-    }
-
-    /// The title, or the row's tabs once there's more than the terminal in it.
-    func setShowsTabs(_ shows: Bool) {
-        guard strip.isHidden == shows else { return }
-        strip.isHidden = !shows
-        title.isHidden = shows
-        updateLeading()
-    }
-
-    /// The column's toggle, here only while the column is hidden.
-    func setShowsSideToggle(_ shows: Bool) {
-        sideToggle.isHidden = !shows
-        sideDivider.isHidden = !shows
-    }
-}
-
-/// Over the side column: its tabs with "+" right after the last one, as in
-/// ChatGPT's right pane, and the column's toggle at the far end.
-@MainActor
-final class SideColumnBar: ChromeBarView, LeafBar {
-    let strip = SideTabStrip()
-    let unzoom = ZoomedButton()
-    let add = HoverFillButton.glyph("plus", "New Tab")
-    let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column (⌥⌘B)")
-    private var stripLeading: NSLayoutConstraint!
-    /// As the main area's row: room for the sidebar's controls when this row
-    /// is the leftmost with the sidebar collapsed.
-    var leadingClearance: CGFloat = 0 {
-        didSet {
-            let constant = max(8, leadingClearance)
-            if abs(stripLeading.constant - constant) > 0.01 { stripLeading.constant = constant }
-        }
-    }
-
-    override init() {
-        super.init()
-        toggle.isSelected = true
-        strip.translatesAutoresizingMaskIntoConstraints = false
-        strip.trailingAccessory = add
-        addSubview(strip)
-        addSubview(unzoom)
-        addSubview(toggle)
-        stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
-        NSLayoutConstraint.activate([
-            stripLeading,
-            // The full row, like the buttons' centre: a tab centred on a strip
-            // that stopped short of the hairline sat half a point low.
-            strip.topAnchor.constraint(equalTo: topAnchor),
-            strip.bottomAnchor.constraint(equalTo: bottomAnchor),
-            strip.trailingAnchor.constraint(equalTo: unzoom.leadingAnchor, constant: -8),
-            unzoom.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -4),
-            unzoom.centerYAnchor.constraint(equalTo: centerYAnchor),
-            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-}
-
 // MARK: - Back and Forward
 
 /// The two arrows that step through the places you've been: a session and
-/// the tab you had in front in it. Part of `SidebarControls`.
+/// the tab you had in front in it. Part of `WindowControls`.
 @MainActor
 final class HistoryButtons: NSStackView {
     let back = HoverFillButton.glyph("chevron.left", "Back (⌃⌘[)")
@@ -655,10 +539,13 @@ final class RunningButton: BadgedGlyphButton {
 @MainActor
 final class TitleBarController: NSObject, NSPopoverDelegate {
     let sidebarBar = SidebarBar()
-    let mainBar = MainBar()
-    let sideBar = SideColumnBar()
-    /// The sidebar toggle and the arrows, over all three rows.
-    let sidebarControls = SidebarControls()
+    /// The main row's and the side column's rows: a split's row like any
+    /// other (`PaneBar`), wired where the tree is built (`MainAreaController`).
+    let mainBar = PaneBar(region: .main)
+    let sideBar = PaneBar(region: .side)
+    /// The sidebar toggle and the arrows at one end of the titlebar, the
+    /// session's controls at the other, over every row.
+    let windowControls = WindowControls()
 
     private let manager: SessionManager
     /// The window these rows are in: its session's name, tabs and jobs.
@@ -674,33 +561,13 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         self.processes = processes
         super.init()
 
-        mainBar.sideToggle.target = self
-        mainBar.sideToggle.action = #selector(toggleSideColumn)
-        sideBar.toggle.target = self
-        sideBar.toggle.action = #selector(toggleSideColumn)
-        sideBar.add.target = self
-        sideBar.add.action = #selector(presentNewTabMenu(_:))
-        mainBar.running.target = self
-        mainBar.running.action = #selector(openRunningJobs(_:))
-        mainBar.more.target = self
-        mainBar.more.action = #selector(presentSessionMenu(_:))
+        windowControls.sideToggle.target = self
+        windowControls.sideToggle.action = #selector(toggleSideColumn)
+        windowControls.running.target = self
+        windowControls.running.action = #selector(openRunningJobs(_:))
+        windowControls.more.target = self
+        windowControls.more.action = #selector(presentSessionMenu(_:))
 
-        // The column's tab row.
-        sideBar.strip.onSelect = { [weak self] tab in self?.git.select(tab) }
-        sideBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        sideBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
-        sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        sideBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
-        sideBar.strip.onSplit = { [weak self] tab, edge in self?.git.split(.side, on: edge, with: tab) }
-        sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
-        // The main area's row.
-        mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
-        mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        mainBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
-        mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        mainBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
-        mainBar.strip.onSplit = { [weak self] tab, edge in self?.git.split(.main, on: edge, with: tab) }
-        mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
     }
 
     func start() {
@@ -714,7 +581,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     private func observeHistory() {
         withObservationTracking {
             let back = manager.canGoBack, forward = manager.canGoForward
-            sidebarControls.history.update(canGoBack: back, canGoForward: forward)
+            windowControls.history.update(canGoBack: back, canGoForward: forward)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeHistory() }
         }
@@ -731,10 +598,11 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     private func syncColumn() {
-        mainBar.setShowsSideToggle(!git.isVisible)
-        mainBar.title.stringValue = home.selected?.name ?? "Wortel"
-        // A plain title until the row holds more than the session's terminal.
-        mainBar.setShowsTabs(git.mainTabs.count > 1)
+        let label = git.isVisible ? "Hide Side Column (⌥⌘B)" : "Show Side Column (⌥⌘B)"
+        if windowControls.sideToggle.toolTip != label {
+            windowControls.sideToggle.toolTip = label
+            windowControls.sideToggle.setAccessibilityLabel(label)
+        }
         let session = home.selected
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
@@ -822,12 +690,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         git.toggle()
     }
 
-    /// The column's "+": NewTabMenu, opening into the column.
-    @objc private func presentNewTabMenu(_ sender: NSView) {
-        // "+" is the column's; the main area's tabs come from the "…" menu.
-        NewTabMenu.popUp(from: sender, git: git, region: .side)
-    }
-
     /// The session's "…": its own actions, as ChatGPT's menu is the
     /// conversation's. Native, small, glyphs that show, shortcuts on the right.
     /// The titles are short on purpose: the longest title decides the menu's
@@ -906,7 +768,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     private func observeProcesses() {
         withObservationTracking {
-            mainBar.running.show(runningSnapshot)
+            windowControls.running.show(runningSnapshot)
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -943,7 +805,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     nonisolated func popoverDidClose(_ notification: Notification) {
         Task { @MainActor in
             self.runningPopover = nil
-            self.mainBar.running.show(self.runningSnapshot)
+            self.windowControls.running.show(self.runningSnapshot)
         }
     }
 }

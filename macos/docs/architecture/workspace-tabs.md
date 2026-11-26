@@ -10,8 +10,10 @@ and every split is a row of tabs over a page (**One tree of splits**, below).
 A session has one to begin with, and Wortel opens two more where they have
 always been:
 
-- **the main row**: the session's own terminal (`SideTab.session`, by the
-  session's name) plus whatever is opened or dragged there. Always there;
+- **the main row**: the session's own terminal (`SideTab.session`, a tab
+  named after the session, pinned: no close button, no menu) plus whatever
+  is opened or dragged there. Always there, and always shown as tabs, a lone
+  terminal too;
 - **the side column**: Changes, History, Files, side terminals. A split at
   the outer edge, there while it has tabs, hidden and shown by ⌥⌘B;
 - **the bottom strip** under the main row (⌘J), on the same terms.
@@ -19,8 +21,9 @@ always been:
 Every other split is one somebody made (⌘D, ⇧⌘D, a tab let go on an edge).
 Until 2026-11-26 those three were fixed regions, modelled on the ChatGPT app's
 bounded layout, and the column and the strip were AppKit panes of their own
-beside the main area. The window still looks that way. It is no longer built
-that way.
+beside the main area. The window is still arranged that way. It is no longer
+built that way, and since the same day every row is the same row (`PaneBar`,
+below).
 
 Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
 a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened blank from "+" or
@@ -330,12 +333,28 @@ The views:
   tree and nothing is rebuilt. Nesting `NSSplitView`s is the trap.
 - **One kind of leaf** (`SplitLeafView`): a row on top and a page under it.
   The row is a `LeafBar`, a `ChromeBarView` with a `strip` of tabs, a
-  `leadingClearance` and an `unzoom` button. There are four: `MainBar` (the
-  session's name as a plain title until the row holds more than the
-  terminal, then its tabs; "…" and what is running), `SideColumnBar` (tabs,
-  "+", the column's toggle), `BottomBar` (tabs, "+", the chevron that hides
-  the strip) and `PaneBar` (tabs, "+"). `TitleBarController` still owns the
-  first two and keeps them in step with the model (`syncColumn`).
+  `leadingClearance`, a `trailingClearance` and an `unzoom` button. One
+  class conforms, `PaneBar`: the tabs, "+" right after the last
+  (`NewTabMenu`), and nothing else but the button that shows while its
+  split is zoomed. Every leaf has one, wired the same way
+  (`PaneBar.wire(to:home:region:)`). There were four until 2026-11-26:
+  `MainBar` showed the session's name as a plain title until the row held
+  more than the terminal and carried the session's "…", what it runs and
+  the column's toggle, `SideColumnBar` carried the toggle, `BottomBar` a
+  chevron that hid the strip. Those buttons are the window's now, at the
+  trailing end of the titlebar (`WindowControls`,
+  `window-and-sidebar.md`), or a key (⌘J for the strip). The reason is in
+  `../../../docs/decisions.md`: on a row, they ended up in the middle of the
+  window once a split could sit to the right of it. A button of a row's own
+  is the thing not to add back.
+- **The main row always shows its tabs.** The session's terminal is the tab
+  `SideTab.session`, titled with the session's name and `pinned`
+  (`TitleBarController.stripItem`): `SideTabView` hides its close button and
+  gives it no menu, and `SideTab.fits` keeps it in the main row. A session
+  with only its terminal shows that one tab. `TitleBarController` still
+  holds the main row's and the side column's bars (`mainBar`, `sideBar`,
+  both `PaneBar`) and fills their strips (`syncColumn`); `MainAreaController`
+  wires them.
 - **The row has two looks, by where the tree put the leaf.**
   `MainAreaController.placed` runs after every layout and sets
   `SplitLeafView.isAtTop` for each leaf on screen (its frame starts at the
@@ -348,8 +367,8 @@ The views:
   a double-click on its empty part zooms the split (`onRowDoubleClick`). A
   leaf changes look when it changes place: a zoomed strip fills the area, so
   it is along the top and has a titlebar row. This is why the terminal with
-  Changes beside it looks as it did when the column was a pane: both are
-  along the top. The first version gave every split a 36pt row under a
+  Changes beside it has both rows in the titlebar, as when the column was a
+  pane: both are along the top. The first version gave every split a 36pt row under a
   titlebar that showed the session's name. That is gone.
 - **The pages.** The main row's (`mainBody`) is the session's terminal and
   what covers it, as before. The side column's is `SideColumnController` and
@@ -360,15 +379,17 @@ The views:
   removed) while it isn't on screen. Each keeps its terminals in a
   `SideTerminalHostController`, and its page is `TabContent` in a hosting
   view with `sizingOptions = []`.
-- **Who makes room for the sidebar's controls.** `MainAreaController`
-  lists the rows along the top with where each starts (`titlebarRows`), and
-  `MainSplitViewController.updateLeadingInsets` gives each the clearance it
-  needs, which is more than nothing only for the leftmost. A row that is not
-  along the top has none (`SplitLeafView.dress`).
+- **Who makes room for the window's controls.** `MainAreaController`
+  lists the rows along the top with where each starts and ends
+  (`titlebarRows`), and `MainSplitViewController.updateLeadingInsets` gives
+  each a `leadingClearance` (for the sidebar's toggle and the arrows, more
+  than nothing only for the leftmost) and a `trailingClearance` (for the
+  session's controls, only for the rightmost). A row that is not along the
+  top has neither (`SplitLeafView.dress`).
 - **Dimming** (`MainAreaController.dressRows`). With more than two leaves on
   screen, the tab in front of a row you are not in has the secondary label
-  colour (`SideTabStrip.isKeyRow`), and the main row's title too. With one or
-  two, nothing is dimmed. `dressRows` is the one place that writes
+  colour (`SideTabStrip.isKeyRow`), the main row's like any other. With one
+  or two, nothing is dimmed. `dressRows` is the one place that writes
   `isKeyRow`, for every row. A made split's controller wrote it too at
   first, without the count, and the two could disagree.
 - **Dividers** are the 1pt gap in `Chrome.hairline`, taking presses 4pt
@@ -414,10 +435,18 @@ Making one, and dropping on one:
   split beside the leaf you're in (`GitPanelModel.currentLeaf`). From Changes
   that is a split beside Changes, from the strip one beside the strip. Split
   Right and Split Down in a tab's menu, in `NewTabMenu` and in the session's
-  "…" go through the same `GitPanelModel.split`. All of them beep and do
-  nothing when `MainAreaController.hasRoom` says the leaf is not two minimums
-  and a gap wide (or high), whichever leaf it is. A command teaches no habit
+  "…" go through the same `GitPanelModel.split`, which asks the window
+  where the room comes from (`roomToSplit`, `MainAreaController.room`). A
+  leaf that is two minimums and a gap wide (or high) is halved. One that is
+  not takes the new split's room from the whole row or column it is in, an
+  equal share from every part (`SplitLayout.insertSpreading`): ⌘D in a side
+  column 280pt wide did nothing before that. Only when that row has no room
+  either do they beep and do nothing. A command teaches no habit
   (`home(for:)`); a drop does.
+- The rows a drag can land in all come from `MainAreaController.rows`: every
+  leaf on screen, the main row among them. Until the main row always showed
+  its tabs it was a static entry of its own, with a drop slot standing in
+  for the hidden strip beside the title (`MainBar.dropSlot`). That is gone.
 - A drag is resolved by `TabDragController`: first the rows
   (`stripLanding`, to reorder or to land at an exact place in another row),
   then the splits (`zoneLanding`, `paneLanding`). `SplitLayout.dropEdge`

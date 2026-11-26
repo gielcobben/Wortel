@@ -4,10 +4,13 @@ import SwiftUI
 
 // MARK: - A split's row
 
-/// The row of a split somebody made (⌘D, a tab let go on an edge): its tabs
-/// with "+" right after the last one. Along the top of the window it is a
-/// titlebar row like the main row's and the side split's; lower down, the
-/// strip's kind of row (`SplitLeafView`).
+/// A split's row: its tabs with "+" right after the last one, and nothing
+/// else. Every split has this one, the main row's, the side column's and the
+/// strip's included: what a row once had of its own (the session's "…", what
+/// it runs, the column's toggle, the strip's chevron) was the session's or
+/// the window's and is at the end of the titlebar (`WindowControls`), or on
+/// the keyboard. Along the top of the window it is a titlebar row; lower
+/// down, a row on a page (`SplitLeafView`).
 ///
 /// Nothing at the trailing end until the split is zoomed: then one button
 /// says so, and puts the others back.
@@ -17,12 +20,21 @@ final class PaneBar: ChromeBarView, LeafBar {
     let add = HoverFillButton.glyph("plus", "New Tab")
     let unzoom = ZoomedButton()
     private var stripLeading: NSLayoutConstraint!
-    /// As every row's: room for the sidebar's controls when this row is the
-    /// leftmost in the titlebar with the sidebar collapsed.
+    private var unzoomTrailing: NSLayoutConstraint!
+    /// Room for the sidebar's controls when this row is the leftmost in the
+    /// titlebar with the sidebar collapsed.
     var leadingClearance: CGFloat = 0 {
         didSet {
             let constant = max(8, leadingClearance)
             if abs(stripLeading.constant - constant) > 0.01 { stripLeading.constant = constant }
+        }
+    }
+    /// And for the session's controls at the other end, when this row is the
+    /// rightmost in the titlebar (`WindowControls`).
+    var trailingClearance: CGFloat = 0 {
+        didSet {
+            let constant = -max(8, trailingClearance)
+            if abs(unzoomTrailing.constant - constant) > 0.01 { unzoomTrailing.constant = constant }
         }
     }
 
@@ -34,12 +46,13 @@ final class PaneBar: ChromeBarView, LeafBar {
         addSubview(strip)
         addSubview(unzoom)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
+        unzoomTrailing = unzoom.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)
         NSLayoutConstraint.activate([
             stripLeading,
             strip.topAnchor.constraint(equalTo: topAnchor),
             strip.bottomAnchor.constraint(equalTo: bottomAnchor),
             strip.trailingAnchor.constraint(equalTo: unzoom.leadingAnchor, constant: -8),
-            unzoom.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            unzoomTrailing,
             unzoom.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }

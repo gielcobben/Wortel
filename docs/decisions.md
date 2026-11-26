@@ -144,7 +144,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the leftmost one makes room for the sidebar's controls. Lower down it is
   the strip's kind of row: 36pt on a faint band over the page, and a
   double-click on its empty part zooms the split. So the terminal with
-  Changes beside it looks exactly as it did. This replaces "a row per
+  Changes beside it is laid out exactly as it was, with both rows in the
+  titlebar. (It looked exactly as it did, too, until the rows were made
+  identical later the same day: see "Every row is the same" further on.)
+  This replaces "a row per
   split, not more rows in the titlebar" in the entry below, where the
   titlebar showed the session's name while split and every split had a 36pt
   row under it. The reason given there, that a titlebar row lies over the
@@ -197,7 +200,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   split's minimum (160 by 100 points), so dragging one to the edge no
   longer closes the column or the strip. ⌥⌘B and ⌘J do that. **Dimming
   goes by how many.** With more than two splits on screen the tab in front
-  of one you are not in has a quiet title, and so has the main row's title.
+  of one you are not in has a quiet title, the main row's like any other.
   With one or two, as always, nothing is dimmed: the cursor says where you
   are. **⌥⌘B and ⌘J still slide.** The first build of the tree cut where
   they used to slide, because the tree set every frame in one pass. The
@@ -262,7 +265,40 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   strip`: 0 faults, and the five splits back after the relaunch. **Not run
   again after them:** the two session-switch runs, which passed before
   them (`try-switch.sh --side --widths`, 0 of 72), and the rest of
-  `check-terminals.sh`.
+  `check-terminals.sh`. **Every row is the same, and the session's
+  controls are the window's.** The owner, trying the build with one tree:
+  the side column's toggle looked odd in the middle of the window, and the
+  main row having no tab was inconsistent. Everything should be the same.
+  Both came from the rows still being three kinds. The main row showed the
+  session's name as a plain title until a second tab joined it, and carried
+  the session's "…", what it is running and the column's toggle while the
+  column was hidden. The side column's row carried the toggle. The strip's
+  row had a chevron to hide it. That was right while those rows were the
+  window's fixed places. Once any split can sit to the right of either,
+  the same buttons land in the middle of the window. Now every split's row is one thing (`PaneBar`): its tabs, a
+  "+" after the last, and nothing else, but for the button that says a
+  split is zoomed. `MainBar`, `SideColumnBar` and `BottomBar` are gone.
+  What belonged to the session or the window is at the trailing end of the
+  titlebar, in the one overlay that already held the sidebar's toggle and
+  Back and Forward at the leading end (`WindowControls`, which was
+  `SidebarControls`): what the session is running, its "…", and the side
+  column's toggle, plain like the sidebar's toggle that it mirrors. They
+  stay there whatever the splits do, and the rightmost titlebar row makes
+  room for them as the leftmost does for the others
+  (`LeafBar.trailingClearance`). The strip's chevron has no successor:
+  ⌘J, and Hide Strip in the "…". Two picks the owner made when asked. A
+  lone terminal shows a tab too, always a tab and never a bare title: the
+  session's own terminal is a tab named after the session, pinned, so no
+  close button and no menu, and it cannot leave its row. And a new session
+  still starts with just the terminal, the side column opening with ⌥⌘B as
+  before. The cost: a session with nothing but its terminal now has a tab
+  in its titlebar where it had a title, so the window nobody arranged no
+  longer looks exactly as it did before splits. It is arranged the same.
+  Verified so far (2026-11-26, throwaway copies): the app builds, and
+  `try-splits.sh --picture column` and a mixed layout were looked at in
+  light and in dark: the rows identical, the controls in the corner, the
+  rightmost row clear of them. Not claimed here: the unit tests and the
+  tour on this change.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -301,8 +337,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the side column and the strip were panes of their own beside the tree,
   not in it, and "every window is the same fixed frame of four places"
   (2026-11-19, below) held as written. They are leaves of the tree since
-  the entry above. What stands: a session with nothing split looks as it
-  did before splits. It no longer saves exactly as before, since a session
+  the entry above. What stands: a session with nothing split is arranged
+  as it was before splits (its row shows a tab where it had a title, the
+  entry above). It no longer saves exactly as before, since a session
   with a column or a strip writes `splitLayout` too. **The word is "split",
   not "pane".** A pane is already
   Changes, History or Files (`docs/glossary.md`). The code says
@@ -1101,6 +1138,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the end. Now `SidebarControls` sits over the titlebar, the toggle never
   moves, the arrows ride the sidebar's edge and stop beside the toggle, and
   the rows to the right are pushed along by the same number every frame.
+  **Since 2026-11-26** on the branch `flexible-panes` the same overlay is
+  `WindowControls` and has a trailing end as well: what the session is
+  running, its "…" and the side column's toggle, which were on rows until
+  then (the first entry of "Window, terminal and keys").
 - **2026-11-18. A new session at the top level goes on top.** It went after
   the selected row, so in a list nobody arranges a new row turned up in the
   middle. Now that list reads newest first, as a list of chats does. In a

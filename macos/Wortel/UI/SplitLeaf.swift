@@ -6,6 +6,7 @@ import AppKit
 protocol LeafBar: ChromeBarView {
     var strip: SideTabStrip { get }
     var leadingClearance: CGFloat { get set }
+    var trailingClearance: CGFloat { get set }
     /// Shown only while this row's split is zoomed (`ZoomedButton`).
     var unzoom: ZoomedButton { get }
 }
@@ -91,6 +92,9 @@ final class SplitLeafView: NSView {
         rowBand.isHidden = isAtTop
         bar.isTitlebar = isAtTop
         bar.strip.isOnPage = !isAtTop
-        if !isAtTop, bar.leadingClearance != 0 { bar.leadingClearance = 0 }
+        if !isAtTop {
+            if bar.leadingClearance != 0 { bar.leadingClearance = 0 }
+            if bar.trailingClearance != 0 { bar.trailingClearance = 0 }
+        }
     }
 }

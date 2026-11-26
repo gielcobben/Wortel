@@ -310,9 +310,9 @@ the design is enforced, and pull requests adding them are unlikely to land.
 feature is held to.
 
 - **No layout to build.** A window is a sidebar and, beside it, splits: parts
-  with a row of tabs each. The window looks as it always has: the side
-  column and the strip under the terminal are splits that Wortel opens for
-  you, where and as big as they always were. Any split can be split again
+  with a row of tabs each. The window is arranged as it always was: the
+  side column and the strip under the terminal are splits that Wortel opens
+  for you, where and as big as they always were. Any split can be split again
   (`⌘D`, `⇧⌘D`), and one is gone when its last tab closes. A split holds
   tabs, never another session: the sidebar of named sessions is where you
   switch work. The engine's own tab and split actions still return "unhandled".

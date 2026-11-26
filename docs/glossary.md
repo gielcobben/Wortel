@@ -44,7 +44,9 @@ also says **side split**. Older docs and some code call it the **inspector**.
 the height you last chose. It too can be hidden with its tabs kept.
 
 **Tab.** One thing in a split's row: a terminal, a pane, a file, a browser.
-The terminal engine has no tabs and no splits of its own. These are Wortel's.
+The session's own terminal is a tab too, named after the session, in the main
+row. It has no close button. The terminal engine has no tabs and no splits of
+its own. These are Wortel's.
 
 **Pane.** One of the three git and file views: Changes, History, Files.
 

@@ -108,7 +108,7 @@ the size they always had. They are the default, not a different kind of thing.
 Any split can be split again, zoomed, resized by its divider and dropped on,
 and one is gone when its last tab closes. So there is still no layout to
 configure: nothing is named, saved or loaded, and a window nobody arranged
-looks exactly as it did before there were splits.
+is arranged exactly as it was before there were splits.
 A second window (⇧⌘N) is the same again, with a sidebar of its own
 sessions: windows are how work is set apart, never how a layout is built.
 Until 2026-11-26 this idea was "a fixed frame of four places", and the side
@@ -258,25 +258,44 @@ row of one flat band, with hairlines between them. The titlebar is Wortel's
 own because macOS 26 and later put every toolbar item on a glass capsule, and
 there is no switch for that.
 
-A split has one of two rows, by where it is (`SplitLeafView`):
+**Every split's row is the same thing** (`PaneBar`): its tabs, a "+" right
+after the last one, and nothing else. No row has a button of its own. The
+one exception is temporary: a zoomed split has one button at the end of its
+row, to show the others again. The main row is no different. The session's
+own terminal is a tab named after the session, pinned: it has no close
+button and no menu, and it cannot leave its row. A session with nothing but
+its terminal shows that one tab, never a bare title.
+
+**The titlebar has two ends, and they are the window's, not a row's**
+(`WindowControls`, one overlay over the whole titlebar). At the leading end,
+by the traffic lights: the sidebar's toggle, then Back and Forward, which
+ride the sidebar's edge. At the trailing end: what the session is running,
+the session's "…" menu, and the side column's toggle, plain like the
+sidebar's toggle that it mirrors. They stay in their corners whatever the
+splits do. The row under each end makes room for it: the leftmost titlebar
+row for the leading end, the rightmost for the trailing one. These buttons
+were on the main row and on the side column's row until 2026-11-26, which
+put them in the middle of the window as soon as a split could sit to the
+right of either. A button for one split's own row is the thing not to add
+back: if it is about the session or the window, it goes in a corner, and if
+it is about the split, it is a key or a menu item.
+
+A split's row has one of two looks, by where it is (`SplitLeafView`):
 
 - **Along the top of the window, a titlebar row.** The titlebar's height,
   see-through to the glass, a hairline where the page starts, the tab in
   front raised off the band. Its empty part moves the window, and a
   double-click there does what the Mac is set to do. The leftmost one makes
-  room for the sidebar's controls when the sidebar is collapsed. The terminal
-  with Changes beside it is two of these, which is the window Wortel has
-  always had.
+  room for the controls at the leading end when the sidebar is collapsed,
+  and the rightmost for those at the trailing end. The terminal with Changes
+  beside it is two of these.
 - **Lower down, the strip's kind of row.** 36pt on a faint band over the
   page, the tab in front raised in the page's own colour, the tabs, then
   "+". A double-click on its empty part zooms the split. It does not move
   the window.
 
-The same split changes row when it changes place: a strip that is zoomed is
-along the top, and has a titlebar row while it is. The main row shows the
-session's name as a plain title until it holds more than the terminal, in
-either row. A zoomed split has one button at the end of its row, to show the
-others again.
+The same split changes look when it changes place: a strip that is zoomed is
+along the top, and has a titlebar row while it is.
 
 ### Sidebar
 
@@ -350,9 +369,8 @@ grey otherwise, as in Finder. Moving between areas with ⌘] blinks a short
 outline around the one that now has the keyboard.
 
 With more than two splits on screen, the tab in front of a split you are not
-in has a quiet title (the secondary label colour, glyph and all), and so has
-the main row's title when you are elsewhere. The one you are in has the usual
-one. That is the whole difference: no border, no tint. With one or two on
+in has a quiet title (the secondary label colour, glyph and all), the main
+row's like any other. The one you are in has the usual one. That is the whole difference: no border, no tint. With one or two on
 screen (the terminal, or the terminal and Changes beside it) nothing is
 dimmed, as it never was: the cursor says where you are.
 

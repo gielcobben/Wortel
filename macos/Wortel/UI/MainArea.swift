@@ -87,6 +87,8 @@ final class MainAreaController: NSViewController {
         }
         addChild(side)
         addChild(bottom)
+        titleBars.mainBar.wire(to: git, home: home, region: .main)
+        titleBars.sideBar.wire(to: git, home: home, region: .side)
         for (region, leaf) in [(TabRegion.main, mainLeaf), (.side, sideLeaf), (.bottom, bottom.leaf)] {
             wire(leaf.bar, region: region)
         }
@@ -255,7 +257,6 @@ final class MainAreaController: NSViewController {
             bar.strip.isKeyRow = !dims || key == region
         }
         dress(titleBars.mainBar, .main)
-        titleBars.mainBar.title.textColor = !dims || key == .main ? .labelColor : .secondaryLabelColor
         dress(titleBars.sideBar, .side)
         dress(bottom.bar, .bottom)
         for (id, pane) in panes { dress(pane.bar, .pane(id)) }
@@ -306,13 +307,11 @@ final class MainAreaController: NSViewController {
 
     // MARK: For the window
 
-    /// The rows of the splits on screen that take a dropped tab, for the tab
-    /// drag, apart from the main row's (which stands for its tabs with a
-    /// title while it holds only the terminal, and is listed with that).
+    /// The rows of the splits on screen, which take a dropped tab: for the
+    /// tab drag.
     var rows: [(strip: SideTabStrip, region: TabRegion)] {
         tree.visibleLeaves.compactMap { entry in
-            guard entry.leaf != .main, let leaf = leafView(of: entry.leaf) else { return nil }
-            return (leaf.bar.strip, TabRegion(entry.leaf))
+            leafView(of: entry.leaf).map { ($0.bar.strip, TabRegion(entry.leaf)) }
         }
     }
 
@@ -321,14 +320,15 @@ final class MainAreaController: NSViewController {
         [titleBars.mainBar.strip, titleBars.sideBar.strip, bottom.bar.strip] + panes.values.map(\.bar.strip)
     }
 
-    /// The rows along the top of the window, each with where it starts in
-    /// window coordinates: the leftmost makes room for the sidebar's
-    /// controls when they are laid over it.
-    var titlebarRows: [(bar: any LeafBar, minX: CGFloat)] {
+    /// The rows along the top of the window, each with where it starts and
+    /// ends in window coordinates: the leftmost makes room for the sidebar's
+    /// controls when they are laid over it, the rightmost for the session's.
+    var titlebarRows: [(bar: any LeafBar, minX: CGFloat, maxX: CGFloat)] {
         guard view.window != nil else { return [] }
         return tree.visibleLeaves.compactMap { entry in
             guard entry.frame.minY < 0.5, let leaf = leafView(of: entry.leaf) else { return nil }
-            return (leaf.bar, tree.convert(entry.frame, to: nil).minX)
+            let frame = tree.convert(entry.frame, to: nil)
+            return (leaf.bar, frame.minX, frame.maxX)
         }
     }
 

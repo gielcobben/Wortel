@@ -163,9 +163,11 @@ final class MarkupOverlayView: NSView {
     override func layout() {
         super.layout()
         marksLayer.frame = bounds
-        let width = max(min(bounds.width - 24, MarkupNoteBar.widest), 120)
+        // Closer to the edges where there is little width to give away.
+        let margin = bounds.width < 420 ? 12 : MarkupNoteBar.margin
+        let width = max(min(bounds.width - margin * 2, MarkupNoteBar.widest), 120)
         let height = noteBar.height(forWidth: width)
-        noteBar.frame = NSRect(x: ((bounds.width - width) / 2).rounded(), y: bounds.height - 12 - height,
+        noteBar.frame = NSRect(x: ((bounds.width - width) / 2).rounded(), y: bounds.height - margin - height,
                                width: width, height: height)
         window?.invalidateCursorRects(for: self)
         place()

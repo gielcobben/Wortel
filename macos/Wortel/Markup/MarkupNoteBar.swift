@@ -203,7 +203,7 @@ final class NoteTextView: NSTextView {
         super.draw(dirtyRect)
         guard (textStorage?.length ?? 0) == 0 else { return }
         var attributes = MarkupNoteBar.attributes
-        attributes[.foregroundColor] = NSColor.tertiaryLabelColor
+        attributes[.foregroundColor] = NSColor.placeholderTextColor
         let room = bounds.width - textContainerInset.width * 2
         // The longest that fits on the one line: half a hint cut off by the
         // button reads as a mistake.
@@ -230,10 +230,12 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     static let font = NSFont.systemFont(ofSize: 13)
     /// Every line the same height, one that has room for a chip.
     static let lineHeight: CGFloat = 22
-    static let widest: CGFloat = 560
+    static let widest: CGFloat = 640
     static let corner: CGFloat = 16
+    /// How far the bar floats from the preview's edges.
+    static let margin: CGFloat = 16
     private static let mostLines: CGFloat = 6
-    private static let padding = NSSize(width: 14, height: 11)
+    private static let padding = NSSize(width: 16, height: 14)
 
     static var attributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -243,8 +245,15 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     }
 
     private let session: MarkupSession
-    private let material = NSVisualEffectView()
+    /// What the bar is made of: the system's glass where there is glass
+    /// (macOS 26 on), and before it the popover material with an edge and a
+    /// shadow of the bar's own, which glass draws for itself.
+    private let backdrop: NSView
+    /// Everything in the bar. Inside the glass's content view: only what is
+    /// there is promised to sit in the glass (`NSGlassEffectView.h`).
+    private let content = FlippedView()
     private let edge = CAShapeLayer()
+    private let clear = HoverFillButton.glyph("trash", "Clear Note")
     private let scroll = NSScrollView()
     private let textLayout = NSLayoutManager()
     let textView: NoteTextView
@@ -256,7 +265,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     private var tools: [(tool: MarkupTool, button: HoverFillButton)] = []
     private let divider = ToolbarDivider()
     private static let toolRow: CGFloat = Chrome.controlSize
-    private static let toolGap: CGFloat = 6
+    private static let toolGap: CGFloat = 8
     private let spinner = NSProgressIndicator()
     /// The bar grew or shrank a line: whoever places it lays out again.
     var onHeightChange: () -> Void = {}
@@ -271,23 +280,40 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         textLayout.addTextContainer(container)
         session.text.addLayoutManager(textLayout)
         textView = NoteTextView(frame: .zero, textContainer: container)
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            glass.cornerRadius = Self.corner
+            glass.contentView = content
+            backdrop = glass
+        } else {
+            let material = NSVisualEffectView()
+            material.material = .popover
+            material.blendingMode = .withinWindow
+            material.state = .active
+            material.maskImage = Self.mask(radius: Self.corner)
+            backdrop = material
+        }
         super.init(frame: .zero)
 
         wantsLayer = true
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.12
-        layer?.shadowRadius = 12
-        layer?.shadowOffset = CGSize(width: 0, height: -4)
-
-        material.material = .popover
-        material.blendingMode = .withinWindow
-        material.state = .active
-        material.maskImage = Self.mask(radius: Self.corner)
-        addSubview(material)
-
-        edge.fillColor = nil
-        edge.lineWidth = 0.5
-        layer?.addSublayer(edge)
+        addSubview(backdrop)
+        if #available(macOS 26.0, *) {
+            // Glass draws its own edge and its own shadow, and deepens the
+            // shadow over text. A border and a shadow added on top fight it.
+        } else {
+            // Through the view, not the layer: AppKit owns a view's layer
+            // and sets its shadow back to none. The first bar had its
+            // shadow on the layer, and so no shadow at all.
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
+            shadow.shadowBlurRadius = 24
+            shadow.shadowOffset = NSSize(width: 0, height: -8)
+            self.shadow = shadow
+            addSubview(content)
+            edge.fillColor = nil
+            edge.lineWidth = 1
+            layer?.addSublayer(edge)
+        }
 
         textView.delegate = self
         textView.placeholders = placeholders
@@ -324,7 +350,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         scroll.hasVerticalScroller = true
         scroll.scrollerStyle = .overlay
         scroll.autohidesScrollers = true
-        addSubview(scroll)
+        content.addSubview(scroll)
 
         button.bezelStyle = .push
         button.controlSize = .regular
@@ -332,7 +358,12 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         button.target = self
         button.action = #selector(copyNote)
         button.setAccessibilityLabel("Copy")
-        addSubview(button)
+        button.toolTip = "Copy the note (\u{21A9})"
+        if #available(macOS 26.0, *) {
+            // The one thing on the bar that is tinted: what Return does.
+            button.tintProminence = .primary
+        }
+        content.addSubview(button)
 
         for tool in MarkupTool.allCases {
             let button = HoverFillButton.glyph(tool.symbol, tool.name)
@@ -340,16 +371,22 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
             button.target = self
             button.action = #selector(pickTool(_:))
             button.tag = tools.count
-            addSubview(button)
+            content.addSubview(button)
             tools.append((tool, button))
         }
         divider.translatesAutoresizingMaskIntoConstraints = true
-        addSubview(divider)
+        content.addSubview(divider)
+
+        // Only while there is something to clear: absent, not greyed.
+        clear.translatesAutoresizingMaskIntoConstraints = true
+        clear.target = self
+        clear.action = #selector(clearNote)
+        content.addSubview(clear)
 
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
-        addSubview(spinner)
+        content.addSubview(spinner)
 
         update()
     }
@@ -373,6 +410,22 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     }
 
     @objc private func copyNote() { session.copyNote() }
+
+    /// The whole note, marks and words. An edit of the text like any
+    /// other, so ⌘Z brings it all back.
+    @objc private func clearNote() {
+        textView.breakUndoCoalescing()
+        textView.insertText("", replacementRange: NSRange(location: 0, length: session.text.length))
+        textView.breakUndoCoalescing()
+        update()
+        onHeightChange()
+        focus()
+    }
+
+    /// A press on the bar itself, beside the text: the keyboard to the note.
+    override func mouseDown(with event: NSEvent) {
+        focus()
+    }
 
     @objc private func pickTool(_ sender: NSButton) {
         guard tools.indices.contains(sender.tag) else { return }
@@ -432,26 +485,27 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
             used = max(used, textLayout.extraLineFragmentRect.maxY)
         }
         let lines = max(1, min(Self.mostLines, (used / Self.lineHeight).rounded(.up)))
-        return lines * Self.lineHeight + Self.padding.height + Self.toolGap + Self.toolRow + 8
+        return lines * Self.lineHeight + Self.padding.height + Self.toolGap + Self.toolRow + 10
     }
 
     override func layout() {
         super.layout()
-        material.frame = bounds
-        let path = CGPath(roundedRect: bounds.insetBy(dx: 0.25, dy: 0.25),
-                          cornerWidth: Self.corner, cornerHeight: Self.corner, transform: nil)
+        backdrop.frame = bounds
+        content.frame = bounds
         edge.frame = bounds
-        edge.path = path
-        layer?.shadowPath = path
+        edge.path = CGPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                           cornerWidth: Self.corner, cornerHeight: Self.corner, transform: nil)
         // The row of tools along the bottom, Copy at its far end.
-        let row = NSRect(x: 0, y: bounds.height - 8 - Self.toolRow, width: bounds.width, height: Self.toolRow)
+        let row = NSRect(x: 0, y: bounds.height - 10 - Self.toolRow, width: bounds.width, height: Self.toolRow)
         let size = buttonSize
-        button.frame = NSRect(x: bounds.width - 10 - size.width, y: row.midY - size.height / 2,
+        button.frame = NSRect(x: bounds.width - 12 - size.width, y: row.midY - size.height / 2,
                               width: size.width, height: size.height)
+        clear.frame = NSRect(x: button.frame.minX - 6 - Self.toolRow, y: row.minY,
+                             width: Self.toolRow, height: Self.toolRow)
         spinner.sizeToFit()
         spinner.frame.origin = NSPoint(x: button.frame.midX - spinner.frame.width / 2,
                                        y: button.frame.midY - spinner.frame.height / 2)
-        var x: CGFloat = 8
+        var x: CGFloat = 10
         for (tool, toolButton) in tools {
             if tool == .move {
                 // Apart from the pens: it draws nothing.
@@ -461,6 +515,10 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
             toolButton.frame = NSRect(x: x, y: row.minY, width: Self.toolRow, height: Self.toolRow)
             x += Self.toolRow + 2
         }
+        // There while there is something to clear and room to stand apart
+        // from the tools: in the narrowest column the tools and Copy have
+        // the row to themselves, and ⌘A then ⌫ clears.
+        clear.isHidden = session.text.length == 0 || clear.frame.minX < x + 6
         scroll.frame = NSRect(x: Self.padding.width, y: Self.padding.height,
                               width: max(bounds.width - Self.padding.width * 2, 40),
                               height: max(row.minY - Self.toolGap - Self.padding.height, Self.lineHeight))
@@ -475,7 +533,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
 
     private func colour() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            edge.strokeColor = Chrome.hairlineStrong.cgColor
+            edge.strokeColor = NSColor.separatorColor.cgColor
         }
     }
 
@@ -491,4 +549,9 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         image.resizingMode = .stretch
         return image
     }
+}
+
+/// A view that counts from its top-left, to lay the bar's parts out in.
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }

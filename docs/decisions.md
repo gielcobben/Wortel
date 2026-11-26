@@ -199,8 +199,16 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   was looked at in dark and in light. After the review's fixes: the tour
   again, a zoom ended by closing the zoomed split's last tab (keyboard and
   area in the main terminal), a split's only terminal moved into the main
-  row, a drop on its own row's top edge (nowhere), 0 faults. **Not
-  checked:** a drag with a real pointer, light mode on a screen, several
+  row, a drop on its own row's top edge (nowhere), 0 faults; and the window
+  resized in steps with four splits (`resize:`), smaller, larger and with
+  the session out of sight: shares kept, every terminal told its view's
+  size. `scripts/check-terminals.sh` on the last build: seven of nine ok
+  (switching, sleeping terminals, pages, a crash and a quit, light and
+  dark, panes sliding). **Not checked:** its two window-resize tests, which
+  did not run (they drive the window through System Events, and `osascript`
+  had no Accessibility access in the session that ran them), so "a session
+  out of sight follows a window resize, once" is not re-proved on this
+  branch; a drag with a real pointer, light mode on a screen, several
   windows with splits, the un-zoom with a file in front and the dropped
   file's diff by hand. **The site changes with the release, not
   before:** it describes the released app. The places are in

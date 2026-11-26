@@ -317,8 +317,9 @@ the size it was told, and who has the keyboard. Checked with it 2026-11-26,
 macOS 27.0: the tour (three splits, zoom and back, a divider drag, equalize,
 focus by direction, a session switch away and back, a new tab, a tab moved,
 every split closed), drops on edges and middles, and a quit and relaunch
-with four splits, 0 faults in each. Not checked: a drag with a real pointer,
-several windows with splits.
+with four splits, and the window resized in steps (`resize:<w>x<h>`),
+0 faults in each. Not checked: a drag with a real pointer, several windows
+with splits.
 
 Things that look like detours and aren't:
 

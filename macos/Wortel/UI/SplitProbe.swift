@@ -22,7 +22,8 @@ import AppKit
 /// `focus-down`, `move-left` `move-right` `move-up` `move-down` (the tab in
 /// front), `zoom`, `equalize`, `tab` (a terminal tab here), `close` (the tab
 /// in front here), `column`, `strip`, `next` (the next session), `wide`
-/// (drag the first divider 80 points), `light` and `dark` (the copy's
+/// (drag the first divider 80 points), `resize:<w>x<h>` (the window to that
+/// size in points, in twenty steps), `light` and `dark` (the copy's
 /// appearance, for a picture), `drop:<n>.<where>` (the tab in front
 /// of the area you're in, let go on split number `n` in reading order, at
 /// its `left`, `right`, `up` or `down` edge or its `middle`), and
@@ -82,6 +83,21 @@ enum SplitProbe {
             case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
             case "wide":
                 treeView(in: controller)?.dragDivider(0, by: 80)
+            case let size where size.hasPrefix("resize:"):
+                // The window to this size in twenty steps over a second, as
+                // a drag by its corner would.
+                let parts = size.dropFirst("resize:".count).split(separator: "x").compactMap { Double($0) }
+                guard parts.count == 2 else { continue }
+                let window = controller.window
+                let from = window.frame
+                for stepIndex in 1...20 {
+                    let t = CGFloat(stepIndex) / 20
+                    let width = from.width + (CGFloat(parts[0]) - from.width) * t
+                    let height = from.height + (CGFloat(parts[1]) - from.height) * t
+                    window.setFrame(NSRect(x: from.minX, y: from.maxY - height, width: width, height: height),
+                                    display: true)
+                    await pause(0.05)
+                }
             case let drop where drop.hasPrefix("drop:"):
                 let landed = self.drop(String(drop.dropFirst("drop:".count)), controller)
                 await pause(1.2)

@@ -129,6 +129,16 @@ enum SplitProbe {
                 entry["landed"] = landed
                 trail.append(entry)
                 continue
+            case let typed where typed.hasPrefix("type:"):
+                // A plain key to whatever has the keyboard in the window, as
+                // the window would hand it on. Never posted to the system.
+                let landed = typeKey(String(typed.dropFirst("type:".count)), controller)
+                await pause(1.2)
+                var entry = state(manager, controller)
+                entry["step"] = step
+                entry["landed"] = landed
+                trail.append(entry)
+                continue
             case let picture where picture.hasPrefix("picture:"):
                 await pause(0.4)
                 draw(controller.window, to: String(picture.dropFirst("picture:".count)))
@@ -173,6 +183,23 @@ enum SplitProbe {
         default: point = NSPoint(x: frame.midX, y: frame.midY)
         }
         return controller.split.probeDrop(tab, at: point)
+    }
+
+    /// Type one plain key (`c`, `return`, `escape`, `down`) at the window's
+    /// first responder. Says what kind of view had the keyboard.
+    @MainActor
+    private static func typeKey(_ key: String, _ controller: MainWindowController) -> String {
+        let codes: [String: UInt16] = ["t": 17, "b": 11, "c": 8, "h": 4, "f": 3, "x": 7,
+                                       "return": 36, "escape": 53, "down": 125, "up": 126]
+        guard let code = codes[key.lowercased()],
+              let cgEvent = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
+              let event = NSEvent(cgEvent: cgEvent) else { return "no such key" }
+        let responder = controller.window.firstResponder
+        let name = responder.map { String(describing: type(of: $0)) } ?? "nothing"
+        // Through the window, as a real key comes: SwiftUI's key handling
+        // hangs off that path, not off `keyDown` on the responder.
+        controller.window.sendEvent(event)
+        return "to \(name), window key: \(controller.window.isKeyWindow)"
     }
 
     /// Press `chord` (`shift+cmd+c`): a key-down made here, never sent

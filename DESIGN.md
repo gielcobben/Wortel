@@ -310,7 +310,9 @@ of the page: Terminal, Browser, Changes, History, Files.
 | Under the pointer, or reached by an arrow | `hoverFill` |
 
 No heading, no caption, no border. The tab is titled "New Tab". ↑ and ↓ move
-through the rows, Return picks, Escape closes the tab.
+through the rows, Return picks, Escape closes the tab. A row's first letter
+alone picks it too (T, B, C, H, F), so a new row needs a first letter no
+other row has.
 
 What was tried and went, all on 2026-11-26. A "+" that opened a menu of
 everything a tab can be: two clicks, with nothing on screen in between. The

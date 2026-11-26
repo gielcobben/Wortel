@@ -124,7 +124,10 @@ without asking:
 | Files | ⇧⌘F |
 
 Click a row, or use ↑ and ↓ and Return, and that takes the tab's place. Esc
-closes the empty tab. Changes, History or Files that are open in another
+closes the empty tab. On the page a row's first letter alone picks it too: T
+for Terminal, B for Browser, C for Changes, H for History, F for Files. They
+are the letters of the keys in the table, without ⇧⌘, and nothing can be
+typed on that page, so the letter is enough. Any other letter does nothing. Changes, History or Files that are open in another
 split move to this one. A row keeps one empty tab at most: "+" again brings
 it forward. It works the same in every split, since anything can be opened
 anywhere.

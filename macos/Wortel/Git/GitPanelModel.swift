@@ -1077,6 +1077,10 @@ final class GitPanelModel {
 
     // MARK: - The empty tab
 
+    /// Bumped when the keyboard is sent to a split whose front tab is an
+    /// empty one: its page takes it (`NewTabPage`).
+    private(set) var newTabFocusRequest = 0
+
     /// A row's "+": an empty tab at the end of `region`'s row, in front,
     /// whose page offers what it can become. One a row already has is
     /// brought forward instead: two of nothing is one too many.
@@ -1547,6 +1551,12 @@ final class GitPanelModel {
             guard let front = activeTab(in: region) else { return }
             tab = front
             if tab.terminalID != nil { requestTerminalFocus(in: region); return }
+        }
+        if tab.isBlank {
+            // Off the terminal that had it, then to the empty tab's page.
+            onClearKeyboard?()
+            newTabFocusRequest += 1
+            return
         }
         if let id = tab.browserID, let page = BrowserTabs.shared.existingPage(for: id) {
             // Nowhere yet, its address field; else the page.

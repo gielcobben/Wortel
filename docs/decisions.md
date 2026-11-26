@@ -616,7 +616,33 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   faults. Renders of a 440pt split's row after "+" with two tabs in it,
   and after two relayouts: all three titles whole each time. Not verified:
   the keys on the real keyboard in the real app, and with a browser page
-  or a text field holding the keyboard.
+  or a text field holding the keyboard. **On the empty tab's page the
+  letter alone picks.** The owner: "can we also add that when you are on
+  the selection window on a new tab that you can press the first letter to
+  open that pane there?" T, B, C, H or F on the page picks Terminal,
+  Browser, Changes, History or Files, in that tab's place. It is safe
+  there and nowhere else: nothing can be typed on that page, the five
+  first letters all differ, and they are the letters these things already
+  have in their shortcuts. With ⌘, ⌃ or ⌥ held the key is not the page's,
+  and any other letter does nothing. For the letter to arrive, the page
+  has to have the keyboard, so it takes it in three cases now: when it
+  appears in the split you are in, when the keyboard is sent to a split
+  whose front tab is an empty one (it is taken off the terminal first),
+  and on a click in the page. **A terminal stays ⌘T and does not become
+  ⇧⌘T.** The owner asked whether it should, to finish the pattern. The
+  reasoning, not yet confirmed by them: ⌘T is "new tab" in every app with
+  tabs, and ⇧⌘T is "reopen closed tab" in every one of them, Wortel
+  included. Moving both would break two habits to tidy a table. And in
+  each tool looked at, the terminal is the one key outside the pattern.
+  Verified (2026-11-26, throwaway copies): WortelTests, 1938 tests, 0
+  failures. `try-splits.sh blank-right type:x type:c blank type:t`: x does
+  nothing, c turns the empty tab into Changes, t into a terminal.
+  `blank-right type:down type:down type:return blank type:escape blank
+  focus-left focus-right type:h blank`: Return on the second row makes a
+  browser, Escape closes the empty tab, and after going to another split
+  and back h makes History. `type:c` with a terminal in front goes to the
+  terminal's view. 0 faults in each. Not verified: the keys on the real
+  keyboard, and the click in the page.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry

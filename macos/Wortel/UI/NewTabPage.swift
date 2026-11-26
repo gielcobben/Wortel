@@ -26,6 +26,9 @@ struct NewTabPage: View {
         let symbol: String
         let shortcut: String
         let choice: GitPanelModel.NewTabChoice
+        /// The key that picks it on this page: its first letter, which is
+        /// also the letter of its shortcut.
+        var letter: String { title.prefix(1).lowercased() }
     }
 
     private var rows: [Row] {
@@ -73,9 +76,24 @@ struct NewTabPage: View {
             git.requestClose(tab)
             return .handled
         }
+        // A row's first letter, alone: T, B, C, H, F. The page is a list of
+        // five things with five different first letters, and the same
+        // letters are their keys everywhere else (with ⇧⌘, or ⌘ for the
+        // terminal), so here, where nothing can be typed, the letter is
+        // enough. With ⌘, ⌃ or ⌥ held it is somebody else's key.
+        .onKeyPress(characters: .letters) { press in
+            guard press.modifiers.isDisjoint(with: [.command, .control, .option]),
+                  let row = rows.first(where: { $0.letter == press.characters.lowercased() })
+            else { return .ignored }
+            git.fill(tab, with: row.choice)
+            return .handled
+        }
         // The keyboard, when this is the split you are in: the terminal the
-        // tab now covers must not keep it.
+        // tab now covers must not keep it. On appearing, on being come to
+        // from another split, and on a click in the page.
         .onAppear { if git.lastRegion == region { hasKeyboard = true } }
+        .onChange(of: git.newTabFocusRequest) { if git.lastRegion == region { hasKeyboard = true } }
+        .simultaneousGesture(TapGesture().onEnded { hasKeyboard = true })
     }
 
     private func step(_ offset: Int) -> KeyPress.Result {

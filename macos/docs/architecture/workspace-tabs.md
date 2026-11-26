@@ -468,10 +468,20 @@ The views:
   closed, then the front tab is focused. In that order on purpose: closing
   first would take a split whose only tab was the empty one out of the
   tree before there was anything to put in it. Escape closes the empty tab
-  (`requestClose`). The page takes the keyboard when it appears in the
-  split you are in, and `settle` takes it from a terminal the empty tab
-  covers (`onClearKeyboard`), so nothing is typed into a terminal that
-  cannot be seen. It is in no row's habits (`kind` is nil) and is not
+  (`requestClose`). A row's first letter alone picks it too (T, B, C, H, F;
+  `Row.letter`, `onKeyPress(characters: .letters)`): not with ⌘, ⌃ or ⌥
+  held, and any other letter is ignored. Those are the letters of the same
+  things' shortcuts, and the page is the one place where a bare letter
+  cannot be meant for anything else. A sixth row has to start with a letter
+  of its own. All of the page's keys need it to have the keyboard, and it
+  takes it in three cases: when it appears in the split you are in
+  (`onAppear`); when the keyboard is sent to a split whose front tab is an
+  empty one, by ⌘], ⌃⌥⌘ and an arrow or anything else that ends in
+  `GitPanelModel.focusFront(of:)`, which clears the keyboard off the
+  terminal and bumps `newTabFocusRequest`; and on a click in the page.
+  `settle` also takes the keyboard from a terminal the empty tab covers
+  (`onClearKeyboard`), so nothing is typed into a terminal that cannot be
+  seen. It is in no row's habits (`kind` is nil) and is not
   counted as a tab opened (`TabOpenedKind`): what it becomes is. It is
   saved as `"new:<uuid>"` with the other tabs, so it is back after a
   relaunch, and a build from before it reads that as no tab and drops it.

@@ -498,6 +498,8 @@ final class SurfaceView: NSView {
     /// it under an empty page and what is typed is held (`StartCover`).
     private var startWatch: StartWatch?
     var isStarting: Bool { startWatch != nil }
+    /// When the start now covered began, on `ProcessInfo.systemUptime`.
+    var startBegan: TimeInterval? { startWatch?.began }
     /// The start is over, however it went: the page comes off. Main thread.
     var onStartSettled: (() -> Void)?
 

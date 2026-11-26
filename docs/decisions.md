@@ -940,7 +940,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   an interface lifts it anyway. That wait was 4 s for an hour, and a spinner
   on the page was considered for it: both hide a slow start, which is the
   one worth seeing (an update, a login, a shell that is stuck), so the page
-  comes off sooner and the terminal is its own progress.
+  comes off sooner and the terminal is its own progress. **2026-11-26: the
+  page gets a spinner after 0.75 s after all.** Not for the slow start past
+  the cap, which is still shown, but for an ordinary one under it: Pi's up
+  to two seconds of empty page read as a hang. Claude Code and Codex are
+  usually up before 0.75 s and keep the plain page. The delay counts from
+  the start, so switching back to a session that has been starting a while
+  shows it at once.
   **What is typed under the page is held, and goes only to the program.**
   Lifted on the shell, it is dropped: a sentence meant for an agent is a
   command to a shell. **A Return that was held is never typed, nor anything

@@ -48,28 +48,64 @@ final class TerminalHostViewController: NSViewController {
     /// underneath at its full size, taking keys and being drawn into. Taken
     /// off in one cut when the start is over.
     private let startCover = FilledView(color: Chrome.content)
+    /// On the page once a start has been going `spinnerDelay`, so a slow one
+    /// (Pi, 1 to 2 s) does not read as a hang. A fast one (Claude Code,
+    /// Codex) is over before it would show, and its page stays empty.
+    private let startSpinner = NSProgressIndicator()
+    private var spinnerTimer: DispatchWorkItem?
+    private static let spinnerDelay: TimeInterval = 0.75
 
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
         startCover.isHidden = true
         startCover.autoresizingMask = [.width, .height]
+        startSpinner.style = .spinning
+        startSpinner.controlSize = .small
+        startSpinner.isIndeterminate = true
+        startSpinner.isDisplayedWhenStopped = false
+        startSpinner.sizeToFit()
+        startSpinner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+        startCover.addSubview(startSpinner)
     }
 
     /// The page over `surfaceView` while it starts, and off otherwise.
     private func coverStart(of surfaceView: SurfaceView?) {
+        hideStartSpinner()
         guard let surfaceView, surfaceView.isStarting else {
             startCover.isHidden = true
             return
         }
         surfaceView.onStartSettled = { [weak self, weak surfaceView] in
             guard let self, let surfaceView, self.ownCurrentView === surfaceView else { return }
+            self.hideStartSpinner()
             self.startCover.isHidden = true
         }
         startCover.frame = view.bounds
+        let size = startSpinner.frame.size
+        startSpinner.setFrameOrigin(NSPoint(x: ((view.bounds.width - size.width) / 2).rounded(),
+                                            y: ((view.bounds.height - size.height) / 2).rounded()))
         // In front of every terminal, the one just added included.
         view.addSubview(startCover, positioned: .above, relativeTo: nil)
         startCover.isHidden = false
+
+        // Counted from the start, not from this showing: back to a session
+        // that has been starting a while, it shows at once.
+        let began = surfaceView.startBegan ?? ProcessInfo.processInfo.systemUptime
+        let wait = max(0, began + Self.spinnerDelay - ProcessInfo.processInfo.systemUptime)
+        let item = DispatchWorkItem { [weak self, weak surfaceView] in
+            guard let self, let surfaceView, surfaceView.isStarting,
+                  self.ownCurrentView === surfaceView, !self.startCover.isHidden else { return }
+            self.startSpinner.startAnimation(nil)
+        }
+        spinnerTimer = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: item)
+    }
+
+    private func hideStartSpinner() {
+        spinnerTimer?.cancel()
+        spinnerTimer = nil
+        startSpinner.stopAnimation(nil)
     }
 
     func show(_ session: Session, runtime: GhosttyRuntime) {

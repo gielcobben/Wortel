@@ -856,19 +856,6 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
             card.layer?.borderColor = Self.edge.cgColor
         }
     }
-
-    /// A rounded shape that stretches: what the material is cut to.
-    private static func mask(radius: CGFloat) -> NSImage {
-        let side = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
-    }
 }
 
 /// A view that counts from its top-left, to lay the bar's parts out in.

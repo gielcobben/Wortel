@@ -171,6 +171,41 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(MarkPen.box.opacity, 1)
     }
 
+    func testABadgeIsACircleOnItsMarkAndAPinOnceTheMarkHasLeft() {
+        let clip = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let inset = MarkBadge.reach + MarkBadge.margin
+        // In view: on its corner, a circle.
+        let seen = MarkBadge.spot(for: CGPoint(x: 100, y: 100), of: CGRect(x: 100, y: 100, width: 80, height: 40), in: clip)
+        XCTAssertEqual(seen, MarkBadge.Spot(centre: CGPoint(x: 100, y: 100), toward: nil))
+        // Its top scrolled out, the rest showing: held at the edge, still a circle.
+        let cut = MarkBadge.spot(for: CGPoint(x: 100, y: -20), of: CGRect(x: 100, y: -20, width: 80, height: 40), in: clip)
+        XCTAssertEqual(cut, MarkBadge.Spot(centre: CGPoint(x: 100, y: MarkDrawing.badge / 2), toward: nil))
+        // Gone above: a pin, far enough in for its point, pointing straight up.
+        let above = MarkBadge.spot(for: CGPoint(x: 100, y: -200), of: CGRect(x: 100, y: -200, width: 80, height: 40), in: clip)
+        XCTAssertEqual(above.centre, CGPoint(x: 100, y: inset))
+        XCTAssertEqual(try XCTUnwrap(above.toward), -.pi / 2, accuracy: 0.001)
+        // Gone below, and wide: still straight down, not toward its corner.
+        let below = MarkBadge.spot(for: CGPoint(x: 40, y: 500), of: CGRect(x: 40, y: 500, width: 300, height: 40), in: clip)
+        XCTAssertEqual(below.centre, CGPoint(x: 40, y: 300 - inset))
+        XCTAssertEqual(try XCTUnwrap(below.toward), .pi / 2, accuracy: 0.001)
+        // The note bar begins at 220: the pin is above it, not under it.
+        let overBar = MarkBadge.spot(for: CGPoint(x: 40, y: 500), of: CGRect(x: 40, y: 500, width: 300, height: 40),
+                                     in: clip, above: 220)
+        XCTAssertEqual(overBar.centre, CGPoint(x: 40, y: 220 - inset))
+        // A circle on a mark that shows is left where its mark is.
+        let low = MarkBadge.spot(for: CGPoint(x: 40, y: 250), of: CGRect(x: 40, y: 250, width: 80, height: 40),
+                                 in: clip, above: 220)
+        XCTAssertEqual(low, MarkBadge.Spot(centre: CGPoint(x: 40, y: 250), toward: nil))
+        // Gone to the side inside a box that scrolls sideways: toward that side.
+        let beside = MarkBadge.spot(for: CGPoint(x: 600, y: 100), of: CGRect(x: 600, y: 100, width: 80, height: 40), in: clip)
+        XCTAssertEqual(beside.centre.x, 400 - inset)
+        XCTAssertEqual(try XCTUnwrap(beside.toward), 0, accuracy: 0.001)
+        // The point reaches as far as it says and no further.
+        let path = MarkBadge.point(at: CGPoint(x: 50, y: 50), toward: -.pi / 2)
+        XCTAssertEqual(path.boundingBoxOfPath.minY, 50 - MarkBadge.reach, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(path.boundingBoxOfPath.width, MarkDrawing.badge)
+    }
+
     func testEachPenKeepsWhatItNeedsOfADrag() {
         let drag = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 18), CGPoint(x: 60, y: 22), CGPoint(x: 90, y: 40)]
         // The pen keeps the hand's line; a box its corners; an arrow its ends.

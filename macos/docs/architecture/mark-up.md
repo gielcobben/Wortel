@@ -404,7 +404,9 @@ The first version brought the thing a mark is tied to into the whole
 view: a page `scrollIntoView` on the element, a table the row a third of
 the way down, Markdown the block to the middle. Measured with the real
 views and a real mouse-down on the chip (2026-11-25), that failed in four
-ways. A box drawn on a page is tied to the element that holds all of it,
+ways. A box drawn on a page was then tied to the element that holds all
+of it (it now follows the block under its middle, see "Off, something
+changes, on again"; the box's own place is still what is revealed),
 here a 3,512pt article, and centring that left the box 350 to 1,300pt
 above the view, even when it had been in view. A mark under the note bar,
 or under a page's fixed header, was inside the view and nothing scrolled
@@ -490,6 +492,37 @@ those are the terminal's in `wortel.conf` and not on the menu. Return
 copies, ⇧Return and ⌥Return make a line, Esc goes back one step (see
 "The tools"). Pasting is plain text only, and Writing Tools are off: both
 would put a chip in the text with no mark behind it, or take one out.
+
+## A mark that has left the view leaves a pin
+
+A badge sits on its mark's corner, and is held inside what the mark may
+show in (`MarkBadge.spot`). While any of the mark shows, it is the circle
+it always is, at the edge if the corner is past it. Once none of the mark
+shows, the badge stays at the edge the mark left by and becomes a pin: a
+drop, the circle with a point (`MarkBadge.point`, drawn under the badge by
+`MarkLayer`), 15.5pt from its middle to its tip and 3pt clear of the edge.
+The point is toward the nearest of the mark, not its corner, so a mark
+straight above is pointed straight up at however wide it is, and one
+inside a box that scrolls sideways is pointed at sideways.
+
+A press on a pin brings its mark into view, with any tool in hand: the
+same `reveal` a chip's click asks for. So a drawing cannot begin on a pin.
+
+A pin for a mark below the view is kept above the note bar, which floats
+over the foot of the preview: under the bar it pointed at nothing anyone
+could see. And pins that would sit on one another are lined up side by
+side along their edge, the lowest number keeping its place
+(`MarkupOverlayView.spreadPins`): marks drawn down one side of a page all
+leave by the same place, and a pile of pins shows one number.
+
+Circles at the edge were what there was first. Scrolled past a few marks
+they were a row of dots along the header that said only that marks were
+somewhere (the owner, 2026-11-25, who asked for a drop). The shape was
+drawn to a picture at every angle and looked at: sides that leave the
+circle along the circle's own direction, so there is no shoulder, and
+arrive at the tip from outside the straight line to it, so the drop is
+full and not a flame. Not seen in the app. The pictures that are copied
+keep circles: nothing is out of view in a picture.
 
 ## The tools
 

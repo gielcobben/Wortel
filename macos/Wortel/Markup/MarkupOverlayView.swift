@@ -90,12 +90,7 @@ final class MarkupOverlayView: NSView {
         strokeLayer.lineJoin = .round
         noteBar.onHeightChange = { [weak self] in self?.needsLayout = true }
         noteBar.onHoverMark = { [weak self] in self?.pointOut($0) }
-        noteBar.onPickMark = { [weak self] number in
-            guard let self, let mark = self.session.mark(number) else { return }
-            // What the bar covers, from its top down: the strip under it is
-            // too thin to show a mark in.
-            self.surface.reveal(mark, coveredBelow: max(self.bounds.height - self.noteBar.frame.minY, 0))
-        }
+        noteBar.onPickMark = { [weak self] in self?.reveal($0) }
         addSubview(noteBar)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -251,14 +246,32 @@ final class MarkupOverlayView: NSView {
             guard let layer = markLayers[mark.number] else { continue }
             if let placement = surface.placement(of: mark.number) {
                 layer.isHidden = false
-                layer.place(live?.number == mark.number ? live ?? mark : mark, at: placement)
+                layer.place(live?.number == mark.number ? live ?? mark : mark, at: placement, above: noteBar.frame.minY)
             } else {
                 // What it was on is gone. Its chip and its picture stay.
                 layer.isHidden = true
             }
         }
+        spreadPins()
         placeSelection()
         CATransaction.commit()
+    }
+
+    /// Pins side by side where they would sit on one another. Marks drawn
+    /// down one side of a page all leave by the same place on the same
+    /// edge, and a pile of pins shows one number. The lowest number keeps
+    /// its place and the rest line up to its right.
+    private func spreadPins() {
+        let pinned = markLayers.compactMap { number, layer in
+            layer.isHidden ? nil : layer.pin.map { (number: number, layer: layer, at: $0.minX) }
+        }.sorted { ($0.at.rounded(), $0.number) < ($1.at.rounded(), $1.number) }
+        var ends: [Int: CGFloat] = [:]
+        for (_, layer, _) in pinned {
+            guard let pin = layer.pin else { continue }
+            let row = Int(pin.midY.rounded())
+            if let end = ends[row], pin.minX < end + 2 { layer.slidePin(by: end + 2 - pin.minX) }
+            ends[row] = layer.pin?.maxX ?? pin.maxX
+        }
     }
 
     /// Where the bar starts and how wide it is.
@@ -433,11 +446,28 @@ final class MarkupOverlayView: NSView {
         CATransaction.commit()
     }
 
+    /// Bring a mark into view: its chip was clicked, or its pin.
+    private func reveal(_ number: Int) {
+        guard let mark = session.mark(number) else { return }
+        // What the bar covers, from its top down: the strip under it is
+        // too thin to show a mark in.
+        surface.reveal(mark, coveredBelow: max(bounds.height - noteBar.frame.minY, 0))
+    }
+
+    /// The mark whose pin is under a point: one that is out of view, with
+    /// its badge left at the edge pointing at it.
+    private func pinned(at point: CGPoint) -> Int? {
+        markLayers.first { $0.value.pin?.insetBy(dx: -2, dy: -2).contains(point) == true }?.key
+    }
+
     override func mouseDown(with event: NSEvent) {
         // The keyboard back to the note, if it wandered to the header.
         if window?.firstResponder !== noteBar.textView { noteBar.focus() }
         showHover(nil)
         let point = convert(event.locationInWindow, from: nil)
+        // A pin points at a mark that is out of view, and a press on it is
+        // a wish to see that mark, with any tool in hand.
+        if let number = pinned(at: point) { return reveal(number) }
         if session.tool == .move {
             if let (mark, handle, points) = handleHit(at: point) {
                 let at = MarkStroke.position(of: handle, pen: mark.pen, points: points)
@@ -845,6 +875,10 @@ final class MarkupOverlayView: NSView {
 private final class MarkLayer: CALayer {
     private let shape = CAShapeLayer()
     private let badge = CALayer()
+    /// The point of a badge that is a pin (`MarkBadge`), under the badge.
+    private let point = CAShapeLayer()
+    /// Where the pin is in the view, while the badge is one.
+    private(set) var pin: CGRect?
 
     init(mark: Mark, colour: CGColor, scale: CGFloat) {
         super.init()
@@ -864,6 +898,10 @@ private final class MarkLayer: CALayer {
             shape.lineWidth = MarkDrawing.outline
         }
         addSublayer(shape)
+        point.anchorPoint = .zero
+        point.fillColor = colour
+        point.strokeColor = nil
+        addSublayer(point)
         badge.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         badge.bounds = CGRect(x: 0, y: 0, width: MarkDrawing.badge, height: MarkDrawing.badge)
         badge.contentsScale = scale
@@ -874,7 +912,7 @@ private final class MarkLayer: CALayer {
     override init(layer: Any) { super.init(layer: layer) }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    func place(_ mark: Mark, at placement: MarkPlacement) {
+    func place(_ mark: Mark, at placement: MarkPlacement, above floor: CGFloat) {
         // The layer is the part of the view the mark may show in; what it
         // draws is placed in the view's own coordinates, moved back by that.
         let clip = placement.clip
@@ -893,10 +931,23 @@ private final class MarkLayer: CALayer {
             var transform = offset
             shape.path = MarkStroke.path(for: mark.pen, through: ink.map(placement.point)).copy(using: &transform)
         }
-        // On the corner, and never off the edge of what it may show in.
-        let half = MarkDrawing.badge / 2, at = placement.badge(of: mark.shape)
-        badge.position = CGPoint(x: min(max(at.x, clip.minX + half), max(clip.maxX - half, clip.minX + half)) - clip.minX,
-                                 y: min(max(at.y, clip.minY + half), max(clip.maxY - half, clip.minY + half)) - clip.minY)
+        // On the corner, never off the edge of what it may show in, and a
+        // pin pointing at the mark once the mark has left.
+        let spot = MarkBadge.spot(for: placement.badge(of: mark.shape), of: box, in: clip, above: floor)
+        badge.position = CGPoint(x: spot.centre.x - clip.minX, y: spot.centre.y - clip.minY)
+        point.path = spot.toward.map { MarkBadge.point(at: badge.position, toward: $0) }
+        let half = MarkDrawing.badge / 2
+        pin = spot.toward == nil ? nil : CGRect(x: spot.centre.x - half, y: spot.centre.y - half,
+                                                width: MarkDrawing.badge, height: MarkDrawing.badge)
+    }
+
+    /// Move the pin along its edge, out from under another.
+    func slidePin(by dx: CGFloat) {
+        guard let was = pin else { return }
+        pin = was.offsetBy(dx: dx, dy: 0)
+        badge.position.x += dx
+        var move = CGAffineTransform(translationX: dx, y: 0)
+        point.path = point.path?.copy(using: &move)
     }
 
     private static func badgeImage(_ number: Int, colour: CGColor, scale: CGFloat) -> CGImage? {

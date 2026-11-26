@@ -108,6 +108,11 @@ settings:
     # silently never appear. 0.0.0 only ever reaches local builds.
     MARKETING_VERSION: "0.0.0"
     CURRENT_PROJECT_VERSION: "0.0.0"
+    # The update channel this build came out on: empty for a regular release,
+    # "beta" when scripts/release.sh --publish --beta passes it to xcodebuild.
+    # Stamped into Info.plist as WortelUpdateChannel; the first launch of a
+    # beta build puts that Mac on the beta channel (Updater.swift).
+    WORTEL_UPDATE_CHANNEL: ""
     # Debug builds sign ad-hoc (fast, no identity needed). Release signing is
     # done by scripts/release.sh (Developer ID + optional notarization) so that
     # dev builds stay frictionless. DEVELOPMENT_TEAM is set for completeness.
@@ -293,6 +298,8 @@ targets:
           NSAllowsArbitraryLoadsInWebContent: true
         # Sparkle auto-update feed (served from the wortel-updates R2 bucket).
         SUFeedURL: https://updates.wortel.sh/appcast.xml
+        # "beta" on a beta build, empty otherwise (see WORTEL_UPDATE_CHANNEL).
+        WortelUpdateChannel: $(WORTEL_UPDATE_CHANNEL)
         # Check and download in the background, every 4 hours, without the
         # "check automatically?" prompt Sparkle otherwise asks on the second
         # launch. A downloaded update waits for a click on "Restart to Update"

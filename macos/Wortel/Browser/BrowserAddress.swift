@@ -217,12 +217,29 @@ enum BrowserDownloadName {
     /// else is usually an advertisement, and one of those answering with an
     /// attachment would put a file in Downloads that nobody clicked for. A
     /// site's own hidden frame is how many of them start a download, so that
-    /// still works. The host must match exactly: a frame on `cdn.example.com`
-    /// in a page on `example.com` saves nothing.
+    /// still works.
     static func saves(isForMainFrame: Bool, canShow: Bool, isAttachment: Bool,
                       host: String?, pageHost: String?) -> Bool {
         if isForMainFrame { return isAttachment || !canShow }
-        guard isAttachment, let host = host?.lowercased(), !host.isEmpty else { return false }
+        return isAttachment && isPagesOwn(host, pageHost: pageHost)
+    }
+
+    /// Whether a link that says it is for saving (`<a download>`) is saved.
+    ///
+    /// By the rule a response is held to: from the page itself, or from a
+    /// frame on the page's own host. What counts is the frame the link is
+    /// in, not where the link points. A frame from another site can point a
+    /// link at the page's own host as easily as at its own, and can click
+    /// it from script with no person involved. A frame with no host of its
+    /// own (a sandboxed one, a `data:` document) is nobody's.
+    static func savesLink(fromMainFrame: Bool, frameHost: String?, pageHost: String?) -> Bool {
+        fromMainFrame || isPagesOwn(frameHost, pageHost: pageHost)
+    }
+
+    /// The host must match exactly: a frame on `cdn.example.com` in a page
+    /// on `example.com` saves nothing.
+    private static func isPagesOwn(_ host: String?, pageHost: String?) -> Bool {
+        guard let host = host?.lowercased(), !host.isEmpty else { return false }
         return host == pageHost?.lowercased()
     }
 

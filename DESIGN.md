@@ -455,15 +455,18 @@ dimmed, as it never was: the cursor says where you are.
 - A split you make or close appears and goes in one cut. So do a zoom and
   making the splits equal.
 - A new session's terminal is under an empty page of its own colour until
-  its program has drawn. The page comes off in one cut, with nothing on it
-  and no fade.
+  its program has drawn. A start still going after 0.75 s gets a small
+  system spinner in the middle of the page. The page comes off in one cut,
+  spinner and all, with no fade.
 - A control that is there in both states moves; it is never hidden in one
   place and shown in another. The sidebar toggle stays by the traffic lights
   and Back and Forward ride the sidebar's edge.
 - The sidebar never re-sorts under the pointer.
 - A long name scrolls after resting a second, slowly, with faded edges.
-- Reduce Motion stills the dots and the wave. The flash around a session that
-  starts wanting you still fades out, without its fade in.
+- Reduce Motion stills the dots and the wave. The start spinner is the
+  system's, and turns as it does everywhere else on the Mac. The flash
+  around a session that starts wanting you still fades out, without its
+  fade in.
 
 ## Which surface for what
 

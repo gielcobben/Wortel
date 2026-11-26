@@ -14,7 +14,7 @@
 // The verdict is spelled out as a word: "●" and "◐" mean nothing in plain text,
 // and "not published" has to read as itself rather than as a quiet no.
 import { getCollection } from 'astro:content';
-import { compareVersions } from '../content.config';
+import { compareVersions, publicRelease } from '../content.config';
 import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, type Block } from './site';
 import { COMPARE, APPS, AXES, GROUPS, type Verdict } from './compare';
 
@@ -174,7 +174,7 @@ export const compareMd = (): string => [
 ].join('\n');
 
 export const updatesMd = async (): Promise<string> => {
-  const releases = (await getCollection('releases')).sort((a, b) => compareVersions(b.id, a.id));
+  const releases = (await getCollection('releases', publicRelease)).sort((a, b) => compareVersions(b.id, a.id));
   const day = (d: Date) => d.toISOString().slice(0, 10);
   return [
     `# ${SITE.name} changelog`,

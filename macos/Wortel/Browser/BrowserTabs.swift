@@ -487,8 +487,17 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         switch BrowserExternalLink.decide(scheme: url?.scheme,
                                           fromMainFrame: fromMainFrame, toMainFrame: toMainFrame) {
         case .load:
-            // A link that says it is for saving (`<a download>`).
-            decisionHandler(action.shouldPerformDownload ? .download : .allow)
+            guard action.shouldPerformDownload else { return decisionHandler(.allow) }
+            // A link that says it is for saving (`<a download>`): saved from
+            // the page and from its own frames, and from a frame on another
+            // site it goes nowhere (`BrowserDownloadName.savesLink`).
+            // Cancelled there, not loaded instead: aimed at the page itself
+            // it would be saved after all, by the rule for the page's own
+            // responses.
+            let saves = BrowserDownloadName.savesLink(fromMainFrame: fromMainFrame,
+                                                      frameHost: source?.securityOrigin.host,
+                                                      pageHost: webView.url?.host())
+            decisionHandler(saves ? .download : .cancel)
         case .ask:
             decisionHandler(.cancel)
             if let url { askToOpen(url, over: webView.window) }

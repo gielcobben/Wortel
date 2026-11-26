@@ -29,7 +29,12 @@ export function latestRelease(): Promise<Release | null> {
     try {
       const res = await fetch(SITE.appcast);
       if (!res.ok) return null;
-      const xml = await res.text();
+      // The newest item everyone is offered. A beta carries a
+      // <sparkle:channel> and is newer than the release the site downloads
+      // (Wortel-latest.dmg), so it is skipped, not shown.
+      const xml = (await res.text()).split('<item>').slice(1)
+        .find((item) => !item.includes('<sparkle:channel>'));
+      if (!xml) return null;
       const version = xml.match(/<sparkle:shortVersionString>([^<]+)</)?.[1];
       if (!version) return null;
       const min = xml.match(/<sparkle:minimumSystemVersion>([^<]+)</)?.[1]?.replace(/\.0$/, '');

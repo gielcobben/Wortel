@@ -230,4 +230,19 @@ final class BrowserDownloadNameTests: XCTestCase {
         XCTAssertFalse(saves(main: false, canShow: false, attachment: false, host: "app.example", page: "app.example"))
         XCTAssertFalse(saves(main: false, canShow: true, attachment: true, host: nil, page: nil), "a blob in a frame")
     }
+
+    /// A link that says it is for saving is held to the same rule, by the
+    /// frame it is in: a frame from another site can click one from script.
+    func testADownloadLinkSavesOnlyFromThePageAndItsOwnFrames() {
+        func saves(main: Bool, frame: String?, page: String?) -> Bool {
+            BrowserDownloadName.savesLink(fromMainFrame: main, frameHost: frame, pageHost: page)
+        }
+        XCTAssertTrue(saves(main: true, frame: nil, page: "app.example"))
+        XCTAssertTrue(saves(main: true, frame: "app.example", page: nil), "a page with no host: a file")
+        XCTAssertTrue(saves(main: false, frame: "App.Example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, frame: "ads.example", page: "app.example"))
+        XCTAssertFalse(saves(main: false, frame: "cdn.app.example", page: "app.example"), "a subdomain is another host")
+        XCTAssertFalse(saves(main: false, frame: "", page: ""), "a sandboxed frame has no host")
+        XCTAssertFalse(saves(main: false, frame: nil, page: nil))
+    }
 }

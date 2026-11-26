@@ -1729,7 +1729,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   an interface lifts it anyway. That wait was 4 s for an hour, and a spinner
   on the page was considered for it: both hide a slow start, which is the
   one worth seeing (an update, a login, a shell that is stuck), so the page
-  comes off sooner and the terminal is its own progress.
+  comes off sooner and the terminal is its own progress. **2026-11-26: the
+  page gets a spinner after 0.75 s after all.** Not for the slow start past
+  the cap, which is still shown, but for an ordinary one under it: Pi's up
+  to two seconds of empty page read as a hang. Claude Code and Codex are
+  usually up before 0.75 s and keep the plain page. The delay counts from
+  the start, so switching back to a session that has been starting a while
+  shows it at once.
   **What is typed under the page is held, and goes only to the program.**
   Lifted on the shell, it is dropped: a sentence meant for an agent is a
   command to a shell. **A Return that was held is never typed, nor anything
@@ -2398,6 +2404,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   shell: asking adds no safety when nothing is opened. A partial file from a
   stopped or failed download is removed, not moved to the Trash: Wortel made
   it seconds ago and it is half a file.
+- **2026-11-26. A `download` link in a frame from another site saves
+  nothing.** A response from such a frame was already refused; a link with
+  the `download` attribute was not, and a frame can click its own link from
+  script with no person involved, so the rule had a way round it. The link
+  is now held to the same rule, by the frame it is in and not by where it
+  points: a frame from another site can point a link at the page's own host.
+  It is cancelled, not loaded instead. The cost is a real download button
+  inside another site's embed, which does nothing; the file is a click away
+  on that site itself.
 - **2026-11-25. Find in a page is WebKit's public find behind the file tab's
   own bar**, with Safari's keys (⌘F, ⌘G, ⇧⌘G, ⌘E). One find bar in the app,
   not the system's `NSTextFinder` bar beside Wortel's. The cost is the count:
@@ -2579,6 +2594,31 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   because the old link is pasted in places nobody can edit. The site's build
   links the zip (and its steps) until a HEAD finds the DMG, so a deploy before
   the first release that uploads one can't put a 404 behind the button.
+- **2026-11-26. A beta channel, cut by hand, for changes that can't be taken
+  back.** Regular releases stay fast and go to everyone; a keeper protocol
+  change or anything as risky goes to a few testers first, with
+  `release.sh --publish --beta`. One feed: the beta's `<item>` is tagged
+  `<sparkle:channel>beta</sparkle:channel>`, which every Sparkle Wortel has
+  shipped (2.9) leaves out unless the app names the channel
+  (`allowedChannels(for:)`). Testers get the regular releases too. A beta
+  takes the next number in the week like any release, so the derivation is
+  unchanged. Joining is installing a beta's DMG: the build carries
+  `WortelUpdateChannel = beta` and its first launch puts the Mac on the
+  channel, as Ghostty's update channel follows the build that is running.
+  **Settings ▸ Beta updates** is the way out, and the one row that only shows
+  where it can matter (running a beta, or on the channel): a tester is a
+  different person from everyone else, decided once, and a channel joined by
+  installing a file needs a visible way to leave. Once there the row stays,
+  so off can be turned back on. Leaving keeps the beta installed until the
+  next regular release passes it, since Sparkle never offers an older
+  version, and a beta already downloaded still installs at the next
+  restart. A beta's note says `beta: true` and is left off the changelog,
+  its pages, the feed and the sitemap, so the update popover has no What's
+  New for a beta (its link would land on the newest regular note); the next
+  regular note tells everyone what it carried. The site, `Wortel-latest.*` and the site
+  deploy are untouched by a beta. Not built: builds on every commit (Ghostty's
+  "tip"), which would need signing and notarizing in CI for a handful of
+  testers.
 
 ## Telemetry and privacy
 
@@ -2827,3 +2867,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   ("Claude") with the branch underneath while it prepares, so the title
   replaces words and nothing moves. A plain shell keeps the branch as its
   name: nothing will title it, and "Terminal" over its branch would say less.
+- **2026-11-26. CI keeps no Zig cache.** `mlugg/setup-zig` saved its own
+  cache of about 400 MB after every macOS run, a new entry each time (four
+  on `main` in two days), and a repository keeps 10 GB of caches, dropping
+  the least recently used. That puts the 32 MB Ghostty build at risk, and
+  losing it costs the five-minute build. Zig is only needed when that build
+  misses, so `use-cache: false`. The Ghostty cache was checked first: it
+  restores in 4 s and the build step then takes 1 s, so CI does not rebuild
+  Ghostty per commit.

@@ -61,9 +61,13 @@ jobs:
         run: echo "version=$(tr -d '[:space:]' < macos/GhosttyKit/zig.version)" >> "$GITHUB_OUTPUT"
 
       # Exactly the pinned version: scripts/build-ghostty.sh refuses any other.
+      # Its own cache is off: it saved about 400 MB on every run, a new entry
+      # each time, which crowds the repository's 10 GB of caches and can push
+      # out the Ghostty build below. Zig is only used when that build misses.
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ steps.zig.outputs.version }}
+          use-cache: false
 
       - name: Metal toolchain
         run: |

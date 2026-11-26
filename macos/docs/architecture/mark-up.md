@@ -262,8 +262,8 @@ over the session's `NSTextStorage`, so undo, spelling, dictation and input
 methods are the system's. It has its own `UndoManager`, for the reason
 `CommitMessageEditor` gives, and takes ⌘A, ⌘C, ⌘V, ⌘X and ⌘Z itself, since
 those are the terminal's in `wortel.conf` and not on the menu. Return
-copies, ⇧Return and ⌥Return make a line, Esc drops a stroke in hand and
-otherwise leaves. Pasting is plain text only, and Writing Tools are off: both
+copies, ⇧Return and ⌥Return make a line, Esc goes back one step (see
+"The tools"). Pasting is plain text only, and Writing Tools are off: both
 would put a chip in the text with no mark behind it, or take one out.
 
 ## The tools
@@ -293,11 +293,45 @@ comes back.
   it first) and pictured again; it keeps its number and its chip. A picked
   element is not moved: it is where its element is. With Move in hand the
   pointer is the arrow, and a hand over a drawing.
+- **Move also selects and resizes.** A press on a drawn mark selects it,
+  and nothing about it changes until the press has travelled 4pt, so a
+  click never nudges it. A box, a pen line or a highlight shows a 1pt
+  accent outline round its ink and four 9pt handles (white, a 1pt accent
+  edge, taken from 20pt around); under 16pt a side only the bottom-right
+  one, since four would crowd it. An arrow shows a handle on each end and
+  no outline. A corner scales the points about the opposite corner: Shift
+  keeps the proportions, Option scales about the middle, and past the
+  opposite corner it mirrors. Never under 8pt on its longer side, and a
+  line stays as wide as it was. An arrow's end moves alone, in steps of 45
+  degrees with Shift. Let go, it is tied and pictured again as a move is.
+  The geometry is `MarkStroke.handles`, `handle(at:)` and `resized`, pure
+  and tested; the layer only hands the mouse to them. The selection is
+  layers of the overlay, placed again whenever the marks are, and is in
+  no picture.
+- **Esc goes one step at a time**: what is in hand (a drawing being
+  carried, a handle, a stroke) is put back, then the selection is
+  dropped, then mark-up is left (`MarkupOverlayView.cancelStroke`).
+- **The pointer on a chip shows its mark**: every other mark stands back
+  to a quarter while it rests there (`pointOut`).
 
 Checked 2026-11-25 with the layer mounted the way a file tab mounts it,
 events handed to it as the mouse would: a box, an arrow drawn level with
 Shift held, a highlighter stroke, the box moved 60 by 40 and pictured where
-it landed, and a drag with Move in hand on nothing drawing nothing.
+it landed, and a drag with Move in hand on nothing drawing nothing. And for
+selecting and resizing: a click selected the box and did not move it; its
+bottom-right handle dragged by (40, 30) grew it by that; Shift kept its
+proportions and Option scaled it about its middle; Esc with a handle in
+hand put it back, the next Esc dropped the selection, the one after left
+mark-up; an arrow's tip moved and its tail did not; the handles moved with
+a 34pt scroll.
+
+Not built, from what tldraw does (its select tool's source, read the same
+day): rotation, handles on the sides, arrow keys to nudge (the keyboard is
+in the note), dragging a copy out with Option, snapping guides, a bend in
+an arrow. Known gaps: Shift or Option pressed mid-drag takes effect at the
+next movement, since the layer is not the first responder and hears no
+change of modifiers; before macOS 15 there is no public diagonal resize
+pointer and a handle shows the crosshair.
 
 ## What is copied, and where it goes
 

@@ -75,6 +75,7 @@ enum SplitProbe {
             case "move-down": send(#selector(AppDelegate.moveTabDown(_:)))
             case "zoom": send(#selector(AppDelegate.zoomSplit(_:)))
             case "equalize": send(#selector(AppDelegate.equalizeSplits(_:)))
+            case "reset": send(#selector(AppDelegate.resetLayout(_:)))
             case "tab": send(#selector(AppDelegate.newTerminalHere(_:)))
             // The "+" of the row you're in, the split buttons, and a pick
             // on the empty tab's page.

@@ -352,6 +352,77 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertNil(blank.kind)
     }
 
+    // MARK: Reset Layout
+
+    /// Everything gathered back: terminals and files in the main row, panes
+    /// and browsers beside it, nothing closed, no strip and no split made
+    /// by hand.
+    func testTheStandardPresetGathersEveryTabAndClosesNone() {
+        let shell = SideTab.terminal(UUID()), under = SideTab.terminal(UUID())
+        let file = SideTab.file("/tmp/a.md"), page = SideTab.browser(UUID())
+        var tabs = WorkspaceTabs(main: [.session, .pane(.history)], side: [.pane(.changes)], sideVisible: true,
+                                 bottom: [under], bottomVisible: true)
+        let pane = tabs.split(.main, on: .right, placing: shell)
+        XCTAssertNotNil(pane)
+        if let pane {
+            tabs.place(file, in: pane, at: .max)
+            tabs.place(page, in: pane, at: .max)
+            tabs.place(.blank(UUID()), in: pane, at: .max)
+        }
+        let before = Set(tabs.allTabs.filter { !$0.isBlank })
+
+        let reset = tabs.arranged(as: .standard)
+
+        XCTAssertEqual(Set(reset.allTabs), before)
+        XCTAssertEqual(reset.main.first, .session)
+        XCTAssertEqual(Set(reset.main), [.session, under, shell, file])
+        XCTAssertEqual(reset.side, [.pane(.changes), .pane(.history), page])
+        XCTAssertTrue(reset.bottom.isEmpty)
+        XCTAssertTrue(reset.panes.isEmpty)
+        XCTAssertEqual(Set(reset.layout.leaves), [.main, .side])
+        XCTAssertNil(reset.zoomed)
+        XCTAssertEqual(reset.hiddenLeaves, [])
+    }
+
+    func testTheStandardPresetOfATerminalAloneIsTheTerminalAlone() {
+        var tabs = WorkspaceTabs(main: [.session])
+        tabs.split(.main, on: .down, placing: .terminal(UUID()))
+        let reset = tabs.arranged(as: .standard)
+        XCTAssertEqual(reset.layout.leaves, [.main])
+        XCTAssertEqual(reset.main.count, 2)
+        XCTAssertTrue(reset.side.isEmpty)
+    }
+
+    /// What you were looking at stays in front where it lands, and the
+    /// habits and the zoom go back with the splits.
+    func testTheStandardPresetKeepsTheFrontTabInFrontAndForgetsHabits() {
+        let shell = SideTab.terminal(UUID())
+        var tabs = WorkspaceTabs(main: [.session], side: [.pane(.changes), .pane(.files)],
+                                 activeSide: .pane(.changes), sideVisible: true)
+        let pane = tabs.split(.main, on: .right, placing: shell)
+        tabs.habits = [.file: pane ?? .side]
+        tabs.zoomed = pane
+
+        let reset = tabs.arranged(as: .standard, keeping: shell)
+        XCTAssertEqual(reset.activeMain, shell)
+        XCTAssertEqual(reset.activeSide, .pane(.changes))
+        XCTAssertTrue(reset.habits.isEmpty)
+        XCTAssertNil(reset.zoomed)
+
+        let beside = tabs.arranged(as: .standard, keeping: .pane(.files))
+        XCTAssertEqual(beside.activeSide, .pane(.files))
+        XCTAssertNil(beside.activeMain)
+    }
+
+    /// Which edge Changes and Files take is a choice, and stays.
+    func testTheStandardPresetKeepsTheSideChangesAndFilesOpenOn() {
+        var tabs = WorkspaceTabs(main: [.session], side: [.pane(.changes)], sideVisible: true, sideLeading: true)
+        tabs.split(.main, on: .down, placing: .terminal(UUID()))
+        let reset = tabs.arranged(as: .standard)
+        XCTAssertTrue(reset.sideLeading)
+        XCTAssertEqual(reset.layout.leaves.first, .side)
+    }
+
     /// The last tab of a split made by hand is its empty one: choosing puts
     /// the new tab in before the empty one goes, so the split stays.
     func testAnEmptyTabHoldsItsSplitUntilItIsReplaced() {

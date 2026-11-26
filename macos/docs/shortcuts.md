@@ -95,6 +95,7 @@ Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 | Focus the split to the left / right / above / below | ⌃⌥⌘← / ⌃⌥⌘→ / ⌃⌥⌘↑ / ⌃⌥⌘↓ | iTerm, Ghostty (⌥⌘ and an arrow, which are sessions and tabs here) |
 | Zoom the split you're in, and show all of them again | ⇧⌘↩ | Ghostty, cmux |
 | Make the splits equal | ⌃⌘= | Ghostty |
+| Put every tab back where a session starts with it | View ▸ Reset Layout | |
 | Full screen | ⌃⌘F | every Mac app |
 | Show or hide Wortel, from any app | ⌃⌥⌘. | |
 
@@ -171,6 +172,14 @@ The line between two splits drags, and a double-click on it makes all of them
 equal. The split ⌥⌘B opens and the one ⌘J makes keep their size when the
 others are made equal. A line stops where a split would get smaller than 160
 by 100 points, so dragging it to the edge closes nothing.
+
+**Reset Layout** (in the View menu) is the way back when the splits have got
+away from you. Your terminal's split gets every terminal and file as tabs.
+Changes, History, Files and browsers go into one split at the right edge, at
+its usual size. Every other split is gone, and so is a zoom. Nothing is
+closed: every terminal keeps running, as a tab. The tab you were looking at
+stays in front. It has no key on purpose, because it cannot be undone. The
+item is dimmed when there is only the terminal and nothing to put back.
 
 Sizes are shares of the window. Make the window wider and every split gets
 wider, Changes too. Before 2026-11-26 the side column kept its width and the

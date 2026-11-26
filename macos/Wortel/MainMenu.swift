@@ -520,6 +520,10 @@ enum MainMenu {
         zoomSplit.keyEquivalentModifierMask = [.command, .shift]
         let equalize = viewMenu.addItem(withTitle: "Equalize Splits", action: #selector(AppDelegate.equalizeSplits(_:)), keyEquivalent: "=")
         equalize.keyEquivalentModifierMask = [.command, .control]
+        // No key: it is for when you are lost, not for every day, and it
+        // undoes an arrangement somebody made. The first of what may become
+        // a list of presets.
+        viewMenu.addItem(withTitle: "Reset Layout", action: #selector(AppDelegate.resetLayout(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
         // A checkmark here, not a row in Settings, because it is flipped

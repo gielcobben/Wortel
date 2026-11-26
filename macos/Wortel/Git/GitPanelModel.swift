@@ -1364,6 +1364,35 @@ final class GitPanelModel {
         focusFront(of: lastRegion)
     }
 
+    /// View ▸ Reset Layout: the session's tabs back in the arrangement a
+    /// session starts in (`WorkspaceTabs.Preset.standard`), for when the
+    /// splits have got away from you. Nothing is closed. The tab you were
+    /// looking at stays in front, and the keyboard goes with it.
+    func resetLayout() {
+        guard let session else { return }
+        let front = activeTab(in: lastRegion)
+        let arranged = session.workspace.arranged(as: .standard, keeping: front)
+        change(session) { $0 = arranged }
+        mirror(session, animated: false)
+        onStateChanged?()
+        resolveCurrent()
+        lastRegion = front.flatMap { session.workspace.region(of: $0) } ?? .main
+        focusFront(of: lastRegion)
+    }
+
+    /// Whether there is anything for Reset Layout to put back: any split
+    /// at all, a zoom, or a tab out of its place. Any split, because a
+    /// divider somebody dragged is a thing to put back too, and what size
+    /// a split opens at is the window's to know, not the model's: with the
+    /// one split beside the terminal already as it opens, the item is on
+    /// and does nothing, which is better than off when it would help.
+    var canResetLayout: Bool {
+        guard let session else { return false }
+        let workspace = session.workspace
+        return workspace.zoomed != nil || workspace.layout.isSplit
+            || workspace.main != workspace.arranged(as: .standard).main
+    }
+
     /// Every part of the main area the same size as its siblings.
     func equalizeSplits() {
         guard let session, !session.splitLayout.isEqualized else { return }

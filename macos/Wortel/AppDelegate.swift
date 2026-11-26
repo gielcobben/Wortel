@@ -2038,6 +2038,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     @objc func equalizeSplits(_ sender: Any?) { gitPanel.equalizeSplits() }
 
+    /// View ▸ Reset Layout: every tab back where a session starts with it.
+    @objc func resetLayout(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.resetLayout()
+    }
+
     @objc func focusSplitLeft(_ sender: Any?) { focusArea(toward: .left) }
     @objc func focusSplitRight(_ sender: Any?) { focusArea(toward: .right) }
     @objc func focusSplitUp(_ sender: Any?) { focusArea(toward: .up) }
@@ -2548,6 +2554,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(equalizeSplits(_:)) {
             return gitPanel.splitLayout.isSplit && !gitPanel.splitLayout.isEqualized
+        }
+        if menuItem.action == #selector(resetLayout(_:)) {
+            return gitPanel.canResetLayout
         }
         if menuItem.action == #selector(focusSplitLeft(_:)) || menuItem.action == #selector(focusSplitRight(_:))
             || menuItem.action == #selector(focusSplitUp(_:)) || menuItem.action == #selector(focusSplitDown(_:)) {

@@ -316,6 +316,30 @@ The model:
   it. Except a split
   made by `wortel split` (`keepsZoom`): the zoom stays and the new split is
   behind it.
+- **Reset Layout** (View menu, no key; `WorkspaceTabs.Preset`,
+  `arranged(as:keeping:)`, since 2026-11-26). A pure function from one
+  `WorkspaceTabs` to another: the same tabs in the arrangement of a preset.
+  There is one preset, `.standard`, the arrangement a session starts in.
+  The main row keeps its tabs in order and takes every other terminal and
+  file, in reading order. The column's row keeps its panes and browsers and
+  takes every other pane and browser (`goesBeside`). The strip, every made
+  split, the zoom and the habits are left out of the new value, and
+  `normalized` builds the tree from the two rows, so the column's leaf is
+  there only if its row has tabs and comes back `unsized`, to be given its
+  usual width by the window. Nothing is closed: every tab of `allTabs` but
+  the empty ones is in one of the two rows. `sideLeading` and the closed
+  tabs' stack are carried over. The tab passed as `keeping` (the one in
+  front of the split you were in) is in front of the row it lands in, and
+  each row's own front stays when it is still in that row.
+  `GitPanelModel.resetLayout` wraps it like any change (mirror, save, the
+  repo, the keyboard to the row `keeping` landed in), with no animation.
+  `canResetLayout` dims the menu item unless there is a zoom, any split
+  at all, or a main row that would change. Any split, so that a session
+  that only had a divider dragged can be reset: the size a split opens at
+  is the window's to know, so with the one split already as it opens the
+  item is on and does nothing. A second
+  preset is a case of `Preset` and a branch in `arranged`. It cannot be
+  undone, which is why it has no key (`../../../docs/decisions.md`).
 - The session's terminal never leaves the main row, and a split's only tab
   can't be split off its own split.
 - `Session` holds it as `splitLayout`, `paneTabs`, `zoomedRegion` and

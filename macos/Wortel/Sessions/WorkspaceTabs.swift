@@ -309,6 +309,51 @@ struct WorkspaceTabs: Equatable, Sendable {
         if zoomed == .pane(id) || shownLeafCount < 2 { zoomed = nil }
     }
 
+    // MARK: - Presets
+
+    /// A named arrangement of a session's splits. One so far, the one a
+    /// session starts in; another is a case here and a branch in
+    /// `arranged(as:keeping:)`.
+    enum Preset: Sendable {
+        /// The terminal, and beside it what opens beside it: Changes,
+        /// History, Files and browsers in one split at the outer edge, at
+        /// the size it opens at. No strip, no splits made by hand.
+        case standard
+    }
+
+    /// These tabs put back the way `preset` has them, for when a layout has
+    /// got away from you. Nothing is closed: every terminal, file, browser
+    /// and pane is still a tab, in one of the preset's splits. Empty tabs
+    /// go, holding nothing. `front` (the tab in front of the split you are
+    /// in) stays in front where it lands, and the rows' own fronts where
+    /// they can.
+    ///
+    /// Sizes, the zoom and the habits (where a kind of tab opens) go back
+    /// too: they are the layout. Which edge Changes and Files take is a
+    /// choice, not a mess, and stays.
+    func arranged(as preset: Preset = .standard, keeping front: SideTab? = nil) -> WorkspaceTabs {
+        switch preset {
+        case .standard:
+            func goesBeside(_ tab: SideTab) -> Bool { tab.pane != nil || tab.browserID != nil }
+            let every = allTabs.filter { !$0.isBlank }
+            // The main row as it was, then what joins it, in reading order.
+            let stays = main.filter { !$0.isBlank && !goesBeside($0) }
+            let middle = stays + every.filter { !goesBeside($0) && !stays.contains($0) }
+            let stayedBeside = side.filter(goesBeside)
+            let beside = stayedBeside + every.filter { goesBeside($0) && !stayedBeside.contains($0) }
+            func pick(_ candidates: [SideTab?], in row: [SideTab]) -> SideTab? {
+                candidates.compactMap { $0 }.first(where: row.contains)
+            }
+            let arranged = WorkspaceTabs(
+                main: middle, activeMain: pick([front, activeMain], in: middle),
+                side: beside, activeSide: pick([front, activeSide], in: beside) ?? beside.first,
+                sideVisible: !beside.isEmpty,
+                closed: closed, peek: peek.flatMap { middle.contains($0) ? $0 : nil },
+                sideLeading: sideLeading)
+            return arranged.normalized()
+        }
+    }
+
     /// The column and the strip are leaves exactly while they have tabs:
     /// put in the one that is missing, take out the one that emptied.
     ///

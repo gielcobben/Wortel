@@ -516,6 +516,46 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   relaunch too. Not verified, since each takes a pointer or a real key: a
   click on a row of the page, on a "+" or on a split button; the arrows,
   Return and Escape on the page; and where the keyboard is after a pick.
+  **Reset Layout: the way back, and the first preset.** The owner: "Can we
+  also make some kind of window reset button in the menubar? So if you're
+  lost you can always go back to the default preset? Maybe in the future
+  we can have some more presets. So reset is basically a preset default."
+  With every split movable a session can end up in an arrangement nobody
+  meant, and until now the only way out was to undo it tab by tab. View ▸
+  Reset Layout puts the session's tabs back in the arrangement a session
+  starts in (`WorkspaceTabs.Preset.standard`, `arranged(as:keeping:)`).
+  "Default" was taken to mean the window Wortel has always had. The main
+  row holds the session's terminal and every other terminal and file, as
+  tabs. Changes, History, Files and browsers are in the one split beside
+  it, at the outer edge and at the size it opens at, and that split is
+  there only if any of them is open. No strip, no split made by hand, no
+  zoom. **Nothing is closed.** A terminal moved into the main row keeps
+  running as a tab there. Default could also have meant "a new session's
+  window", the terminal alone, and that would have ended every shell in a
+  split: a way back that ends your dev server is not a way back. Empty
+  tabs do go, since they hold nothing. The tab you were looking at stays
+  in front where it lands, and the keyboard goes with it. Sizes, the zoom
+  and the habits (where a kind of tab opens) go back too: they are the
+  layout. Which edge Changes and Files take stays: that was a choice, not
+  a mess. The item is dimmed when there is nothing to put back: no split,
+  no zoom, and no tab that would move (`GitPanelModel.canResetLayout`).
+  With any split it is on, since a dragged divider is a thing to put back
+  too; on a layout that is already the preset it then does nothing. **No key.** It is for when you are
+  lost, not for every day, and it takes away an arrangement somebody made.
+  **An enum of one.** `Preset` has the one case, so that a second preset
+  is a case and a branch and not a second mechanism. The menu has one item
+  until there is a second. Nothing is
+  named, saved or loaded by the user, so "no layout to build" in
+  `docs/product.md` stands. **The cost: it cannot be undone.** One click
+  in a menu and the arrangement is gone, with the tabs all still there.
+  That is why it has no key.
+  Verified (2026-11-26, throwaway copies): the app builds. WortelTests,
+  1938 tests, 0 failures, four of them new. `try-splits.sh column
+  focus-left right down strip blank-right zoom reset reset next next
+  --relaunch`: 0 faults, and the render after the reset shows four
+  terminals as tabs of the main row, the one that was zoomed in front, and
+  Changes and Files in a 440pt split on the right. Not verified: choosing
+  the item from the real menu, and its dimming.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry

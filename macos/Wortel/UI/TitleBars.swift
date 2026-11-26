@@ -282,16 +282,16 @@ final class WindowControls: NSView {
     let history = HistoryButtons()
     private var historyLeading: NSLayoutConstraint!
 
-    // The trailing end, the session's own: what it is running, its "…"
-    // menu, and the side column's toggle, the sidebar toggle's mirror. They
-    // were on the main row and the side column's row, which was right while
-    // those two were the window's fixed places and put them in the middle
-    // of the window once any split could sit beside any other. A row is a
-    // split's tabs and its "+" and nothing else; what belongs to the session
-    // or the window is here, where it stays whatever the splits do.
+    // The trailing end, the session's own: what it is running and its "…"
+    // menu. They were on the main row, which was right while that row was
+    // the window's fixed middle and put them in the middle of the window
+    // once any split could sit beside any other. A row is a split's tabs
+    // and its "+" and nothing else; what belongs to the session is here,
+    // where it stays whatever the splits do. (A toggle for the side column
+    // sat here for an hour: with every split movable there is no side
+    // column to toggle, only Changes and Files, which ⌥⌘B opens and closes.)
     let running = RunningButton()
     let more = HoverFillButton.glyph("ellipsis", "Session")
-    let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
     private let trailing = NSStackView()
 
     /// How much of the titlebar's trailing end the session's controls take,
@@ -307,7 +307,7 @@ final class WindowControls: NSView {
         history.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toggle)
         addSubview(history)
-        for button in [running, more, sideToggle] { trailing.addArrangedSubview(button) }
+        for button in [running, more] { trailing.addArrangedSubview(button) }
         trailing.spacing = 4
         trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(trailing)
@@ -561,8 +561,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         self.processes = processes
         super.init()
 
-        windowControls.sideToggle.target = self
-        windowControls.sideToggle.action = #selector(toggleSideColumn)
         windowControls.running.target = self
         windowControls.running.action = #selector(openRunningJobs(_:))
         windowControls.more.target = self
@@ -598,11 +596,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     private func syncColumn() {
-        let label = git.isVisible ? "Hide Side Column (⌥⌘B)" : "Show Side Column (⌥⌘B)"
-        if windowControls.sideToggle.toolTip != label {
-            windowControls.sideToggle.toolTip = label
-            windowControls.sideToggle.setAccessibilityLabel(label)
-        }
         let session = home.selected
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
@@ -686,10 +679,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         return raw
     }
 
-    @objc private func toggleSideColumn() {
-        git.toggle()
-    }
-
     /// The session's "…": its own actions, as ChatGPT's menu is the
     /// conversation's. Native, small, glyphs that show, shortcuts on the right.
     /// The titles are short on purpose: the longest title decides the menu's
@@ -732,7 +721,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         splitDown.keyEquivalent = "d"
         splitDown.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(splitDown)
-        let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Strip" : "Show Strip") { [weak self] in
+        let strip = ClosureMenuItem(title: "Terminal Below") { [weak self] in
             self?.git.toggleBottom()
         }
         Self.setGlyph("rectangle.bottomthird.inset.filled", on: strip)

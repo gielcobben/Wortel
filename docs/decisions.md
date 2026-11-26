@@ -35,7 +35,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   opens, automatic updates, anonymous usage data. Their checkmarks left the
   menus (the usage-data switch is still in the sidebar's ⓘ too). What is
   flipped while working stays a checkmark in the View menu (Sort Unread
-  First, which side the column is on). What the app can know for itself gets
+  First, which side the column is on; that second one went on the branch
+  `flexible-panes` on 2026-11-26, with the side column as a place). What
+  the app can know for itself gets
   no switch. Fonts, colours, keys and scrollback are still decided once, and
   font size is still ⌘+ and ⌘−. Why now: people who never file their sessions
   needed to say what a new session starts, and the answer that needed no
@@ -130,7 +132,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   split along the top of the window has its tab row in the titlebar, as the
   side column always did, and only a split lower down has a row of its own.
   The strip becomes a split too. ⌥⌘B and ⌘J still hide and show theirs with
-  the tabs kept. **One tree.** The leaves of `SplitLayout` are the main row
+  the tabs kept. (The owner took that third pick back the same afternoon:
+  "Nothing is hidden", at the end of this entry. Where this entry says
+  hidden, read it as how the tree was built that morning.) **One tree.** The leaves of `SplitLayout` are the main row
   (the one with the session's terminal), the side column (`.side`), the
   strip (`.bottom`) and the splits somebody made (`.pane(id)`). The side
   column is a leaf exactly while it has tabs, and so is the strip. The
@@ -152,13 +156,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   titlebar showed the session's name while split and every split had a 36pt
   row under it. The reason given there, that a titlebar row lies over the
   whole main area, went with the panes that made it true. **What is still
-  the side column's and the strip's, and why.** *Hidden with the tabs
-  kept.* ⌥⌘B and ⌘J put theirs away and bring it back as it was. That is
-  what those keys have always done, and a split made with ⌘D has no need of
-  it: it goes when its last tab closes. A hidden leaf stays in the tree
-  with its weight, takes no room and has no divider, and everything that
+  the side column's and the strip's, and why.** Three things that morning,
+  two since the afternoon. *Hidden with the tabs kept: until the afternoon
+  only.* ⌥⌘B and ⌘J put theirs away and brought it back as it was. That
+  was what those keys had always done, and a split made with ⌘D has no need
+  of it: it goes when its last tab closes. A hidden leaf stayed in the tree
+  with its weight, took no room and had no divider, and everything that
   measures (frames, dividers, neighbours) is handed the set of hidden
-  leaves. *A place and a size to open at.* They are where things open
+  leaves. The set is still in the model and nothing in the app fills it
+  ("Nothing is hidden", below). *A place and a size to open at.* They are where things open
   without anyone saying where (Changes, a browser, ⌘J's terminal). The side
   column takes the outer edge of the whole area, the left one when the
   session has it there (`sideColumnLeading`), and the strip goes directly
@@ -173,9 +179,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   ⌃⌘=, one more split among equals and a split closing all leave the two
   what they had. Otherwise ⌃⌘= with one split beside Changes would hand
   Changes a third of the window, and a second ⌘D would make a quarter where
-  it makes a third without the column. And ⇧⌥⌘B still moves the side column
-  to the other side, and the session's own tab dropped on it still trades
-  sides with it.
+  it makes a third without the column. That morning ⇧⌥⌘B still moved the
+  side column to the other side, and the session's own tab dropped on it
+  still traded sides with it. Both went in the afternoon (below).
   **Everything else is one rule for all.** Any split, those two included,
   can be split (⌘D from Changes makes a split beside Changes), zoomed,
   dropped on, reached by ⌃⌥⌘ with an arrow and by ⌘] and ⌘[ in reading
@@ -188,7 +194,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   split under the pointer, and a drop that would move nothing lights up
   nothing. ⌃⌘ with an arrow takes the tab in front to the neighbouring
   split. With none there, toward the side column's edge or down still opens
-  the side column or the strip when it is hidden. **Sizes are shares
+  the side column or the strip when it is not there. **Sizes are shares
   everywhere.** On a window resize Changes grows and shrinks with the
   window, where it kept its width and the terminal took all of the change.
   That gives up two rules that were never entries here and stood in
@@ -198,7 +204,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   was given is now wider on a wide window and narrower on a small one, and
   the terminal beside it gains fewer columns from a wider window. A divider stops at a
   split's minimum (160 by 100 points), so dragging one to the edge no
-  longer closes the column or the strip. ⌥⌘B and ⌘J do that. **Dimming
+  longer closes the column or the strip. **Dimming
   goes by how many.** With more than two splits on screen the tab in front
   of one you are not in has a quiet title, the main row's like any other.
   With one or two, as always, nothing is dimmed: the cursor says where you
@@ -216,7 +222,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   when the side column or the strip is opened or put away by hand
   (`MainAreaController.slides`: ⌥⌘B, ⌘J, a tab opened there), never on a
   session switch and never with a zoom in the change. One that goes because
-  its last tab closed cuts, as it did before. A split somebody makes or
+  its last tab closed cuts, as it did before. Since the afternoon that is
+  the only way either goes, so they slide open and are put away in one cut
+  (below). A split somebody makes or
   closes, a zoom and equalize still land in one cut. A change during a
   slide, a window resize under it and a session switch land it first.
   **Saved.**
@@ -282,11 +290,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   titlebar, in the one overlay that already held the sidebar's toggle and
   Back and Forward at the leading end (`WindowControls`, which was
   `SidebarControls`): what the session is running, its "…", and the side
-  column's toggle, plain like the sidebar's toggle that it mirrors. They
+  column's toggle, plain like the sidebar's toggle that it mirrors (the
+  toggle lasted an hour, see below). They
   stay there whatever the splits do, and the rightmost titlebar row makes
   room for them as the leftmost does for the others
   (`LeafBar.trailingClearance`). The strip's chevron has no successor:
-  ⌘J, and Hide Strip in the "…". Two picks the owner made when asked. A
+  ⌘J, and the strip's item in the "…". Two picks the owner made when asked. A
   lone terminal shows a tab too, always a tab and never a bare title: the
   session's own terminal is a tab named after the session, pinned, so no
   close button and no menu, and it cannot leave its row. And a new session
@@ -298,7 +307,68 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `try-splits.sh --picture column` and a mixed layout were looked at in
   light and in dark: the rows identical, the controls in the corner, the
   rightmost row clear of them. Not claimed here: the unit tests and the
-  tour on this change.
+  tour on this change. **Nothing is hidden: ⌥⌘B and ⌘J after the side
+  column stopped being a place.** An hour after the buttons moved to the
+  corner, the owner, about the "Show Side Column" button there: "I still
+  don't get this button then, since everything is movable". Asked what to
+  do with it, they picked removing the whole idea: no button and no hidden
+  state, for the strip as well. That reverses the third of their own picks
+  from that morning, to keep ⌥⌘B and ⌘J as hide and show with the tabs
+  kept. The reason is the one behind the whole entry, followed to its end.
+  A split that can be anywhere is not a place, so there is no side column
+  to show or hide, only Changes and Files, which are tabs. And a second
+  kind of "gone" for two splits out of many, there but out of sight with a
+  shell still running in it, was the last thing that made those two
+  different. What the keys do now. **⌥⌘B** (View ▸ Show Changes and Files,
+  Hide Changes and Files) opens Changes and Files in the split they open in
+  (the outer edge, the right unless the session has it on the left), the
+  pane last used in front, and takes the keyboard there. Pressed with any
+  of Changes, History or Files open in that split, it closes them and the
+  keyboard goes back to the main row. Closing is what "put away" is now: a
+  pane holds nothing a close loses. Anything else in that split (a
+  terminal, a file, a page) stays, and the split with it. A pane already
+  open in another split is not opened a second time. ⌃⌘1, ⌃⌘2, ⌃⌘3 and
+  ⌃⇧G are the same toggle for one pane: in front already, in that split or
+  in the strip, its tab is closed, where it used to hide the whole column.
+  **⌘J** (View ▸ Terminal Below, also ⌃`) makes a strip under the main row
+  with a terminal in it when there is none. With one, it takes the keyboard
+  to it, and from it back to the main row. It never hides anything. To
+  have the whole window for one split for a moment, zoom it (⇧⌘↩): that
+  is what hide and show was for. Gone with the idea: the corner's toggle
+  (the session's "…" and what it is running stay there); View ▸ Move Side
+  Column to the Left (⇧⌥⌘B) and the session tab's drop that traded sides
+  (to have Changes on the left, drag it there); Tab ▸ New Terminal in Side
+  Column (⌘D does it); and a tab's right-click Move to Main Area, Side
+  Column or Bottom Strip (a tab goes to another split by a drag or by ⌃⌘
+  with an arrow, and Split Right and Split Down are still in that menu).
+  The strip's item in the session's "…" is Terminal Below. No menu and no
+  tooltip says "side column" or "bottom strip" any more. In these docs the
+  two words now mean only where Changes and Files, and ⌘J's terminal, open
+  by default (`docs/glossary.md`). A session saved by a build that could
+  hide them is mended once, when it is read (`WorkspaceTabs.showHidden`):
+  the panes of a hidden column or strip are closed, and anything else in
+  it comes on screen, because a shell must not be out of reach. Opening
+  still slides, and putting away cuts: the tabs are closed first, so a
+  slide would be of an empty page. The cost: a strip with a dev
+  server in it, or a terminal beside Changes, can no longer be put out of
+  sight and kept running there. It stays on screen, and the way to get the
+  room is to zoom the split you want. And the two keys know only the
+  default places: Changes dragged into another split is brought forward by
+  ⌥⌘B, not closed by it, and the split that comes back is at the width
+  last dragged to and at the outer edge. What was not taken out, read from
+  the code: the model's two flags and `SplitLayout`'s hidden set are still
+  there with nothing setting them. (⌃⌘ with an arrow, with the session's own
+  terminal in front, still flipped the side the column opens on for an
+  hour, the swap by another door; it does nothing now.) Verified (2026-11-26, a throwaway copy, `try-splits.sh
+  --relaunch column column column tab column column strip strip strip zoom
+  zoom`): ⌥⌘B opens Changes and Files at 440pt, closes them (the split
+  gone, the keyboard in the main row) and opens them again; with a
+  terminal tab added to that split it closes the two panes and leaves the
+  terminal and the split, and opens them again; ⌘J makes the strip, goes
+  back to the main row, goes to the strip; a zoom and back; 0 faults, and
+  the three splits back after a relaunch. WortelTests pass, three
+  expectations changed to "on screen from the moment it holds a tab" and
+  one test new for `showHidden`. Not looked at by eye.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -369,7 +439,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   moves a tab, so ⌃⌥⌘ was what was free. ⌃⌘ with an arrow now takes the tab
   in front to the neighbouring split. With none that way, toward the side
   column's edge or down still opens the side column or the strip when it is
-  hidden, as it always did. **One flat view, not split views inside split views**
+  not there, as it always did. **One flat view, not split views inside split views**
   (`SplitTreeView`). Every split is a direct subview whose frame comes from
   `SplitLayout.frames`, so a split that comes, goes or changes edge never
   takes another one out of the window on its way. A terminal that left the
@@ -520,8 +590,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   resize, once:** see "A terminal out of sight follows its window". **Until
   2026-11-26** on the branch `flexible-panes` the side column and the strip
   were panes that AppKit animated. There they are splits of one tree, and
-  the tree slides them itself when ⌥⌘B or ⌘J opens or puts one away, with
-  resizes held until it lands (the first entry of this section). The rule
+  the tree slides them itself when ⌥⌘B or ⌘J opens one, with resizes held
+  until it lands (the first entry of this section; putting one away is
+  closing its tabs since that afternoon, and cuts). The rule
   is the same: one resize, when it lands.
 - **2026-11-18. A session switch lays out the column and strip before it shows
   the terminal.** SwiftUI showed the terminal first, in the previous session's

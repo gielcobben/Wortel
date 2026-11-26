@@ -1967,21 +1967,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Move the tab in front of the row you're in to the split in
-    /// `direction`. With none there, toward the side split's edge opens the
-    /// side split with it and down opens the strip. The session's own
-    /// terminal never leaves its row: sent toward the side split, it trades
-    /// sides with it.
+    /// `direction`. With none there, toward the edge Changes and Files open
+    /// on makes a split there with it, and down one under the main row. The
+    /// session's own terminal never leaves its row.
     private func moveFocusedTab(_ direction: SplitLayout.Edge) {
         let from = focusedRegion()
         guard let tab = gitPanel.activeTab(in: from) else { return }
         let target = neighbouringArea(of: from, toward: direction, showingOnly: false)
         guard let target else { return }
-        if tab == .session {
-            // The session's terminal stays in the main row: sent toward the
-            // column, it trades sides with it.
-            if target == .side { gitPanel.setColumnLeading(!gitPanel.columnLeading) }
-            return
-        }
+        // The session's terminal stays in its row.
+        guard tab != .session else { return }
         gitPanel.move(tab, to: target, at: .max)
     }
 
@@ -2158,19 +2153,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.toggleBottom()
     }
 
-    @objc func toggleColumnSide(_ sender: Any?) {
-        focusMainWindow()
-        gitPanel.setColumnLeading(!gitPanel.columnLeading)
-    }
-
     @objc func reopenClosedTab(_ sender: Any?) {
         focusMainWindow()
         gitPanel.reopenClosedTab(in: focusedRegion())
-    }
-
-    @objc func newSideTerminal(_ sender: Any?) {
-        focusMainWindow()
-        gitPanel.openTerminal()
     }
 
     @objc func selectNextSideTab(_ sender: Any?) {
@@ -2501,8 +2486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(toggleBottomStrip(_:)) {
-            menuItem.title = gitPanel.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
-            return true
+            return manager.selected != nil
         }
         if menuItem.action == #selector(showPreviewFind(_:)) {
             return findTarget() != nil
@@ -2537,14 +2521,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(reopenClosedTab(_:)) {
             return gitPanel.canReopenClosedTab
         }
-        if menuItem.action == #selector(toggleColumnSide(_:)) {
-            menuItem.title = gitPanel.columnLeading
-                ? "Move Side Column to the Right" : "Move Side Column to the Left"
-            return true
-        }
         if menuItem.action == #selector(toggleSideColumn(_:)) {
-            menuItem.title = gitPanel.isVisible ? "Hide Side Column" : "Show Side Column"
-            return true
+            menuItem.title = gitPanel.toggleCloses ? "Hide Changes and Files" : "Show Changes and Files"
+            return manager.selected != nil
         }
         if menuItem.action == #selector(selectNextSideTab(_:))
             || menuItem.action == #selector(selectPreviousSideTab(_:)) {

@@ -152,7 +152,6 @@ final class MainSplitViewController: NSSplitViewController {
         drag.paneDrop = { [weak mainArea] point, tab in mainArea?.paneDrop(at: point, dragging: tab) }
         drag.hasRoom = { [weak mainArea] region, edge in mainArea?.hasRoom(toSplit: region, on: edge) ?? true }
         drag.tabCount = { [weak self] region in self?.git.tabs(in: region).count ?? 0 }
-        drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }
         drag.regionOf = { [weak self] tab in self?.git.session?.workspace.region(of: tab) }
         // ⌘D, ⇧⌘D and Split Right / Split Down in any menu: where the new
         // split's room comes from, and the system's sound where there is
@@ -162,7 +161,6 @@ final class MainSplitViewController: NSSplitViewController {
             if room == .none { NSSound.beep() }
             return room
         }
-        drag.onSwap = { [weak self] _, leading in self?.git.setColumnLeading(leading) }
         drag.onDrop = { [weak self] tab, region, index in
             self?.git.move(tab, to: region, at: index)
         }

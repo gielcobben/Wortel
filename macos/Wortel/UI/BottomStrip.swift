@@ -115,8 +115,7 @@ struct BottomAreaPane: View {
 /// splits themselves, an edge to make a new split there and the middle to
 /// move into the one that is there. The side split and the strip are splits
 /// like the rest. A tab only lights up the places it's allowed to go
-/// (`SideTab.fits`): the session's own tab none but its own row, and the
-/// side split, which it trades sides with.
+/// (`SideTab.fits`): the session's own tab none but its own row.
 ///
 /// While it runs, a ghost of the tab follows the pointer and the landing spot
 /// is drawn: a marker between tabs, or an overlay the size of the pane the
@@ -148,8 +147,6 @@ final class TabDragController {
         /// An edge of a pane of the main area: a new pane there, holding the
         /// tab. `area` is the half the new pane would take.
         case split(TabRegion, SplitLayout.Edge, area: NSRect)
-        /// The terminal's edge away from the column: the column moves there.
-        case swap(leading: Bool, area: NSRect)
         /// Outside the window: a window of its own.
         case tearOff
         /// A row in another main window: it moves to that window's session
@@ -187,9 +184,6 @@ final class TabDragController {
     /// Files dragged out of a list and dropped on a row or an area: open them
     /// there, from `index` in that row's order.
     var onFileDrop: ([URL], TabRegion, Int) -> Void = { _, _, _ in }
-    /// Which side the column is on now.
-    var columnLeading: () -> Bool = { false }
-    var onSwap: (SideTab, Bool) -> Void = { _, _ in }
     /// Which row a tab is in now: dropped back on its own area, it stays put.
     var regionOf: (SideTab) -> TabRegion? = { _ in nil }
     /// A file tab let go outside the window: open it in a window whose
@@ -254,7 +248,6 @@ final class TabDragController {
             case .strip(let region, let index, _): onDrop(tab, region, index)
             case .zone(let region, _): onDrop(tab, region, .max)
             case .split(let region, let edge, _): onSplit(tab, region, edge)
-            case .swap(let leading, _): onSwap(tab, leading)
             case .tearOff: if let topLeft { onTearOff(tab, topLeft) }
             case .otherWindow, nil: break
             }
@@ -307,7 +300,7 @@ final class TabDragController {
             case .strip(let region, let index, _): onFileDrop(files, region, index)
             case .zone(let region, _): onFileDrop(files, region, .max)
             case .split(let region, let edge, _): onFileSplit(files, region, edge)
-            case .swap, .tearOff, .otherWindow, nil: break
+            case .tearOff, .otherWindow, nil: break
             }
         }
     }
@@ -399,9 +392,8 @@ final class TabDragController {
         target = away == .window ? nil : resolve(tab: tab, point: point)
         updateTearOff(point: point, covered: away == .window)
         if draggingFile {
-            // Never "move the column" for a file, and nothing over a terminal:
-            // that drop is the terminal's (it types the path).
-            if case .swap? = target { target = nil }
+            // Nothing over a terminal: that drop is the terminal's (it types
+            // the path).
             if case .zone? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
             if case .split? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
         }
@@ -435,12 +427,6 @@ final class TabDragController {
             case .down: overlay.zoneEdge = .maxY
             case .up: overlay.zoneEdge = .minY
             }
-        case .swap(let leading, let area):
-            overlay.marker = nil
-            overlay.zone = overlay.convert(area, from: nil)
-            // Only the session's own tab lands here: its terminal trades
-            // sides with the side split.
-            overlay.zoneEdge = leading ? .minX : .maxX
         case .tearOff, .otherWindow, nil:
             overlay.marker = nil
             overlay.zone = nil
@@ -486,12 +472,11 @@ final class TabDragController {
     private func zoneLanding(tab: SideTab, point: NSPoint) -> Target? {
         guard let hit = paneDrop(point, tab) else { return nil }
         // The session's own tab never goes into another split's row and is
-        // never split off: it is the main row's anchor, as the chat is in
-        // the ChatGPT app. Dropped on the side split (its row or its page),
-        // it trades sides with it instead.
-        if tab == .session {
-            return hit.region == .side ? .swap(leading: !columnLeading(), area: hit.frame) : nil
-        }
+        // never split off: it is its row's anchor, as the chat is in the
+        // ChatGPT app. (Until 2026-11-26 it traded sides with the side column
+        // when dropped on it. There is no side column to trade with now: to
+        // put Changes on the left, drag Changes there.)
+        if tab == .session { return nil }
         return paneLanding(hit, tab: tab)
     }
 
@@ -534,9 +519,6 @@ final class TabDragController {
         case .split(let region, let edge, let area)?:
             onSplit(tab, region, edge)
             return "split \(edge.rawValue) of \(region.rawValue.prefix(10)), preview \(Int(area.minX)),\(Int(area.minY)) \(Int(area.width))x\(Int(area.height))"
-        case .swap(let leading, _)?:
-            onSwap(tab, leading)
-            return "column to the \(leading ? "left" : "right")"
         case .tearOff?, .otherWindow?: return "out of the window"
         case nil: return "nowhere"
         }

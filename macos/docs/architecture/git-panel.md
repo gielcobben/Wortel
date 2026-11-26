@@ -173,15 +173,33 @@ holds `objects/` — one fetch would scan the work tree of every open session.
 Whether the panel is up is **per session**, not app-wide: it's a property of what
 the session is for — a manager sitting in `~` never wants it, the one in a repo
 always does. So `GitPanelModel` holds no visibility state of its own. `isVisible`
-mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`
-and written back through `setVisible` (the one funnel); `SessionStore` persists
-it. Since 2026-11-26 (branch `flexible-panes`) the column is a split of the
-window's tree, hidden with its tabs kept (`workspace-tabs.md`). A session
-switch that changes visibility **snaps** the column rather than sliding it
-(`animatesVisibilityChange`, read by `MainAreaController.slides`): switching
-sessions is meant to be instant. ⌥⌘B slides it, as before, and the tree does
-the sliding now (`SplitTreeView`). A divider can no longer be dragged shut,
-so there is no divider-drag dismissal to record.
+mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`;
+`SessionStore` persists it.
+
+Since 2026-11-26 (branch `flexible-panes`) that flag says less than it did.
+The column is a split of the window's tree, and nothing is hidden with its
+tabs kept: the split is on screen while its row holds a tab
+(`WorkspaceTabs.place` sets the flag) and gone when it holds none
+(`workspace-tabs.md`, "Nothing is hidden"). `setVisible` and `isPresented`
+are gone from this model. So "is the panel up" is now "are Changes, History
+or Files open":
+
+- **⌥⌘B** (`toggle`, View ▸ Show Changes and Files / Hide Changes and Files
+  by `toggleCloses`) opens Changes and Files in the column's row, the pane
+  last used in front (Changes when that was History), and takes the keyboard
+  there. With any pane in that row it closes them (`putAway`) and the
+  keyboard goes back to the main row. A terminal, a file or a page in that
+  row stays, and the split with it. A pane open in another split is not
+  opened again.
+- A session switch that changes what is on screen **snaps** rather than
+  slides (`animatesVisibilityChange`, read by `MainAreaController.slides`):
+  switching sessions is meant to be instant. ⌥⌘B opening the panes slides
+  them in, and the tree does the sliding (`SplitTreeView`). Putting them
+  away cuts: their tabs are closed first.
+- A divider can no longer be dragged shut, so there is no divider-drag
+  dismissal to record.
+- A session saved with a hidden column comes back with its panes closed and
+  anything else in it on screen (`WorkspaceTabs.showHidden`).
 
 **Which pane** the column shows (`InspectorPane`: Changes / History / Files) is
 per session for the same reason and by the same mechanism — `pane` mirrors
@@ -192,8 +210,10 @@ chosen anywhere, so a new session inherits your habit instead of snapping to
 Changes. `lastSourceControlPane` is tracked separately so ⌘⌥G coming back from
 Files lands on History if that's where you were. One rule drives all three
 openers — the View menu, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
-hidden → open on that pane, showing another → swap, showing that one → close. A
-pane in the main row or the strip toggles there instead.
+not open → open on that pane, another in front → bring this one forward, this
+one in front → close its tab (`putAway`; until 2026-11-26 that hid the whole
+column). In the strip it is the same. In the main row the pane goes behind
+the session's terminal instead, and in a made split it only comes forward.
 
 **How wide** the column opens is per *session* and the same for every tab in
 it (`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width

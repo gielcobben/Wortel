@@ -792,21 +792,32 @@ final class GitPanelModel {
             selectMain(activeMainTab == .pane(requested) ? .session : .pane(requested))
             return
         }
-        // In the strip: the same toggle, against the strip being up.
+        // In the strip or the side column: in front already, it is put
+        // away, which is closing it (a pane holds nothing a close loses, and
+        // nothing is hidden with its tabs kept any more).
         if bottomTabs.contains(.pane(requested)) {
             if bottomVisible && activeBottomTab == .pane(requested) {
-                toggleBottom()
+                putAway([.pane(requested)], from: .bottom)
             } else {
                 selectBottom(.pane(requested))
             }
             return
         }
         if isVisible && activeTab == .pane(requested) {
-            setVisible(false)
-            resolveCurrent()
+            putAway([.pane(requested)], from: .side)
         } else {
             show(requested, via: origin)
         }
+    }
+
+    /// Close panes of `region`'s row as a Show command pressed again does:
+    /// the keyboard goes back to the main row if you were there and the
+    /// split went with them, and stays in the split if something is left.
+    private func putAway(_ tabs: [SideTab], from region: TabRegion) {
+        let wasThere = lastRegion == region
+        for tab in tabs { close(tab) }
+        resolveCurrent()
+        if wasThere { focus(isShowing(region) ? region : .main) }
     }
 
     /// Show a pane without the toggle — for the paths where a click can only
@@ -824,28 +835,40 @@ final class GitPanelModel {
         }
     }
 
-    /// Show or hide the column. Hiding keeps its tabs; showing a column that
-    /// has none opens the pane you last chose, because an empty column is not
-    /// something to show.
+    /// ⌥⌘B: Changes and Files, in the split they open in (the outer edge of
+    /// the window's splits, the right unless it was moved).
     ///
-    /// The keyboard follows, as it does for the strip (⌘J): showing the column
-    /// puts you in it (a terminal, or a pane's list), hiding it puts you back in
-    /// the session's terminal. That's what makes ⌥⌘B, ⌘T, ⌘W a sequence you can
-    /// type without reaching for the pointer.
+    /// With none of the panes open there, Changes and Files are opened, the
+    /// one you last used in front, and the keyboard goes to it. With any
+    /// open there, they are closed, and the keyboard goes back to the main
+    /// row: Changes, History and Files hold nothing a close loses, so
+    /// putting them away needs no hidden state. Anything else in that split
+    /// (a terminal, a file) stays, and the split with it.
+    ///
+    /// Until 2026-11-26 this hid and showed the side column with its tabs
+    /// kept. With every split movable there is no side column to hide, and
+    /// a second kind of "gone" for one split among many was the last thing
+    /// that made it a place of its own. To have the whole window for the
+    /// terminal for a moment, zoom it (⇧⌘↩).
     func toggle() {
-        if !isVisible, tabs.isEmpty {
-            fillEmptyColumn()
-            focus(.side)
-            return
+        guard let session else { return }
+        let panes = session.sideTabs.filter { $0.pane != nil }
+        guard panes.isEmpty else { return putAway(panes, from: .side) }
+        // Read first: opening a pane makes it the one last used.
+        let last = session.inspectorPane ?? Self.defaultPane
+        let front = SideTab.pane(last == .history ? .changes : last)
+        // A pane that is open in another split is brought forward where it
+        // is; the rest open here.
+        for pane in [InspectorPane.changes, .files] where session.workspace.region(of: .pane(pane)) == nil {
+            open(.pane(pane), in: .side)
         }
-        setVisible(!isVisible)
-        resolveCurrent()
-        if isVisible {
-            focus(.side)
-        } else {
-            focus(.main)
-        }
+        open(front)
+        focus(session.workspace.region(of: front) ?? .side)
     }
+
+    /// Whether ⌥⌘B would put Changes and Files away rather than open them:
+    /// what its menu item calls itself.
+    var toggleCloses: Bool { tabs.contains { $0.pane != nil } }
 
     // MARK: - Tabs
     //
@@ -1506,27 +1529,27 @@ final class GitPanelModel {
 
     // MARK: - The strip under the terminal
 
-    /// Show or hide the strip. Showing one with nothing in it opens a
-    /// terminal there, because an empty strip is not something to show. ⌘J.
+    /// ⌘J: the terminal under the main row. With no strip, one is made
+    /// with a terminal in it. With one, the keyboard goes to it, and from
+    /// it back to the main row. Nothing is hidden: until 2026-11-26 this
+    /// tucked the strip away with its tabs kept, and a key that puts a
+    /// running shell out of sight was the strip's one difference from any
+    /// other split. Zoom the terminal (⇧⌘↩) to have the window for it.
     func toggleBottom() {
         guard let session else { return }
-        if session.bottomTabs.isEmpty {
+        guard let front = session.activeBottomTab ?? session.bottomTabs.first else {
             openBottomTerminal()
             return
         }
-        // Through the rules: showing the strip ends a zoom on another leaf,
-        // and hiding it one on the strip.
-        change(session) { $0.setVisible(!$0.bottomVisible, in: .bottom) }
-        mirror(session, animated: true)
-        onStateChanged?()
-        if bottomVisible {
-            // A pane in front of the strip needs this session's repo: while
-            // nothing showed one, a session switch left the last session's.
-            resolveCurrent()
-            focus(.bottom)
-        } else {
+        // There and showing: back to the main row.
+        if lastRegion == .bottom, isShowing(.bottom) {
             focus(.main)
+            return
         }
+        // Brought forward first, which ends a zoom that was hiding it.
+        selectBottom(front)
+        resolveCurrent()
+        focus(.bottom)
     }
 
     func openBottomTerminal() {
@@ -1537,20 +1560,6 @@ final class GitPanelModel {
         guard let session, session.bottomTabs.contains(tab) else { return }
         change(session) { $0.bringForward(tab) }
         settle(tab, in: session)
-    }
-
-    /// Writable mirror of `isVisible` for the paths that don't toggle: dragging
-    /// the divider to the edge collapses the panel behind this model's back
-    /// (MainSplitViewController reflects it here), and the toolbar's pane control
-    /// forces it open. Every write still goes through `setVisible`, so a
-    /// divider-drag dismissal is recorded on the session like any other.
-    var isPresented: Bool {
-        get { isVisible }
-        set {
-            guard newValue != isVisible else { return }
-            setVisible(newValue)
-            resolveCurrent()
-        }
     }
 
     /// Show the panel if needed and ask the changes list to take keyboard focus.
@@ -1569,33 +1578,8 @@ final class GitPanelModel {
         onAreaFocused?(lastRegion)
     }
 
-    /// The user showed or hid the panel — record it on the session it was done
-    /// *to*, and have that persisted. Every write to `isVisible` outside `focus`
-    /// goes through here, so the session and the panel can't drift apart.
-    private func setVisible(_ visible: Bool) {
-        // An empty column has nothing to show; opening one goes through `open`.
-        if visible, tabs.isEmpty {
-            if let session, session.sideTabs.isEmpty {
-                fillEmptyColumn()
-            }
-            return
-        }
-        guard let session else {
-            animatesVisibilityChange = true
-            isVisible = visible
-            return
-        }
-        // Through the rules: showing the column ends a zoom on another leaf,
-        // and hiding it one on the column. The mirror then moves `isVisible`
-        // with what the tree hides and what is zoomed, animated as before.
-        let was = session.gitPanelVisible
-        change(session) { $0.setVisible(visible, in: .side) }
-        mirror(session, animated: true)
-        if session.gitPanelVisible != was { onStateChanged?() }
-    }
-
-    /// The user chose a pane — the same funnel as `setVisible`, for the same
-    /// reason. It also updates the two app-wide defaults: the pane a session
+    /// The user chose a pane: recorded on the session it was done to, so the
+    /// session and the panel can't drift apart. It also updates the two app-wide defaults: the pane a session
     /// with no preference of its own opens on, and (for a source-control pane)
     /// the one ⌘⌥G returns to from Files. Those are defaults, not state — the
     /// session is the state.

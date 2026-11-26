@@ -1238,7 +1238,7 @@ final class WorkspaceTabsTests: XCTestCase {
         let shell = terminal()
         tabs.place(shell, in: .bottom, at: 0)
         XCTAssertTrue(tabs.isShowing(.side))
-        XCTAssertFalse(tabs.isShowing(.bottom), "the strip is down until a tab comes forward in it")
+        XCTAssertTrue(tabs.isShowing(.bottom), "on screen from the moment it holds a tab")
         tabs.bringForward(shell)
         XCTAssertTrue(tabs.isShowing(.bottom))
 
@@ -1811,6 +1811,42 @@ final class WorkspaceTabsTests: XCTestCase {
         tabs.layout.share(of: leaf, along: axis) ?? -1
     }
 
+    /// A file from a build that could hide the column or the strip with its
+    /// tabs kept: the panes of a hidden one are closed, and anything else
+    /// in it is on screen, because nothing is hidden any more and a shell
+    /// must not be out of reach.
+    func testWhatAnOlderBuildHidComesBackOrCloses() {
+        // A hidden column of panes only: closed, and its leaf with it.
+        var panesOnly = WorkspaceTabs(side: [changes, files], activeSide: changes, sideVisible: false)
+        panesOnly.showHidden()
+        XCTAssertTrue(panesOnly.side.isEmpty)
+        XCTAssertFalse(panesOnly.layout.contains(.side))
+        XCTAssertFalse(panesOnly.isShowing(.side))
+
+        // A hidden column with a terminal among them: the panes closed, the
+        // terminal on screen.
+        let shell = terminal()
+        var mixed = WorkspaceTabs(side: [changes, shell], activeSide: changes, sideVisible: false)
+        mixed.showHidden()
+        XCTAssertEqual(mixed.side, [shell])
+        XCTAssertEqual(mixed.front(of: .side), shell)
+        XCTAssertTrue(mixed.isShowing(.side))
+        XCTAssertTrue(mixed.hiddenLeaves.isEmpty)
+
+        // A hidden strip with a shell in it: on screen.
+        let log = terminal()
+        var strip = WorkspaceTabs(bottom: [log], activeBottom: log, bottomVisible: false)
+        strip.showHidden()
+        XCTAssertEqual(strip.bottom, [log])
+        XCTAssertTrue(strip.isShowing(.bottom))
+
+        // What was showing is left as it is.
+        var showing = WorkspaceTabs(side: [changes, files], activeSide: files, sideVisible: true)
+        showing.showHidden()
+        XCTAssertEqual(showing.side, [changes, files])
+        XCTAssertEqual(showing.front(of: .side), files)
+    }
+
     /// The column is a leaf of the tree exactly while it has tabs: made by
     /// its first, at the outer edge with a third of the width, and gone with
     /// its last. Showing or hidden makes no difference to that.
@@ -1821,8 +1857,8 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.layout.leaves, [.main, .side])
         XCTAssertEqual(share(of: .side, along: .row, in: tabs), 1.0 / 3, accuracy: 1e-9)
         XCTAssertEqual(tabs.unsized, [.side], "a guess, until the window has laid it out")
-        XCTAssertEqual(tabs.hiddenLeaves, [.side], "placed, not brought forward: there, and not showing")
-        XCTAssertFalse(tabs.isShowing(.side))
+        XCTAssertTrue(tabs.hiddenLeaves.isEmpty, "on screen from the moment it holds a tab")
+        XCTAssertTrue(tabs.isShowing(.side))
 
         tabs.bringForward(changes)
         XCTAssertTrue(tabs.hiddenLeaves.isEmpty)
@@ -1865,7 +1901,7 @@ final class WorkspaceTabsTests: XCTestCase {
                        accuracy: 1e-9, "as wide as the main row, not the whole area")
         XCTAssertEqual(share(of: pane.leaf, along: .column, in: tabs), 1, accuracy: 1e-9)
         XCTAssertTrue(tabs.unsized.contains(.bottom))
-        XCTAssertTrue(tabs.hiddenLeaves.contains(.bottom))
+        XCTAssertFalse(tabs.hiddenLeaves.contains(.bottom), "on screen from the moment it holds a tab")
 
         tabs.detach(shell)
         XCTAssertEqual(tabs.splitRegions, [.main, pane, .side])

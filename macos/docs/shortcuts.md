@@ -9,8 +9,9 @@ Control and Option with a letter always stay with the shell.
 
 A few rules cover most of it:
 
-- **The layout is an editor's.** ⌘B, ⌥⌘B and ⌘J show and hide the three areas,
-  as in VS Code, Cursor, Zed and Codex. The three panes are numbered as git
+- **The layout is an editor's.** ⌘B is the sidebar, ⌥⌘B is Changes and Files
+  beside the terminal, ⌘J is the terminal below: the three keys VS Code,
+  Cursor, Zed and Codex use for their three areas. The three panes are numbered as git
   apps number theirs: ⌃⌘1 Changes, ⌃⌘2 History, ⌃⌘3 Files.
 - **Up and down for sessions, brackets for tabs.** ⌥⌘↑ / ⌥⌘↓ walk the sidebar,
   as Arc walks its; ⇧⌘[ / ⇧⌘] are previous and next tab, as in every Mac app.
@@ -88,9 +89,8 @@ Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 | Action | Shortcut | Same as |
 |---|---|---|
 | Show / hide the sidebar | ⌘B (also ⌥⌘S) | VS Code, Cursor, Zed, Codex, cmux |
-| Show / hide the side column, with its tabs kept | ⌥⌘B | VS Code, Zed, Codex, cmux |
-| Show / hide the bottom strip, with its tabs kept | ⌘J, ⌃` | VS Code, Zed, Codex |
-| Move the side column to the other side | ⇧⌥⌘B | |
+| Open Changes and Files beside the terminal, or close them | ⌥⌘B | VS Code, Zed, Codex, cmux |
+| Go to the terminal below (making one if there is none), and back | ⌘J, ⌃` | VS Code, Zed, Codex |
 | Focus the next / previous split | ⌘] / ⌘[ | iTerm, Ghostty, Warp (next / previous pane) |
 | Focus the split to the left / right / above / below | ⌃⌥⌘← / ⌃⌥⌘→ / ⌃⌥⌘↑ / ⌃⌥⌘↓ | iTerm, Ghostty (⌥⌘ and an arrow, which are sessions and tabs here) |
 | Zoom the split you're in, and show all of them again | ⇧⌘↩ | Ghostty, cmux |
@@ -99,39 +99,58 @@ Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 | Show or hide Wortel, from any app | ⌃⌥⌘. | |
 
 Everything beside the sidebar is made of splits: parts with a row of tabs
-each. The side column and the bottom strip are two of them. Wortel opens
-those for you, the side column at the outer edge and the strip under the
-terminal, each at the size you last gave it. Any other split you make
-yourself (⌘D and ⇧⌘D, under Tabs).
+each. A session starts with one, its terminal. You make more with ⌘D and ⇧⌘D
+(under Tabs), and two keys make one for you in a place of their own: ⌥⌘B at
+the right edge, ⌘J under the terminal.
 
 Every split's row is the same: its tabs, then "+". The session's own terminal
 is a tab too, named after the session, with no close button. What belongs to
-the session and the window is at the right end of the titlebar: what the
-session is running, its "…" menu, and the side column's button.
+the session is at the right end of the titlebar: what it is running, and its
+"…" menu.
 
-⌥⌘B and ⌘J put the side column and the strip away and bring them back with
-the same tabs and the same share of the window. A split you made has no such key: it is
-there while it has tabs. The two slide open and shut on those keys, as they
-always have. A split you make or close, a zoom and ⌃⌘= land in one cut.
+**Nothing is hidden.** A split is on screen while it holds a tab and gone when
+it holds none. Until 2026-11-26, ⌥⌘B and ⌘J hid the side column and the
+bottom strip and brought them back with their tabs. They no longer do:
+
+- **⌥⌘B** (View ▸ Show Changes and Files) opens Changes and Files in a split
+  at the right edge, at the width you last gave it, with the one you used
+  last in front, and puts the keyboard there. Press it again (Hide Changes
+  and Files) and it closes Changes, History and Files in that split, and the
+  keyboard goes back to your terminal. Closing them loses nothing. Anything
+  else in that split stays, a terminal or a file for one, and so does the
+  split. A pane you have dragged into another split is not opened twice: it
+  stays where you put it.
+- **⌘J** (View ▸ Terminal Below, also ⌃`) puts the keyboard in the terminal
+  under your main one, and from there back in the main one. If there is none
+  yet, it makes one. It never closes or hides it. To close it, close its
+  tabs (⌘W).
+- **To have the whole window for one split, zoom it** (⇧⌘↩). That is what
+  hiding the others was for.
+
+Changes and Files slide in when ⌥⌘B opens them, and so does the terminal
+below when ⌘J makes it. Putting them away, a split you make or close, a zoom
+and ⌃⌘= land in one cut.
 
 ⌘] and ⌘[ walk every split on screen in reading order, left to right and top
-down, the side column and the strip where they sit. ⌃⌥⌘ and an arrow goes by
-direction instead (View ▸ Focus Area).
+down. ⌃⌥⌘ and an arrow goes by direction instead (View ▸ Focus Area).
 
-A zoomed split is shown alone and the others are kept. The side column and
-the strip can be zoomed like any other. A double-click on the empty part of a
-split's row zooms it too, unless the row is in the titlebar, where a
-double-click is the window's. A button at the end of the row brings the
-others back. A zoom is not kept through a relaunch.
+A zoomed split is shown alone and the others are kept. Any split can be
+zoomed. A double-click on the empty part of a split's row zooms it too,
+unless the row is in the titlebar, where a double-click is the window's. A
+button at the end of the row brings the others back. A zoom is not kept
+through a relaunch.
 
 The line between two splits drags, and a double-click on it makes all of them
-equal. The side column and the strip keep their size when the others are made
-equal. A line stops where a split would get smaller than 160 by 100 points,
-so dragging it to the edge closes nothing: ⌥⌘B and ⌘J do that.
+equal. The split ⌥⌘B opens and the one ⌘J makes keep their size when the
+others are made equal. A line stops where a split would get smaller than 160
+by 100 points, so dragging it to the edge closes nothing.
 
 Sizes are shares of the window. Make the window wider and every split gets
-wider, the side column too. Before 2026-11-26 the side column kept its width
-and the terminal took all of the change.
+wider, Changes too. Before 2026-11-26 the side column kept its width and the
+terminal took all of the change.
+
+There is no menu command to move Changes to the other side any more (it was
+⇧⌥⌘B). Drag its tab to the left edge of your terminal's split instead.
 
 Splits were added on 2026-11-26 and are not in a release yet.
 
@@ -146,8 +165,11 @@ Splits were added on 2026-11-26 and are not in a release yet.
 | Focus the list | ⌥⌘L | |
 | The selected file in the preview tab, or close it (in Changes or Files) | Space | Finder (Quick Look) |
 
-Each opens its pane, brings it forward, or closes it when it's already in front.
-A pane that is in a split you made only comes forward: there is nothing to put it away to.
+Each opens its pane or brings it forward. Pressed with the pane already in
+front, it closes that pane's tab, where it used to hide the whole side
+column: closing a pane loses nothing. Two exceptions. A pane that shares a
+row with your session's terminal goes behind the terminal instead. And a pane
+you dragged into a split of its own only comes forward.
 While a file is in front, a click or ↑/↓ in Changes or Files shows the picked
 file in the preview tab (italic title). A double-click on a file opens it
 there too, and a double-click on the file it already shows keeps it as a tab.
@@ -155,17 +177,15 @@ there too, and a double-click on the file it already shows keeps it as a tab.
 ## Tabs
 
 These act on the tab row you're in: the split you last clicked or typed in,
-picked a tab in, or moved to with ⌘] / ⌘[ or ⌃⌥⌘ and an arrow. The side
-column and the strip are splits like the others, so ⌘T, ⌘W, ⇧⌘T and ⇧⌘L act
-in whichever one you're in.
+picked a tab in, or moved to with ⌘] / ⌘[ or ⌃⌥⌘ and an arrow. ⌘T, ⌘W, ⇧⌘T
+and ⇧⌘L act in whichever split you're in.
 
 | Action | Shortcut | Same as |
 |---|---|---|
 | New terminal tab here | ⌘T | everyone (new tab); in a terminal, a new shell where you are |
 | Split right: a new terminal in a split beside the one you're in | ⌘D | iTerm, Ghostty, Warp, cmux |
 | Split down: the same, under it | ⇧⌘D | iTerm, Ghostty, Warp, cmux |
-| New terminal in the bottom strip | ⌃⇧` | VS Code, Zed (new terminal) |
-| New terminal in the side column | Tab ▸ New Terminal in Side Column | |
+| New terminal below: one more tab in the split under the main terminal | ⌃⇧` | VS Code, Zed (new terminal) |
 | New browser tab here | ⇧⌘L | cmux |
 | Close tab | ⌘W | everyone |
 | Reopen closed tab | ⇧⌘T | Safari, Chrome, VS Code, Zed, iTerm, Ghostty, Warp, cmux |
@@ -178,11 +198,10 @@ in whichever one you're in.
 session, the same as closing a tab in any other terminal ends its shell.
 
 ⌘D and ⇧⌘D put the new terminal in a split of its own, beside or under the
-split you're in. From the side column that is a split beside the side column
-(⌘D with Changes in front gives you a terminal next to Changes), and from the
-strip one beside the strip. Where the split you're in is too small to be two,
+split you're in, whichever that is: ⌘D with Changes in front gives you a
+terminal next to Changes. Where the split you're in is too small to be two,
 the new one takes its room from the whole row instead, a little from each
-(⌘D in a narrow side column still gives you a terminal next to it). Only
+(⌘D beside a narrow Changes still gives you a terminal next to it). Only
 when the row has no room either do they beep and do nothing: a split is
 never laid out under 160 by 100 points while there is room. A split is there only while it has tabs, so closing its
 last tab closes the split and its neighbours take the room.
@@ -192,25 +211,28 @@ move that tab into a new split, and in every row's "+" and the session's "…",
 where they open a new terminal. They beep the same way when there is no room.
 The session's own terminal stays in the main row and can't be split off.
 
+That right-click menu no longer has Move to Main Area, Move to Side Column
+and Move to Bottom Strip. There are no named places to move to, only splits.
+A tab goes to another split by a drag, or by ⌃⌘ and an arrow.
+
 A tab dragged onto the edge of a split makes a new split there, and onto its
-middle moves into it (the split lights up). That is the rule for every split, the
-side column and the strip included. Before 2026-11-26 the sides of the main
-area stood for the side column and its lower quarter for the strip. They no
-longer do: to put a tab in the side column, drop it on the side column, or on
-its row. While the side column is hidden, a tab's right-click menu (Move to
-Side Column) or ⌃⌘ and an arrow puts it there. A split too small to be two has no edges, only a middle. A file
-dragged out of Changes or Files lands the same way, except over a terminal, which takes its path. The session's own
-tab goes nowhere but its own row. Dropped on the side column, it trades
-sides with it.
+middle moves into it (the split lights up). That is the rule for every split.
+Before 2026-11-26 the sides of the main area stood for the side column and
+its lower quarter for the strip. They no longer do. A split too small to be
+two has no edges, only a middle. A file dragged out of Changes or Files lands
+the same way, except over a terminal, which takes its path. The session's own
+tab goes nowhere but its own row. (It used to trade sides with the side
+column when dropped on it. To have Changes on the left, drag Changes there.)
 
 ⌃⌘ and an arrow moves the tab in front to the neighbouring split. Where there
-is none, two directions still open something: toward the side the side
-column is on, the tab goes to the side column, and down it goes to the strip,
-when that one is hidden or not there yet. The session's own terminal sent
-toward the column swaps sides with it.
+is none, two directions still make one: toward the right edge, the tab goes
+to a new split there (where ⌥⌘B opens Changes and Files), and down, to a new
+one under the main terminal (where ⌘J makes its terminal), when there is no
+such split yet. Your session's own terminal stays in its row: ⌃⌘ and an arrow
+does nothing with it in front.
 
 Before 2026-11-26, ⌘D was a new terminal in the side column and ⇧⌘D one in the
-bottom strip. Both are still in the Tab menu, the strip's on ⌃⇧`.
+bottom strip. ⌘D from Changes does the first now, and ⌃⇧` is the second.
 
 ## In a terminal
 

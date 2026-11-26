@@ -39,11 +39,8 @@ import Foundation
 ///   tab. Taking out a leaf's last tab, by closing or moving it, takes the
 ///   leaf out too, and its room goes to its siblings.
 /// - The column and the strip are leaves like any other. They are split,
-///   zoomed and sized by the rules every leaf has. Two things are still
-///   theirs. They can be hidden with their tabs kept (`sideVisible`,
-///   `bottomVisible`, `hiddenLeaves`): the leaf stays in the tree and keeps
-///   its share, and takes no room until it is shown again. And they are
-///   where things open, so they have a place to appear at: the column at
+///   zoomed and sized by the rules every leaf has. One thing is still
+///   theirs: they are where things open, so they have a place to appear at: the column at
 ///   the outer edge of the whole area (`sideLeading` says which), the strip
 ///   under the main row. Opened there, a leaf is at a guessed share until
 ///   the window gives it its size (`unsized`).
@@ -347,9 +344,13 @@ struct WorkspaceTabs: Equatable, Sendable {
         case .main: main.insert(tab, at: min(max(index, 0), main.count))
         case .side:
             side.insert(tab, at: min(max(index, 0), side.count))
+            // On screen from the moment it holds something: nothing is
+            // tucked away with its tabs kept any more (`showHidden`).
+            sideVisible = true
             keepFixedLeaves()
         case .bottom:
             bottom.insert(tab, at: min(max(index, 0), bottom.count))
+            bottomVisible = true
             keepFixedLeaves()
         case .pane(let id):
             guard var pane = panes[id] else { return false }
@@ -506,9 +507,32 @@ struct WorkspaceTabs: Equatable, Sendable {
 
     // MARK: - The column and the strip
 
-    /// Show or hide the column or the strip with its tabs kept (⌥⌘B, ⌘J):
-    /// its leaf stays in the tree with the share it has. One with no tabs
-    /// has nothing to show, and stays hidden. Nothing for any other region.
+    /// What a file from a build that could hide the column or the strip
+    /// with its tabs kept comes to, now that nothing is hidden: the panes of
+    /// a hidden one (Changes, History, Files) are closed, which loses
+    /// nothing and is what ⌥⌘B does to them now, and whatever else is in
+    /// it (a terminal, a file, a page) is on screen, because a shell must
+    /// not be out of reach. Once, when a session is read.
+    mutating func showHidden() {
+        if !sideVisible {
+            for tab in side where tab.pane != nil { detach(tab) }
+            sideVisible = !side.isEmpty
+        }
+        if !bottomVisible {
+            for tab in bottom where tab.pane != nil { detach(tab) }
+            bottomVisible = !bottom.isEmpty
+        }
+        keepFixedLeaves()
+    }
+
+    /// Show or hide the column or the strip with its tabs kept: its leaf
+    /// stays in the tree with the share it has. One with no tabs has nothing
+    /// to show, and stays hidden. Nothing for any other region.
+    ///
+    /// Nothing in the app asks for this since 2026-11-26: ⌥⌘B closes the
+    /// panes and ⌘J goes to the strip, and a tab placed in either shows it
+    /// (`place`, `showHidden`). It is what the hidden set in `SplitLayout`
+    /// is tested through, and what a hidden one from an older file is.
     ///
     /// Showing one is asking to see it, so a zoom on another leaf ends, as
     /// it does for a tab brought forward. Hiding the one that is zoomed

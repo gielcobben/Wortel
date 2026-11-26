@@ -30,13 +30,16 @@ The rest falls through to the row under it, which moves the window.
   Back and Forward. They are placed on every layout pass and split resize
   (the first real layout at launch sends no resize) so the arrows ride the
   sidebar's edge as it opens and closes (`WindowControls.place`).
-- **The trailing end**: what the session is running (`RunningButton`), the
-  session's "…" menu, and the side column's toggle. `TitleBarController`
-  wires them and keeps the toggle's tooltip in step. Until 2026-11-26 they
-  were on the main row (`MainBar`) and the side column's row
-  (`SideColumnBar`), and the strip's row (`BottomBar`) had a chevron to hide
-  it. All three classes are gone. With splits, those rows can be anywhere,
-  and their buttons were in the middle of the window.
+- **The trailing end**: two buttons, what the session is running
+  (`RunningButton`) and the session's "…" menu. `TitleBarController` wires
+  them. Until 2026-11-26 they were on the main row (`MainBar`), the side
+  column's row (`SideColumnBar`) had the column's toggle, and the strip's row
+  (`BottomBar`) a chevron to hide it. All three classes are gone. With
+  splits, those rows can be anywhere, and their buttons were in the middle
+  of the window. The column's toggle sat here for an hour that day and was
+  taken out: nothing is hidden with its tabs kept any more, so there is
+  nothing for a toggle to show (`workspace-tabs.md`, "Nothing is hidden").
+  ⌥⌘B opens Changes and Files and closes them.
 
 Who clears what is the tree's to say. `MainAreaController.titlebarRows` lists
 the rows along the top with where each starts and ends, and
@@ -45,8 +48,8 @@ the rows along the top with where each starts and ends, and
 `trailingClearance`, how far the trailing ones do
 (`WindowControls.trailingWidth`). Only the leftmost row gets any of the
 first and only the rightmost any of the second. Which rows those are changes
-with the splits: the main row and the side column as a rule, the other way
-round when the column is on the left, one row for both when a split is
+with the splits: the main row and the split with Changes as a rule, the
+other way round when that one is on the left, one row for both when a split is
 zoomed, a made split when one was dropped at an end. It runs on every layout
 pass here and again after every layout of the tree (`onPlaced`). A row that
 is not along the top has neither (`SplitLeafView.dress`).

@@ -119,8 +119,10 @@ defaults write $ID "NSSplitView Subview Frames window-split" -array \
 The last line gives the sidebar the canvas's 234pt. The window's split view
 has two panes since 2026-11-26 (the sidebar, and everything beside it), saved
 as `window-split`. The side column is a split inside the second pane, not a
-pane, so nothing here hides it: use View ▸ Hide Side Column through the menu,
-below. This line was written from the code (`MainSplitViewController`) and
+pane, so nothing here hides it: use View ▸ Hide Changes and Files through
+the menu, below (the item is Show Changes and Files while they are closed,
+and since 2026-11-26 it closes those panes; nothing is hidden with its tabs
+kept). This line was written from the code (`MainSplitViewController`) and
 has not been tried yet. A build from before that date has three panes, saved
 as `main-split`, and takes a third frame that hides the column:
 `"1310, 0, 384, 815, YES, YES"` after `"235, 0, 1075, 815, NO, NO"`.

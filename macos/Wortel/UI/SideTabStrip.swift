@@ -686,15 +686,8 @@ private final class SideTabView: NSControl, TabTitleProviding {
             menu.addItem(ClosureMenuItem(title: "Split Right") { [weak self] in self?.onSplit(.right) })
             menu.addItem(ClosureMenuItem(title: "Split Down") { [weak self] in self?.onSplit(.down) })
         }
-        // Every other area this tab may go to. In a pane's own row
-        // `stripRegion()` is that pane, so all three are offered.
-        let destinations: [(TabRegion, String)] = [
-            (.main, "Move to Main Area"), (.side, "Move to Side Column"), (.bottom, "Move to Bottom Strip"),
-        ].filter { $0.0 != stripRegion() && tab.fits($0.0) }
-        if !destinations.isEmpty { menu.addItem(.separator()) }
-        for (region, title) in destinations {
-            menu.addItem(ClosureMenuItem(title: title) { [weak self] in self?.onMove(region) })
-        }
+        // No "Move to" a place by name: there are no named places, only
+        // splits, and a tab goes to another one by a drag or ⌃⌘ and an arrow.
         return menu
     }
 

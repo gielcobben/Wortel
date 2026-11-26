@@ -444,7 +444,8 @@ beside itself. The decisions:
   until nothing in it is usable. Since 2026-11-26 the session's side column
   and strip are leaves of that layout, so they are measured with it, and one
   that is hidden in that session is left out
-  (`session.workspace.hiddenLeaves`). One thing still makes it an estimate,
+  (`session.workspace.hiddenLeaves`; since later that day nothing can be
+  hidden, so the set is empty). One thing still makes it an estimate,
   read from the code and not tried: a column or a strip that was never laid
   out is at its guessed share.
   An agent asleep (`AgentSleep`) is no reason: the new terminal is a shell of

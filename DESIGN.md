@@ -106,7 +106,9 @@ in the middle, the repository beside it, a second shell underneath. The side
 column and the strip are splits that Wortel opens for you, at the place and
 the size they always had. They are the default, not a different kind of thing.
 Any split can be split again, zoomed, resized by its divider and dropped on,
-and one is gone when its last tab closes. So there is still no layout to
+and one is gone when its last tab closes. Nothing is hidden with its tabs
+kept: a split is on screen while it holds a tab, and the way to have the
+window for one of them is to zoom it. So there is still no layout to
 configure: nothing is named, saved or loaded, and a window nobody arranged
 is arranged exactly as it was before there were splits.
 A second window (⇧⌘N) is the same again, with a sidebar of its own
@@ -269,16 +271,18 @@ its terminal shows that one tab, never a bare title.
 **The titlebar has two ends, and they are the window's, not a row's**
 (`WindowControls`, one overlay over the whole titlebar). At the leading end,
 by the traffic lights: the sidebar's toggle, then Back and Forward, which
-ride the sidebar's edge. At the trailing end: what the session is running,
-the session's "…" menu, and the side column's toggle, plain like the
-sidebar's toggle that it mirrors. They stay in their corners whatever the
-splits do. The row under each end makes room for it: the leftmost titlebar
+ride the sidebar's edge. At the trailing end, two buttons: what the session
+is running, and the session's "…" menu. They stay in their corners whatever
+the splits do. The row under each end makes room for it: the leftmost titlebar
 row for the leading end, the rightmost for the trailing one. These buttons
-were on the main row and on the side column's row until 2026-11-26, which
-put them in the middle of the window as soon as a split could sit to the
-right of either. A button for one split's own row is the thing not to add
-back: if it is about the session or the window, it goes in a corner, and if
-it is about the split, it is a key or a menu item.
+were on the main row until 2026-11-26, which put them in the middle of the
+window as soon as a split could sit to the right of it. A button for one
+split's own row is the thing not to add back: if it is about the session or
+the window, it goes in a corner, and if it is about the split, it is a key
+or a menu item. There is no button for the side column. One sat in the
+trailing corner for an hour and was taken out: with every split movable
+there is no side column to show or hide, only Changes and Files, which ⌥⌘B
+opens and closes (`docs/decisions.md`).
 
 A split's row has one of two looks, by where it is (`SplitLeafView`):
 
@@ -387,16 +391,18 @@ dimmed, as it never was: the cursor says where you are.
   showing snaps; it never animates.
 - A terminal does not resize during an animation. It resizes once, when the
   pane lands.
-- The side column and the strip slide open and shut when you open or put
-  one away yourself (⌥⌘B, ⌘J, a tab opened there), in the times above, as
-  the sidebar does. They are splits since 2026-11-26 and the tree of splits
-  moves them itself: the one coming or going grows from, or shrinks to,
-  nothing against the edge of the neighbour that makes room. The lines
-  between splits are not drawn while it moves, and each row has the look of
-  where it will end up from the first frame.
-- A split you make or close appears and goes in one cut. So do a zoom,
-  making the splits equal, and a side column or strip that goes because its
-  last tab closed.
+- The side column and the strip slide open when you open one yourself
+  (⌥⌘B, ⌘J, a tab opened there), in the opening time above, as the sidebar
+  does. They are splits since 2026-11-26 and the tree of splits moves them
+  itself: the one coming in grows from nothing against the edge of the
+  neighbour that makes room. The lines between splits are not drawn while
+  it moves, and each row has the look of where it will end up from the
+  first frame.
+- Putting them away cuts. ⌥⌘B closes the tabs of Changes and Files, and a
+  split that has lost its last tab is gone at once: a slide would be of an
+  empty page.
+- A split you make or close appears and goes in one cut. So do a zoom and
+  making the splits equal.
 - A new session's terminal is under an empty page of its own colour until
   its program has drawn. The page comes off in one cut, with nothing on it
   and no fade.

@@ -480,14 +480,17 @@ enum MainMenu {
         let toggleSidebar = viewMenu.addItem(withTitle: "Hide Sidebar", action: #selector(AppDelegate.toggleSessionSidebar(_:)), keyEquivalent: "b")
         toggleSidebar.keyEquivalentModifierMask = [.command]
         addHidden(viewMenu, "Hide Sidebar", #selector(AppDelegate.toggleSessionSidebar(_:)), "s", [.command, .option])
-        let sideColumn = viewMenu.addItem(withTitle: "Show Side Column", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
+        // ⌥⌘B and ⌘J were Show Side Column and Show Bottom Strip, hiding and
+        // showing the window's two fixed places. Those are splits like any
+        // other now and nothing is hidden: ⌥⌘B opens Changes and Files on
+        // the right and closes them again, ⌘J takes you to the terminal
+        // under the main row (making one if there is none) and back.
+        let sideColumn = viewMenu.addItem(withTitle: "Show Changes and Files", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
         sideColumn.keyEquivalentModifierMask = [.command, .option]
-        let bottomStrip = viewMenu.addItem(withTitle: "Show Bottom Strip", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
+        let bottomStrip = viewMenu.addItem(withTitle: "Terminal Below", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
         bottomStrip.keyEquivalentModifierMask = [.command]
-        // ⌃` too, as VS Code, Zed and ChatGPT toggle their terminal panel.
-        addHidden(viewMenu, "Show Bottom Strip", #selector(AppDelegate.toggleBottomStrip(_:)), "`", [.control])
-        let swapSides = viewMenu.addItem(withTitle: "Move Side Column to the Left", action: #selector(AppDelegate.toggleColumnSide(_:)), keyEquivalent: "b")
-        swapSides.keyEquivalentModifierMask = [.command, .option, .shift]
+        // ⌃` too, as VS Code, Zed and ChatGPT go to their terminal panel.
+        addHidden(viewMenu, "Terminal Below", #selector(AppDelegate.toggleBottomStrip(_:)), "`", [.control])
         // With the keyboard in a browser's page these are Forward and Back
         // while the page has somewhere to go, as in Safari and Chrome (and as
         // cmux splits the same two keys); see AppDelegate.focusNextArea.
@@ -644,12 +647,11 @@ enum MainMenu {
         splitRight.keyEquivalentModifierMask = [.command]
         let splitDown = tabMenu.addItem(withTitle: "Split Down", action: #selector(AppDelegate.splitDown(_:)), keyEquivalent: "d")
         splitDown.keyEquivalentModifierMask = [.command, .shift]
-        tabMenu.addItem(withTitle: "New Terminal in Side Column", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "")
         // ⌃⇧`, as VS Code and Zed open a new terminal. The shifted twin, as
         // ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
-        let newBottom = tabMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
+        let newBottom = tabMenu.addItem(withTitle: "New Terminal Below", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
         newBottom.keyEquivalentModifierMask = [.control, .shift]
-        addHidden(tabMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
+        addHidden(tabMenu, "New Terminal Below", #selector(AppDelegate.newBottomTerminal(_:)),
                   "~", [.control, .shift])
 
         tabMenu.addItem(.separator())

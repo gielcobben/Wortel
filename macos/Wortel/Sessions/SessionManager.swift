@@ -1251,6 +1251,10 @@ final class SessionManager {
             tabs.side = [.pane(pane)]
             tabs.activeSide = .pane(pane)
         }
+        // A column or a strip an older build had hidden with its tabs kept:
+        // its panes closed, anything else in it on screen. Nothing is hidden
+        // any more (`WorkspaceTabs.showHidden`).
+        tabs.showHidden()
         // Whatever the file said, made consistent: the terminal in the main
         // row exactly once, what's in front something the row has, an empty
         // column or strip hidden. See `WorkspaceTabs.normalized`.

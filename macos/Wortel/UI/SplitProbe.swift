@@ -80,7 +80,7 @@ enum SplitProbe {
             case "column": send(#selector(AppDelegate.toggleSideColumn(_:)))
             case "strip": send(#selector(AppDelegate.toggleBottomStrip(_:)))
             case "sidebar": send(#selector(AppDelegate.toggleSessionSidebar(_:)))
-            case "swap": send(#selector(AppDelegate.toggleColumnSide(_:)))
+            case "swap": git.setColumnLeading(!git.columnLeading)
             case "next": send(#selector(AppDelegate.selectNextSession(_:)))
             case "light": NSApp.appearance = NSAppearance(named: .aqua)
             case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)

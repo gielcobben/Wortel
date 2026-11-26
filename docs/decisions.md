@@ -1610,6 +1610,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   shell: asking adds no safety when nothing is opened. A partial file from a
   stopped or failed download is removed, not moved to the Trash: Wortel made
   it seconds ago and it is half a file.
+- **2026-11-26. A `download` link in a frame from another site saves
+  nothing.** A response from such a frame was already refused; a link with
+  the `download` attribute was not, and a frame can click its own link from
+  script with no person involved, so the rule had a way round it. The link
+  is now held to the same rule, by the frame it is in and not by where it
+  points: a frame from another site can point a link at the page's own host.
+  It is cancelled, not loaded instead. The cost is a real download button
+  inside another site's embed, which does nothing; the file is a click away
+  on that site itself.
 - **2026-11-25. Find in a page is WebKit's public find behind the file tab's
   own bar**, with Safari's keys (⌘F, ⌘G, ⇧⌘G, ⌘E). One find bar in the app,
   not the system's `NSTextFinder` bar beside Wortel's. The cost is the count:

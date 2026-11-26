@@ -210,6 +210,7 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(TabArea(.main).rawValue, "main")
         XCTAssertEqual(TabArea(.side).rawValue, "side")
         XCTAssertEqual(TabArea(.bottom).rawValue, "bottom")
+        XCTAssertEqual(TabArea(.pane(UUID())).rawValue, "split")
     }
 
     /// Every agent the shell integration detects maps to its own case, and

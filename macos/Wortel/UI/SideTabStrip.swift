@@ -646,6 +646,9 @@ private final class SideTabView: NSControl, TabTitleProviding {
         menu.addItem(ClosureMenuItem(title: "Close Tab") { [weak self] in self?.onClose() })
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })
         // Every other area this tab may go to.
+        // TODO(splits): Split Right/Down with this tab (`GitPanelModel.split`),
+        // and Move to a pane that is there. In a pane's own row `stripRegion()`
+        // is that pane, so all three of these are offered, which is right.
         let destinations: [(TabRegion, String)] = [
             (.main, "Move to Main Area"), (.side, "Move to Side Column"), (.bottom, "Move to Bottom Strip"),
         ].filter { $0.0 != stripRegion() && tab.fits($0.0) }

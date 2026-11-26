@@ -395,12 +395,72 @@ extension SideTab {
     }
 }
 
-/// Where a tab can live: the main area (beside the session's own terminal,
-/// which is one of its tabs), the side column, or the strip under the
-/// session's terminal. Any tab goes anywhere, except the session's terminal,
-/// which stays in the main area.
-enum TabRegion: String, Sendable {
+/// Where a tab can live: the main area's row (beside the session's own
+/// terminal, which is one of its tabs), the side column, the strip under the
+/// session's terminal, or a pane split off the main area, which has a row of
+/// its own (`WorkspaceTabs.panes`, `SplitLayout`). Any tab goes anywhere,
+/// except the session's terminal, which stays in the main row.
+///
+/// Saved as a string (`"main"`, `"side"`, `"bottom"`, `"pane:<uuid>"`), in a
+/// closed tab's entry and in the habits. A build from before panes reads
+/// `"pane:…"` as no region at all and drops the entry, which is what it
+/// should do with a place it can't show.
+enum TabRegion: Hashable, Sendable {
     case main, side, bottom
+    /// A pane split off the main area, by its id: a leaf of the session's
+    /// `SplitLayout` other than the main row.
+    case pane(UUID)
+
+    private static let panePrefix = "pane:"
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "main": self = .main
+        case "side": self = .side
+        case "bottom": self = .bottom
+        default:
+            guard rawValue.hasPrefix(Self.panePrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.panePrefix.count)))
+            else { return nil }
+            self = .pane(id)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .main: return "main"
+        case .side: return "side"
+        case .bottom: return "bottom"
+        case .pane(let id): return Self.panePrefix + id.uuidString
+        }
+    }
+
+    /// The leaf of the main area's tree this region is: the main row or a
+    /// pane. nil for the column and the strip, which are beside the tree,
+    /// not in it.
+    var leaf: SplitLayout.Leaf? {
+        switch self {
+        case .main: return .main
+        case .pane(let id): return .pane(id)
+        case .side, .bottom: return nil
+        }
+    }
+
+    init(_ leaf: SplitLayout.Leaf) {
+        switch leaf {
+        case .main: self = .main
+        case .pane(let id): self = .pane(id)
+        }
+    }
+
+    /// Whether this is a part of the main area: the main row or a pane.
+    var isSplitLeaf: Bool { leaf != nil }
+
+    /// The pane's id, for a pane.
+    var paneID: UUID? {
+        if case .pane(let id) = self { return id }
+        return nil
+    }
 }
 
 /// Why a list (Changes, Files) is asking to show a file in the preview tab.
@@ -443,7 +503,8 @@ struct ClosedTab: Equatable, Sendable {
     let index: Int
 
     /// `side:2:changes`, the form it's saved in: a relaunch shouldn't empty
-    /// the list of what ⌘⇧T can bring back.
+    /// the list of what ⌘⇧T can bring back. One closed in a pane is
+    /// `pane:<uuid>:2:changes`.
     var rawValue: String { "\(region.rawValue):\(index):\(tab.rawValue)" }
 
     init(tab: SideTab, region: TabRegion, index: Int) {
@@ -453,7 +514,14 @@ struct ClosedTab: Equatable, Sendable {
     }
 
     init?(rawValue: String) {
-        let parts = rawValue.split(separator: ":", maxSplits: 2).map(String.init)
+        // A pane's region has a colon of its own (`pane:<uuid>:2:changes`),
+        // so it is one part more. The tab comes last because its raw value
+        // can hold any number of them (a file's path).
+        let inPane = rawValue.hasPrefix("pane:")
+        var parts = rawValue.split(separator: ":", maxSplits: inPane ? 3 : 2).map(String.init)
+        if inPane, parts.count == 4 {
+            parts = [parts[0] + ":" + parts[1], parts[2], parts[3]]
+        }
         guard parts.count == 3, let region = TabRegion(rawValue: parts[0]),
               let index = Int(parts[1]), let tab = SideTab(rawValue: parts[2]) else { return nil }
         self.init(tab: tab, region: region, index: index)

@@ -134,9 +134,24 @@ final class Session: Identifiable {
     /// The preview tab, whose title is italic: `WorkspaceTabs.peek`. Observed
     /// for that title; not persisted.
     var peekTab: SideTab?
+    /// The panes split off the main area, each with its row of tabs and the
+    /// one in front, and how the main area is divided among them and the
+    /// main row (`WorkspaceTabs.panes`, `SplitLayout`). Persisted, and left
+    /// out of the file while there is no split.
+    var paneTabs: [UUID: WorkspaceTabs.PaneTabs] = [:]
+    var splitLayout = SplitLayout()
+    /// The part of the main area shown alone: `WorkspaceTabs.zoomed`.
+    /// Observed for the views that hide the others; not persisted.
+    var zoomedRegion: TabRegion?
 
     /// Every terminal tab id the session holds, wherever it sits.
-    var terminalTabIDs: [UUID] { workspace.terminalIDs }
+    var terminalTabIDs: [UUID] { allTabs.compactMap(\.terminalID) }
+
+    /// Every tab the session has, in every row: the main area's, the
+    /// column's, the strip's and each pane's. What anything that has to
+    /// reach all of a session's tabs (its terminals, its browsers, its
+    /// files) goes through, so a new place for tabs is added once.
+    var allTabs: [SideTab] { workspace.allTabs }
 
     /// The tab layout above as one value, for the rules in `WorkspaceTabs`.
     /// Written back field by field and only where something changed: each of
@@ -147,7 +162,8 @@ final class Session: Identifiable {
                           side: sideTabs, activeSide: activeSideTab, sideVisible: gitPanelVisible,
                           bottom: bottomTabs, activeBottom: activeBottomTab,
                           bottomVisible: bottomVisible, closed: closedTabs, habits: tabHabits,
-                          openers: tabOpeners, peek: peekTab)
+                          openers: tabOpeners, peek: peekTab,
+                          panes: paneTabs, layout: splitLayout, zoomed: zoomedRegion)
         }
         set {
             if mainTabs != newValue.main { mainTabs = newValue.main }
@@ -162,6 +178,9 @@ final class Session: Identifiable {
             tabHabits = newValue.habits
             tabOpeners = newValue.openers
             if peekTab != newValue.peek { peekTab = newValue.peek }
+            if paneTabs != newValue.panes { paneTabs = newValue.panes }
+            if splitLayout != newValue.layout { splitLayout = newValue.layout }
+            if zoomedRegion != newValue.zoomed { zoomedRegion = newValue.zoomed }
         }
     }
     /// Full title reported by the shell (user@host:cwd, or the running

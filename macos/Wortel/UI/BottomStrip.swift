@@ -600,7 +600,10 @@ final class TabDragController {
             case .side:
                 overlay.zoneLabel = draggingFile ? "Open in Side Column" : "Move to Side Column"
                 overlay.zoneEdge = columnLeading() ? .maxX : .minX
-            case .main:
+            // TODO(splits): a pane needs drop zones of its own: its middle
+            // ("into this pane") and its four edges (`SplitLayout.dropEdge`,
+            // `half`), ending in `GitPanelModel.splitDropped`.
+            case .main, .pane:
                 overlay.zoneLabel = draggingFile ? "Open Here" : "Move Here"
                 overlay.zoneEdge = .minY
             }

@@ -67,6 +67,7 @@ extension TabArea {
         case .main: self = .main
         case .side: self = .side
         case .bottom: self = .bottom
+        case .pane: self = .split
         }
     }
 }

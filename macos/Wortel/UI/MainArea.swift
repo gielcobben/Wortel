@@ -60,6 +60,11 @@ final class MainAreaController: NSViewController {
 
     private func sync() {
         let session = home.selected
+        // TODO(splits): this is the main row only. The main area becomes the
+        // tree in `git.splitLayout`: one of these per leaf (`git.paneTabs`,
+        // `git.focusRequest(in:)`), dividers between them
+        // (`git.moveSplitDivider`, `commitSplitLayout`), and only
+        // `git.zoomedRegion` shown while there is one.
         let active = git.activeMainTab
         // A pane, a file, a web page: anything that isn't a terminal is drawn
         // by the SwiftUI cover.

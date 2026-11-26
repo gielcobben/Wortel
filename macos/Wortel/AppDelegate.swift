@@ -283,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // keeps watching its file, for as long as anything holds them.
         manager.onSessionClosed = { [weak self] session in
             let workspace = session.workspace
-            let tabs = workspace.main + workspace.side + workspace.bottom + workspace.closed.map(\.tab)
+            let tabs = workspace.allTabs + workspace.closed.map(\.tab)
             for tab in tabs {
                 if let id = tab.browserID { BrowserTabs.shared.forget(id) }
                 if let path = tab.filePath { self?.releaseFile(path) }
@@ -737,8 +737,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // A file, a page or a pane in front of it: what is in front
                 // of the main area, which is then where you are, so ⌘W and
                 // the rest act there.
+                // (Or of the part of it that is zoomed: `lastRegion` says.)
                 if gitPanel.lastRegion != .main { gitPanel.lastRegion = .main }
-                gitPanel.focusFront(of: .main)
+                gitPanel.focusFront(of: gitPanel.lastRegion)
             }
         }
         gitPanel.onFocusMainTerminal = { [weak window, weak gitPanel, weak home] in
@@ -1700,10 +1701,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// picking one in the column the keyboard is still in the main terminal,
     /// and "move this tab" would have moved the wrong one.
     private func focusedRegion() -> TabRegion {
-        switch gitPanel.lastRegion {
+        let region = gitPanel.lastRegion
+        switch region {
         case .side: return gitPanel.isVisible ? .side : .main
         case .bottom: return gitPanel.bottomVisible ? .bottom : .main
         case .main: return .main
+        // `lastRegion` never answers with a pane that has gone or that a
+        // zoom hides, so this one is on screen.
+        case .pane: return gitPanel.isShowing(region) ? region : .main
         }
     }
 
@@ -1727,7 +1732,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// The areas in the order ⌘] walks them: left to right as they sit, then
     /// the strip.
     private var visibleRegions: [TabRegion] {
-        var regions: [TabRegion] = [.main]
+        // The main area's parts as they read, left to right and top down:
+        // just the main row until it is split, and just the zoomed part
+        // while one is.
+        var regions = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { gitPanel.isShowing($0) }
+        if regions.isEmpty { regions = [.main] }
         if gitPanel.isVisible {
             gitPanel.columnLeading ? regions.insert(.side, at: 0) : regions.append(.side)
         }
@@ -1766,6 +1775,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .main: gitPanel.openMainTerminal()
         case .side: gitPanel.openTerminal()
         case .bottom: gitPanel.openBottomTerminal()
+        case .pane(let id): gitPanel.open(.terminal(UUID()), in: .pane(id))
         }
     }
 
@@ -1799,16 +1809,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         BrowserTabs.shared.page(for: id).focusAddress()
     }
 
+    /// The areas a command that acts on "the one in front" looks through:
+    /// the one you're in, then the column, the main area, the strip and the
+    /// panes split off the main area.
+    private var frontRegions: [TabRegion] {
+        let panes = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { $0 != .main }
+        return [focusedRegion(), .side, .main, .bottom] + panes
+    }
+
     private func frontBrowser() -> UUID? {
-        let regions: [TabRegion] = [focusedRegion(), .side, .main, .bottom]
-        let visible = regions.filter { region in
-            switch region {
-            case .main: return true
-            case .side: return gitPanel.isVisible
-            case .bottom: return gitPanel.bottomVisible
-            }
-        }
-        return visible.lazy.compactMap { self.gitPanel.activeTab(in: $0)?.browserID }.first
+        // `activeTab(in:)` is nil for an area that isn't showing.
+        return frontRegions.lazy.compactMap { self.gitPanel.activeTab(in: $0)?.browserID }.first
     }
 
     /// ⌘R: reload the browser in front, the area you're in first. It works
@@ -1939,6 +1950,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case (.side, .maxX): target = columnOnLeft ? .main : nil
         case (.main, .minY), (.side, .minY): target = .bottom
         case (.bottom, .maxY): target = .main
+        // TODO(splits): from a pane, Move Tab Left/Right/Up/Down should go
+        // to the neighbouring part of the main area (`SplitLayout.neighbour`,
+        // which needs the main area's bounds), and from the main row into a
+        // pane beside it. Until then a pane's tab stays where it is.
         default: target = nil
         }
         guard let target else { return }
@@ -2039,7 +2054,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// column, the main area, the strip. A file that is text and not
     /// rendered, or a browser that is somewhere.
     private func findTarget() -> FindTarget? {
-        for tab in [focusedRegion(), .side, .main, .bottom].compactMap({ gitPanel.activeTab(in: $0) }) {
+        for tab in frontRegions.compactMap({ gitPanel.activeTab(in: $0) }) {
             if let path = tab.filePath {
                 let document = previewTabs.document(for: path).document
                 if document.mode != .rendered, !document.isBinary { return .file(path) }

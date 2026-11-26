@@ -506,4 +506,89 @@ final class PersistedSessionTests: XCTestCase {
             XCTAssertEqual(list.count, 0)
         }
     }
+
+    // MARK: - Panes of the main area
+
+    /// A split main area comes back as it was: the tree, and each pane's
+    /// tabs and the one in front.
+    func testASplitMainAreaRoundTrips() throws {
+        let right = UUID(), under = UUID()
+        let shell = SideTab.terminal(UUID())
+        var layout = SplitLayout()
+        layout.insert(.pane(right), beside: .main, on: .right)
+        layout.insert(.pane(under), beside: .pane(right), on: .down)
+        layout.moveDivider(at: [], index: 0, to: 333, in: CGRect(x: 0, y: 0, width: 801, height: 601))
+        let panes = [
+            right.uuidString: PersistedPaneTabs(tabs: [SideTab.pane(.changes).rawValue, shell.rawValue],
+                                                active: shell.rawValue),
+            under.uuidString: PersistedPaneTabs(tabs: [SideTab.file("/tmp/a:b.md").rawValue]),
+        ]
+        let original = PersistedSession(
+            id: UUID(), name: "Wortel/App", title: "shell", cwd: "/tmp",
+            selected: true, nameSource: "user", gitPanelVisible: false,
+            closedTabs: [ClosedTab(tab: .pane(.files), region: .pane(right), index: 1).rawValue],
+            tabHabits: [TabKind.file.rawValue: TabRegion.pane(under).rawValue],
+            splitLayout: layout, paneTabs: panes)
+        let data = try JSONEncoder().encode([original])
+        let decoded = try XCTUnwrap(JSONDecoder().decode([PersistedSession].self, from: data).first)
+        XCTAssertEqual(decoded.splitLayout, layout)
+        XCTAssertEqual(decoded.paneTabs, panes)
+        XCTAssertEqual(decoded.closedTabs?.compactMap(ClosedTab.init(rawValue:)),
+                       [ClosedTab(tab: .pane(.files), region: .pane(right), index: 1)])
+        XCTAssertEqual(decoded.tabHabits?[TabKind.file.rawValue].flatMap(TabRegion.init(rawValue:)), .pane(under))
+    }
+
+    /// A session that isn't split writes neither key: its entry is what it
+    /// was before there were panes, so an older build reading it loses
+    /// nothing and a newer one reads no split.
+    func testAnUnsplitSessionSavesNoSplit() throws {
+        let original = PersistedSession(
+            id: UUID(), name: "s", title: "shell", cwd: "/tmp",
+            selected: false, nameSource: "user", gitPanelVisible: false)
+        let data = try JSONEncoder().encode(original)
+        let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
+        XCTAssertFalse(keys.contains("splitLayout"))
+        XCTAssertFalse(keys.contains("paneTabs"))
+
+        let decoded = try decode(#"{"id":"\#(UUID())"}"#)
+        XCTAssertNil(decoded.splitLayout)
+        XCTAssertNil(decoded.paneTabs)
+    }
+
+    /// A tree this build can't read is no split. It must not cost the
+    /// session, let alone the list it is in: the pane tabs that did read are
+    /// still there for `restore` to put in the main row.
+    func testADamagedSplitDoesNotFailTheFile() throws {
+        let pane = UUID()
+        let shell = SideTab.terminal(UUID())
+        let sessions = try decodeList("""
+        [{"id":"\(UUID())","name":"one",
+          "splitLayout":{"axis":"spiral","parts":[{"node":{"leaf":"main"},"weight":"half"}]},
+          "paneTabs":{"\(pane)":{"tabs":["\(shell.rawValue)"],"active":"\(shell.rawValue)"}}},
+         {"id":"\(UUID())","name":"two","splitLayout":"sideways","paneTabs":[1,2,3]},
+         {"id":"\(UUID())","name":"three","splitLayout":{"leaf":"main"},
+          "paneTabs":{"\(pane)":{"tabs":"none","active":7},"other":{}}}]
+        """)
+        XCTAssertEqual(sessions.map(\.name), ["one", "two", "three"])
+        XCTAssertNil(sessions[0].splitLayout)
+        XCTAssertEqual(sessions[0].paneTabs, [pane.uuidString: PersistedPaneTabs(tabs: [shell.rawValue],
+                                                                              active: shell.rawValue)])
+        XCTAssertNil(sessions[1].splitLayout)
+        XCTAssertNil(sessions[1].paneTabs)
+        XCTAssertEqual(sessions[2].splitLayout, SplitLayout())
+        XCTAssertEqual(sessions[2].paneTabs, [pane.uuidString: PersistedPaneTabs(tabs: []),
+                                              "other": PersistedPaneTabs(tabs: [])])
+    }
+
+    /// What `restore` makes of a pane whose tree was lost: every tab in the
+    /// main row, the terminal's shell still reachable.
+    func testPanesWithoutATreeFoldIntoTheMainRow() {
+        let shell = SideTab.terminal(UUID())
+        var tabs = WorkspaceTabs(main: [.session])
+        tabs.panes[UUID()] = WorkspaceTabs.PaneTabs(tabs: [shell, .pane(.changes)], active: shell)
+        let restored = tabs.normalized()
+        XCTAssertEqual(restored.main, [.session, shell, .pane(.changes)])
+        XCTAssertTrue(restored.panes.isEmpty)
+        XCTAssertEqual(restored.terminalIDs, [shell].compactMap(\.terminalID))
+    }
 }

@@ -230,7 +230,8 @@ final class MainSplitViewController: NSSplitViewController {
         drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }
         drag.regionOf = { [weak self] tab in
             guard let git = self?.git else { return nil }
-            return [TabRegion.main, .side, .bottom].first { git.tabs(in: $0).contains(tab) }
+            let regions = [TabRegion.main, .side, .bottom] + git.paneTabs.keys.map(TabRegion.pane)
+            return regions.first { git.tabs(in: $0).contains(tab) }
         }
         drag.bottomArea = { [weak self, weak bottomPane] in
             guard let self, self.git.bottomVisible, let view = bottomPane?.view,
@@ -755,6 +756,8 @@ extension MainSplitViewController {
         case .main: target = terminalAreaView
         case .side: target = git.isVisible ? columnContentView : nil
         case .bottom: target = git.bottomVisible ? bottomAreaView : nil
+        // TODO(splits): blink the pane's own view, not the whole main area.
+        case .pane: target = git.isShowing(region) ? terminalAreaView : nil
         }
         guard let target, target.window != nil else { return }
         guard !target.isHiddenOrHasHiddenAncestor,
@@ -814,6 +817,8 @@ extension MainSplitViewController {
             return .side
         }
         if git.bottomVisible, contains(bottomAreaView) { return .bottom }
+        // TODO(splits): a click in a pane of the main area should answer with
+        // that pane (`SplitLayout.frames`), so ⌘W and ⌘T act there.
         if let contentItem, contains(contentItem.viewController.view) { return .main }
         return nil
     }

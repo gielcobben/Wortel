@@ -670,4 +670,973 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.peek, b)
         XCTAssertEqual(tabs.activeSide, b)
     }
+
+    // MARK: - Panes of the main area
+
+    private let fileC = SideTab.file("/repo/c.swift")
+
+    /// Split a pane off the right of `tabs`' main row, holding `tab`.
+    @discardableResult
+    private func splitOff(_ tab: SideTab, from tabs: inout WorkspaceTabs) -> TabRegion {
+        let id = UUID()
+        let pane = tabs.split(.main, on: .right, placing: tab, id: id)
+        XCTAssertEqual(pane, .pane(id))
+        return .pane(id)
+    }
+
+    /// A region is saved as a string, a pane's with its id.
+    func testRegionRawValues() {
+        let id = UUID()
+        XCTAssertEqual(TabRegion.main.rawValue, "main")
+        XCTAssertEqual(TabRegion.side.rawValue, "side")
+        XCTAssertEqual(TabRegion.bottom.rawValue, "bottom")
+        XCTAssertEqual(TabRegion.pane(id).rawValue, "pane:\(id.uuidString)")
+        for region in [TabRegion.main, .side, .bottom, .pane(id)] {
+            XCTAssertEqual(TabRegion(rawValue: region.rawValue), region)
+        }
+        XCTAssertNil(TabRegion(rawValue: "pane:"))
+        XCTAssertNil(TabRegion(rawValue: "pane:not-an-id"))
+        XCTAssertNil(TabRegion(rawValue: id.uuidString))
+        XCTAssertNil(TabRegion(rawValue: "top"))
+    }
+
+    /// Which regions are parts of the main area's tree.
+    func testRegionsAndLeaves() {
+        let id = UUID()
+        XCTAssertEqual(TabRegion.main.leaf, .main)
+        XCTAssertEqual(TabRegion.pane(id).leaf, .pane(id))
+        XCTAssertNil(TabRegion.side.leaf)
+        XCTAssertNil(TabRegion.bottom.leaf)
+        XCTAssertEqual(TabRegion(.main), .main)
+        XCTAssertEqual(TabRegion(.pane(id)), .pane(id))
+        XCTAssertTrue(TabRegion.main.isSplitLeaf)
+        XCTAssertTrue(TabRegion.pane(id).isSplitLeaf)
+        XCTAssertFalse(TabRegion.side.isSplitLeaf)
+        XCTAssertFalse(TabRegion.bottom.isSplitLeaf)
+    }
+
+    /// Anything goes in a pane but the session's own terminal.
+    func testWhatFitsAPane() {
+        let pane = TabRegion.pane(UUID())
+        for tab in [changes, terminal(), fileA, SideTab.browser(UUID())] {
+            XCTAssertTrue(tab.fits(pane))
+        }
+        XCTAssertFalse(SideTab.session.fits(pane))
+        XCTAssertTrue(SideTab.session.fits(.main))
+    }
+
+    /// A tab closed in a pane is saved with the pane, colons and all, and a
+    /// file's path may have colons of its own.
+    func testAClosedTabInAPaneRoundTrips() {
+        let id = UUID()
+        let shell = terminal()
+        for tab in [changes, shell, SideTab.file("/r/a:b:c.swift"), .browser(UUID())] {
+            for region in [TabRegion.pane(id), .main, .side, .bottom] {
+                let closed = ClosedTab(tab: tab, region: region, index: 3)
+                XCTAssertEqual(ClosedTab(rawValue: closed.rawValue), closed, closed.rawValue)
+            }
+        }
+        XCTAssertEqual(ClosedTab(tab: changes, region: .pane(id), index: 2).rawValue,
+                       "pane:\(id.uuidString):2:changes")
+        XCTAssertNil(ClosedTab(rawValue: "pane:\(id.uuidString):changes"))
+        XCTAssertNil(ClosedTab(rawValue: "pane:nope:2:changes"))
+        XCTAssertNil(ClosedTab(rawValue: "pane:\(id.uuidString):x:changes"))
+    }
+
+    // MARK: Splitting
+
+    /// A new tab split off the main row: a pane beside it, the tab in front.
+    func testSplittingMakesAPaneWithTheTabInFront() {
+        let shell = terminal()
+        var tabs = column()
+        let pane = splitOff(shell, from: &tabs)
+        let id = pane.paneID!
+        XCTAssertEqual(tabs.panes[id], WorkspaceTabs.PaneTabs(tabs: [shell], active: shell))
+        XCTAssertEqual(tabs.layout.leaves, [.main, .pane(id)])
+        XCTAssertEqual(tabs.region(of: shell), pane)
+        XCTAssertEqual(tabs.tabs(in: pane), [shell])
+        XCTAssertEqual(tabs.front(of: pane), shell)
+        XCTAssertTrue(tabs.isShowing(pane))
+        XCTAssertEqual(tabs.splitRegions, [.main, pane])
+        XCTAssertEqual(tabs.main, [.session], "the main row is as it was")
+    }
+
+    /// The edge says which side: left of the main row reads first.
+    func testTheEdgeSaysWhichSide() {
+        var tabs = WorkspaceTabs()
+        let left = tabs.split(.main, on: .left, placing: terminal())!
+        let under = tabs.split(.main, on: .down, placing: terminal())!
+        XCTAssertEqual(tabs.splitRegions, [left, .main, under])
+    }
+
+    /// A tab that is already somewhere is moved into the pane, and the row
+    /// it left behaves as it does for any move.
+    func testSplittingMovesATabThatIsOpen() {
+        var tabs = WorkspaceTabs()
+        tabs.place(changes, in: .side, at: 0)
+        tabs.bringForward(changes)
+        tabs.place(fileA, in: .main, at: .max)
+        tabs.bringForward(fileA)
+
+        let first = tabs.split(.main, on: .right, placing: changes)
+        XCTAssertEqual(tabs.region(of: changes), first)
+        XCTAssertTrue(tabs.side.isEmpty)
+        XCTAssertFalse(tabs.sideVisible, "the column emptied, so it hid")
+
+        let second = tabs.split(.main, on: .down, placing: fileA)
+        XCTAssertEqual(tabs.region(of: fileA), second)
+        XCTAssertEqual(tabs.main, [.session])
+        XCTAssertNil(tabs.activeMain, "the terminal is in front of the main row again")
+        XCTAssertEqual(tabs.allTabs.filter { $0 == changes || $0 == fileA }.count, 2, "each still once")
+    }
+
+    /// Splitting a pane puts the new one beside that pane, not the main row.
+    func testSplittingAPaneSplitsThatPane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let shell = terminal()
+        let under = tabs.split(pane, on: .down, placing: shell)!
+        XCTAssertEqual(tabs.splitRegions, [.main, pane, under])
+        XCTAssertEqual(tabs.layout.root, .split(.row, [
+            .init(node: .leaf(.main), weight: 0.5),
+            .init(node: .split(.column, [.init(node: .leaf(pane.leaf!), weight: 0.5),
+                                         .init(node: .leaf(under.leaf!), weight: 0.5)]), weight: 0.5),
+        ]))
+    }
+
+    /// The column and the strip aren't parts of the main area, and a pane
+    /// that has gone isn't either: asked about one, the main row is split.
+    func testSplittingWhatIsNotALeafSplitsTheMainRow() {
+        for region in [TabRegion.side, .bottom, .pane(UUID())] {
+            var tabs = column()
+            let shell = terminal()
+            guard let pane = tabs.split(region, on: .left, placing: shell) else {
+                XCTFail("\(region): nothing was split")
+                continue
+            }
+            XCTAssertEqual(tabs.splitRegions, [pane, .main], "\(region)")
+            XCTAssertEqual(tabs.region(of: shell), pane)
+        }
+    }
+
+    /// A pane's only tab can't be split off its own pane: nothing changes.
+    func testSplittingAPaneFromItsOnlyTabIsANoOp() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.toggleZoom(.main)
+        let before = tabs
+        XCTAssertNil(tabs.split(pane, on: .down, placing: changes))
+        XCTAssertEqual(tabs, before, "not even the zoom")
+
+        // With a second tab in the pane there is something to split off.
+        tabs.move(history, to: pane, at: .max)
+        let under = tabs.split(pane, on: .down, placing: changes)
+        XCTAssertNotNil(under)
+        XCTAssertEqual(tabs.tabs(in: pane), [history])
+        XCTAssertEqual(under.map { tabs.tabs(in: $0) }, [changes])
+    }
+
+    /// The session's terminal never leaves the main row.
+    func testTheSessionTerminalIsNeverSplitOff() {
+        var tabs = column()
+        let before = tabs
+        XCTAssertNil(tabs.split(.main, on: .right, placing: .session))
+        XCTAssertEqual(tabs, before)
+    }
+
+    /// An id that is taken makes no second pane of it.
+    func testSplittingWithATakenIdChangesNothing() {
+        var tabs = column()
+        let id = splitOff(changes, from: &tabs).paneID!
+        let before = tabs
+        XCTAssertNil(tabs.split(.main, on: .down, placing: terminal(), id: id))
+        XCTAssertEqual(tabs, before)
+    }
+
+    /// The tab can be the last of another pane: that pane goes, and the new
+    /// one is still made beside the one asked about.
+    func testSplittingWithAnotherPanesLastTab() {
+        var tabs = column()
+        let first = splitOff(changes, from: &tabs)
+        let shell = terminal()
+        let second = tabs.split(.main, on: .down, placing: shell)!
+        XCTAssertEqual(tabs.splitRegions.count, 3)
+
+        guard let third = tabs.split(second, on: .right, placing: changes) else {
+            return XCTFail("nothing was split")
+        }
+        XCTAssertFalse(tabs.exists(first), "its last tab left, so it went")
+        XCTAssertFalse(tabs.layout.contains(first.leaf!))
+        XCTAssertEqual(tabs.splitRegions, [.main, second, third])
+        XCTAssertEqual(tabs.tabs(in: third), [changes])
+
+        // And when the pane asked about is the one that goes, beside the
+        // main row: there is nothing else for it to be beside.
+        var other = column()
+        let pane = splitOff(changes, from: &other)
+        guard let moved = other.split(.pane(UUID()), on: .right, placing: changes) else {
+            return XCTFail("nothing was split")
+        }
+        XCTAssertFalse(other.exists(pane))
+        XCTAssertEqual(other.splitRegions, [.main, moved])
+    }
+
+    /// A new pane is something to look at: a zoom ends.
+    func testSplittingEndsAZoom() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.toggleZoom(pane)
+        XCTAssertEqual(tabs.zoomed, pane)
+        tabs.split(pane, on: .down, placing: terminal())
+        XCTAssertNil(tabs.zoomed)
+    }
+
+    /// A file or a browser split off by a drag makes the pane where its kind
+    /// opens; a command (`recordsHabit: false`) doesn't.
+    func testSplittingByADragTeachesWhereItsKindGoes() {
+        var tabs = column()
+        let pane = tabs.split(.main, on: .right, placing: fileA)!
+        XCTAssertEqual(tabs.habits[.file], pane)
+        XCTAssertEqual(tabs.home(for: fileB), pane)
+
+        var once = column()
+        let other = once.split(.main, on: .right, placing: fileA, recordsHabit: false)
+        XCTAssertNotNil(other)
+        XCTAssertNil(once.habits[.file])
+        XCTAssertEqual(once.home(for: fileB), .main)
+
+        // A terminal has no habit to teach.
+        var shells = column()
+        shells.split(.main, on: .right, placing: terminal())
+        XCTAssertTrue(shells.habits.isEmpty)
+    }
+
+    // MARK: A pane lives while it has tabs
+
+    func testTakingOutAPanesLastTabTakesThePaneOut() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let id = pane.paneID!
+        let from = tabs.detach(changes)
+        XCTAssertEqual(from?.region, pane)
+        XCTAssertEqual(from?.index, 0)
+        XCTAssertNil(tabs.panes[id])
+        XCTAssertEqual(tabs.layout, SplitLayout(), "its room went back to the main row")
+        XCTAssertFalse(tabs.exists(pane))
+        XCTAssertFalse(tabs.isShowing(pane))
+        XCTAssertNil(tabs.region(of: changes))
+    }
+
+    /// With another tab in it the pane stays, the neighbour in front.
+    func testTakingOutOneOfSeveralKeepsThePane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let id = pane.paneID!
+        tabs.move(history, to: pane, at: .max)
+        tabs.move(files, to: pane, at: .max)
+        tabs.bringForward(history)
+        tabs.detach(history)
+        XCTAssertEqual(tabs.panes[id], WorkspaceTabs.PaneTabs(tabs: [changes, files], active: files))
+        XCTAssertTrue(tabs.layout.contains(.pane(id)))
+        tabs.detach(files)
+        XCTAssertEqual(tabs.front(of: pane), changes, "at the end of the row, the one before")
+    }
+
+    /// The room of a pane that went is its siblings', in proportion.
+    func testAPaneThatGoesGivesItsRoomToItsSiblings() {
+        var tabs = WorkspaceTabs()
+        let a = terminal(), b = terminal()
+        let first = tabs.split(.main, on: .right, placing: a)!
+        tabs.split(first, on: .right, placing: b)
+        // main ½, a ¼, b ¼.
+        tabs.close(a)
+        guard case .split(.row, let parts) = tabs.layout.root else { return XCTFail("not a row of two") }
+        XCTAssertEqual(parts.count, 2)
+        XCTAssertEqual(parts[0].weight, 2.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(parts[1].weight, 1.0 / 3, accuracy: 1e-9)
+    }
+
+    func testAZoomEndsWhenItsPaneGoes() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let under = tabs.split(.main, on: .down, placing: history)!
+        tabs.toggleZoom(pane)
+        tabs.detach(changes)
+        XCTAssertNil(tabs.zoomed)
+
+        // Zoomed on another pane, it stays.
+        tabs.split(.main, on: .right, placing: files)
+        tabs.toggleZoom(under)
+        tabs.detach(files)
+        XCTAssertEqual(tabs.zoomed, under)
+
+        // And a zoom on the main row ends when the main row is all there is.
+        var alone = column()
+        splitOff(changes, from: &alone)
+        alone.toggleZoom(.main)
+        alone.close(changes)
+        XCTAssertNil(alone.zoomed)
+    }
+
+    // MARK: Putting a tab in a pane
+
+    func testATabGoesInAPaneOnlyWhileThePaneIsThere() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let id = pane.paneID!
+        XCTAssertTrue(tabs.place(fileA, in: pane, at: 0))
+        XCTAssertEqual(tabs.panes[id]?.tabs, [fileA, changes])
+        XCTAssertEqual(tabs.front(of: pane), changes, "placing doesn't bring forward")
+        XCTAssertEqual(tabs.region(of: fileA), pane)
+
+        let before = tabs
+        XCTAssertFalse(tabs.place(fileB, in: .pane(UUID()), at: 0), "split is what makes a pane")
+        XCTAssertFalse(tabs.place(.session, in: pane, at: 0))
+        XCTAssertFalse(tabs.place(fileA, in: pane, at: 0), "already somewhere")
+        XCTAssertEqual(tabs, before)
+    }
+
+    func testMovingATabIntoAPane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let id = pane.paneID!
+        XCTAssertTrue(tabs.move(history, to: pane, at: 0))
+        XCTAssertEqual(tabs.panes[id], WorkspaceTabs.PaneTabs(tabs: [history, changes], active: history))
+        XCTAssertEqual(tabs.side, [files])
+        XCTAssertEqual(tabs.activeSide, files)
+    }
+
+    /// A move to a pane that isn't there leaves the tab where it is.
+    func testMovingToAPaneThatHasGoneChangesNothing() {
+        var tabs = column()
+        splitOff(changes, from: &tabs)
+        let before = tabs
+        XCTAssertFalse(tabs.move(history, to: .pane(UUID()), at: 0))
+        XCTAssertEqual(tabs, before)
+        XCTAssertEqual(tabs.region(of: history), .side)
+    }
+
+    /// Moving a pane's last tab out is moving the pane away.
+    func testMovingAPanesLastTabOutTakesThePane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        XCTAssertTrue(tabs.move(changes, to: .main, at: .max))
+        XCTAssertEqual(tabs.main, [.session, changes])
+        XCTAssertFalse(tabs.exists(pane))
+        XCTAssertFalse(tabs.layout.isSplit)
+    }
+
+    /// Between panes, the same: the one it left goes when that was its last.
+    func testMovingBetweenPanes() {
+        var tabs = column()
+        let first = splitOff(changes, from: &tabs)
+        let second = tabs.split(.main, on: .down, placing: history)!
+        XCTAssertTrue(tabs.move(changes, to: second, at: 0))
+        XCTAssertEqual(tabs.tabs(in: second), [changes, history])
+        XCTAssertEqual(tabs.front(of: second), changes)
+        XCTAssertFalse(tabs.exists(first))
+        XCTAssertEqual(tabs.splitRegions, [.main, second])
+    }
+
+    /// Reordering in a pane, and the one case that must not take the pane
+    /// with it: its only tab dropped back where it is.
+    func testReorderingInAPane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let id = pane.paneID!
+        let before = tabs
+        for index in [0, 1, 5] {
+            XCTAssertTrue(tabs.move(changes, to: pane, at: index))
+            XCTAssertEqual(tabs, before, "dropped at \(index)")
+        }
+        tabs.move(history, to: pane, at: .max)
+        tabs.move(files, to: pane, at: .max)
+        XCTAssertTrue(tabs.move(changes, to: pane, at: 3))
+        XCTAssertEqual(tabs.panes[id]?.tabs, [history, files, changes])
+        XCTAssertTrue(tabs.move(files, to: pane, at: 0))
+        XCTAssertEqual(tabs.panes[id]?.tabs, [files, history, changes])
+        XCTAssertEqual(tabs.front(of: pane), files)
+    }
+
+    func testMovingIntoAPaneTeachesWhereItsKindGoes() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.place(fileA, in: .main, at: .max)
+        tabs.move(fileA, to: pane, at: .max)
+        XCTAssertEqual(tabs.home(for: fileB), pane)
+    }
+
+    // MARK: In front, and the zoom
+
+    func testBringingForwardInAPaneSetsItsFront() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        let id = pane.paneID!
+        tabs.place(fileA, in: pane, at: .max)
+        XCTAssertEqual(tabs.front(of: pane), changes)
+        let side = tabs.activeSide
+        tabs.bringForward(fileA)
+        XCTAssertEqual(tabs.panes[id]?.active, fileA)
+        XCTAssertEqual(tabs.front(of: pane), fileA)
+        XCTAssertNil(tabs.activeMain, "the other rows are as they were")
+        XCTAssertEqual(tabs.activeSide, side)
+        tabs.bringForward(changes)
+        XCTAssertEqual(tabs.front(of: pane), changes)
+    }
+
+    /// A pane with nothing marked in front shows its first tab.
+    func testAPanesFrontDefaultsToItsFirstTab() {
+        var tabs = WorkspaceTabs()
+        let id = UUID()
+        tabs.panes[id] = WorkspaceTabs.PaneTabs(tabs: [changes, history], active: nil)
+        tabs.layout.insert(.pane(id), beside: .main, on: .right)
+        XCTAssertEqual(tabs.front(of: .pane(id)), changes)
+        XCTAssertNil(tabs.front(of: .pane(UUID())), "a pane that isn't there has no front")
+        XCTAssertEqual(tabs.tabs(in: .pane(UUID())), [])
+    }
+
+    func testZoomShowsOneLeafAlone() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.toggleZoom(pane)
+        XCTAssertEqual(tabs.zoomed, pane)
+        XCTAssertTrue(tabs.isShowing(pane))
+        XCTAssertFalse(tabs.isShowing(.main))
+        tabs.toggleZoom(pane)
+        XCTAssertNil(tabs.zoomed)
+        XCTAssertTrue(tabs.isShowing(.main))
+
+        tabs.toggleZoom(.main)
+        XCTAssertEqual(tabs.zoomed, .main)
+        XCTAssertTrue(tabs.isShowing(.main))
+        XCTAssertFalse(tabs.isShowing(pane))
+        // Zooming another leaf moves the zoom there.
+        tabs.toggleZoom(pane)
+        XCTAssertEqual(tabs.zoomed, pane)
+    }
+
+    /// Only a leaf of the tree, and only while there is more than one.
+    func testOnlyALeafOfASplitAreaZooms() {
+        var unsplit = column()
+        unsplit.toggleZoom(.main)
+        XCTAssertNil(unsplit.zoomed, "nothing to zoom out of")
+
+        var tabs = column()
+        splitOff(changes, from: &tabs)
+        for region in [TabRegion.side, .bottom, .pane(UUID())] {
+            tabs.toggleZoom(region)
+            XCTAssertNil(tabs.zoomed, "\(region)")
+        }
+    }
+
+    /// The column and the strip are beside the main area: a zoom doesn't
+    /// hide them, and they show as they always do.
+    func testZoomLeavesTheColumnAndTheStripAlone() {
+        var tabs = column()
+        let pane = splitOff(terminal(), from: &tabs)
+        tabs.place(terminal(), in: .bottom, at: 0)
+        tabs.toggleZoom(pane)
+        XCTAssertTrue(tabs.isShowing(.side))
+        XCTAssertFalse(tabs.isShowing(.bottom), "the strip is down until a tab comes forward in it")
+        tabs.bringForward(tabs.bottom[0])
+        XCTAssertTrue(tabs.isShowing(.bottom))
+        tabs.sideVisible = false
+        XCTAssertFalse(tabs.isShowing(.side))
+    }
+
+    /// Bringing a tab forward in a leaf the zoom hides ends the zoom: it
+    /// would have come forward out of sight.
+    func testBringingForwardInAnotherLeafEndsTheZoom() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.place(fileA, in: .main, at: .max)
+        tabs.toggleZoom(pane)
+        tabs.bringForward(fileA)
+        XCTAssertNil(tabs.zoomed)
+
+        tabs.toggleZoom(.main)
+        tabs.bringForward(changes)
+        XCTAssertNil(tabs.zoomed)
+    }
+
+    /// In the zoomed leaf itself, in the column or in the strip, it stays.
+    func testBringingForwardElsewhereKeepsTheZoom() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.place(fileA, in: pane, at: .max)
+        let shell = terminal()
+        tabs.place(shell, in: .bottom, at: 0)
+        tabs.toggleZoom(pane)
+
+        tabs.bringForward(fileA)
+        XCTAssertEqual(tabs.zoomed, pane, "a tab of the zoomed pane")
+        tabs.bringForward(history)
+        XCTAssertEqual(tabs.zoomed, pane, "the column is beside it")
+        tabs.bringForward(shell)
+        XCTAssertEqual(tabs.zoomed, pane, "and so is the strip")
+        tabs.bringForward(opened: files)
+        XCTAssertEqual(tabs.zoomed, pane)
+    }
+
+    /// A file opened into a hidden leaf ends the zoom too: opening is
+    /// bringing forward.
+    func testOpeningIntoAHiddenLeafEndsTheZoom() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.toggleZoom(pane)
+        tabs.place(fileA, in: .main, at: .max)
+        XCTAssertEqual(tabs.zoomed, pane, "placing alone shows nothing")
+        tabs.bringForward(opened: fileA)
+        XCTAssertNil(tabs.zoomed)
+    }
+
+    /// The session's terminal isn't on screen while a pane is zoomed over it.
+    func testTheTerminalIsNotShownUnderAZoomedPane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        XCTAssertTrue(tabs.showsSessionTerminal)
+        tabs.toggleZoom(pane)
+        XCTAssertFalse(tabs.showsSessionTerminal)
+        tabs.toggleZoom(.main)
+        XCTAssertTrue(tabs.showsSessionTerminal, "zoomed itself, it is all there is")
+        tabs.toggleZoom(.main)
+        XCTAssertTrue(tabs.showsSessionTerminal)
+    }
+
+    func testEqualizeEvensTheLayout() {
+        var tabs = WorkspaceTabs()
+        let first = tabs.split(.main, on: .right, placing: terminal())!
+        tabs.split(first, on: .right, placing: terminal())
+        XCTAssertFalse(tabs.layout.isEqualized)
+        let leaves = tabs.layout.leaves
+        tabs.equalize()
+        XCTAssertTrue(tabs.layout.isEqualized)
+        XCTAssertEqual(tabs.layout.leaves, leaves)
+    }
+
+    // MARK: Where things open
+
+    /// A habit for a pane that has gone is no habit: the kind's own start.
+    func testAHabitForAPaneThatHasGoneFallsBack() {
+        var tabs = column()
+        let pane = tabs.split(.main, on: .right, placing: fileA)!
+        let browser = SideTab.browser(UUID())
+        tabs.placeDropped(browser, in: pane, at: .max)
+        XCTAssertEqual(tabs.home(for: fileB), pane)
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), pane)
+
+        tabs.close(fileA)
+        tabs.close(browser)
+        XCTAssertFalse(tabs.exists(pane))
+        XCTAssertEqual(tabs.home(for: fileB), .main)
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), .side)
+    }
+
+    /// ⌥ sends a tab out of the main row, and anything else into it: a tab
+    /// in a pane, or one that would open in one, goes to the main row.
+    func testElsewhereFromAPaneIsTheMainRow() {
+        var tabs = column()
+        let pane = tabs.split(.main, on: .right, placing: fileA)!
+        XCTAssertEqual(tabs.elsewhere(for: fileA), .main)
+        XCTAssertEqual(tabs.elsewhere(for: fileB), .main, "it would open in the pane")
+        tabs.place(fileC, in: .main, at: .max)
+        XCTAssertEqual(tabs.elsewhere(for: fileC), .side)
+        tabs.close(fileA)
+        XCTAssertFalse(tabs.exists(pane))
+        XCTAssertEqual(tabs.elsewhere(for: fileB), .side, "back to opening in the main row")
+    }
+
+    /// A drop into a pane that has gone opens nothing.
+    func testDroppingIntoAPaneThatHasGone() {
+        var tabs = column()
+        let before = tabs
+        tabs.placeDropped(fileA, in: .pane(UUID()), at: 0)
+        XCTAssertEqual(tabs, before)
+    }
+
+    // MARK: Closing and reopening in a pane
+
+    func testClosingInAPaneRemembersThePane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.place(fileA, in: pane, at: .max)
+        XCTAssertEqual(tabs.close(fileA), pane)
+        XCTAssertEqual(tabs.closed.last, ClosedTab(tab: fileA, region: pane, index: 1))
+        XCTAssertTrue(tabs.exists(pane))
+
+        XCTAssertEqual(tabs.reopen(preferring: .main), fileA, "the only one closed")
+        XCTAssertEqual(tabs.tabs(in: pane), [changes, fileA], "back in its pane, in its place")
+        XCTAssertEqual(tabs.front(of: pane), fileA)
+    }
+
+    /// Reopening prefers what was closed in the pane you're in.
+    func testReopeningPrefersThePaneYouAreIn() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.place(fileA, in: pane, at: .max)
+        tabs.close(fileA)
+        tabs.close(history)
+        XCTAssertEqual(tabs.reopen(preferring: pane), fileA)
+        XCTAssertEqual(tabs.region(of: fileA), pane)
+        XCTAssertEqual(tabs.reopen(preferring: pane), history, "then the last closed anywhere")
+        XCTAssertEqual(tabs.region(of: history), .side)
+    }
+
+    /// The opener rule holds in a pane: a file opened from Changes there
+    /// goes back to Changes.
+    func testClosingInAPaneGoesBackToWhereItWasOpenedFrom() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.place(fileC, in: pane, at: .max)
+        tabs.bringForward(changes)
+        tabs.place(fileA, in: pane, at: .max)
+        tabs.bringForward(opened: fileA)
+        XCTAssertEqual(tabs.tabs(in: pane), [changes, fileC, fileA])
+        tabs.close(fileA)
+        XCTAssertEqual(tabs.front(of: pane), changes, "not its neighbour")
+
+        // Left in between, it is the neighbour rule's again.
+        tabs.place(fileB, in: pane, at: 1)
+        tabs.bringForward(opened: fileB)
+        tabs.bringForward(fileC)
+        tabs.bringForward(fileB)
+        tabs.close(fileB)
+        XCTAssertEqual(tabs.front(of: pane), fileC)
+    }
+
+    /// Closing a pane's last tab is closing the pane.
+    func testClosingAPanesLastTabClosesThePane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        XCTAssertEqual(tabs.close(changes), pane)
+        XCTAssertFalse(tabs.exists(pane))
+        XCTAssertFalse(tabs.layout.isSplit)
+        XCTAssertEqual(tabs.closed.last?.region, pane, "where it was, though that has gone")
+    }
+
+    /// A tab closed in a pane that has gone comes back in the row you're in.
+    func testReopeningFromAPaneThatHasGoneUsesTheRowYouAreIn() {
+        for preferred in [TabRegion.side, .bottom, .main] {
+            var tabs = column()
+            let pane = splitOff(fileA, from: &tabs)
+            tabs.close(fileA)
+            XCTAssertFalse(tabs.exists(pane))
+            XCTAssertEqual(tabs.reopen(preferring: preferred), fileA)
+            XCTAssertEqual(tabs.region(of: fileA), preferred, "\(preferred)")
+            XCTAssertEqual(tabs.front(of: preferred), fileA)
+            XCTAssertEqual(tabs.tabs(in: preferred).last, fileA, "at the end: its old index was another row's")
+            XCTAssertTrue(tabs.isShowing(preferred))
+        }
+    }
+
+    /// In another pane, when that is where you are.
+    func testReopeningFromAPaneThatHasGoneIntoAnotherPane() {
+        var tabs = column()
+        let pane = splitOff(fileA, from: &tabs)
+        let other = tabs.split(.main, on: .down, placing: history)!
+        tabs.close(fileA)
+        XCTAssertFalse(tabs.exists(pane))
+        XCTAssertEqual(tabs.reopen(preferring: other), fileA)
+        XCTAssertEqual(tabs.tabs(in: other), [history, fileA])
+    }
+
+    /// And in the main row when the row you were in has gone too.
+    func testReopeningWhenBothPanesHaveGoneUsesTheMainRow() {
+        var tabs = column()
+        let pane = splitOff(fileA, from: &tabs)
+        tabs.close(fileA)
+        XCTAssertEqual(tabs.reopen(preferring: pane), fileA)
+        XCTAssertEqual(tabs.main, [.session, fileA])
+        XCTAssertEqual(tabs.activeMain, fileA)
+        XCTAssertFalse(tabs.layout.isSplit, "reopening a tab doesn't remake its pane")
+    }
+
+    /// A terminal reopened this way is a new shell, in the main row.
+    func testATerminalReopenedFromAPaneThatHasGone() {
+        let shell = terminal()
+        var tabs = column()
+        let pane = splitOff(shell, from: &tabs)
+        tabs.close(shell)
+        let reopened = tabs.reopen(preferring: pane)
+        XCTAssertNotNil(reopened?.terminalID)
+        XCTAssertNotEqual(reopened, shell, "its shell ended with it")
+        XCTAssertEqual(tabs.main.first, .session)
+        XCTAssertEqual(tabs.main.last, reopened)
+        XCTAssertEqual(tabs.main.count, 2)
+        XCTAssertTrue(tabs.closed.isEmpty)
+    }
+
+    /// `takeClosed` answers with a row that is there, for whoever places it.
+    func testTakeClosedNamesARowThatIsThere() {
+        var tabs = column()
+        let pane = splitOff(fileA, from: &tabs)
+        tabs.place(fileB, in: pane, at: .max)
+        tabs.close(fileB)
+        XCTAssertEqual(tabs.takeClosed(preferring: .side), ClosedTab(tab: fileB, region: pane, index: 1),
+                       "its pane is still there")
+        tabs.close(fileA)
+        XCTAssertEqual(tabs.takeClosed(preferring: .side)?.region, .side)
+        XCTAssertNil(tabs.takeClosed(preferring: .side))
+    }
+
+    // MARK: The preview tab in a pane
+
+    /// With files at home in a pane, the preview opens there, and the next
+    /// file takes its place in that pane's row.
+    func testThePreviewSwapsInPlaceInAPane() {
+        var tabs = column()
+        let pane = splitOff(a, from: &tabs)
+        let id = pane.paneID!
+        tabs.place(terminal(), in: pane, at: .max)
+        XCTAssertEqual(tabs.peekRegion(for: b, avoiding: .side), pane, "where files go")
+
+        XCTAssertNil(tabs.showPeek(b, in: pane))
+        XCTAssertEqual(tabs.peek, b)
+        XCTAssertEqual(tabs.front(of: pane), b)
+        let index = tabs.panes[id]?.tabs.firstIndex(of: b)
+        XCTAssertEqual(index, 2)
+
+        XCTAssertEqual(tabs.showPeek(c, in: pane), b, "the file it replaced")
+        XCTAssertEqual(tabs.panes[id]?.tabs.firstIndex(of: c), index, "in its place")
+        XCTAssertEqual(tabs.panes[id]?.active, c)
+        XCTAssertNil(tabs.region(of: b))
+        XCTAssertEqual(tabs.peekInFront, c)
+
+        // Closing it goes back to what was in front before the first.
+        tabs.close(c)
+        XCTAssertEqual(tabs.front(of: pane), a)
+        XCTAssertNil(tabs.peek)
+    }
+
+    /// A list in a pane never has its own row taken by what it picks.
+    func testThePreviewAvoidsAListInAPane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: pane), .main)
+        tabs.habits[.file] = pane
+        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: pane), .main, "not over the list")
+        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: .side), pane)
+        // The preview tab's own row, wherever it is.
+        tabs.habits[.file] = nil
+        tabs.showPeek(a, in: pane)
+        XCTAssertEqual(tabs.peekRegion(for: b, avoiding: .side), pane)
+        XCTAssertEqual(tabs.peekRegion(for: b, avoiding: pane), .main)
+    }
+
+    /// A click follows in a pane while a file is in front of it, and the
+    /// pane is on screen.
+    func testShowsFileInAPane() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        XCTAssertFalse(tabs.showsFile(in: pane))
+        tabs.showPeek(a, in: pane)
+        XCTAssertTrue(tabs.showsFile(in: pane))
+        XCTAssertEqual(tabs.peekInFront, a)
+        XCTAssertEqual(tabs.peekAction(for: b, .follow, avoiding: .side), .show)
+
+        tabs.toggleZoom(.main)
+        XCTAssertFalse(tabs.showsFile(in: pane), "behind a zoom nothing is in front of anything")
+        XCTAssertNil(tabs.peekInFront)
+        tabs.toggleZoom(.main)
+
+        tabs.bringForward(changes)
+        XCTAssertFalse(tabs.showsFile(in: pane))
+        XCTAssertNil(tabs.peekInFront)
+        XCTAssertFalse(tabs.showsFile(in: .pane(UUID())))
+    }
+
+    /// The main row's file isn't in front while a pane is zoomed over it.
+    func testShowsFileInTheMainRowNeedsItOnScreen() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.showPeek(a, in: .main)
+        XCTAssertTrue(tabs.showsFile(in: .main))
+        tabs.toggleZoom(pane)
+        XCTAssertFalse(tabs.showsFile(in: .main))
+    }
+
+    /// The preview that is a pane's only tab: taking it out by moving it
+    /// keeps it, as any move does.
+    func testMovingThePreviewOutOfAPaneKeepsIt() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.showPeek(a, in: pane)
+        tabs.move(a, to: .main, at: .max)
+        XCTAssertNil(tabs.peek)
+        XCTAssertTrue(tabs.exists(pane), "changes is still in it")
+    }
+
+    // MARK: Every tab
+
+    func testEveryTabIsCountedInReadingOrder() {
+        var tabs = column()
+        let strip = terminal(), right = terminal(), left = terminal()
+        tabs.place(strip, in: .bottom, at: 0)
+        let rightPane = tabs.split(.main, on: .right, placing: right)!
+        tabs.place(fileA, in: rightPane, at: .max)
+        let leftPane = tabs.split(.main, on: .left, placing: left)!
+        XCTAssertEqual(tabs.splitRegions, [leftPane, .main, rightPane])
+        XCTAssertEqual(tabs.allTabs, [.session, changes, history, files, strip, left, right, fileA])
+        XCTAssertEqual(Set(tabs.terminalIDs), Set([strip, right, left].compactMap(\.terminalID)))
+    }
+
+    /// A pane the layout has lost track of still has its terminals counted:
+    /// one left out is a shell nobody closes.
+    func testTerminalsOfAStrayPaneStillCount() {
+        var tabs = WorkspaceTabs()
+        let shell = terminal()
+        tabs.panes[UUID()] = WorkspaceTabs.PaneTabs(tabs: [shell], active: shell)
+        XCTAssertEqual(tabs.terminalIDs, [shell].compactMap(\.terminalID))
+        XCTAssertEqual(tabs.allTabs, [.session, shell])
+    }
+
+    func testAnUnsplitWorkspaceHasNoPanes() {
+        let tabs = column()
+        XCTAssertEqual(tabs.splitRegions, [.main])
+        XCTAssertTrue(tabs.panes.isEmpty)
+        XCTAssertFalse(tabs.layout.isSplit)
+        XCTAssertNil(tabs.zoomed)
+        XCTAssertTrue(tabs.isShowing(.main))
+        XCTAssertTrue(tabs.exists(.main) && tabs.exists(.side) && tabs.exists(.bottom))
+        XCTAssertEqual(tabs.normalized(), tabs)
+    }
+
+    // MARK: Consistency with panes
+
+    /// A consistent layout is left as it is.
+    func testNormalizedLeavesGoodPanesAlone() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.place(fileA, in: pane, at: .max)
+        tabs.split(pane, on: .down, placing: terminal())
+        tabs.habits[.file] = pane
+        tabs.toggleZoom(pane)
+        XCTAssertEqual(tabs.normalized(), tabs)
+    }
+
+    /// A tab two rows claim stays in the first: main, column, strip, then
+    /// the panes as the layout reads.
+    func testATabInTwoRowsStaysInTheFirst() {
+        let left = UUID(), right = UUID()
+        var tabs = WorkspaceTabs(main: [.session, fileA], side: [changes, fileB], sideVisible: true,
+                                 bottom: [fileC])
+        tabs.panes[left] = WorkspaceTabs.PaneTabs(tabs: [fileA, history, a], active: history)
+        tabs.panes[right] = WorkspaceTabs.PaneTabs(tabs: [fileB, fileC, a, b], active: a)
+        tabs.layout.insert(.pane(right), beside: .main, on: .right)
+        tabs.layout.insert(.pane(left), beside: .main, on: .left)
+
+        let fixed = tabs.normalized()
+        XCTAssertEqual(fixed.main, [.session, fileA])
+        XCTAssertEqual(fixed.side, [changes, fileB])
+        XCTAssertEqual(fixed.bottom, [fileC])
+        XCTAssertEqual(fixed.panes[left]?.tabs, [history, a], "the left pane reads first")
+        XCTAssertEqual(fixed.panes[right], WorkspaceTabs.PaneTabs(tabs: [b], active: b),
+                       "and its front is something it still has")
+        XCTAssertEqual(fixed.allTabs.count, Set(fixed.allTabs).count)
+    }
+
+    /// The session's terminal is the main row's, whatever a pane says.
+    func testTheSessionTerminalIsNeverInAPane() {
+        let id = UUID()
+        var tabs = WorkspaceTabs(main: [fileA])
+        tabs.panes[id] = WorkspaceTabs.PaneTabs(tabs: [.session, changes], active: .session)
+        tabs.layout.insert(.pane(id), beside: .main, on: .right)
+        let fixed = tabs.normalized()
+        XCTAssertEqual(fixed.main, [.session, fileA])
+        XCTAssertEqual(fixed.panes[id], WorkspaceTabs.PaneTabs(tabs: [changes], active: changes))
+
+        // With nothing else in it, the pane goes.
+        tabs.panes[id] = WorkspaceTabs.PaneTabs(tabs: [.session], active: .session)
+        let emptied = tabs.normalized()
+        XCTAssertTrue(emptied.panes.isEmpty)
+        XCTAssertFalse(emptied.layout.isSplit)
+    }
+
+    /// A pane with no tabs, and a leaf with no pane, are both dropped.
+    func testEmptyPanesAndLeavesWithoutOneAreDropped() {
+        let empty = UUID(), ghost = UUID(), real = UUID()
+        var tabs = WorkspaceTabs()
+        tabs.panes[empty] = WorkspaceTabs.PaneTabs(tabs: [], active: nil)
+        tabs.panes[real] = WorkspaceTabs.PaneTabs(tabs: [changes], active: changes)
+        for id in [empty, ghost, real] { tabs.layout.insert(.pane(id), beside: .main, on: .right) }
+
+        let fixed = tabs.normalized()
+        XCTAssertEqual(Array(fixed.panes.keys), [real])
+        XCTAssertEqual(fixed.layout.leaves, [.main, .pane(real)])
+        guard case .split(.row, let parts) = fixed.layout.root else { return XCTFail("not split") }
+        XCTAssertEqual(parts.reduce(0) { $0 + $1.weight }, 1, accuracy: 1e-9)
+    }
+
+    /// A pane the layout doesn't know (the tree couldn't be read): its tabs
+    /// go to the main row. A terminal is never lost for want of a place.
+    func testAPaneMissingFromTheLayoutFoldsIntoTheMainRow() {
+        let shell = terminal()
+        var tabs = WorkspaceTabs(main: [.session, fileA], activeMain: fileA)
+        tabs.panes[UUID()] = WorkspaceTabs.PaneTabs(tabs: [shell, fileA, changes, .session], active: shell)
+
+        let fixed = tabs.normalized()
+        XCTAssertEqual(fixed.main, [.session, fileA, shell, changes], "after what the row had, each once")
+        XCTAssertEqual(fixed.activeMain, fileA, "what was in front still is")
+        XCTAssertTrue(fixed.panes.isEmpty)
+        XCTAssertFalse(fixed.layout.isSplit)
+        XCTAssertEqual(fixed.terminalIDs, [shell].compactMap(\.terminalID))
+    }
+
+    /// The tree itself is put right too: a leaf twice, weights that are no
+    /// shares, the main row missing.
+    func testTheLayoutIsNormalized() {
+        let id = UUID()
+        var tabs = WorkspaceTabs()
+        tabs.panes[id] = WorkspaceTabs.PaneTabs(tabs: [changes], active: changes)
+        tabs.layout = SplitLayout(root: .split(.column, [
+            .init(node: .leaf(.pane(id)), weight: 3),
+            .init(node: .leaf(.pane(id)), weight: 1),
+        ]))
+        let fixed = tabs.normalized()
+        XCTAssertEqual(Set(fixed.layout.leaves), [.main, .pane(id)])
+        XCTAssertEqual(fixed.layout, fixed.layout.normalized())
+        XCTAssertEqual(fixed.panes[id]?.tabs, [changes])
+    }
+
+    func testAPanesFrontIsSomethingItHas() {
+        let first = UUID(), second = UUID()
+        var tabs = WorkspaceTabs()
+        tabs.panes[first] = WorkspaceTabs.PaneTabs(tabs: [changes, history], active: files)
+        tabs.panes[second] = WorkspaceTabs.PaneTabs(tabs: [fileA, fileB], active: nil)
+        tabs.layout.insert(.pane(first), beside: .main, on: .right)
+        tabs.layout.insert(.pane(second), beside: .main, on: .down)
+        let fixed = tabs.normalized()
+        XCTAssertEqual(fixed.panes[first]?.active, changes)
+        XCTAssertEqual(fixed.panes[second]?.active, fileA)
+    }
+
+    /// A zoom on something that isn't a leaf of a split area is no zoom.
+    func testAZoomIsOnALeafThatIsThere() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        for zoomed in [TabRegion.side, .bottom, .pane(UUID())] {
+            tabs.zoomed = zoomed
+            XCTAssertNil(tabs.normalized().zoomed, "\(zoomed)")
+        }
+        tabs.zoomed = pane
+        XCTAssertEqual(tabs.normalized().zoomed, pane)
+        tabs.zoomed = .main
+        XCTAssertEqual(tabs.normalized().zoomed, .main)
+
+        var unsplit = column()
+        unsplit.zoomed = .main
+        XCTAssertNil(unsplit.normalized().zoomed, "there is nothing to zoom out of")
+    }
+
+    /// A habit and a preview that point at what has gone are dropped.
+    func testHabitsForPanesThatHaveGoneAreDropped() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.habits = [.file: .pane(UUID()), .browser: pane]
+        XCTAssertEqual(tabs.normalized().habits, [.browser: pane])
+        tabs.peek = fileA
+        XCTAssertNil(tabs.normalized().peek)
+        tabs.place(fileA, in: pane, at: .max)
+        XCTAssertEqual(tabs.normalized().peek, fileA, "a preview in a pane is a preview")
+    }
 }

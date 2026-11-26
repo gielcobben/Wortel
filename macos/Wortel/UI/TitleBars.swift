@@ -714,6 +714,9 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
         mainBar.strip.update(items: git.mainTabs.map(item), active: git.activeMainTab ?? .session)
+        // TODO(splits): each pane of the main area has a tab row of its own
+        // to draw (`git.paneTabs`, laid out by `git.splitLayout.frames`), with
+        // "+", Close Pane, Zoom and the split commands.
     }
 
     /// A tab as a row shows it: its title and glyph.

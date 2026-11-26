@@ -156,6 +156,46 @@ session's individually-observed fields into it and writes back only what
 changed, and `GitPanelModel` wraps each change with the side effects (the pane
 shown, the keyboard, saving). Change a rule there, not in the model.
 
+**Panes of the main area** (`SplitLayout`, `WorkspaceTabs.panes`,
+`TabRegion.pane`): the model is in, and nothing draws it yet. Until a view
+does, no command reaches it and a session is never split. The view work is
+marked `TODO(splits)` where it has to happen.
+
+The main area is a tree of rows and columns (`SplitLayout`, a pure value with
+its own tests, `SplitLayoutTests`) whose leaves are rows of tabs. One leaf is
+the main row, which is always there. Every other is a pane, made by
+`WorkspaceTabs.split` around one tab, with a row of its own
+(`panes[id]`, `TabRegion.pane(id)`). The column and the strip are beside the
+tree, not in it, and work as they did.
+
+- A pane is there only while it has tabs. Closing or moving out its last one
+  takes the pane out of `panes` and of the tree, and its room goes to its
+  siblings. Nothing is placed in a pane that isn't there.
+- Sizes are weights, so a window resize keeps every pane's share. Points only
+  exist in `SplitLayout.frames(in:)`, on whole points, with no pane under its
+  minimum while there is room.
+- One leaf can be zoomed (`zoomed`, not saved): shown alone, the others kept.
+  Bringing a tab forward in another leaf, or splitting, ends it.
+- `Session` holds it as `paneTabs`, `splitLayout` and `zoomedRegion`, and
+  `Session.allTabs` is every tab in every row: what closing a session, the
+  process roots and the browser lookups go through.
+- `GitPanelModel` mirrors the three and adds `split`, `splitDropped`,
+  `closePane`, `toggleZoom`, `equalizeSplits`, and for a divider's drag
+  `moveSplitDivider` (every step, writes the layout only) and
+  `commitSplitLayout` (once, saves). `lastRegion` never answers with a pane
+  that has gone or that a zoom hides.
+- Saved as `splitLayout` and `paneTabs` in `sessions.json`, both left out
+  while a session isn't split, so an unsplit session's entry is what it was.
+  Both are read leniently: a tree that can't be read is no split, and
+  `WorkspaceTabs.normalized` puts the tabs of a pane with no place in the
+  tree into the main row, so a terminal's shell is never left without a tab.
+- An older build opening a newer file drops both fields and saves without
+  them. A pane's terminal is then a shell in the keeper that no session
+  claims, which the next launch treats as any unclaimed shell
+  (`SessionManager.recoverOrphanedShells`): closed when it sits at a prompt,
+  brought back as a session of its own when something runs in it. Read from
+  the code, 2026-11-26, not tried.
+
 Things that look like detours and aren't:
 
 - **Terminals are never rebuilt when they move.** Side terminals (`sideSurfaces`

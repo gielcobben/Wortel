@@ -1225,6 +1225,17 @@ final class SessionManager {
             habits: Dictionary(uniqueKeysWithValues: (entry.tabHabits ?? [:]).compactMap { key, value in
                 TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
             }))
+        // The panes split off the main area. A pane whose key isn't an id is
+        // dropped here; one the tree has no leaf for, a leaf with no pane and
+        // a tree that couldn't be read are `normalized`'s, which never leaves
+        // a tab (a terminal with a shell in the keeper) without a row.
+        for (key, pane) in entry.paneTabs ?? [:] {
+            guard let id = UUID(uuidString: key) else { continue }
+            tabs.panes[id] = WorkspaceTabs.PaneTabs(
+                tabs: pane.tabs.compactMap(SideTab.init(rawValue:)),
+                active: pane.active.flatMap(SideTab.init(rawValue:)))
+        }
+        if let layout = entry.splitLayout { tabs.layout = layout }
         if entry.sideTabs == nil, session.gitPanelVisible {
             let pane = session.inspectorPane ?? GitPanelModel.defaultPane
             tabs.side = [.pane(pane)]
@@ -5274,7 +5285,7 @@ final class SessionManager {
         // front of the terminal the line would be typed out of sight, and
         // the keyboard handed to a terminal nobody is looking at.
         if let session = (placingWindow ?? activeWindow)?.selected, let view = session.surfaceView,
-           session.activeMainTab ?? .session == .session,
+           session.workspace.showsSessionTerminal,
            let window = view.window, window.isVisible, !view.isHiddenOrHasHiddenAncestor,
            shellIsAtPrompt(session, view) {
             view.sendText(line, scripted: true)
@@ -6026,8 +6037,7 @@ final class SessionManager {
     /// waiting for ⌘⇧T; the rest are gone for good.
     private static func persistedBrowserAddresses(of session: Session) -> [String: String]? {
         let workspace = session.workspace
-        let kept = Set((workspace.main + workspace.side + workspace.bottom
-                        + workspace.closed.map(\.tab)).compactMap(\.browserID))
+        let kept = Set((workspace.allTabs + workspace.closed.map(\.tab)).compactMap(\.browserID))
         let addresses = session.browserAddresses.filter { kept.contains($0.key) }
         guard !addresses.isEmpty else { return nil }
         return Dictionary(uniqueKeysWithValues: addresses.map { ($0.key.uuidString, $0.value) })
@@ -6080,6 +6090,14 @@ final class SessionManager {
             gitCheckout: session.gitCheckout,
             tabHabits: session.tabHabits.isEmpty ? nil
                 : Dictionary(uniqueKeysWithValues: session.tabHabits.map { ($0.key.rawValue, $0.value.rawValue) }),
+            // Only for a session that is split: one that isn't saves what it
+            // always has, so an older build reading the file loses nothing.
+            splitLayout: session.splitLayout.isSplit ? session.splitLayout : nil,
+            paneTabs: session.paneTabs.isEmpty ? nil
+                : Dictionary(uniqueKeysWithValues: session.paneTabs.map { id, pane in
+                    (id.uuidString, PersistedPaneTabs(tabs: pane.tabs.map(\.rawValue),
+                                                      active: pane.active?.rawValue))
+                }),
             runningAgent: agent?.agent, runningModel: agent?.model,
             runningArgv: agent?.argv,
             runningConversationID: agent == nil ? nil : conversationID,

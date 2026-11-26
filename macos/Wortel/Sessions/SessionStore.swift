@@ -93,6 +93,17 @@ struct PersistedSession: Codable {
     /// `Session.tabHabits`, kind to region, raw values. nil in older files:
     /// everything opens in the column.
     let tabHabits: [String: String]?
+    /// How the session's main area is split into panes (`Session.splitLayout`,
+    /// the tree as `SplitLayout` encodes it), and each pane's tabs by the
+    /// pane id's string. Both nil while there is no split, and in older
+    /// files: the main area is the main row, and a session that was never
+    /// split saves exactly what it saved before there were panes.
+    ///
+    /// Read leniently (`try?`): a tree or a pane this build can't read is no
+    /// split, not a file that can't be opened. `SessionManager.restore` then
+    /// puts whatever tabs it did read where they can be reached.
+    let splitLayout: SplitLayout?
+    let paneTabs: [String: PersistedPaneTabs]?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -168,6 +179,7 @@ struct PersistedSession: Codable {
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
+        case splitLayout, paneTabs
         case runningAgent, runningModel, runningArgv, runningConversationID, runningStartedAt
         case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
         case createdAt, lastSentAt
@@ -191,6 +203,8 @@ struct PersistedSession: Codable {
          browserAddresses: [String: String]? = nil,
          gitCheckout: String? = nil,
          tabHabits: [String: String]? = nil,
+         splitLayout: SplitLayout? = nil,
+         paneTabs: [String: PersistedPaneTabs]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil, runningStartedAt: Date? = nil,
          lastConversationID: String? = nil,
@@ -218,6 +232,8 @@ struct PersistedSession: Codable {
         self.browserAddresses = browserAddresses
         self.gitCheckout = gitCheckout
         self.tabHabits = tabHabits
+        self.splitLayout = splitLayout
+        self.paneTabs = paneTabs
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -288,6 +304,10 @@ struct PersistedSession: Codable {
         browserAddresses = try c.decodeIfPresent([String: String].self, forKey: .browserAddresses)
         gitCheckout = try c.decodeIfPresent(String.self, forKey: .gitCheckout)
         tabHabits = try c.decodeIfPresent([String: String].self, forKey: .tabHabits)
+        // Not `try`: a damaged tree, or one from a build that splits in a
+        // way this one doesn't know, must not cost the whole session list.
+        splitLayout = try? c.decodeIfPresent(SplitLayout.self, forKey: .splitLayout)
+        paneTabs = try? c.decodeIfPresent([String: PersistedPaneTabs].self, forKey: .paneTabs)
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.
@@ -308,6 +328,27 @@ struct PersistedSession: Codable {
         remindAt = try c.decodeIfPresent(Date.self, forKey: .remindAt)
         reportedState = try c.decodeIfPresent(String.self, forKey: .reportedState)
         agentPaintedDark = try c.decodeIfPresent(Bool.self, forKey: .agentPaintedDark)
+    }
+}
+
+/// One pane's row as it's saved: its tabs as `SideTab` raw values, and the one
+/// in front. A plain reading of the file, like `PersistedSession`: which tabs
+/// are real and what is in front when the file doesn't say is `restore`'s.
+struct PersistedPaneTabs: Codable, Equatable {
+    let tabs: [String]
+    let active: String?
+
+    init(tabs: [String], active: String? = nil) {
+        self.tabs = tabs
+        self.active = active
+    }
+
+    private enum CodingKeys: String, CodingKey { case tabs, active }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tabs = (try? c.decodeIfPresent([String].self, forKey: .tabs)) ?? []
+        active = try? c.decodeIfPresent(String.self, forKey: .active)
     }
 }
 

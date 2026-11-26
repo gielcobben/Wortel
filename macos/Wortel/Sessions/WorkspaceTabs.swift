@@ -1,8 +1,9 @@
 import Foundation
 
-/// Where a session's tabs are: the main area's row, the side column's row and
-/// the strip under the terminal, what's in front of each, which of the two that
-/// can hide are showing, and what ⌘⇧T can bring back.
+/// Where a session's tabs are: the main area's row, the side column's row,
+/// the strip under the terminal and the panes split off the main area, what's
+/// in front of each, which of the two that can hide are showing, and what ⌘⇧T
+/// can bring back.
 ///
 /// The rules, in one pure value so they can be tested without a window:
 ///
@@ -30,6 +31,30 @@ import Foundation
 ///   Reopening prefers the last one closed in the row you're in; a terminal
 ///   comes back as a new shell (a new id) in its old place.
 ///
+/// And for the panes split off the main area (`SplitLayout` says where each
+/// is; this says what is in it):
+///
+/// - The main area is a tree whose leaves are rows of tabs. One leaf is the
+///   main row, which is always there; every other is a pane, made by `split`
+///   around one tab.
+/// - A pane is there only while it has tabs. Taking out its last one, by
+///   closing or moving it, takes the pane out too, and its room goes to its
+///   siblings. Nothing is put into a pane that isn't there.
+/// - A pane's row follows the rules above: any tab but the session's
+///   terminal, one in front, the neighbour or the opener coming forward. It
+///   is never hidden while it exists.
+/// - Splitting takes a tab from wherever it is, or a new one, and gives it a
+///   pane beside the leaf asked about. Asked about the column, the strip or
+///   a pane that has gone, it splits the main row. A pane's only tab can't be
+///   split off its own pane: that would be the same pane in the same place.
+/// - One leaf can be zoomed: shown alone in the main area, the others kept
+///   as they are. Bringing a tab forward in another leaf, or splitting, ends
+///   it; the column and the strip are beside the main area and leave it
+///   alone. A zoom is about now, so it isn't saved.
+/// - A habit that points at a pane which has gone is no habit: the kind
+///   opens where it starts. A tab closed in a pane that has gone reopens in
+///   the row you're in, or in the main row.
+///
 /// Session holds the same state as separate properties (they're persisted and
 /// observed individually); `Session.workspace` reads them into this and writes
 /// them back, and GitPanelModel does the work that isn't pure around it:
@@ -56,12 +81,73 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// becomes a tab like any other) by a double-click or by moving it. Not
     /// persisted: after a relaunch it is an ordinary tab.
     var peek: SideTab?
+    /// A pane's row of tabs and the one in front. Never empty in a layout
+    /// that is consistent: a pane with no tabs is no pane.
+    struct PaneTabs: Equatable, Sendable {
+        var tabs: [SideTab]
+        var active: SideTab?
+    }
+    /// The panes split off the main area, by id: the leaves of `layout`
+    /// other than the main row.
+    var panes: [UUID: PaneTabs] = [:]
+    /// How the main area is divided among the main row and the panes.
+    var layout = SplitLayout()
+    /// The leaf of the main area shown alone, the others out of sight until
+    /// it is toggled back. Not persisted.
+    var zoomed: TabRegion?
 
     static let closedLimit = 25
 
     /// Every terminal tab's id, wherever it is.
     var terminalIDs: [UUID] {
-        (main + side + bottom).compactMap(\.terminalID)
+        allTabs.compactMap(\.terminalID)
+    }
+
+    // MARK: - Rows by region
+
+    /// A row's tabs in order. A pane that isn't there has none.
+    func tabs(in region: TabRegion) -> [SideTab] {
+        switch region {
+        case .main: return main
+        case .side: return side
+        case .bottom: return bottom
+        case .pane(let id): return panes[id]?.tabs ?? []
+        }
+    }
+
+    /// Every tab of the session: the main row, the column, the strip, then
+    /// each pane as the layout reads, left to right and top down.
+    var allTabs: [SideTab] {
+        let inLayout = layout.leaves.compactMap { TabRegion($0).paneID }
+        // A pane the layout doesn't know is one `normalized` will fold into
+        // the main row. Until it has, its tabs still count: a terminal left
+        // out here is a shell nobody closes.
+        let stray = panes.keys.filter { !inLayout.contains($0) }.sorted { $0.uuidString < $1.uuidString }
+        return main + side + bottom + (inLayout + stray).flatMap { panes[$0]?.tabs ?? [] }
+    }
+
+    /// The main area's leaves as regions, in reading order: the main row and
+    /// each pane.
+    var splitRegions: [TabRegion] { layout.leaves.map(TabRegion.init) }
+
+    /// Whether `region` is a place a tab can be put: always for the three
+    /// fixed rows, and for a pane only while it is there.
+    func exists(_ region: TabRegion) -> Bool {
+        switch region {
+        case .main, .side, .bottom: return true
+        case .pane(let id): return panes[id] != nil
+        }
+    }
+
+    /// Whether `region`'s row is on screen: the column and the strip while
+    /// they are up, a leaf of the main area unless another one is zoomed.
+    func isShowing(_ region: TabRegion) -> Bool {
+        switch region {
+        case .main: return zoomed == nil || zoomed == .main
+        case .side: return sideVisible
+        case .bottom: return bottomVisible
+        case .pane(let id): return panes[id] != nil && (zoomed == nil || zoomed == region)
+        }
     }
 
     /// Where a new tab opens when nothing says where: the row you last moved
@@ -70,7 +156,9 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// column, beside what it's showing you the result of.
     func home(for tab: SideTab) -> TabRegion {
         guard let kind = tab.kind else { return .side }
-        return habits[kind] ?? (kind == .file ? .main : .side)
+        // A habit for a pane that has since gone is no habit.
+        if let habit = habits[kind], exists(habit) { return habit }
+        return kind == .file ? .main : .side
     }
 
     /// Where ⌥ sends a tab, just this once: away from the main area if it's
@@ -97,13 +185,15 @@ struct WorkspaceTabs: Equatable, Sendable {
         if main.contains(tab) { return .main }
         if side.contains(tab) { return .side }
         if bottom.contains(tab) { return .bottom }
+        for (id, pane) in panes where pane.tabs.contains(tab) { return .pane(id) }
         return nil
     }
 
     // MARK: - Taking out and putting in
 
     /// Take a tab out of whichever row holds it. What was in front moves to a
-    /// neighbour if it was this tab, and a column or strip left empty hides.
+    /// neighbour if it was this tab, a column or strip left empty hides, and
+    /// a pane left empty is gone, its room given to its siblings.
     /// Where it was, or nil if it wasn't anywhere.
     @discardableResult
     mutating func detach(_ tab: SideTab) -> (region: TabRegion, index: Int)? {
@@ -131,19 +221,44 @@ struct WorkspaceTabs: Equatable, Sendable {
             if bottom.isEmpty { bottomVisible = false }
             return (.bottom, index)
         }
+        for (id, var pane) in panes {
+            guard let index = pane.tabs.firstIndex(of: tab) else { continue }
+            pane.tabs.remove(at: index)
+            if pane.active == tab { pane.active = Self.neighbour(in: pane.tabs, of: index) }
+            if pane.tabs.isEmpty {
+                dissolve(id)
+            } else {
+                panes[id] = pane
+            }
+            return (.pane(id), index)
+        }
         return nil
+    }
+
+    /// A pane with nothing left in it: out of the tree, its siblings taking
+    /// its room. A zoom on it ends, and so does one on the main row when
+    /// that is all there is again.
+    private mutating func dissolve(_ id: UUID) {
+        panes[id] = nil
+        layout.remove(.pane(id))
+        if zoomed == .pane(id) || !layout.isSplit { zoomed = nil }
     }
 
     /// Put a tab into a row at `index` (clamped). Doesn't bring it forward: see
     /// `bringForward`. False, and nothing changes, when the tab doesn't go
-    /// there or is already somewhere.
+    /// there, is already somewhere, or the row is a pane that isn't there
+    /// (`split` is what makes one).
     @discardableResult
     mutating func place(_ tab: SideTab, in region: TabRegion, at index: Int) -> Bool {
-        guard tab.fits(region), self.region(of: tab) == nil else { return false }
+        guard tab.fits(region), exists(region), self.region(of: tab) == nil else { return false }
         switch region {
         case .main: main.insert(tab, at: min(max(index, 0), main.count))
         case .side: side.insert(tab, at: min(max(index, 0), side.count))
         case .bottom: bottom.insert(tab, at: min(max(index, 0), bottom.count))
+        case .pane(let id):
+            guard var pane = panes[id] else { return false }
+            pane.tabs.insert(tab, at: min(max(index, 0), pane.tabs.count))
+            panes[id] = pane
         }
         return true
     }
@@ -172,14 +287,10 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// Whether the session's own terminal is the tab in front of its row, and
     /// that row is up: what's on screen when the session is. A file or a page
     /// in front of it means the terminal, and what the agent wrote there,
-    /// isn't.
+    /// isn't. Nor is it while a pane is zoomed over the main row.
     var showsSessionTerminal: Bool {
-        switch region(of: .session) {
-        case .main?: return front(of: .main) == .session
-        case .side?: return sideVisible && front(of: .side) == .session
-        case .bottom?: return bottomVisible && front(of: .bottom) == .session
-        case nil: return false
-        }
+        guard let region = region(of: .session) else { return false }
+        return isShowing(region) && front(of: region) == .session
     }
 
     /// The tab in front of `region`'s row; the session's terminal for the
@@ -189,20 +300,26 @@ struct WorkspaceTabs: Equatable, Sendable {
         case .main: return activeMain ?? .session
         case .side: return activeSide
         case .bottom: return activeBottom
+        case .pane(let id): return panes[id].flatMap { $0.active ?? $0.tabs.first }
         }
     }
 
     private mutating func show(_ tab: SideTab) {
-        switch region(of: tab) {
-        case .main?: activeMain = tab == .session ? nil : tab
-        case .side?:
+        guard let region = region(of: tab) else { return }
+        switch region {
+        case .main: activeMain = tab == .session ? nil : tab
+        case .side:
             activeSide = tab
             sideVisible = true
-        case .bottom?:
+        case .bottom:
             activeBottom = tab
             bottomVisible = true
-        case nil: break
+        case .pane(let id): panes[id]?.active = tab
         }
+        // A tab brought forward somewhere a zoom is hiding: the zoom ends,
+        // or it would have come forward out of sight. The column and the
+        // strip are beside the main area, not under the zoom.
+        if let zoomed, region.isSplitLeaf, zoomed != region { self.zoomed = nil }
     }
 
     /// Move a tab to `region` at `index`, or reorder it within its row. The
@@ -214,7 +331,15 @@ struct WorkspaceTabs: Equatable, Sendable {
     @discardableResult
     mutating func move(_ tab: SideTab, to region: TabRegion, at index: Int,
                        recordsHabit: Bool = true) -> Bool {
-        guard tab.fits(region), let from = detach(tab) else { return false }
+        guard tab.fits(region), exists(region) else { return false }
+        // A pane's only tab, reordered in its own row: where it is already.
+        // Taking it out first would take the pane with it.
+        if case .pane = region, self.region(of: tab) == region, tabs(in: region).count == 1 {
+            if peek == tab { peek = nil }
+            bringForward(tab)
+            return true
+        }
+        guard let from = detach(tab) else { return false }
         let target = from.region == region && from.index < index ? index - 1 : index
         place(tab, in: region, at: target)
         bringForward(tab)
@@ -222,6 +347,54 @@ struct WorkspaceTabs: Equatable, Sendable {
         // says nothing about where things belong.
         if recordsHabit, from.region != region { learnHome(of: tab, in: region) }
         return true
+    }
+
+    // MARK: - Panes of the main area
+
+    /// Make a pane beside `region`, on `edge` of it, holding `tab` in front.
+    /// A tab that is already somewhere is moved there; one that isn't is
+    /// new. The pane, or nil when nothing changed: the session's terminal
+    /// never leaves the main row, and a pane's only tab can't be split off
+    /// its own pane.
+    ///
+    /// `region` is a leaf of the main area. The column, the strip and a pane
+    /// that isn't there are not, so asked about one of those it is the main
+    /// row that is split. `recordsHabit`, as for `move`: whether this is you
+    /// saying where the tab's kind belongs (a drag) or not (a command).
+    @discardableResult
+    mutating func split(_ region: TabRegion, on edge: SplitLayout.Edge, placing tab: SideTab,
+                        id: UUID = UUID(), recordsHabit: Bool = true) -> TabRegion? {
+        guard tab != .session, panes[id] == nil, !layout.contains(.pane(id)) else { return nil }
+        var target = SplitLayout.Leaf.main
+        if let leaf = region.leaf, exists(region), layout.contains(leaf) { target = leaf }
+        if case .pane = target, self.region(of: tab) == TabRegion(target),
+           tabs(in: TabRegion(target)).count == 1 { return nil }
+        // Taking the tab out can take a pane with it, when it was that
+        // pane's last. Never the one being split: that case just returned.
+        detach(tab)
+        if !layout.insert(.pane(id), beside: target, on: edge) {
+            // Only a tree that had lost its leaf, which `normalized` mends:
+            // beside the main row then, rather than a tab that is nowhere.
+            layout = layout.normalized()
+            layout.insert(.pane(id), beside: .main, on: edge)
+        }
+        panes[id] = PaneTabs(tabs: [tab], active: tab)
+        // A new pane is something to look at, and a zoom would hide it.
+        zoomed = nil
+        if recordsHabit { learnHome(of: tab, in: .pane(id)) }
+        return .pane(id)
+    }
+
+    /// Show one leaf of the main area alone, or all of them again. Only a
+    /// leaf that is there, and only while there is more than one.
+    mutating func toggleZoom(_ region: TabRegion) {
+        guard layout.isSplit, exists(region), let leaf = region.leaf, layout.contains(leaf) else { return }
+        zoomed = zoomed == region ? nil : region
+    }
+
+    /// Every part of every split the same size as its siblings.
+    mutating func equalize() {
+        layout.equalize()
     }
 
     // MARK: - The preview tab
@@ -241,11 +414,7 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// the one time a click in a list shows what it picked. With a terminal
     /// or a page in front, a click only selects; you didn't ask to cover it.
     func showsFile(in region: TabRegion) -> Bool {
-        switch region {
-        case .main: return front(of: .main)?.filePath != nil
-        case .side: return sideVisible && activeSide?.filePath != nil
-        case .bottom: return bottomVisible && activeBottom?.filePath != nil
-        }
+        isShowing(region) && front(of: region)?.filePath != nil
     }
 
     /// Show `tab` (a file) as the preview tab, in front. A file that already
@@ -274,6 +443,12 @@ struct WorkspaceTabs: Equatable, Sendable {
         case .main: main = main.map { $0 == old ? tab : $0 }
         case .side: side = side.map { $0 == old ? tab : $0 }
         case .bottom: bottom = bottom.map { $0 == old ? tab : $0 }
+        case .pane(let id):
+            if var pane = panes[id] {
+                pane.tabs = pane.tabs.map { $0 == old ? tab : $0 }
+                if pane.active == old { pane.active = tab }
+                panes[id] = pane
+            }
         }
         if activeMain == old { activeMain = tab }
         if activeSide == old { activeSide = tab }
@@ -345,12 +520,22 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// Take the tab ⌘⇧T should bring back: the last closed in `region`, or the
     /// last closed anywhere when that row has none. A terminal's is a new id.
     /// Doesn't put it anywhere; the caller does, with `reopen`'s placement.
+    ///
+    /// The region it answers with is one that is there. A tab closed in a
+    /// pane that has since gone (closing its last tab is what takes a pane
+    /// away) comes back in the row you're in, or in the main row when that
+    /// one has gone too or the tab doesn't go there.
     mutating func takeClosed(preferring region: TabRegion) -> ClosedTab? {
         guard !closed.isEmpty else { return nil }
         let index = closed.lastIndex { $0.region == region } ?? closed.count - 1
         let entry = closed.remove(at: index)
         let tab: SideTab = entry.tab.terminalID != nil ? .terminal(UUID()) : entry.tab
-        return ClosedTab(tab: tab, region: entry.region, index: entry.index)
+        guard !exists(entry.region) else {
+            return ClosedTab(tab: tab, region: entry.region, index: entry.index)
+        }
+        // Its index was one into a row that no longer is: at the end.
+        return ClosedTab(tab: tab, region: exists(region) && tab.fits(region) ? region : .main,
+                         index: .max)
     }
 
     /// Reopen: bring back the tab `takeClosed` picks, in its old place, in
@@ -371,17 +556,46 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// The same layout with anything a file could have got wrong put right:
     /// every tab in one row only, the
     /// session's terminal in the main row exactly once, what's in front being
-    /// something the row has, and an empty column or strip hidden. What
-    /// `SessionManager.restore` applies to whatever it read.
+    /// something the row has, and an empty column or strip hidden. For the
+    /// panes: each one a leaf of the tree and each leaf a pane with tabs, a
+    /// pane the tree doesn't know folded into the main row (a terminal is
+    /// never dropped for want of a place), and a zoom only on a leaf that is
+    /// there. What `SessionManager.restore` applies to whatever it read.
     func normalized() -> WorkspaceTabs {
         var copy = self
         // Each tab once, in the first row that lists it (main, then the
-        // column, then the strip): two rows claiming one terminal would give
-        // one view two places to be.
+        // column, then the strip, then the panes as the layout reads): two
+        // rows claiming one terminal would give one view two places to be.
         var placed = Set<SideTab>()
         copy.main = copy.main.filter { placed.insert($0).inserted }
         copy.side = copy.side.filter { placed.insert($0).inserted }
         copy.bottom = copy.bottom.filter { placed.insert($0).inserted }
+        var layout = copy.layout.normalized()
+        var panes: [UUID: PaneTabs] = [:]
+        for leaf in layout.leaves {
+            guard case .pane(let id) = leaf else { continue }
+            // The session's terminal is the main row's, whatever a pane says.
+            let tabs = (copy.panes[id]?.tabs ?? []).filter { $0 != .session && placed.insert($0).inserted }
+            guard !tabs.isEmpty else {
+                // A leaf with no pane, or a pane with nothing left in it.
+                layout.remove(leaf)
+                continue
+            }
+            let active = copy.panes[id]?.active
+            panes[id] = PaneTabs(tabs: tabs, active: active.flatMap { tabs.contains($0) ? $0 : nil } ?? tabs.first)
+        }
+        // A pane the tree has no place for: its tabs go to the main row.
+        for id in copy.panes.keys.sorted(by: { $0.uuidString < $1.uuidString })
+        where !copy.layout.contains(.pane(id)) {
+            copy.main += (copy.panes[id]?.tabs ?? []).filter { $0 != .session && placed.insert($0).inserted }
+        }
+        copy.panes = panes
+        copy.layout = layout
+        if let zoomed = copy.zoomed,
+           !(layout.isSplit && copy.exists(zoomed) && zoomed.leaf.map(layout.contains) == true) {
+            copy.zoomed = nil
+        }
+        copy.habits = copy.habits.filter { copy.exists($0.value) }
         if !copy.main.contains(.session) { copy.main.insert(.session, at: 0) }
         if let active = copy.activeMain, active == .session || !copy.main.contains(active) {
             copy.activeMain = nil

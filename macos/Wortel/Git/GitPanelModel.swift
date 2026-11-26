@@ -1293,6 +1293,17 @@ final class GitPanelModel {
         if splitLayout != layout { splitLayout = layout }
     }
 
+    /// The layout as a divider's drag left it, from the view that moved it
+    /// (`SplitTreeView` moves the divider in its own copy first, so the pane
+    /// follows the pointer in the same event). Not saved: see
+    /// `commitSplitLayout`.
+    func setSplitLayout(_ layout: SplitLayout) {
+        guard let session, session.splitLayout != layout,
+              Set(layout.leaves) == Set(session.splitLayout.leaves) else { return }
+        session.splitLayout = layout
+        if splitLayout != layout { splitLayout = layout }
+    }
+
     /// The end of a divider's drag: the layout as it now is, saved.
     func commitSplitLayout() {
         onStateChanged?()

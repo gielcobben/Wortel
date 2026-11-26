@@ -94,6 +94,8 @@ final class MainSplitViewController: NSSplitViewController {
     /// strip, what `blink` draws around.
     private weak var terminalAreaView: NSView?
     private weak var workspace: TerminalWorkspaceController?
+    /// The main area and its panes (`MainAreaController`).
+    private(set) weak var mainArea: MainAreaController?
     private weak var columnContentView: NSView?
     private weak var sideColumn: SideColumnController?
     private weak var blinkView: NSView?
@@ -166,6 +168,7 @@ final class MainSplitViewController: NSSplitViewController {
             terminal: TerminalPaneController(runtime: runtime, manager: manager, home: home, git: git, files: files),
             runtime: runtime, manager: manager, home: home, git: git, files: files, previewTabs: previewTabs)
         let workspace = TerminalWorkspaceController(top: mainArea, bottom: bottomPane, git: git)
+        self.mainArea = mainArea
         bottomAreaView = bottomPane.view
         terminalAreaView = workspace.terminalView
         self.workspace = workspace
@@ -233,6 +236,25 @@ final class MainSplitViewController: NSSplitViewController {
             let regions = [TabRegion.main, .side, .bottom] + git.paneTabs.keys.map(TabRegion.pane)
             return regions.first { git.tabs(in: $0).contains(tab) }
         }
+        // The panes of the main area: their rows, their edges and middles.
+        drag.paneStrips = { [weak mainArea] in
+            (mainArea?.rows ?? []).map { .init(strip: $0.strip, region: $0.region) }
+        }
+        drag.paneDrop = { [weak mainArea] point in mainArea?.paneDrop(at: point) }
+        drag.isSplit = { [weak self] in self?.git.splitLayout.isSplit ?? false }
+        drag.tabCount = { [weak self] region in self?.git.tabs(in: region).count ?? 0 }
+        drag.onSplit = { [weak self] tab, region, edge in
+            self?.git.splitDropped(tab, beside: region, on: edge, isNew: false)
+        }
+        drag.onFileSplit = { [weak self] urls, region, edge in
+            guard let self, let first = urls.first else { return }
+            // The first file makes the pane; then all of them are opened in
+            // it the way dropped files are, which decides what each shows.
+            let tab = SideTab.file(first.resolvingSymlinksInPath().standardizedFileURL.path)
+            self.git.splitDropped(tab, beside: region, on: edge, isNew: true)
+            guard let pane = self.git.session?.workspace.region(of: tab) else { return }
+            self.openDroppedFiles(urls, pane, 0)
+        }
         drag.bottomArea = { [weak self, weak bottomPane] in
             guard let self, self.git.bottomVisible, let view = bottomPane?.view,
                   view.window != nil, !view.isHiddenOrHasHiddenAncestor,
@@ -271,6 +293,13 @@ final class MainSplitViewController: NSSplitViewController {
         }
         titleBars.sideBar.strip.onDrag = forward
         bottomPane.bar.strip.onDrag = forward
+        // A pane's row is made with its pane, so each is given the drag when
+        // the rows change.
+        let wirePaneRows: () -> Void = { [weak mainArea] in
+            for strip in mainArea?.allStrips ?? [] { strip.onDrag = forward }
+        }
+        mainArea.onRowsChanged = wirePaneRows
+        wirePaneRows()
         tabDrag = drag
     }
 
@@ -450,6 +479,7 @@ final class MainSplitViewController: NSSplitViewController {
         applyLayout()
         workspace?.applyNow()
         sideColumn?.applyNow()
+        mainArea?.applyNow()
         // The terminal's own area only. The sidebar and the column lay out
         // with everything else when the frame is drawn; the whole window laid
         // out here as well made a switch up to 130 ms slower (measured).
@@ -753,11 +783,12 @@ extension MainSplitViewController {
     func blink(_ region: TabRegion, waited: Bool = false) {
         let target: NSView?
         switch region {
-        case .main: target = terminalAreaView
+        // Split, the main row is one pane among several: its own outline.
+        case .main: target = git.splitLayout.isSplit && git.zoomedRegion == nil
+            ? mainArea?.view(of: .main) : terminalAreaView
         case .side: target = git.isVisible ? columnContentView : nil
         case .bottom: target = git.bottomVisible ? bottomAreaView : nil
-        // TODO(splits): blink the pane's own view, not the whole main area.
-        case .pane: target = git.isShowing(region) ? terminalAreaView : nil
+        case .pane: target = git.isShowing(region) ? mainArea?.view(of: region) : nil
         }
         guard let target, target.window != nil else { return }
         guard !target.isHiddenOrHasHiddenAncestor,
@@ -817,9 +848,11 @@ extension MainSplitViewController {
             return .side
         }
         if git.bottomVisible, contains(bottomAreaView) { return .bottom }
-        // TODO(splits): a click in a pane of the main area should answer with
-        // that pane (`SplitLayout.frames`), so ⌘W and ⌘T act there.
-        if let contentItem, contains(contentItem.viewController.view) { return .main }
+        // A pane of the main area, if the point is in one, so ⌘W and ⌘T act
+        // there; the titlebar row above them is the main row's.
+        if let contentItem, contains(contentItem.viewController.view) {
+            return mainArea?.paneDrop(at: point)?.region ?? .main
+        }
         return nil
     }
 }

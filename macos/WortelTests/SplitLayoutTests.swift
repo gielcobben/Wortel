@@ -97,8 +97,8 @@ final class SplitLayoutTests: XCTestCase {
     }
 
     /// Along the axis its parent already runs, the new pane is a sibling:
-    /// three side by side are one row of three, and the two share what the
-    /// one had.
+    /// three side by side are one row of three. Equals stay equal, so the
+    /// third split gives thirds, not a half and two quarters.
     func testASplitAlongTheParentsAxisIsASibling() {
         var layout = SplitLayout()
         layout.insert(a, beside: .main, on: .right)
@@ -106,9 +106,30 @@ final class SplitLayoutTests: XCTestCase {
         XCTAssertEqual(layout.leaves, [.main, b, a])
         let parts = parts(of: layout)
         XCTAssertEqual(parts.count, 3, "one row of three, not a row in a row")
-        XCTAssertEqual(parts.map(\.weight), [0.25, 0.25, 0.5])
+        for part in parts { XCTAssertEqual(part.weight, 1.0 / 3, accuracy: 1e-9) }
+        XCTAssertTrue(layout.isEqualized)
         assertWellFormed(layout)
+    }
 
+    /// Once the sizes are somebody's choice (a divider was dragged), a new
+    /// sibling only halves the pane it was split from.
+    func testASiblingAmongUnequalPanesHalvesOnlyItsSource() {
+        var layout = SplitLayout(root: .split(.row, [
+            .init(node: .leaf(.main), weight: 0.7), .init(node: .leaf(a), weight: 0.3),
+        ]))
+        layout.insert(b, beside: a, on: .right)
+        XCTAssertEqual(layout.leaves, [.main, a, b])
+        let weights = parts(of: layout).map(\.weight)
+        XCTAssertEqual(weights[0], 0.7, accuracy: 1e-9)
+        XCTAssertEqual(weights[1], 0.15, accuracy: 1e-9)
+        XCTAssertEqual(weights[2], 0.15, accuracy: 1e-9)
+        assertWellFormed(layout)
+    }
+
+    func testAFourthSiblingAmongEqualsMakesQuarters() {
+        var layout = SplitLayout()
+        layout.insert(a, beside: .main, on: .right)
+        layout.insert(b, beside: .main, on: .right)
         layout.insert(c, beside: a, on: .left)
         XCTAssertEqual(layout.leaves, [.main, b, c, a])
         XCTAssertEqual(self.parts(of: layout).map(\.weight), [0.25, 0.25, 0.25, 0.25])
@@ -243,6 +264,8 @@ final class SplitLayoutTests: XCTestCase {
         layout.insert(a, beside: .main, on: .right)
         layout.insert(b, beside: .main, on: .right)
         layout.insert(c, beside: a, on: .down)
+        XCTAssertTrue(layout.isEqualized, "splits among equals leave them equal")
+        layout.moveDivider(at: [], index: 0, to: 300, in: CGRect(x: 0, y: 0, width: 1200, height: 800))
         XCTAssertFalse(layout.isEqualized)
         layout.equalize()
         XCTAssertTrue(layout.isEqualized)

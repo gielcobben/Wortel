@@ -495,6 +495,28 @@ enum MainMenu {
         focusNext.keyEquivalentModifierMask = [.command]
         let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Area", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
         focusPrevious.keyEquivalentModifierMask = [.command]
+        // By direction, across the splits of the main area and on into the
+        // column and the strip. ⌥⌘ with an arrow, every other terminal's keys
+        // for this, are the sessions and the tabs here, and ⌃⌘ moves a tab;
+        // ⌃⌥⌘ is what was free.
+        let focusSplit = NSMenuItem(title: "Focus Area", action: nil, keyEquivalent: "")
+        let focusSplitMenu = NSMenu(title: "Focus Area")
+        for (title, action, key) in [
+            ("Left", #selector(AppDelegate.focusSplitLeft(_:)), NSLeftArrowFunctionKey),
+            ("Right", #selector(AppDelegate.focusSplitRight(_:)), NSRightArrowFunctionKey),
+            ("Above", #selector(AppDelegate.focusSplitUp(_:)), NSUpArrowFunctionKey),
+            ("Below", #selector(AppDelegate.focusSplitDown(_:)), NSDownArrowFunctionKey),
+        ] {
+            let item = focusSplitMenu.addItem(withTitle: title, action: action, keyEquivalent: arrow(key))
+            item.keyEquivalentModifierMask = [.command, .option, .control]
+        }
+        focusSplit.submenu = focusSplitMenu
+        viewMenu.addItem(focusSplit)
+        // ⇧⌘↩ and ⌃⌘=: Ghostty's keys for the same two things.
+        let zoomSplit = viewMenu.addItem(withTitle: "Zoom Split", action: #selector(AppDelegate.zoomSplit(_:)), keyEquivalent: "\r")
+        zoomSplit.keyEquivalentModifierMask = [.command, .shift]
+        let equalize = viewMenu.addItem(withTitle: "Equalize Splits", action: #selector(AppDelegate.equalizeSplits(_:)), keyEquivalent: "=")
+        equalize.keyEquivalentModifierMask = [.command, .control]
 
         viewMenu.addItem(.separator())
         // A checkmark here, not a row in Settings, because it is flipped
@@ -613,16 +635,20 @@ enum MainMenu {
         let newBrowser = tabMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "l")
         newBrowser.keyEquivalentModifierMask = [.command, .shift]
         // ⌘D / ⇧⌘D: every terminal's split right and split down (iTerm,
-        // Ghostty, Warp, cmux, Terminal). Wortel's layout is fixed, so they
-        // are a terminal beside the one you're in and one under it.
-        let newSide = tabMenu.addItem(withTitle: "New Terminal in Side Column", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "d")
-        newSide.keyEquivalentModifierMask = [.command]
-        let newBottom = tabMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "d")
-        newBottom.keyEquivalentModifierMask = [.command, .shift]
-        // ⌃⇧` too, as VS Code and Zed open a new terminal. The shifted twin,
-        // as ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
-        addHidden(tabMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
-                  "`", [.control, .shift])
+        // Ghostty, Warp, cmux, Terminal), and since the main area can be
+        // split, that is what they are: a new terminal in a split of its own,
+        // beside the one you're in or under it. (Until then they were a
+        // terminal in the side column and one in the bottom strip, which
+        // keep their items below.)
+        let splitRight = tabMenu.addItem(withTitle: "Split Right", action: #selector(AppDelegate.splitRight(_:)), keyEquivalent: "d")
+        splitRight.keyEquivalentModifierMask = [.command]
+        let splitDown = tabMenu.addItem(withTitle: "Split Down", action: #selector(AppDelegate.splitDown(_:)), keyEquivalent: "d")
+        splitDown.keyEquivalentModifierMask = [.command, .shift]
+        tabMenu.addItem(withTitle: "New Terminal in Side Column", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "")
+        // ⌃⇧`, as VS Code and Zed open a new terminal. The shifted twin, as
+        // ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
+        let newBottom = tabMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
+        newBottom.keyEquivalentModifierMask = [.control, .shift]
         addHidden(tabMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
                   "~", [.control, .shift])
 

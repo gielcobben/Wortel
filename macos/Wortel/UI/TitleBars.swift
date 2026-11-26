@@ -668,6 +668,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         sideBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
         sideBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
+        sideBar.strip.onSplit = { [weak self] tab, edge in self?.git.split(.side, on: edge, with: tab) }
         sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
         // The main area's row.
         mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
@@ -675,6 +676,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         mainBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
         mainBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
+        mainBar.strip.onSplit = { [weak self] tab, edge in self?.git.split(.main, on: edge, with: tab) }
         mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
     }
 
@@ -708,15 +710,14 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     private func syncColumn() {
         mainBar.setShowsSideToggle(!git.isVisible)
         mainBar.title.stringValue = home.selected?.name ?? "Wortel"
-        // A plain title until the row holds more than the session's terminal.
-        mainBar.setShowsTabs(git.mainTabs.count > 1)
+        // A plain title until the row holds more than the session's terminal,
+        // and again once the main area is split: every pane then has a row of
+        // its own under the titlebar, the main row's included (`PaneBar`).
+        mainBar.setShowsTabs(git.mainTabs.count > 1 && !git.splitLayout.isSplit)
         let session = home.selected
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
         mainBar.strip.update(items: git.mainTabs.map(item), active: git.activeMainTab ?? .session)
-        // TODO(splits): each pane of the main area has a tab row of its own
-        // to draw (`git.paneTabs`, laid out by `git.splitLayout.frames`), with
-        // "+", Close Pane, Zoom and the split commands.
     }
 
     /// A tab as a row shows it: its title and glyph.
@@ -833,6 +834,21 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         browser.keyEquivalent = "l"
         browser.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(browser)
+        // A terminal in a split of its own, beside the main row or under it.
+        let splitRight = ClosureMenuItem(title: "Split Right") { [weak self] in
+            self?.git.split(.main, on: .right)
+        }
+        Self.setGlyph("rectangle.split.2x1", on: splitRight)
+        splitRight.keyEquivalent = "d"
+        splitRight.keyEquivalentModifierMask = [.command]
+        menu.addItem(splitRight)
+        let splitDown = ClosureMenuItem(title: "Split Down") { [weak self] in
+            self?.git.split(.main, on: .down)
+        }
+        Self.setGlyph("rectangle.split.1x2", on: splitDown)
+        splitDown.keyEquivalent = "d"
+        splitDown.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(splitDown)
         let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Strip" : "Show Strip") { [weak self] in
             self?.git.toggleBottom()
         }
@@ -929,19 +945,13 @@ enum NewTabMenu {
         menu.autoenablesItems = false
 
         // The shortcut that opens a terminal *there*: ⌘T opens one in the area
-        // you're in, which from the column's menu is the column; the strip's
-        // own is ⇧⌘D.
+        // you're in, which from a row's own menu is that row.
         let terminal = ClosureMenuItem(title: "New Terminal") {
             git.open(.terminal(UUID()), in: region)
         }
         terminal.setGlyph("apple.terminal")
-        if region == .bottom {
-            terminal.keyEquivalent = "d"
-            terminal.keyEquivalentModifierMask = [.command, .shift]
-        } else {
-            terminal.keyEquivalent = "t"
-            terminal.keyEquivalentModifierMask = [.command]
-        }
+        terminal.keyEquivalent = "t"
+        terminal.keyEquivalentModifierMask = [.command]
         menu.addItem(terminal)
 
         let browser = ClosureMenuItem(title: "New Browser") {
@@ -951,6 +961,21 @@ enum NewTabMenu {
         browser.keyEquivalent = "l"
         browser.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(browser)
+
+        // A terminal in a split of its own: beside this one, when the row is
+        // a part of the main area, and beside the main row from the column
+        // or the strip.
+        menu.addItem(.separator())
+        let splitRight = ClosureMenuItem(title: "Split Right") { git.split(region, on: .right) }
+        splitRight.setGlyph("rectangle.split.2x1")
+        splitRight.keyEquivalent = "d"
+        splitRight.keyEquivalentModifierMask = [.command]
+        menu.addItem(splitRight)
+        let splitDown = ClosureMenuItem(title: "Split Down") { git.split(region, on: .down) }
+        splitDown.setGlyph("rectangle.split.1x2")
+        splitDown.keyEquivalent = "d"
+        splitDown.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(splitDown)
 
         menu.addItem(.separator())
         for pane in InspectorPane.allCases {

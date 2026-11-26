@@ -10,10 +10,15 @@ import Foundation
 /// window:
 ///
 /// - A split divides the leaf it is asked about in two, along one axis. Along
-///   the axis its parent already runs, the new leaf becomes a sibling and the
-///   two share what the old one had; across it, the leaf is replaced by a
-///   split of the two. So three panes side by side are one row of three, not a
-///   row inside a row, and dragging one divider moves one edge.
+///   the axis its parent already runs, the new leaf becomes a sibling; across
+///   it, the leaf is replaced by a split of the two. So three panes side by
+///   side are one row of three, not a row inside a row, and dragging one
+///   divider moves one edge.
+/// - Siblings that were all the same size stay the same size when one more
+///   joins them: a second split right gives three thirds, not a half and two
+///   quarters, which is what every split halving its source comes to. Once a
+///   divider has been dragged the sizes are somebody's choice, and then the
+///   new leaf only halves the one it was split from.
 /// - Removing a leaf gives its room to its siblings, in proportion. A split
 ///   left with one part is replaced by that part, and a split inside a split
 ///   of the same axis is folded into it.
@@ -108,11 +113,17 @@ struct SplitLayout: Equatable, Sendable {
         case .split(let axis, var parts):
             if axis == edge.axis,
                let index = parts.firstIndex(where: { $0.node == .leaf(target) }) {
-                // A sibling: the two halve what the one had.
+                // A sibling. Among equals, one more equal; otherwise the two
+                // halve what the one had and nobody else moves.
+                let even = unevenness(of: .split(axis, parts.map { Part(node: .leaf(.main), weight: $0.weight) })) < 0.001
                 let half = parts[index].weight / 2
                 parts[index].weight = half
                 parts.insert(Part(node: .leaf(new), weight: half),
                              at: edge.isLeading ? index : index + 1)
+                if even {
+                    let share = 1 / Double(parts.count)
+                    for part in parts.indices { parts[part].weight = share }
+                }
                 return .split(axis, parts)
             }
             for index in parts.indices {

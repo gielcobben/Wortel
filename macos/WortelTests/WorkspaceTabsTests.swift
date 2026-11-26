@@ -947,8 +947,13 @@ final class WorkspaceTabsTests: XCTestCase {
         var tabs = WorkspaceTabs()
         let a = terminal(), b = terminal()
         let first = tabs.split(.main, on: .right, placing: a)!
-        tabs.split(first, on: .right, placing: b)
-        // main ½, a ¼, b ¼.
+        let second = tabs.split(first, on: .right, placing: b)!
+        // main ½, a ¼, b ¼, as after a drag.
+        tabs.layout = SplitLayout(root: .split(.row, [
+            .init(node: .leaf(.main), weight: 0.5),
+            .init(node: .leaf(first.leaf!), weight: 0.25),
+            .init(node: .leaf(second.leaf!), weight: 0.25),
+        ]))
         tabs.close(a)
         guard case .split(.row, let parts) = tabs.layout.root else { return XCTFail("not a row of two") }
         XCTAssertEqual(parts.count, 2)
@@ -1206,7 +1211,13 @@ final class WorkspaceTabsTests: XCTestCase {
     func testEqualizeEvensTheLayout() {
         var tabs = WorkspaceTabs()
         let first = tabs.split(.main, on: .right, placing: terminal())!
-        tabs.split(first, on: .right, placing: terminal())
+        let second = tabs.split(first, on: .right, placing: terminal())!
+        XCTAssertTrue(tabs.layout.isEqualized, "three splits among equals are thirds")
+        tabs.layout = SplitLayout(root: .split(.row, [
+            .init(node: .leaf(.main), weight: 0.5),
+            .init(node: .leaf(first.leaf!), weight: 0.25),
+            .init(node: .leaf(second.leaf!), weight: 0.25),
+        ]))
         XCTAssertFalse(tabs.layout.isEqualized)
         let leaves = tabs.layout.leaves
         tabs.equalize()

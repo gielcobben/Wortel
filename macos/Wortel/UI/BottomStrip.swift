@@ -253,6 +253,7 @@ final class BottomPaneController: NSViewController {
         strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
         strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
         strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
+        strip.onSplit = { [weak self] tab, edge in self?.git.split(.bottom, on: edge, with: tab) }
         strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.home.selected) }
         observe()
     }
@@ -331,6 +332,9 @@ final class TabDragController {
     private enum Target: Equatable {
         case strip(TabRegion, index: Int, marker: NSRect)
         case zone(TabRegion, area: NSRect)
+        /// An edge of a pane of the main area: a new pane there, holding the
+        /// tab. `area` is the half the new pane would take.
+        case split(TabRegion, SplitLayout.Edge, area: NSRect)
         /// The terminal's edge away from the column: the column moves there.
         case swap(leading: Bool, area: NSRect)
         /// Outside the window: a window of its own.
@@ -353,6 +357,18 @@ final class TabDragController {
     }
 
     var strips: [StripTarget] = []
+    /// The rows of the main area's panes, asked at each step: they come and
+    /// go with the panes, and with the session on screen.
+    var paneStrips: () -> [StripTarget] = { [] }
+    /// The pane of the main area under a point in window coordinates, and
+    /// what a drop there asks for (`MainAreaController.paneDrop`).
+    var paneDrop: (NSPoint) -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? = { _ in nil }
+    /// Whether the main area is split into panes.
+    var isSplit: () -> Bool = { false }
+    /// How many tabs a row holds: a pane can't be split from its only tab.
+    var tabCount: (TabRegion) -> Int = { _ in 0 }
+    var onSplit: (SideTab, TabRegion, SplitLayout.Edge) -> Void = { _, _, _ in }
+    var onFileSplit: ([URL], TabRegion, SplitLayout.Edge) -> Void = { _, _, _ in }
     /// The session terminal's area, in window coordinates.
     var terminalArea: () -> NSRect? = { nil }
     /// The bottom strip, bar and all, while it's showing, in window coordinates.
@@ -429,6 +445,7 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onDrop(tab, region, index)
             case .zone(let region, _): onDrop(tab, region, .max)
+            case .split(let region, let edge, _): onSplit(tab, region, edge)
             case .swap(let leading, _): onSwap(tab, leading)
             case .tearOff: if let topLeft { onTearOff(tab, topLeft) }
             case .otherWindow, nil: break
@@ -481,6 +498,7 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onFileDrop(files, region, index)
             case .zone(let region, _): onFileDrop(files, region, .max)
+            case .split(let region, let edge, _): onFileSplit(files, region, edge)
             case .swap, .tearOff, .otherWindow, nil: break
             }
         }
@@ -577,6 +595,7 @@ final class TabDragController {
             // that drop is the terminal's (it types the path).
             if case .swap? = target { target = nil }
             if case .zone? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
+            if case .split? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
         }
         if case .tearOff? = target {
             overlay?.marker = nil
@@ -600,11 +619,27 @@ final class TabDragController {
             case .side:
                 overlay.zoneLabel = draggingFile ? "Open in Side Column" : "Move to Side Column"
                 overlay.zoneEdge = columnLeading() ? .maxX : .minX
-            // TODO(splits): a pane needs drop zones of its own: its middle
-            // ("into this pane") and its four edges (`SplitLayout.dropEdge`,
-            // `half`), ending in `GitPanelModel.splitDropped`.
             case .main, .pane:
                 overlay.zoneLabel = draggingFile ? "Open Here" : "Move Here"
+                overlay.zoneEdge = nil
+            }
+        case .split(_, let edge, let area):
+            overlay.marker = nil
+            overlay.zone = overlay.convert(area, from: nil)
+            // The line is on the side of the new pane that meets the old one.
+            // The overlay's coordinates are AppKit's: up is a larger y.
+            switch edge {
+            case .right:
+                overlay.zoneLabel = draggingFile ? "Open to the Right" : "Split Right"
+                overlay.zoneEdge = .minX
+            case .left:
+                overlay.zoneLabel = draggingFile ? "Open to the Left" : "Split Left"
+                overlay.zoneEdge = .maxX
+            case .down:
+                overlay.zoneLabel = draggingFile ? "Open Below" : "Split Down"
+                overlay.zoneEdge = .maxY
+            case .up:
+                overlay.zoneLabel = draggingFile ? "Open Above" : "Split Up"
                 overlay.zoneEdge = .minY
             }
         case .swap(let leading, let area):
@@ -641,7 +676,7 @@ final class TabDragController {
 
     /// The place in a tab row a drop at `point` would take, if it's over one.
     private func stripLanding(tab: SideTab, point: NSPoint) -> Target? {
-        for entry in strips {
+        for entry in strips + paneStrips() {
             guard let strip = entry.strip, strip.window != nil, tab.fits(entry.region) else { continue }
             if strip.isHiddenOrHasHiddenAncestor {
                 guard let slot = entry.whenHidden(),
@@ -676,6 +711,11 @@ final class TabDragController {
         if tab.fits(.bottom), let bottom = bottomArea(), bottom.contains(point) {
             return .zone(.bottom, area: bottom)
         }
+        // Once the main area is split, a pane's edges split that pane and
+        // its middle takes the tab: the area's own edges no longer stand for
+        // the column and the strip, which have their rows and their pages to
+        // drop on while they show.
+        if isSplit(), let hit = paneDrop(point) { return paneLanding(hit, tab: tab) }
         if tab.fits(.bottom), bottomArea() == nil, let area = terminalArea() {
             let zone = NSRect(x: area.minX, y: area.minY, width: area.width, height: area.height / 4)
             if zone.contains(point) {
@@ -701,18 +741,34 @@ final class TabDragController {
         let rightEdge = NSRect(x: area.maxX - edge, y: area.minY, width: edge, height: area.height)
         let leftPane = NSRect(x: area.minX, y: area.minY, width: width, height: area.height)
         let rightPane = NSRect(x: area.maxX - width, y: area.minY, width: width, height: area.height)
+        // An edge whose fixed pane is already showing (the column on that
+        // side, the strip underneath) and the top edge, which has none,
+        // split the main area instead: `paneLanding`.
         if leftEdge.contains(point) {
-            return leading ? (column == nil ? .zone(.side, area: leftPane) : nil)
-                           : .swap(leading: true, area: leftPane)
+            if !leading { return .swap(leading: true, area: leftPane) }
+            if column == nil { return .zone(.side, area: leftPane) }
+        } else if rightEdge.contains(point) {
+            if leading { return .swap(leading: false, area: rightPane) }
+            if column == nil { return .zone(.side, area: rightPane) }
         }
-        if rightEdge.contains(point) {
-            return leading ? .swap(leading: false, area: rightPane)
-                           : (column == nil ? .zone(.side, area: rightPane) : nil)
-        }
+        if let hit = paneDrop(point) { return paneLanding(hit, tab: tab) }
         if area.contains(point), tab.fits(.main) {
             return .zone(.main, area: area)
         }
         return nil
+    }
+
+    /// A drop on a pane of the main area: on an edge, a new pane there; in
+    /// the middle, into the pane.
+    private func paneLanding(_ hit: (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?),
+                             tab: SideTab) -> Target? {
+        guard tab.fits(hit.region) || (hit.edge != nil && tab != .session) else { return nil }
+        if let edge = hit.edge, let half = hit.half {
+            // A pane split from its own only tab would be the same pane.
+            if regionOf(tab) == hit.region, tabCount(hit.region) <= 1 { return nil }
+            return .split(hit.region, edge, area: half)
+        }
+        return .zone(hit.region, area: hit.frame)
     }
 
     /// Outside the window, a file tab becomes a window of its own: the
@@ -778,7 +834,7 @@ private final class TabDragOverlay: NSView {
     var marker: NSRect?
     var zone: NSRect?
     var zoneLabel = ""
-    var zoneEdge: NSRectEdge = .maxY
+    var zoneEdge: NSRectEdge? = .maxY
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -818,6 +874,7 @@ private final class TabDragOverlay: NSView {
             case .maxY: NSRect(x: zone.minX, y: zone.maxY - 1, width: zone.width, height: 1).fill()
             case .maxX: NSRect(x: zone.maxX - 1, y: zone.minY, width: 1, height: zone.height).fill()
             case .minX: NSRect(x: zone.minX, y: zone.minY, width: 1, height: zone.height).fill()
+            case .minY: NSRect(x: zone.minX, y: zone.minY, width: zone.width, height: 1).fill()
             default: break
             }
             let attributes: [NSAttributedString.Key: Any] = [

@@ -194,7 +194,15 @@ final class TerminalHostViewController: NSViewController {
     /// terminal that draws but does not take a keystroke.
     override func viewDidAppear() {
         super.viewDidAppear()
-        if let currentView = ownCurrentView { focusTerminal(currentView) }
+        // Only when nobody has the keyboard, which is how a window starts.
+        // This also runs when the terminal's area comes back from being
+        // hidden (a split of the main area was zoomed, and then all of them
+        // shown again), and the keyboard is then in the split you were in:
+        // taking it from there put you in a terminal you hadn't gone to.
+        let window = view.window
+        if let currentView = ownCurrentView, window?.firstResponder == nil || window?.firstResponder === window {
+            focusTerminal(currentView)
+        }
         SurfaceView.settleSoon("the window appeared")
     }
 

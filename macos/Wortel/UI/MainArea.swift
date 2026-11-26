@@ -2,13 +2,20 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// The main area: the session's own terminal, and in front of it whatever
-/// else its tab row has brought forward, a pane or another terminal.
+/// The main area: the session's own terminal, in front of it whatever else
+/// its tab row has brought forward, and beside it the panes that were split
+/// off it.
 ///
 /// The session's terminal is never taken out: it stays mounted underneath, the
 /// way TerminalHostViewController keeps every session's, and the tab in front
 /// is laid over it. Switching back to the session's tab is removing a cover, so
 /// it's as instant as switching sessions.
+///
+/// Unsplit, this is one pane filling the area with its row in the titlebar,
+/// exactly as it was before there were splits. Split, the area is a
+/// `SplitTreeView`: the main row's pane is one leaf of it and gets a row of
+/// its own (`mainBar`, the titlebar then shows the session's name), and every
+/// other leaf is a `SplitPaneController`.
 @MainActor
 final class MainAreaController: NSViewController {
     private let terminal: NSViewController
@@ -18,6 +25,20 @@ final class MainAreaController: NSViewController {
     private let manager: SessionManager
     private let home: SessionWindow
     private let git: GitPanelModel
+    private let files: FileTreeModel
+    private let previewTabs: PreviewTabs
+
+    private let tree = SplitTreeView()
+    /// The main row's leaf: its own row on top while the area is split, and
+    /// under it the terminal and what covers it.
+    private let mainLeaf = NSView()
+    let mainBar = PaneBar(region: .main)
+    private var mainBarHeight: NSLayoutConstraint!
+    private var panes: [UUID: SplitPaneController] = [:]
+
+    /// The rows of the panes changed (one was made or let go of): the tab
+    /// drag reads them again.
+    var onRowsChanged: () -> Void = {}
 
     init(terminal: NSViewController, runtime: GhosttyRuntime, manager: SessionManager, home: SessionWindow,
          git: GitPanelModel, files: FileTreeModel, previewTabs: PreviewTabs) {
@@ -26,6 +47,8 @@ final class MainAreaController: NSViewController {
         self.manager = manager
         self.home = home
         self.git = git
+        self.files = files
+        self.previewTabs = previewTabs
         paneHost = NSHostingController(rootView: MainAreaPane(git: git, files: files,
                                                               previewTabs: previewTabs))
         super.init(nibName: nil, bundle: nil)
@@ -33,20 +56,34 @@ final class MainAreaController: NSViewController {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
-        let root = NSView()
+        mainBar.translatesAutoresizingMaskIntoConstraints = false
+        mainBar.isHidden = true
+        mainLeaf.addSubview(mainBar)
+        mainBarHeight = mainBar.heightAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            mainBar.topAnchor.constraint(equalTo: mainLeaf.topAnchor),
+            mainBar.leadingAnchor.constraint(equalTo: mainLeaf.leadingAnchor),
+            mainBar.trailingAnchor.constraint(equalTo: mainLeaf.trailingAnchor),
+            mainBarHeight,
+        ])
         for child in [terminal, paneHost, tabHost] as [NSViewController] {
             addChild(child)
             let view = child.view
             view.translatesAutoresizingMaskIntoConstraints = false
-            root.addSubview(view)
+            mainLeaf.addSubview(view)
             NSLayoutConstraint.activate([
-                view.topAnchor.constraint(equalTo: root.topAnchor),
-                view.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-                view.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-                view.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+                view.topAnchor.constraint(equalTo: mainBar.bottomAnchor),
+                view.leadingAnchor.constraint(equalTo: mainLeaf.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: mainLeaf.trailingAnchor),
+                view.bottomAnchor.constraint(equalTo: mainLeaf.bottomAnchor),
             ])
         }
-        view = root
+        mainBar.wire(to: git, home: home, region: .main)
+        tree.setLeaves([.main: mainLeaf])
+        tree.onLayoutChanged = { [weak self] layout in self?.git.setSplitLayout(layout) }
+        tree.onDividerReleased = { [weak self] in self?.git.commitSplitLayout() }
+        tree.onDividerDoubleClicked = { [weak self] in self?.git.equalizeSplits() }
+        view = tree
         observe()
     }
 
@@ -58,26 +95,164 @@ final class MainAreaController: NSViewController {
         }
     }
 
-    private func sync() {
+    /// The area as the selected session has it, applied and laid out now
+    /// rather than a turn later by the observers: a session switch shows the
+    /// terminal only once it has the size it will keep
+    /// (`MainSplitViewController.show`).
+    func applyNow() {
+        sync()
+        panes.values.forEach { $0.applyNow() }
+        tree.layoutSubtreeIfNeeded()
+    }
+
+    // MARK: Panes
+
+    private func syncPanes() {
         let session = home.selected
-        // TODO(splits): this is the main row only. The main area becomes the
-        // tree in `git.splitLayout`: one of these per leaf (`git.paneTabs`,
-        // `git.focusRequest(in:)`), dividers between them
-        // (`git.moveSplitDivider`, `commitSplitLayout`), and only
-        // `git.zoomedRegion` shown while there is one.
+        let layout = git.splitLayout
+        let split = layout.isSplit
+        // The main row's own row, only while there is another pane to tell it
+        // from. One layout change for both: the row and the frames.
+        if mainBar.isHidden == split {
+            mainBar.isHidden = !split
+            mainBarHeight.constant = split ? PaneBar.height : 0
+        }
+        if split {
+            mainBar.strip.update(items: git.mainTabs.map { TitleBarController.stripItem(for: $0, in: session) },
+                                 active: git.activeMainTab ?? .session)
+        }
+        mainBar.unzoom.isHidden = git.zoomedRegion != .main
+
+        var views: [SplitLayout.Leaf: NSView] = [.main: mainLeaf]
+        var made = false
+        for case .pane(let id) in layout.leaves {
+            if panes[id] == nil {
+                let pane = SplitPaneController(id: id, runtime: runtime, home: home, git: git,
+                                               files: files, previewTabs: previewTabs)
+                addChild(pane)
+                panes[id] = pane
+                made = true
+            }
+            views[.pane(id)] = panes[id]?.view
+        }
+        tree.setLeaves(views)
+        tree.apply(layout: layout, zoomed: git.zoomedRegion?.leaf)
+        // A pane no session has any more is let go of. One that another
+        // session of this window has stays, hidden: see `SplitPaneController`.
+        let dead = panes.keys.filter { id in !manager.sessions.contains { $0.paneTabs[id] != nil } }
+        for id in dead {
+            guard let pane = panes.removeValue(forKey: id) else { continue }
+            tree.discard(pane.view)
+            pane.removeFromParent()
+        }
+        if made || !dead.isEmpty { onRowsChanged() }
+    }
+
+    /// Every row in the area that takes a dropped tab, for the tab drag: the
+    /// main row's own (while split) and each pane's on screen.
+    var rows: [(strip: SideTabStrip, region: TabRegion)] {
+        var rows: [(SideTabStrip, TabRegion)] = []
+        if !mainBar.isHidden { rows.append((mainBar.strip, .main)) }
+        for case .pane(let id) in git.splitLayout.leaves {
+            if let pane = panes[id] { rows.append((pane.bar.strip, .pane(id))) }
+        }
+        return rows
+    }
+
+    /// Every row that can start a tab drag, whether or not it is on screen.
+    var allStrips: [SideTabStrip] { [mainBar.strip] + panes.values.map(\.bar.strip) }
+
+    /// The panes on screen, each with its frame in window coordinates.
+    var paneFrames: [(region: TabRegion, frame: NSRect)] {
+        guard view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return [] }
+        return tree.visibleLeaves.map { (TabRegion($0.leaf), tree.convert($0.frame, to: nil)) }
+    }
+
+    /// The pane under a point in window coordinates, and what a tab let go
+    /// there asks for: a split on one of its edges (with the half of the pane
+    /// the new one would take, in window coordinates), or nil for the pane
+    /// itself.
+    func paneDrop(at point: NSPoint) -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? {
+        guard view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return nil }
+        let local = tree.convert(point, from: nil)
+        guard let hit = tree.visibleLeaves.first(where: { $0.frame.contains(local) }) else { return nil }
+        let edge = SplitLayout.dropEdge(at: local, in: hit.frame)
+        let half = edge.map { tree.convert(SplitLayout.half(of: hit.frame, on: $0), to: nil) }
+        return (TabRegion(hit.leaf), tree.convert(hit.frame, to: nil), edge, half)
+    }
+
+    /// The pane you reach from `region` by going toward `edge`, if the area
+    /// has one there.
+    func neighbour(of region: TabRegion, toward edge: SplitLayout.Edge) -> TabRegion? {
+        guard let leaf = region.leaf, git.zoomedRegion == nil else { return nil }
+        return git.splitLayout.neighbour(of: leaf, toward: edge, in: tree.bounds, metrics: tree.metrics)
+            .map(TabRegion.init)
+    }
+
+    /// The first pane along the area's `edge`: where the keyboard, or a tab,
+    /// lands coming in from the column or the strip.
+    func edgeSplit(on edge: SplitLayout.Edge) -> TabRegion? {
+        let leaves = tree.visibleLeaves
+        let bounds = tree.bounds
+        let onEdge = leaves.filter { leaf in
+            switch edge {
+            case .left: return leaf.frame.minX <= bounds.minX + 1
+            case .right: return leaf.frame.maxX >= bounds.maxX - 1
+            case .up: return leaf.frame.minY <= bounds.minY + 1
+            case .down: return leaf.frame.maxY >= bounds.maxY - 1
+            }
+        }
+        return onEdge.first.map { TabRegion($0.leaf) }
+    }
+
+    /// Whether `region` is big enough on screen to be split in two on
+    /// `edge`, each half keeping the least a pane is laid out at. Out of
+    /// sight (zoomed away), there is nothing to measure and it may.
+    func hasRoom(toSplit region: TabRegion, on edge: SplitLayout.Edge) -> Bool {
+        guard let leaf = region.leaf, let frame = tree.frame(of: leaf) else { return true }
+        let minimum = tree.metrics.minimum
+        return edge.axis == .row ? frame.width >= minimum.width * 2 + tree.metrics.gap
+                                 : frame.height >= minimum.height * 2 + tree.metrics.gap
+    }
+
+    /// The view of a pane, for the edge flash and for telling which pane a
+    /// click was in.
+    func view(of region: TabRegion) -> NSView? {
+        switch region {
+        case .main: return mainLeaf
+        case .pane(let id): return panes[id]?.view
+        default: return nil
+        }
+    }
+
+    /// Which pane a view is in, if it is in one.
+    func region(containing descendant: NSView) -> TabRegion? {
+        if descendant.isDescendant(of: mainLeaf) { return .main }
+        for (id, pane) in panes where descendant.isDescendant(of: pane.view) { return .pane(id) }
+        return nil
+    }
+
+    // MARK: The main row
+
+    private func sync() {
+        syncPanes()
+        let session = home.selected
+        // Zoomed on another pane, the main row is out of sight: nothing of
+        // it shows, and its terminal is treated as covered.
+        let showing = git.isShowing(.main)
         let active = git.activeMainTab
         // A pane, a file, a web page: anything that isn't a terminal is drawn
         // by the SwiftUI cover.
-        let showsPane = active?.isPage ?? false
+        let showsPane = showing && (active?.isPage ?? false)
         paneHost.view.isHidden = !showsPane
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
-        let surface = git.session === session
+        let surface = showing && git.session === session
             ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
         tabHost.show(surface, focusRequest: git.mainFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
         // Out of the way of clicks when it has nothing to show.
         tabHost.view.isHidden = surface == nil
         // Nor does its cursor show through what covers it.
-        session?.surfaceView?.isCovered = active != nil
+        session?.surfaceView?.isCovered = active != nil || !showing
         // After this turn: a session switch focuses the session's terminal in
         // the same update, and the check has to come after that.
         DispatchQueue.main.async { [weak self] in self?.keepKeyboardOffCoveredTerminal() }
@@ -87,11 +262,14 @@ final class MainAreaController: NSViewController {
     /// into a terminal you can't see is the one thing a cover must not allow.
     /// Checked after every change here and when the window becomes key, since
     /// the session's terminal takes the keyboard at launch and on a switch.
+    /// Out of sight behind a zoomed pane is covered too, and the keyboard
+    /// goes to that pane.
     private func keepKeyboardOffCoveredTerminal() {
-        guard git.activeMainTab != nil, let window = view.window,
+        let hidden = !git.isShowing(.main)
+        guard git.activeMainTab != nil || hidden, let window = view.window,
               let main = home.selected?.surfaceView, window.firstResponder === main else { return }
         window.makeFirstResponder(nil)
-        git.focusFront(of: .main)
+        git.focusFront(of: hidden ? (git.zoomedRegion ?? .main) : .main)
     }
 
     override func viewDidAppear() {

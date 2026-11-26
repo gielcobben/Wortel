@@ -125,7 +125,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         #if DEBUG
         // The first window's panel: the probe measures the session in front
         // of a one-window copy.
-        if DataDirectory.custom != nil { SwitchProbe.install(manager: manager, git: first.gitPanel) }
+        if DataDirectory.custom != nil {
+            SwitchProbe.install(manager: manager, git: first.gitPanel)
+            SplitProbe.install(manager: manager, controller: first)
+        }
         #endif
         // Where it was, before anything is shown in it: a terminal laid out
         // at a size the window is about to leave is a resize its program
@@ -1938,36 +1941,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Sideways crosses between the main area and the column, whichever side
     /// the column is on; down puts a terminal in the strip, up brings it back
     /// to the main area. The session's own terminal moving sideways swaps sides.
-    private func moveFocusedTab(_ direction: NSRectEdge) {
+    private func moveFocusedTab(_ direction: SplitLayout.Edge) {
         let from = focusedRegion()
         guard let tab = gitPanel.activeTab(in: from) else { return }
-        let columnOnLeft = gitPanel.columnLeading
-        var target: TabRegion?
-        switch (from, direction) {
-        case (.main, .minX): target = columnOnLeft ? .side : nil
-        case (.main, .maxX): target = columnOnLeft ? nil : .side
-        case (.side, .minX): target = columnOnLeft ? nil : .main
-        case (.side, .maxX): target = columnOnLeft ? .main : nil
-        case (.main, .minY), (.side, .minY): target = .bottom
-        case (.bottom, .maxY): target = .main
-        // TODO(splits): from a pane, Move Tab Left/Right/Up/Down should go
-        // to the neighbouring part of the main area (`SplitLayout.neighbour`,
-        // which needs the main area's bounds), and from the main row into a
-        // pane beside it. Until then a pane's tab stays where it is.
-        default: target = nil
-        }
+        // Down from the column is the strip, as it was before the main area
+        // could be split; every other move goes to what is there.
+        let target = from == .side && direction == .down ? .bottom
+            : neighbouringArea(of: from, toward: direction, showingOnly: false)
         guard let target else { return }
         if tab == .session {
-            if target == .side { gitPanel.setColumnLeading(!columnOnLeft) }
+            // The session's terminal stays in the main row: sent toward the
+            // column, it trades sides with it.
+            if target == .side { gitPanel.setColumnLeading(!gitPanel.columnLeading) }
             return
         }
         gitPanel.move(tab, to: target, at: .max)
     }
 
-    @objc func moveTabLeft(_ sender: Any?) { moveFocusedTab(.minX) }
-    @objc func moveTabRight(_ sender: Any?) { moveFocusedTab(.maxX) }
-    @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.minY) }
-    @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.maxY) }
+    /// The area beside `region` on `edge`'s side, as the window is laid out:
+    /// the next split of the main area, and past the main area's own edge the
+    /// column on its side and the strip underneath. From the column or the
+    /// strip, the split of the main area nearest to it. `showingOnly` leaves
+    /// out a column or a strip that is hidden; a tab moved toward one opens
+    /// it, as it always has.
+    private func neighbouringArea(of region: TabRegion, toward edge: SplitLayout.Edge,
+                                  showingOnly: Bool) -> TabRegion? {
+        let main = splitController?.mainArea
+        let columnEdge: SplitLayout.Edge = gitPanel.columnLeading ? .left : .right
+        let hasColumn = !showingOnly || gitPanel.isVisible
+        let hasStrip = !showingOnly || gitPanel.bottomVisible
+        switch region {
+        case .main, .pane:
+            if let split = main?.neighbour(of: region, toward: edge) { return split }
+            if edge == columnEdge { return hasColumn ? .side : nil }
+            if edge == .down { return hasStrip ? .bottom : nil }
+            return nil
+        case .side:
+            // Back toward the main area: the side of it the column is on.
+            guard edge.axis == .row, edge != columnEdge else { return nil }
+            return main?.edgeSplit(on: columnEdge) ?? .main
+        case .bottom:
+            if edge == .up { return main?.edgeSplit(on: .down) ?? .main }
+            if edge == columnEdge { return hasColumn ? .side : nil }
+            return nil
+        }
+    }
+
+    // MARK: - Splits of the main area
+
+    /// ⌘D and ⇧⌘D: a new terminal in a split of its own, beside or under the
+    /// one you're in. From the column or the strip, beside the main row.
+    @objc func splitRight(_ sender: Any?) { split(.right) }
+    @objc func splitDown(_ sender: Any?) { split(.down) }
+
+    private func split(_ edge: SplitLayout.Edge) {
+        focusMainWindow()
+        guard manager.selected != nil else { return }
+        let from = focusedRegion()
+        // Not when there's no room for two: a split that opens too small to
+        // use is worse than none (and the terminal in it starts a few
+        // columns wide).
+        guard splitController?.mainArea?.hasRoom(toSplit: from.isSplitLeaf ? from : .main, on: edge) != false else {
+            NSSound.beep()
+            return
+        }
+        gitPanel.split(on: edge)
+    }
+
+    @objc func zoomSplit(_ sender: Any?) { gitPanel.toggleZoom() }
+    @objc func equalizeSplits(_ sender: Any?) { gitPanel.equalizeSplits() }
+
+    @objc func focusSplitLeft(_ sender: Any?) { focusArea(toward: .left) }
+    @objc func focusSplitRight(_ sender: Any?) { focusArea(toward: .right) }
+    @objc func focusSplitUp(_ sender: Any?) { focusArea(toward: .up) }
+    @objc func focusSplitDown(_ sender: Any?) { focusArea(toward: .down) }
+
+    private func focusArea(toward edge: SplitLayout.Edge) {
+        guard let target = neighbouringArea(of: focusedRegion(), toward: edge, showingOnly: true) else { return }
+        gitPanel.focus(target)
+    }
+
+    @objc func moveTabLeft(_ sender: Any?) { moveFocusedTab(.left) }
+    @objc func moveTabRight(_ sender: Any?) { moveFocusedTab(.right) }
+    @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.down) }
+    @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.up) }
 
     /// Let a file's document go, unless another session still has it open:
     /// documents are one per file for the whole app, tabs are per session.
@@ -2470,6 +2527,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(focusNextArea(_:))
             || menuItem.action == #selector(focusPreviousArea(_:)) {
             return visibleRegions.count > 1 || keyboardBrowserPage != nil
+        }
+        if menuItem.action == #selector(splitRight(_:)) || menuItem.action == #selector(splitDown(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(zoomSplit(_:)) {
+            menuItem.title = gitPanel.zoomedRegion == nil ? "Zoom Split" : "Show All Splits"
+            return gitPanel.splitLayout.isSplit
+        }
+        if menuItem.action == #selector(equalizeSplits(_:)) {
+            return gitPanel.splitLayout.isSplit && !gitPanel.splitLayout.isEqualized
+        }
+        if menuItem.action == #selector(focusSplitLeft(_:)) || menuItem.action == #selector(focusSplitRight(_:))
+            || menuItem.action == #selector(focusSplitUp(_:)) || menuItem.action == #selector(focusSplitDown(_:)) {
+            return visibleRegions.count > 1
         }
 
         if menuItem.action == #selector(mergeAllWindows(_:)) {

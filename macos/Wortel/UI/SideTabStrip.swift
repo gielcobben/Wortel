@@ -39,6 +39,13 @@ final class SideTabStrip: NSView {
     var onClose: (SideTab) -> Void = { _ in }
     var onCloseOthers: (SideTab) -> Void = { _ in }
     var onMove: (SideTab, TabRegion) -> Void = { _, _ in }
+    /// Split Right or Split Down from a tab's menu: the tab into a pane of
+    /// its own, on that edge of the pane it is in.
+    var onSplit: (SideTab, SplitLayout.Edge) -> Void = { _, _ in }
+    /// Whether the row sits on a page (the strip's, a pane's) rather than in
+    /// the titlebar band: the tab in front is raised with the page's own
+    /// colour there.
+    var isOnPage = false
     /// A tab double-clicked: the preview tab, kept.
     var onKeep: (SideTab) -> Void = { _ in }
     /// A tab is being dragged; `point` is in window coordinates. The drag is
@@ -177,6 +184,8 @@ final class SideTabStrip: NSView {
         view.onClose = { [weak self] in self?.onClose(item.tab) }
         view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
         view.onMove = { [weak self] region in self?.onMove(item.tab, region) }
+        view.onSplit = { [weak self] edge in self?.onSplit(item.tab, edge) }
+        view.isOnPage = { [weak self] in self?.isOnPage ?? false }
         view.onKeep = { [weak self] in self?.onKeep(item.tab) }
         view.onDrag = { [weak self, weak view] phase, point in
             guard let self, let view else { return }
@@ -407,6 +416,8 @@ private final class SideTabView: NSControl, TabTitleProviding {
     var onClose: () -> Void = {}
     var onCloseOthers: () -> Void = {}
     var onMove: (TabRegion) -> Void = { _ in }
+    var onSplit: (SplitLayout.Edge) -> Void = { _ in }
+    var isOnPage: () -> Bool = { false }
     var onKeep: () -> Void = {}
     var onDrag: (SideTabStrip.DragPhase, NSPoint) -> Void = { _, _ in }
     var stripRegion: () -> TabRegion = { .side }
@@ -547,7 +558,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
                 // The strip's row is on the page; the main area's and the
                 // column's are on the titlebar band, which is the window's
                 // vibrancy.
-                let fill = stripRegion() == .bottom ? Chrome.raised : Chrome.raisedOnBand
+                let fill = stripRegion() == .bottom || isOnPage() ? Chrome.raised : Chrome.raisedOnBand
                 layer.backgroundColor = fill.cgColor
                 layer.borderWidth = 0.5
                 layer.borderColor = Chrome.hairlineStrong.cgColor
@@ -645,10 +656,15 @@ private final class SideTabView: NSControl, TabTitleProviding {
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem(title: "Close Tab") { [weak self] in self?.onClose() })
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })
-        // Every other area this tab may go to.
-        // TODO(splits): Split Right/Down with this tab (`GitPanelModel.split`),
-        // and Move to a pane that is there. In a pane's own row `stripRegion()`
-        // is that pane, so all three of these are offered, which is right.
+        // Into a pane of its own, beside the one it is in. Other panes are
+        // reached by dragging: a menu would have to name them.
+        menu.addItem(.separator())
+        let right = ClosureMenuItem(title: "Split Right") { [weak self] in self?.onSplit(.right) }
+        menu.addItem(right)
+        let down = ClosureMenuItem(title: "Split Down") { [weak self] in self?.onSplit(.down) }
+        menu.addItem(down)
+        // Every other area this tab may go to. In a pane's own row
+        // `stripRegion()` is that pane, so all three are offered.
         let destinations: [(TabRegion, String)] = [
             (.main, "Move to Main Area"), (.side, "Move to Side Column"), (.bottom, "Move to Bottom Strip"),
         ].filter { $0.0 != stripRegion() && tab.fits($0.0) }

@@ -216,6 +216,19 @@ final class LinesMarkupSurface: MarkupSurface {
 
     func forget(_ number: Int) { ties[number] = nil }
 
+    /// A third of the way down the view, where the eye lands, as a line
+    /// asked for by its number is shown. Not when it is already in view.
+    func reveal(_ number: Int) {
+        guard let tie = ties[number], !tie.lost, let table, let scroll, tie.row < table.numberOfRows else { return }
+        let row = table.rect(ofRow: tie.row), visible = scroll.documentVisibleRect
+        guard !visible.contains(row) else { return }
+        let clip = scroll.contentView
+        let top = max(row.minY - visible.height / 3, 0)
+        clip.scroll(to: clip.constrainBoundsRect(NSRect(x: visible.minX, y: top, width: visible.width,
+                                                        height: visible.height)).origin)
+        scroll.reflectScrolledClipView(clip)
+    }
+
     /// A table's marks move in the frame its rows do. Nothing is ever owed.
     func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool { false }
 

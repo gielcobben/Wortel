@@ -92,6 +92,8 @@ final class ImageMarkupSurface: MarkupSurface {
     }
 
     func forget(_ number: Int) { tied.remove(number) }
+    /// A picture is fitted to its view: all of it is always in view.
+    func reveal(_ number: Int) {}
     func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool { false }
 
     // MARK: - Pictures

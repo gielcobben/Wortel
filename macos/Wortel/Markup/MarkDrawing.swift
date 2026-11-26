@@ -14,7 +14,9 @@ enum MarkDrawing {
     static let outline: CGFloat = 2
     static let outlineRadius: CGFloat = 4
     /// The badge with the mark's number.
-    static let badge: CGFloat = 16
+    /// 20, up from 16: at 16 the number was too small to read at a glance
+    /// across a page, which is the one thing a badge is for.
+    static let badge: CGFloat = 20
 
     static func color(_ colour: MarkColour) -> NSColor {
         switch colour {

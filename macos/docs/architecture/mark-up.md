@@ -246,6 +246,37 @@ set on the layer back to none, which is why the first bar had no shadow at
 all. It floats 16pt from the preview's edges (12 in a column under 420pt),
 640pt wide at most.
 
+**The words are read against a ground, not against the glass.** Inside the
+glass's content view, under everything, is a fill of the page's raised
+colour at 86%. Glass alone lets a page's text through as a smear behind the
+note's own: seen by the owner over a README, and again in a capture with a
+paragraph under the bar. Clear glass and glass tinted toward the same
+colour were both tried and both unreadable. The glass still gives the edge
+and the shadow.
+
+**Over rendered Markdown the bar is the reading column**: the same left
+and right edges as the text it is about, at whatever size the text is
+(`MarkupSurface.readingColumn`, which only the Markdown adapter answers,
+from any built block's frame). Elsewhere it is centred, 640pt at most.
+
+**A chip can be clicked.** It is selected as one character is (⌫ removes
+it, typing replaces it), and its mark is brought into view if it is not
+(`MarkupSurface.reveal`): a page eases its element to the middle, a table
+puts the row a third of the way down, and Markdown asks the document's own
+scroll reader for the block, which is the only thing that can scroll to a
+block not yet built (`MarkupViews.revealBlock`). A new mark's chip goes in
+after what is selected, never in place of it: a drawing is not typing, and
+with a chip selected it would otherwise delete the mark that chip stood
+for (found by the first trial of the click, 2026-11-25).
+
+A chip has 3pt of clear room either side, as part of itself, so two chips
+or a chip and a word do not touch. The text is lifted to the middle of its
+line: a line is 22pt to hold a chip, the caret is as tall as the line, and
+with the text at the line's foot the caret stood well above it.
+`NoteTextView` also draws the caret itself at the text's height, which a
+text view honours when a subclass draws it; whether macOS 27's own caret
+view does was not seen, since a caret shows only in a key window.
+
 A trash button clears the whole note while there is one and the row has
 room for it; it is an edit of the text like any other, so ⌘Z brings it all
 back. A press on the bar beside the text puts the keyboard in the note.

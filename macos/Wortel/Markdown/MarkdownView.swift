@@ -110,6 +110,14 @@ struct MarkdownView: View {
                     show(reveal, with: proxy)
                 }
                 .onChange(of: reveal) { _, request in show(request, with: proxy) }
+                // Mark-up asks for a block by its id when a mark's chip is
+                // clicked. Only this reader can scroll to a block that is
+                // not built yet.
+                .onChange(of: reportsFrames, initial: true) { _, _ in
+                    markup?.revealBlock = { id in
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
+                    }
+                }
         }
     }
 

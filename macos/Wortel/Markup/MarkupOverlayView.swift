@@ -90,6 +90,7 @@ final class MarkupOverlayView: NSView {
         strokeLayer.lineJoin = .round
         noteBar.onHeightChange = { [weak self] in self?.needsLayout = true }
         noteBar.onHoverMark = { [weak self] in self?.pointOut($0) }
+        noteBar.onPickMark = { [weak self] in self?.surface.reveal($0) }
         addSubview(noteBar)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -193,10 +194,18 @@ final class MarkupOverlayView: NSView {
         marksLayer.frame = bounds
         // Closer to the edges where there is little width to give away.
         let margin = bounds.width < 420 ? 12 : MarkupNoteBar.margin
-        let width = max(min(bounds.width - margin * 2, MarkupNoteBar.widest), 120)
+        var width = max(min(bounds.width - margin * 2, MarkupNoteBar.widest), 120)
+        var x = ((bounds.width - width) / 2).rounded()
+        // Where the preview is read in a column of its own (rendered
+        // Markdown), the bar is that column: the same edges as the text it
+        // is about, at whatever size the text is.
+        column = surface.readingColumn
+        if let column, column.width >= 200, column.minX >= margin, column.maxX <= bounds.width - margin {
+            x = column.minX.rounded()
+            width = column.width.rounded()
+        }
         let height = noteBar.height(forWidth: width)
-        noteBar.frame = NSRect(x: ((bounds.width - width) / 2).rounded(), y: bounds.height - margin - height,
-                               width: width, height: height)
+        noteBar.frame = NSRect(x: x, y: bounds.height - margin - height, width: width, height: height)
         window?.invalidateCursorRects(for: self)
         place()
     }
@@ -254,7 +263,13 @@ final class MarkupOverlayView: NSView {
         CATransaction.commit()
     }
 
+    /// The reading column the bar was last laid out to.
+    private var column: CGRect?
+
     private func moved() {
+        // The column is known once the document has said where its blocks
+        // are, a moment after the layer appears, and moves with ⌘+.
+        if surface.readingColumn != column { needsLayout = true }
         awaiting = false
         behind?.cancel()
         behind = nil

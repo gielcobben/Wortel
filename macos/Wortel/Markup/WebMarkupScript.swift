@@ -360,6 +360,16 @@ enum WebMarkupScript {
                          elements: inside(el, l, t, w, h)};
           return out;
         },
+        // Into the middle of the view, eased, and only when some of it is
+        // out of view: a mark already whole on screen should not move.
+        reveal: function (number) {
+          var mark = marks.get(number);
+          if (!mark || !mark.el.isConnected) { return 0; }
+          var r = rectOf(mark.el);
+          var inside = r[1] >= 0 && r[0] >= 0 && r[1] + r[3] <= window.innerHeight && r[0] + r[2] <= window.innerWidth;
+          if (!inside) { mark.el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'}); }
+          return 1;
+        },
         forget: function (number) {
           var mark = marks.get(number);
           if (mark && sizes && mark.el.isConnected) { sizes.unobserve(mark.el); }

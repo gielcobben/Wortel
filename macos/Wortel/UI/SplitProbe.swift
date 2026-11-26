@@ -129,13 +129,17 @@ enum SplitProbe {
                 entry["landed"] = landed
                 trail.append(entry)
                 continue
-            case "trace-blank", "trace-tab":
+            case "trace-blank", "trace-tab", "trace-close":
                 // A tab added to the row you're in, and the row's motion
                 // sampled through the animation: what moves that should not.
                 let region = git.lastRegion
                 let strip = controller.split.mainArea?.rows.first { $0.region == region }?.strip
                 var samples = ["before  " + (strip?.motionSample ?? "no row")]
-                if step == "trace-blank" { git.openBlank(in: region) } else { send(#selector(AppDelegate.newTerminalHere(_:))) }
+                switch step {
+                case "trace-blank": git.openBlank(in: region)
+                case "trace-close": send(#selector(AppDelegate.closeSession(_:)))
+                default: send(#selector(AppDelegate.newTerminalHere(_:)))
+                }
                 for index in 0..<14 {
                     await pause(0.02)
                     samples.append(String(format: "%3dms  ", (index + 1) * 20) + (strip?.motionSample ?? ""))

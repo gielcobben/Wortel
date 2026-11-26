@@ -26,8 +26,10 @@ not on your `PATH` in Terminal.app or iTerm, by design.
 
 ### `wortel open <path>`
 
-Opens a file as a tab in the side column, the same view a double-click in the Files
-pane gives you: source, diff, or rendered Markdown depending on the file.
+Opens a file as a tab, the same view a double-click in the Files pane gives
+you: source, diff, or rendered Markdown depending on the file. It opens beside
+the session's terminal tab, or wherever you last moved a file tab to in that
+session. (It was the side column until 2026-11-17.)
 
 ```sh
 wortel open README.md                  # relative to where you are
@@ -285,8 +287,8 @@ run in, and nothing else.
 
 ### `wortel split [right|down|left|up] [--session <s>] [-- <command>]`
 
-Opens a new terminal in a split of the session's main area, beside its main
-terminal: to the right unless you say `down`, `left` or `up`. It starts in the
+Opens a new terminal in a split beside the session's main terminal: to the
+right unless you say `down`, `left` or `up`. It starts in the
 session's folder, as a terminal you open beside it by hand does. With a
 command after `--`, that command is typed into the new shell and run, the way
 `wortel new -- <command>` does it, so the shell is still there when it exits.

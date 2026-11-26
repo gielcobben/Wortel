@@ -75,9 +75,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the main area, a side column, a bottom strip. Still no splits and no free
   grid. The terminal engine's own tab and split actions still return
   "unhandled" (`9c864df`, `50ec9ca`). "No splits" held until 2026-11-26,
-  when it was reversed on the branch `flexible-panes` (the first entry of
-  "Window, terminal and keys"). The three places and the engine's
-  "unhandled" stand.
+  when it was reversed on the branch `flexible-panes` (the first two entries
+  of "Window, terminal and keys"). "Three fixed places" held until the same
+  day: on that branch the side column and the strip are splits of one tree,
+  which open where they always did. The engine's "unhandled" stands.
 - **2026-08-08. "Deliberately no CLI" was reversed.** The `wortel` command
   exists so that Wortel never needs a per-agent integration (`76ea9f8`).
 - **2026-08-04. No invented benchmark numbers**, on the site or anywhere
@@ -115,10 +116,127 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 
 ## Window, terminal and keys
 
+- **2026-11-26. The side column and the strip are splits: one tree for
+  everything beside the sidebar.** On the branch `flexible-panes`, not merged
+  and not released, like the entry below, which it follows by a few hours.
+  The first version of splits divided the main area and left the side column
+  and the strip as panes of their own beside it. The owner tried it and
+  asked, the same day, for no difference between a split and the side
+  column: it should all be splits, with a default arrangement, and Wortel
+  should keep looking as it always has. The first version had made two kinds
+  of thing out of one: a column that could not be split or dropped on,
+  beside splits that could (`535ec74` the model, `02e39b6` the views,
+  `599ef1f` the probe). **Three choices, made by the owner when asked.** A
+  split along the top of the window has its tab row in the titlebar, as the
+  side column always did, and only a split lower down has a row of its own.
+  The strip becomes a split too. ⌥⌘B and ⌘J still hide and show theirs with
+  the tabs kept. **One tree.** The leaves of `SplitLayout` are the main row
+  (the one with the session's terminal), the side column (`.side`), the
+  strip (`.bottom`) and the splits somebody made (`.pane(id)`). The side
+  column is a leaf exactly while it has tabs, and so is the strip. The
+  window's own split view holds two panes now: the sidebar, and everything
+  else (`MainAreaController`, one `SplitTreeView`).
+  `TerminalWorkspaceController` is gone, and so is the column's pane with
+  its width capture, its collapsing and its resize priority. **One kind of
+  leaf on screen** (`SplitLeafView`): a row over a page. Along the top of
+  the window the row is a titlebar row: the titlebar's height, see-through
+  to the window, a hairline under it, its empty part moves the window, and
+  the leftmost one makes room for the sidebar's controls. Lower down it is
+  the strip's kind of row: 36pt on a faint band over the page, and a
+  double-click on its empty part zooms the split. So the terminal with
+  Changes beside it looks exactly as it did. This replaces "a row per
+  split, not more rows in the titlebar" in the entry below, where the
+  titlebar showed the session's name while split and every split had a 36pt
+  row under it. The reason given there, that a titlebar row lies over the
+  whole main area, went with the panes that made it true. **What is still
+  the side column's and the strip's, and why.** *Hidden with the tabs
+  kept.* ⌥⌘B and ⌘J put theirs away and bring it back as it was. That is
+  what those keys have always done, and a split made with ⌘D has no need of
+  it: it goes when its last tab closes. A hidden leaf stays in the tree
+  with its weight, takes no room and has no divider, and everything that
+  measures (frames, dividers, neighbours) is handed the set of hidden
+  leaves. *A place and a size to open at.* They are where things open
+  without anyone saying where (Changes, a browser, ⌘J's terminal). The side
+  column takes the outer edge of the whole area, the left one when the
+  session has it there (`sideColumnLeading`), and the strip goes directly
+  under the main row. They open at the size they always did: the session's
+  own column width or the last one chosen anywhere (440pt to start with),
+  at most half the area, and the strip's height (240pt to start with), at
+  most six tenths. The model knows shares, not points, so it puts the leaf
+  in at a guessed share marked `unsized`, and the window gives it the real
+  size the first time it lays it out (`MainAreaController.sizeNewLeaves`).
+  A divider's drag that changes either one is remembered for the next
+  session that opens one. *Their share when the others are made equal.*
+  ⌃⌘=, one more split among equals and a split closing all leave the two
+  what they had. Otherwise ⌃⌘= with one split beside Changes would hand
+  Changes a third of the window, and a second ⌘D would make a quarter where
+  it makes a third without the column. And ⇧⌥⌘B still moves the side column
+  to the other side, and the session's own tab dropped on it still trades
+  sides with it.
+  **Everything else is one rule for all.** Any split, those two included,
+  can be split (⌘D from Changes makes a split beside Changes), zoomed,
+  dropped on, reached by ⌃⌥⌘ with an arrow and by ⌘] and ⌘[ in reading
+  order, and resized by its divider. A tab let go on a split's edge makes a
+  split there, and on its middle moves in. The area's own edges no longer
+  stand for "open the column" and "open the strip": those drop zones and
+  their labels are gone, and every middle says "Move Here", or "Open Here"
+  for a file. ⌃⌘ with an arrow takes the tab in front to the neighbouring
+  split. With none there, toward the side column's edge or down still opens
+  the side column or the strip when it is hidden. **Sizes are shares
+  everywhere.** On a window resize Changes grows and shrinks with the
+  window, where it kept its width and the terminal took all of the change.
+  That gives up two rules that were never entries here and stood in
+  `macos/docs/architecture/git-panel.md` until today: "a window resize goes
+  to the main area", and its exception, that a browser in front of the
+  column took the resize instead. The cost: a diff that kept the width it
+  was given is now wider on a wide window and narrower on a small one, and
+  the terminal beside it gains fewer columns from a wider window. A divider stops at a
+  split's minimum (160 by 100 points), so dragging one to the edge no
+  longer closes the column or the strip. ⌥⌘B and ⌘J do that. **Dimming
+  goes by how many.** With more than two splits on screen the tab in front
+  of one you are not in has a quiet title, and so has the main row's title.
+  With one or two, as always, nothing is dimmed: the cursor says where you
+  are. **No animation yet.** ⌥⌘B and ⌘J cut where they used to slide. This
+  is a known gap, not a choice: the tree sets every frame in one pass and
+  nothing animates a leaf yet. The sidebar still slides. **Saved.**
+  `splitLayout` is written whenever the tree is more than the main row, so
+  a session with a column or a strip writes it now. `sideTabs`,
+  `bottomTabs`, `gitPanelVisible`, `bottomVisible`, `sideColumnLeading` and
+  `sideColumnWidth` are still written, so an older build shows the column
+  and the strip. The first version's build (`de5808e`) cannot read a tree
+  with a `side` or a `bottom` leaf and reads it as no split. The split
+  view's autosave name went from `main-split` to `window-split` (two panes
+  instead of three), and the sidebar's width is carried over once.
+  `macos/docs/architecture/workspace-tabs.md` has the rest. **Verified
+  (2026-11-26, macOS 27.0, throwaway copies):** WortelTests, 1928 tests, 0
+  failures. `macos/scripts/try-splits.sh`: the side column alone (its
+  picture is the window as it has always looked), hidden and shown (back at 440pt), the strip
+  likewise (240pt), splits of the main row, of the strip and of the side
+  column, a zoom, the keyboard by direction across all of them, a divider
+  drag, equalize, a window resize, a session switch and back, drops on an
+  edge and into the strip, the side column moved to the left with the
+  sidebar collapsed, and a relaunch: 0 faults.
+  `macos/scripts/try-switch.sh --side --widths`: 0 of 72 returns wrong. Its
+  probe reads the side column's leaf from the tree now. Before that it
+  looked for a pane that no longer exists and would have called every
+  return right. **Not checked:** `macos/scripts/check-terminals.sh` on this
+  build, a drag with a real pointer, several windows, and the look by eye
+  beyond the probe's pictures. **Read from the code, not measured:** a
+  session's terminal out of sight still follows a window resize by the
+  whole change (`SurfaceView.followWindow`, the 2026-11-20 entry below),
+  which was right while the panes beside it kept their width. With a side
+  column beside it the main row now takes only its share, so that terminal
+  is told a size it will not be shown at, and takes the real one when it is
+  shown. And `ResizeBench` (`bench-resize.sh --column`) still looks for the
+  column's divider in the window's split view, where the column no longer
+  is, so its divider round is skipped (`macos/docs/debugging.md`).
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
-  is the rule only where the branch is. The owner asked for a window layout
+  is the rule only where the branch is. It records the first version. The
+  same day the side column and the strip became splits too (the entry
+  above), and where the two differ that one is the rule: the places are
+  marked here. The owner asked for a window layout
   that is more flexible, "more like cmux: multiple columns and rows next to
   each other", in the app's own look. And ⌘D and ⇧⌘D were already standing
   in for every terminal's split right and split down, as a terminal in the
@@ -126,8 +244,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   terminal in a split of its own, beside or under the area you are in
   (`007dae4` the model, `00d9106` the views and the commands, `843cdd8`).
   It reverses "Still no splits and no free grid" in the 2026-09-29 entry of
-  "The product". **The rules.** A split is a part of the main area that was
-  split off, with a tab row of its own. It is made by ⌘D or ⇧⌘D, by Split
+  "The product". **The rules.** A split is a part of the window beside the
+  sidebar with a tab row of its own (in this first version: a part of the
+  main area that was split off). It is made by ⌘D or ⇧⌘D, by Split
   Right or Split Down in a tab's menu (that tab moves into it), in a row's
   "+" or the session's "…", or by letting go of a tab or a file on an edge.
   It is there only while it has tabs: closing its last one takes it away
@@ -137,34 +256,45 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   two. ⇧⌘↩ shows one split alone and then all of them again (not saved),
   ⌃⌘= makes them equal, ⌘] and ⌘[ walk them in reading order, and the
   session's own terminal never leaves the main row. Saved per session as
-  `splitLayout` and `paneTabs`, only while split.
+  `splitLayout`, whenever the tree is more than the main row, and
+  `paneTabs`, while there are splits somebody made.
   `macos/docs/architecture/workspace-tabs.md` has the rest. **The frame
-  stays, and only the main area splits.** Sidebar, main area, side column
-  and strip are what they were, and the column and the strip are beside the
-  tree, not in it. So an unsplit session looks and saves exactly as before,
-  and "every window is the same fixed frame of four places" (2026-11-19,
-  below) still holds. **The word is "split", not "pane".** A pane is already
+  stayed, and only the main area split: the first version only.** There
+  the side column and the strip were panes of their own beside the tree,
+  not in it, and "every window is the same fixed frame of four places"
+  (2026-11-19, below) held as written. They are leaves of the tree since
+  the entry above. What stands: a session with nothing split looks as it
+  did before splits. It no longer saves exactly as before, since a session
+  with a column or a strip writes `splitLayout` too. **The word is "split",
+  not "pane".** A pane is already
   Changes, History or Files (`docs/glossary.md`). The code says
   `TabRegion.pane` and `SplitLayout` for the same thing. **A row per split,
-  not more rows in the titlebar.** While the main area is split every split
-  has its own 36pt row on the strip's band, the main row's included, and the
-  titlebar shows the session's name. A titlebar row lies over the whole main
-  area, not over one split, and a split under another has no titlebar over
-  it at all. The row is the strip's because it is the same thing in another
-  place: a row of tabs that is not in the titlebar. The tab in front of a
-  split you are not in has a quiet title, so the row ⌘T, ⌘W and ⌘D act in
-  can be told from its neighbours. **Equal siblings stay equal.** A second
+  not more rows in the titlebar: replaced the same day.** In the first
+  version, while the main area was split, every split had its own 36pt row
+  on the strip's band, the main row's included, and the titlebar showed the
+  session's name. The reason was that a titlebar row lay over the whole
+  main area, not over one split, and a split under another had no titlebar
+  over it at all. Now a split along the top of the window has its row in
+  the titlebar and only one lower down has the strip's kind of row (the
+  entry above). What stands: a row lower down is the strip's because it is
+  the same thing in another place, a row of tabs that is not in the
+  titlebar. And the tab in front of a split you are not in has a quiet
+  title, so the row ⌘T, ⌘W and ⌘D act in can be told from its neighbours,
+  since the entry above only with more than two splits on screen. **Equal
+  siblings stay equal.** A second
   Split Right gives three thirds, not a half and two quarters, which is
   what every split halving its source comes to. Once a divider has been
   dragged the sizes are somebody's choice, and a new split halves only the
-  one it came from. **No animation.** A split appears and goes in one cut,
-  so each terminal beside it gets one new size. **⌃⌥⌘ with an arrow moves
-  the keyboard by direction**, across the splits and on into the column and
-  the strip. iTerm and Ghostty use ⌥⌘ with an arrow for this. Those are
-  sessions and tabs here, and ⌃⌘ with an arrow moves a tab, so ⌃⌥⌘ was what
-  was free. ⌃⌘ with an arrow now takes the tab in front to the neighbouring
-  split, and past the main area's edge to the column or the strip as it
-  always did. **One flat view, not split views inside split views**
+  one it came from. The side column and the strip keep their share through
+  all of it (the entry above). **No animation.** A split appears and goes
+  in one cut, so each terminal beside it gets one new size. **⌃⌥⌘ with an
+  arrow moves the keyboard by direction**, across every split on screen,
+  the side column and the strip among them. iTerm and Ghostty use ⌥⌘ with
+  an arrow for this. Those are sessions and tabs here, and ⌃⌘ with an arrow
+  moves a tab, so ⌃⌥⌘ was what was free. ⌃⌘ with an arrow now takes the tab
+  in front to the neighbouring split. With none that way, toward the side
+  column's edge or down still opens the side column or the strip when it is
+  hidden, as it always did. **One flat view, not split views inside split views**
   (`SplitTreeView`). Every split is a direct subview whose frame comes from
   `SplitLayout.frames`, so a split that comes, goes or changes edge never
   takes another one out of the window on its way. A terminal that left the
@@ -180,13 +310,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   review of the branch found that and nine smaller things**, all fixed in
   `04ef2e5`: a file dropped on an edge lost its diff, a press on a divider
   moved the area you're in, a tab let go under its own row split upward
-  where it used to be a drag abandoned. **Limits.** A split's terminal is a
-  side terminal: agent tracking, naming and resume follow the session's own
-  terminal only, and like a terminal in the side column it is never
-  hibernated, so a session with four splits keeps four surfaces while it is
-  out of sight. A split holds tabs, never another session. ⌃⌥⌘ with an
-  arrow is taken from the program in the terminal even when there is
-  nowhere to go, as every disabled menu key here is. **Verified (2026-11-26, macOS
+  where it used to be a drag abandoned. **Limits.** A terminal in any split
+  but the main row is a side terminal: agent tracking, naming and resume
+  follow the session's own terminal only, and it is never hibernated, so a
+  session with four splits keeps four surfaces while it is out of sight. A
+  split holds tabs, never another session. ⌃⌥⌘ with an arrow is taken from
+  the program in the terminal even when there is nowhere to go, as every
+  disabled menu key here is. The entry above adds its own: ⌥⌘B and ⌘J do
+  not slide yet. **Verified, the first version (2026-11-26, macOS
   27.0):** WortelTests, 1873 tests, 0 failures. In a throwaway copy, with
   `macos/scripts/try-splits.sh` and the Debug-only `SplitProbe`: three
   splits, a zoom and back, a divider drag, equalize, the keyboard by
@@ -210,7 +341,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   out of sight follows a window resize, once" is not re-proved on this
   branch; a drag with a real pointer, light mode on a screen, several
   windows with splits, the un-zoom with a file in front and the dropped
-  file's diff by hand. **The site changes with the release, not
+  file's diff by hand. All of that was run on the first version (up to
+  `de5808e`). The build with one tree was checked again and has its own
+  lists in the entry above. `check-terminals.sh` has not been run on it at
+  all, so the seven of nine say nothing about that build. **The
+  site changes with the release, not
   before:** it describes the released app. The places are in
   `web/src/data/site.ts`: the "One window, four places" feature, and the
   answers about Ghostty ("tabs, splits and a large configuration file"),
@@ -227,6 +362,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   model; it was not chosen, because an NSView has one parent and dragging
   between windows would have meant nothing. Every window is the same fixed
   frame of four places. See `macos/docs/architecture/window-and-sidebar.md`.
+  **Until 2026-11-26** on the branch `flexible-panes`: there every window is
+  a sidebar and one tree of splits, which starts out as the same four
+  places (the first entry of this section).
 - **2026-11-19. Drags between windows: spring-loading, and tabs that move.**
   A drag held over a window behind brings it forward, as in the Finder, on
   the Mac's own spring-loading setting and delay rather than one of ours.
@@ -255,6 +393,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-07-14. The shell is AppKit split panes hosting SwiftUI.** It went
   AppKit, then SwiftUI `NavigationSplitView`, then back. A SwiftUI inspector is
   a fixed thickness and resizes the window instead of its siblings (`2cc5b81`).
+  **Until 2026-11-26** on the branch `flexible-panes` there were three such
+  panes. There the split view holds two, the sidebar and everything else,
+  and what is beside the sidebar is one flat view of splits (the first
+  entry of this section). Still AppKit, still hosting SwiftUI.
 - **2026-07-08. ⌘A clears the input line; Select All is ⇧⌘A.** It flips to ⌘A
   only while a text field or web view has the keyboard (`338b28c`, `abc2146`).
 - **2026-07-10. `mouse-hide-while-typing = false`.** It hid the pointer across
@@ -301,7 +443,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-09-29. A terminal resizes once per pane animation and never while
   hidden.** Every resize re-wraps the screen and sends SIGWINCH to the agent
   (`2dfae43`, `c20f403`). **Since 2026-11-20 a hidden one follows a window
-  resize, once:** see "A terminal out of sight follows its window".
+  resize, once:** see "A terminal out of sight follows its window". **Until
+  2026-11-26** on the branch `flexible-panes` the side column and the strip
+  were among the panes that animate. There they open and close in one cut
+  (no slide yet, the first entry of this section), and the sidebar is the
+  one pane that still animates with resizes held.
 - **2026-11-18. A session switch lays out the column and strip before it shows
   the terminal.** SwiftUI showed the terminal first, in the previous session's
   layout, and the column followed 10 to 85 ms later: the terminal was drawn
@@ -311,6 +457,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the same clicks: unchanged when the column stays put; when it opens or
   closes, the first frame comes with the column (60 to 110 ms) instead of a
   wrong frame first. Opening or closing the column itself is that cost.
+  **Since 2026-11-26** on the branch `flexible-panes` the column and the
+  strip are leaves of one tree, and what the switch lays out first is that
+  tree's frames (`MainAreaController.applyNow`). The rule is the same. The
+  timings above are from before and were not taken again.
 - **2026-11-18. A terminal checks its size against its view whenever things
   settle.** Seen three times in a day: the terminal drawn at an old size and
   pinned top left, so either cut off by the side column (too wide) or sitting
@@ -605,7 +755,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   same as the shown one. Its view keeps that size, so a change of display
   or scale passes on the followed size, not the old one. **Not covered:** a terminal made at launch and not
   shown since is not in the window and does not follow; it is told its own
-  last size when it is made.
+  last size when it is made. **Until 2026-11-26:** "the panes beside it
+  keep their width" is no longer so on the branch `flexible-panes`, where
+  sizes are shares (the first entry of this section). The follow still adds
+  the window's whole change, so with a side column beside it a hidden
+  terminal is told a size it will not be shown at. Read from the code, not
+  measured, and not yet changed.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   **Replaced 2026-11-20:** nothing is lost by dropping a terminal now, so one
   whose agent is at work goes like any other.
@@ -670,6 +825,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the column's content (23 ms), but the frame no longer matched the split
   view's own layout: the main pane was seen running under the column until
   the window was resized. Done properly it has to go through the split view.
+  **Until 2026-11-26:** on the branch `flexible-panes` the column is no
+  pane of that split view. It is a leaf of the tree and gets its width
+  there, the first time it is laid out (`MainAreaController.sizeNewLeaves`).
 - **2026-10-07. ⇧⌘[ and ⇧⌘] are tabs**, the system's convention. Sessions are
   ⌥⌘↑ and ⌥⌘↓ (`c87fd17`).
 - **2026-10-20. A reload of the config is applied synchronously on the main

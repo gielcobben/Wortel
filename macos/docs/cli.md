@@ -441,8 +441,13 @@ beside itself. The decisions:
   that is now (`MainAreaController.hasRoom(toSplit:on:in:)`): the session may
   not be the one on screen, or its main row may be behind a zoom, and
   without a measure a script could halve a session nobody is looking at
-  until nothing in it is usable. For a session whose column or strip differs
-  from the one on screen it is an estimate.
+  until nothing in it is usable. Since 2026-11-26 the session's side column
+  and strip are leaves of that layout, so they are measured with it. Two
+  things still make it an estimate, both read from the code and not tried:
+  `AppDelegate.splitFromCommand` does not hand over which leaves are hidden,
+  so a column or a strip that is hidden in that session is counted as if it
+  were showing and the answer errs toward "no room"; and one that was never
+  laid out is still at its guessed share.
   An agent asleep (`AgentSleep`) is no reason: the new terminal is a shell of
   its own and nothing is typed at the agent, so it isn't woken either.
 

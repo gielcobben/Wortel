@@ -4,16 +4,23 @@ Part of the app's architecture record; the index is in `macos/AGENTS.md`.
 Paths are relative to `macos/`.
 
 **Tabs and the workspace** (`WorkspaceTabs`, `SideTab`, `GitPanelModel`,
-`Wortel/UI/SideTabStrip.swift`, `MainArea.swift`, `BottomStrip.swift`) — each
-session has three places for tabs, modelled on the ChatGPT app's bounded layout
-(a fixed set of regions). The regions never move. The first of them, the main
-area, can be divided into splits with a row each (**Splits of the main area**,
-below):
+`Wortel/UI/SideTabStrip.swift`, `MainArea.swift`, `SplitLeaf.swift`,
+`BottomStrip.swift`). Everything beside the sidebar is one tree of splits,
+and every split is a row of tabs over a page (**One tree of splits**, below).
+A session has one to begin with, and Wortel opens two more where they have
+always been:
 
-- **the main area's row**: the session's own terminal (`SideTab.session`, by
-  the session's name) plus whatever is opened or dragged there;
-- **the side column's row**: Changes, History, Files, side terminals;
-- **the bottom strip** under the main area (⌘J).
+- **the main row**: the session's own terminal (`SideTab.session`, by the
+  session's name) plus whatever is opened or dragged there. Always there;
+- **the side column**: Changes, History, Files, side terminals. A split at
+  the outer edge, there while it has tabs, hidden and shown by ⌥⌘B;
+- **the bottom strip** under the main row (⌘J), on the same terms.
+
+Every other split is one somebody made (⌘D, ⇧⌘D, a tab let go on an edge).
+Until 2026-11-26 those three were fixed regions, modelled on the ChatGPT app's
+bounded layout, and the column and the strip were AppKit panes of their own
+beside the main area. The window still looks that way. It is no longer built
+that way.
 
 Besides panes and terminals, a tab can be a previewed file (`SideTab.file`) or
 a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened blank from "+" or
@@ -150,116 +157,165 @@ front there (`showsFile(in:)`).
 A tab is in exactly one row; the one in front fills its area. Any tab goes in
 any row, except the session's terminal, which never leaves the
 main row and can't be closed: dragged onto the column it **swaps sides** instead,
-as ChatGPT's chat does. Opening a tab shows its row, closing the last hides the
-column or strip (instantly), hiding keeps the tabs, ⌘⇧T reopens the last closed
-in the row you're in. All of those rules live in **`WorkspaceTabs`**, a pure value
+as ChatGPT's chat does. Opening a tab shows its row, closing the last takes
+the column, the strip or a made split out of the tree (in one cut), hiding the
+column or the strip keeps its tabs, ⌘⇧T reopens the last closed in the row
+you're in. All of those rules live in **`WorkspaceTabs`**, a pure value
 with its own tests (`WorkspaceTabsTests`); `Session.workspace` reads the
 session's individually-observed fields into it and writes back only what
 changed, and `GitPanelModel` wraps each change with the side effects (the pane
 shown, the keyboard, saving). Change a rule there, not in the model.
 
-**Splits of the main area** (`SplitLayout`, `WorkspaceTabs.panes`,
-`TabRegion.pane`, `Wortel/UI/SplitTreeView.swift`, `SplitPane.swift`,
-`MainArea.swift`). On the branch `flexible-panes` since 2026-11-26, not
-released; it reversed "No splits" (`../../../docs/decisions.md`). A person
-reads "split". The code says "pane" for a split's row (`TabRegion.pane(id)`,
-`panes`, `PaneBar`), which is not the glossary's pane.
+**One tree of splits** (`SplitLayout`, `WorkspaceTabs`, `TabRegion`,
+`Wortel/UI/MainArea.swift`, `SplitTreeView.swift`, `SplitLeaf.swift`,
+`SplitPane.swift`, `BottomStrip.swift`). On the branch `flexible-panes` since
+2026-11-26, not released. It reversed "No splits", and the same day the side
+column and the strip became splits too (`../../../docs/decisions.md`, the two
+entries of that date). A person reads "split". The code says "pane" for a
+split somebody made (`TabRegion.pane(id)`, `panes`, `PaneBar`,
+`SplitPaneController`), which is not the glossary's pane, and "column" or
+"side split" for the side column.
 
-The main area is a tree of rows and columns (`SplitLayout`, a pure value with
-its own tests, `SplitLayoutTests`) whose leaves are rows of tabs. One leaf is
-the main row, which is always there. Every other is a split, made by
-`WorkspaceTabs.split` around one tab, with a row of its own
-(`panes[id]`, `TabRegion.pane(id)`). Unsplit, with no column and no strip,
-nothing here draws or saves anything it did not before.
+Everything beside the sidebar is a tree of rows and columns (`SplitLayout`, a
+pure value with its own tests, `SplitLayoutTests`) whose leaves are rows of
+tabs. There are four kinds of leaf and one set of rules for them:
 
-**The column and the strip are leaves of the same tree** in the model
-(`SplitLayout.Leaf.side`, `.bottom`), since 2026-11-26. The views are not
-there yet: the column and the strip are still drawn by panes of their own
-(`MainSplitViewController`, `BottomStrip.swift`), and `SplitTreeView` is told
-to leave their leaves out (`MainAreaController.hiddenLeaves`). Every place
-that stands in for the missing view is marked `TODO(unify)`. Until those are
-gone, read "the tree" below as the model's, and these as true of it:
+- `.main`, the main row: the session's own terminal and what shares its row.
+  Always there.
+- `.side`, the side column: a leaf exactly while it has tabs.
+- `.bottom`, the strip: a leaf exactly while it has tabs.
+- `.pane(id)`, a split somebody made (`WorkspaceTabs.split`, around one
+  tab), with its row in `panes[id]`.
 
-- `.side` is a leaf exactly while the column has tabs and `.bottom` exactly
-  while the strip has, showing or hidden (`WorkspaceTabs.keepFixedLeaves`,
-  repaired by `normalized`). Every `TabRegion` is a leaf (`TabRegion.leaf`).
-- Two things are still theirs. ⌥⌘B and ⌘J hide them with their tabs kept
-  (`sideVisible`, `bottomVisible`, `WorkspaceTabs.setVisible`): the leaf
-  stays in the tree with its weight, and is in `hiddenLeaves`, which
-  `SplitLayout.frames`, `moveDivider`, `neighbour` and `resize` take as
-  `hidden`. A hidden leaf takes no room and has no divider, and shown again
-  it has the share it had. And they have a place to open at: the column at
-  the outer edge of the whole area (`insert(_:atRootEdge:share:)`, left when
-  `sideLeading`), a third of the width, and the strip under the main row
-  with three tenths of its height.
-- Those shares are guesses. A leaf the model put in is in `unsized` (not
-  saved) until the window gives it its size in points
-  (`GitPanelModel.resizeLeaf`, `SplitLayout.resize`) or says it has one
-  (`markLeafSized`). Nothing calls either yet, and a tree saved meanwhile
-  carries the guess as if it were a size: after a relaunch it is not in
-  `unsized`. `sideColumnWidth` is still saved beside it.
-- In everything else they are leaves: a split is made beside the one you are
-  in (⌘D in the column splits beside the column), either can be zoomed, and
-  a zoom on another leaf hides them, so a tab brought forward in one, or
-  ⌥⌘B or ⌘J showing one, ends that zoom.
-- "Equal" is about the others. One more split among equal siblings, a split
-  that is closed, and `equalize` all leave the column and the strip the
-  share they have (`SplitLayout.keepsItsShare`). Otherwise a second ⌘D beside
-  a column would make a quarter where it makes a third without one.
+Every `TabRegion` is a leaf (`TabRegion.leaf`). A session with nothing but
+the main row has a tree of one leaf, and looks as it did before there were
+splits.
 
-Known gaps while the old views draw them: a zoom leaves the column and the
-strip on screen though the model counts them out of sight (keys typed in one
-then act on the zoomed leaf, and ⌘] skips it), and ⇧⌘↩ from the column or the
-strip zooms the main row as before (`AppDelegate.zoomSplit`). Not tried by
-hand.
+**What was taken out on 2026-11-26.** The side column was a third pane of
+the window's `NSSplitViewController`, and the strip a pane inside the middle
+one (`TerminalWorkspaceController`). Each had its own sizing, collapsing,
+animation and drop zones: the column's width captured in `viewDidLayout`, its
+collapse, its holding priority that a browser in front could lower, the
+strip's own height. All of it is gone, and so is the first version's
+stand-in, where the tree view was told to leave the two leaves out
+(`TODO(unify)`). `MainSplitViewController.ColumnWidth` and
+`BottomPaneController.Height` are left, only as where the two start. A new
+pane in the window's split view for something that holds tabs is the thing
+that was taken out. Make it a leaf.
+
+**What is still the side column's and the strip's.** Three things:
+
+- **Hidden with the tabs kept.** ⌥⌘B and ⌘J (`sideVisible`, `bottomVisible`,
+  `WorkspaceTabs.setVisible`). The leaf stays in the tree with its weight
+  and is in `hiddenLeaves`. `SplitLayout.frames`, `moveDivider`, `neighbour`
+  and `resize` all take that set as `hidden`: a hidden leaf has no frame and
+  no divider, is nobody's neighbour, and what is beside it shares its room.
+  Shown again it has the share it had. `GitPanelModel.hiddenLeaves` mirrors
+  it for the views, which hand it to `SplitTreeView.apply`. Anything new
+  that measures the tree has to take the hidden set too, or it lays out a
+  column nobody can see.
+- **A place and a size to open at.** `WorkspaceTabs.keepFixedLeaves` puts in
+  the leaf that is missing when its row gets a first tab, and takes out the
+  one that emptied (`normalized` mends a file the same way). The side column
+  goes to the outer edge of the whole tree
+  (`SplitLayout.insert(_:atRootEdge:share:)`, the left edge when
+  `sideLeading`), the strip directly under the main row. The model knows
+  shares, not points, so both go in at a guess (a third of the width, three
+  tenths of the main row's height) and are marked `unsized`, which is not
+  saved. The window gives each its real size the first time it lays it out
+  (`MainAreaController.sizeNewLeaves`, from `syncTree` and `viewDidLayout`,
+  through `GitPanelModel.resizeLeaf` and `SplitLayout.resize`). For the
+  column that is the session's width or the last one chosen anywhere
+  (`MainSplitViewController.ColumnWidth`: 440pt to start with, at least
+  260), and at most half the area. For the strip it is the height last
+  chosen (`BottomPaneController.Height`: 240pt to start with, at least 100),
+  and at most six tenths. Only for the session on screen, not under a zoom,
+  and not for a leaf that is hidden: that one waits until it is shown. From
+  then on its size is a share like any other. A divider's drag that changes
+  the column's width or the strip's height is remembered for the next one
+  that opens (`MainAreaController.rememberSizes`, on the divider's release).
+- **Their share when the others are made equal.** One more split among
+  equal siblings, a split that closes, and `equalize` all leave the two the
+  share they have (`SplitLayout.keepsItsShare`). Otherwise ⌃⌘= would hand
+  Changes an equal part of the window, and a second ⌘D beside a column
+  would make a quarter where it makes a third without one.
+
+And one command that is the column's alone: `WorkspaceTabs.setSideLeading`
+(⇧⌥⌘B, or the session's own tab let go on the column) takes the column's leaf
+out and puts it at the other outer edge, with the share of the width it had.
+Everything else about the two is what every leaf does.
 
 The model:
 
-- A split is there only while it has tabs. Closing or moving out its last one
-  takes it out of `panes` and of the tree, and its room goes to its
-  siblings. Nothing is placed in a split that isn't there.
-- Sizes are weights, so a window resize keeps every split's share. Points only
-  exist in `SplitLayout.frames(in:)`, on whole points, with no split under its
-  minimum (160 by 100, `Metrics.minimum`) while there is room.
+- A leaf other than the main row is there only while it has tabs. Closing or
+  moving out its last one takes it out of the tree, and its room goes to its
+  siblings. Nothing is placed in a made split that isn't there. A tab put in
+  the column or the strip makes its leaf.
+- Sizes are weights, everywhere, so a window resize keeps every split's
+  share, the column's and the strip's too: Changes grows with the window.
+  Until 2026-11-26 the column kept its width and the terminal took the whole
+  change. Points only exist in `SplitLayout.frames(in:)`, on whole points,
+  with no split under its minimum (160 by 100, `Metrics.minimum`) while
+  there is room.
+- A divider's drag changes only the two parts beside it, neither under its
+  minimum (`moveDivider`). So dragging a divider to the edge closes nothing,
+  where it used to close the column and the strip.
 - Siblings that were equal stay equal when one more joins: a second split
   right is three thirds. After a divider has been dragged, a new split halves
   only the one it came from (`SplitLayout.insert`).
+- A split is made beside the leaf it is asked about, the column and the
+  strip included. Asked about one that is hidden or gone, it is made beside
+  the main row.
 - One leaf can be zoomed (`zoomed`, not saved): shown alone, the others kept.
-  Bringing a tab forward in another leaf, or splitting, ends it. Except a
-  split made by `wortel split` (`keepsZoom`): the zoom stays and the new
-  split is behind it.
+  Any leaf that is on screen, while there is more than one. Bringing a tab
+  forward in another leaf, ⌥⌘B or ⌘J showing the column or the strip, or
+  splitting ends it. So does hiding the one that is zoomed. Except a split
+  made by `wortel split` (`keepsZoom`): the zoom stays and the new split is
+  behind it.
 - The session's terminal never leaves the main row, and a split's only tab
   can't be split off its own split.
-- `Session` holds it as `paneTabs`, `splitLayout` and `zoomedRegion`, and
+- `Session` holds it as `splitLayout`, `paneTabs`, `zoomedRegion` and
+  `unsizedLeaves`, beside the column's and the strip's own rows and flags.
   `Session.allTabs` is every tab in every row: what closing a session, the
   process roots and the browser lookups go through.
-- `GitPanelModel` mirrors the three and adds `split`, `splitDropped`,
-  `splitFromCommand` (`wortel split`: a split beside the main row of any
-  session of the window, on screen or not, that takes no keyboard and is no
-  stop on Back's trail; `../cli.md`),
-  `toggleZoom`, `equalizeSplits`, `allowsSplit` (the window's answer to
-  "is there room for two", asked before a split made by a key or a menu;
-  a no is the system's sound), and for a divider's drag
-  `setSplitLayout` (every step, writes the layout only) and
-  `commitSplitLayout` (once, saves). `lastRegion` never answers with a split
-  that has gone or that a zoom hides. `keyRegion` is the same answer, read so
-  that a row follows it.
-- Saved as `splitLayout` and `paneTabs` in `sessions.json`. The tree is left
-  out while the main row is all there is, so a session with a column or a
-  strip writes it; `paneTabs` is left out while there are no splits. The
-  column's and the strip's tabs, whether each is up, the side and the width
-  are saved beside the tree as they always were, which is what an older
-  build reads. Both are read leniently: a tree that can't be read is no
-  split, and `WorkspaceTabs.normalized` puts the tabs of a split with no
-  place in the tree into the main row, so a terminal's shell is never left
-  without a tab. A file with no tree, or a tree without the column's or the
-  strip's leaf, gets each put where it opens, `unsized`.
-- An older build opening a newer file drops both fields and saves without
-  them. A split's terminal is then a shell in the keeper that no session
-  claims, which the next launch treats as any unclaimed shell
+- `GitPanelModel` mirrors those (and `hiddenLeaves`, `unsizedLeaves`) and
+  adds `split`, `splitDropped`, `splitFromCommand` (`wortel split`: a split
+  beside the main row of any session of the window, on screen or not, that
+  takes no keyboard and is no stop on Back's trail; `../cli.md`),
+  `toggleZoom`, `equalizeSplits`, `resizeLeaf` and `markLeafSized`,
+  `setColumnLeading`, `allowsSplit` (the window's answer to "is there room
+  for two", asked before a split made by a key or a menu; a no is the
+  system's sound), and for a divider's drag `setSplitLayout` (every step,
+  writes the layout only) and `commitSplitLayout` (once, saves).
+  `currentLeaf` is the leaf a command without a target acts on: the one you
+  last worked in while it is in the tree and on screen, else the main row.
+  `lastRegion` never answers with a split that has gone or that a zoom
+  hides. `keyRegion` is the same answer, read so that a row follows it.
+- Saved as `splitLayout` and `paneTabs` in `sessions.json`. The tree is
+  written whenever it is more than the main row, so a session with a column
+  or a strip writes it. `paneTabs` is left out while there are no made
+  splits. `sideTabs`, `bottomTabs`, `gitPanelVisible`, `bottomVisible`,
+  `sideColumnLeading` and `sideColumnWidth` are saved beside the tree as
+  they always were, which is what an older build reads. Both new fields are
+  read leniently: a tree that can't be read is no split, and
+  `WorkspaceTabs.normalized` puts the tabs of a split with no place in the
+  tree into the main row, so a terminal's shell is never left without a tab.
+  A file with no tree, or a tree without the column's or the strip's leaf,
+  gets each put where it opens, `unsized`, so it comes up at the session's
+  saved width.
+- Three kinds of older build. The released app drops both fields and saves
+  without them: the column and the strip are as they were, and a made
+  split's terminal is then a shell in the keeper that no session claims,
+  which the next launch treats as any unclaimed shell
   (`SessionManager.recoverOrphanedShells`): closed when it sits at a prompt,
-  brought back as a session of its own when something runs in it. Read from
-  the code, 2026-11-26, not tried.
+  brought back as a session of its own when something runs in it. The first
+  version's build of this branch (`de5808e`) cannot read a tree with a
+  `side` or `bottom` leaf and reads it as no split, the made splits' tabs
+  going to the main row. Read from the code, 2026-11-26, not tried.
+- The window's split view autosaves under `window-split`, not `main-split`:
+  it has two panes where it had three, and builds share the defaults. The
+  sidebar's width is carried over from the old name once
+  (`MainSplitViewController.startingSidebarWidth`).
 
 The views:
 
@@ -270,49 +326,85 @@ The views:
   never takes another one out of the window, and a terminal that left the
   window would have to be shown again. A session switch hands over another
   tree and nothing is rebuilt. Nesting `NSSplitView`s is the trap.
-- **The main row's leaf** (`mainLeaf`) is the session's terminal and what
-  covers it, as before. **Every other leaf** is a `SplitPaneController`, one
-  per split id, kept for as long as any session has that split and hidden
-  (never removed) while it isn't on screen. Its terminals are in a
-  `SideTerminalHostController`, as the column's and the strip's are, and its
-  page is `TabContent` in a hosting view with `sizingOptions = []`.
-- **Rows.** While split, every leaf has a `PaneBar`: 36pt on the strip's
-  band, the tabs, then "+" (`NewTabMenu`). The main row's is `mainBar`,
-  hidden at no height until there is a split, and the titlebar then shows
-  the session's name instead of the main row's tabs
-  (`TitleBarController.syncColumn`). The tab in front of a split you are not
-  in has the secondary label colour (`SideTabStrip.isKeyRow`).
+- **One kind of leaf** (`SplitLeafView`): a row on top and a page under it.
+  The row is a `LeafBar`, a `ChromeBarView` with a `strip` of tabs, a
+  `leadingClearance` and an `unzoom` button. There are four: `MainBar` (the
+  session's name as a plain title until the row holds more than the
+  terminal, then its tabs; "…" and what is running), `SideColumnBar` (tabs,
+  "+", the column's toggle), `BottomBar` (tabs, "+", the chevron that hides
+  the strip) and `PaneBar` (tabs, "+"). `TitleBarController` still owns the
+  first two and keeps them in step with the model (`syncColumn`).
+- **The row has two looks, by where the tree put the leaf.**
+  `MainAreaController.placed` runs after every layout and sets
+  `SplitLeafView.isAtTop` for each leaf on screen (its frame starts at the
+  top of the tree). Along the top the row is a titlebar row
+  (`ChromeBarView.isTitlebar`): the titlebar's height, see-through to the
+  window's glass, a hairline under it, the tab in front raised off the band,
+  and its empty part moves the window. Lower down it is the strip's kind of
+  row: 36pt (`SplitLeafView.rowHeight`) on `Chrome.stripBand` over the page,
+  no hairline, the tab in front in the page's colour (`strip.isOnPage`), and
+  a double-click on its empty part zooms the split (`onRowDoubleClick`). A
+  leaf changes look when it changes place: a zoomed strip fills the area, so
+  it is along the top and has a titlebar row. This is why the terminal with
+  Changes beside it looks as it did when the column was a pane: both are
+  along the top. The first version gave every split a 36pt row under a
+  titlebar that showed the session's name. That is gone.
+- **The pages.** The main row's (`mainBody`) is the session's terminal and
+  what covers it, as before. The side column's is `SideColumnController` and
+  the strip's `BottomPaneController`, the same controllers as when they were
+  panes, minus everything about their size. Those three leaves always have
+  views, shown or not. A made split is a `SplitPaneController`, one per split
+  id, kept for as long as any session has that split and hidden (never
+  removed) while it isn't on screen. Each keeps its terminals in a
+  `SideTerminalHostController`, and its page is `TabContent` in a hosting
+  view with `sizingOptions = []`.
+- **Who makes room for the sidebar's controls.** `MainAreaController`
+  lists the rows along the top with where each starts (`titlebarRows`), and
+  `MainSplitViewController.updateLeadingInsets` gives each the clearance it
+  needs, which is more than nothing only for the leftmost. A row that is not
+  along the top has none (`SplitLeafView.dress`).
+- **Dimming** (`MainAreaController.dressRows`). With more than two leaves on
+  screen, the tab in front of a row you are not in has the secondary label
+  colour (`SideTabStrip.isKeyRow`), and the main row's title too. With one or
+  two, nothing is dimmed.
 - **Dividers** are the 1pt gap in `Chrome.hairline`, taking presses 4pt
   either side. A drag moves the divider in the view's own copy of the layout
-  (`SplitLayout.moveDivider`: only the two parts beside it change, neither
-  under its minimum), so the split follows the pointer in the same event. A
-  double-click equalizes the whole tree, as ⌃⌘= does.
+  (`SplitLayout.moveDivider`), so the split follows the pointer in the same
+  event. A double-click equalizes the whole tree, as ⌃⌘= does.
 - **No animation.** A split, a zoom and a divider's double-click each land
-  in one cut, so a terminal gets one new size.
+  in one cut, so a terminal gets one new size. That now covers ⌥⌘B and ⌘J
+  as well, which slid while the column and the strip were panes: there is no
+  slide for them yet, and that is a gap to close, not a rule.
+  `GitPanelModel` still sets `animatesVisibilityChange` and
+  `animatesBottomChange`, and nothing reads them. `Motion.pane` is the
+  sidebar's alone for now.
 
 Making one, and dropping on one:
 
 - ⌘D and ⇧⌘D (`AppDelegate.splitRight`, `splitDown`) put a new terminal in a
-  split beside the leaf you're in, the column and the strip included while
-  they are up (`GitPanelModel.currentLeaf`). They beep when
-  `MainAreaController.hasRoom` says the leaf is not two minimums and a gap
-  wide (or high); the column and the strip are not measured yet. Split Right and Split Down in a
-  tab's menu, in `NewTabMenu` and in the session's "…" call
-  `GitPanelModel.split` and do not ask `hasRoom`. A command teaches no habit
+  split beside the leaf you're in (`GitPanelModel.currentLeaf`). From Changes
+  that is a split beside Changes, from the strip one beside the strip. Split
+  Right and Split Down in a tab's menu, in `NewTabMenu` and in the session's
+  "…" go through the same `GitPanelModel.split`. All of them beep and do
+  nothing when `MainAreaController.hasRoom` says the leaf is not two minimums
+  and a gap wide (or high), whichever leaf it is. A command teaches no habit
   (`home(for:)`); a drop does.
-- A drag is resolved by `TabDragController.zoneLanding` and `paneLanding`.
-  `SplitLayout.dropEdge` gives each edge of a leaf a band a quarter of it
-  deep, 32pt at least, 160pt at most and never over a third. In a band the
-  drop is a new split on that edge, lit as the half it would take. In the
-  middle it moves into the leaf.
-- Split, that holds for every leaf. Unsplit, the main area's edges keep what
-  they meant: the side on the column's side opens the column when it is
-  hidden, the far side moves the column over, the lower quarter opens the
-  strip when it is hidden. What had no meaning goes to `paneLanding`: the top
-  edge, the side where the column is already showing, the bottom while the
-  strip shows.
+- A drag is resolved by `TabDragController`: first the rows
+  (`stripLanding`, to reorder or to land at an exact place in another row),
+  then the splits (`zoneLanding`, `paneLanding`). `SplitLayout.dropEdge`
+  gives each edge of a leaf a band a quarter of it deep, 32pt at least,
+  160pt at most and never over a third. In a band the drop is a new split on
+  that edge, lit as the frame it would take. In the middle it moves into the
+  leaf, and the label is "Move Here", or "Open Here" for a file.
+- That holds for every leaf. Until 2026-11-26 the area's own edges stood for
+  "open the column", "move the column over" and "open the strip", each with
+  a label of its own. Those zones are gone. One special case is left: the
+  session's own tab fits no row but its own and is never split off, and let
+  go on the side column (its row or its page) it trades sides with it
+  (`.swap`).
 - A leaf too small to be two has no edges, only a middle. A split's only tab
-  dropped on its own edge lands nowhere.
+  dropped on its own edge lands nowhere, and so does a tab let go on the top
+  edge of its own split.
 - A file out of Changes or Files lands the same way ("Open to the Right"),
   the first file making the split and the rest opening in it. Over a
   terminal the drop stays the terminal's, which types the path.
@@ -320,22 +412,23 @@ Making one, and dropping on one:
 The keyboard:
 
 - ⌘] and ⌘[ walk `visibleRegions`: the tree's leaves that are on screen, in
-  reading order. The column and the strip come where their leaves are: the
-  strip after the main row it is under, the column first or last.
+  reading order. The column and the strip come where their leaves are.
 - ⌃⌥⌘ and an arrow (`focusArea`) and ⌃⌘ and an arrow (`moveFocusedTab`) both
   ask `neighbouringArea`: the leaf across that edge that shares the most of
-  it (`SplitLayout.neighbour`, the upper or left one on a tie), past the main
-  area's edge the column on its side or the strip below, and from those back
-  to the first leaf along that edge (`edgeSplit`). Focus skips a column or
-  strip that is hidden; a moved tab opens it.
+  it (`SplitLayout.neighbour`, the upper or left one on a tie). With no leaf
+  there, focus stops. A moved tab has one more answer: toward the edge the
+  column is on it goes to the column, and down to the strip, when that one
+  is not showing, which opens it. The session's own tab sent toward the
+  column trades sides with it.
 - A click in a split makes it the area you're in
   (`MainSplitViewController.region(at:)`), so ⌘T, ⌘W, ⇧⌘T and ⇧⌘L act there.
   Closing the split you're in sends the keyboard to the main row, or to
   whatever is zoomed.
-- Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row), the tree view gives
-  one leaf the whole area and hides the rest. The hidden rows answer nil to
-  `activeTab(in:)`, and the main terminal behind a zoomed split counts as
-  covered, so it gives up the keyboard
+- Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the
+  titlebar), the tree view gives one leaf the whole area and hides the rest.
+  ⇧⌘↩ from the column or the strip zooms that one. The hidden rows answer
+  nil to `activeTab(in:)`, and the main terminal behind a zoomed split
+  counts as covered, so it gives up the keyboard
   (`keepKeyboardOffCoveredTerminal`). Showing all of them again leaves you
   where you were: `TerminalHostViewController.viewDidAppear` takes the
   keyboard the first time only (it also runs each time the main row comes
@@ -346,14 +439,29 @@ The keyboard:
 
 Known limits:
 
-- A split's terminal is a side terminal. Agent tracking, naming and resume
-  follow the session's own terminal only.
+- A terminal in any split but the main row is a side terminal. Agent
+  tracking, naming and resume follow the session's own terminal only.
 - A split holds tabs, never another session.
-- A split's terminal is never hibernated, as a terminal in the side column
-  isn't: `HibernationPolicy` is only told about a session's own terminal.
-- A split that emptied is hidden at once and leaves the window half a second
-  later (`MainAreaController.syncPanes`): a terminal moved out of it as its
-  last tab is in its old host until the row it went to has shown it.
+- A side terminal is never hibernated: `HibernationPolicy` is only told
+  about a session's own terminal.
+- A made split that emptied is hidden at once and leaves the window half a
+  second later (`MainAreaController.syncTree`): a terminal moved out of it
+  as its last tab is in its old host until the row it went to has shown it.
+- ⌥⌘B and ⌘J do not slide (above).
+- A column or a strip that was opened in a session out of sight, and never
+  shown before the app quit, was saved at its guessed share: `unsized` is
+  not saved, so it comes back at a third of the width, not the session's
+  width. Read from the code, not tried.
+- A session's terminal out of sight follows a window resize by the whole
+  change (`SurfaceView.followWindow`), which assumed the panes beside it
+  keep their width. With a side column beside it the main row now takes only
+  its share of the change, so that terminal is told a size it will not be
+  shown at, and takes the real one when it is shown. Read from the code, not
+  measured.
+- `SplitPaneController.sync` sets its row's `isKeyRow` without the "more
+  than two" rule that `dressRows` has. With exactly two leaves on screen,
+  one of them a made split, which of the two writes lands last was not
+  checked.
 
 `scripts/try-splits.sh` is the test. It runs a throwaway copy of a Debug
 build, and `SplitProbe` in it (there only with a data folder of its own)
@@ -361,12 +469,18 @@ makes the splits by the actions the menu sends, lets go of a tab
 through the drag's own resolver (`drop:<n>.<where>`), and writes down each
 split's frame and tabs, each terminal's view against its split and against
 the size it was told, and who has the keyboard. Checked with it 2026-11-26,
-macOS 27.0: the tour (three splits, zoom and back, a divider drag, equalize,
-focus by direction, a session switch away and back, a new tab, a tab moved,
-every split closed), drops on edges and middles, and a quit and relaunch
-with four splits, and the window resized in steps (`resize:<w>x<h>`),
-0 faults in each. Not checked: a drag with a real pointer, several windows
-with splits.
+macOS 27.0, on the build with one tree: the side column alone (the picture
+is the window as it was before splits), hidden and shown (back at 440pt),
+the strip likewise (240pt), splits of the main row, of the strip and of the
+side column, a zoom, focus by direction across all of them, a divider drag,
+equalize, a window resize (`resize:<w>x<h>`), a session switch and back,
+drops on an edge and into the strip, the side column moved to the left with
+the sidebar collapsed (`swap`, `sidebar`), and a relaunch: 0 faults.
+`scripts/try-switch.sh --side --widths` the same day: 0 of 72 returns wrong.
+`SwitchProbe` reads the side column's leaf from `SplitTreeView` now and
+drags the divider beside it. Not checked: `scripts/check-terminals.sh` on
+this build, a drag with a real pointer, several windows with splits, and the
+look by eye beyond the probe's pictures.
 
 Things that look like detours and aren't:
 
@@ -377,10 +491,13 @@ Things that look like detours and aren't:
   into the other host. The session's own terminal stays mounted in the main
   area and a pane in front of it is a cover that takes the keyboard away from it.
 - **A terminal's host is never inside a SwiftUI view.** All five places a
-  terminal can be (the session's own pane, the main area's row, the side
-  column, the strip, a split) are AppKit controllers that size the host
+  terminal can be (the session's own pane, the main row, the side column,
+  the strip, a made split) are AppKit controllers that size the host
   themselves, with SwiftUI's page in a view of its own on top, hidden or
-  taking no clicks while a terminal is in front. Inside a representable it is SwiftUI
+  taking no clicks while a terminal is in front. Since 2026-11-26 all five
+  sit in leaves of the one tree, and they are still five controllers:
+  `TerminalPaneController`, `MainAreaController`'s own host,
+  `SideColumnController`, `BottomPaneController`, `SplitPaneController`. Inside a representable it is SwiftUI
   that places the host, and SwiftUI can be a layout behind: the session's
   terminal ran under the side column that way (`TerminalPaneController`,
   `../../../docs/decisions.md` 2026-11-19). A hosting view pinned to a pane
@@ -397,18 +514,22 @@ Things that look like detours and aren't:
 - **Sidebar commands are Wortel's own** (`toggleSessionSidebar:`), not AppKit's
   `toggleSidebar:`: SwiftUI's hosting views answer that one on its way up the
   responder chain and swallow it.
-- **Terminals don't resize during pane animations** (`Motion.pane`,
+- **Terminals don't resize during a pane's animation** (`Motion.pane`,
   `SurfaceView.holdResizes`): one resize when it lands instead of one a frame,
-  each of which made the program inside redraw. Collapsing panes never resize a
-  terminal below 40×20pt for the same reason. A session switch holds them too,
-  while the column and strip take the new session's layout
-  (`MainSplitViewController.show`).
+  each of which made the program inside redraw. Since 2026-11-26 the only
+  pane that animates is the sidebar: the side column and the strip are leaves
+  of the tree and open and close in one cut. A terminal is never told a size
+  under 40×20pt, which a collapsing pane used to pass through. A session
+  switch holds resizes too, while the tree takes the new session's frames
+  (`MainSplitViewController.show`, `MainAreaController.applyNow`).
 
-Width: the column's is per session and the same for every tab, and it may grow
-until the terminal has 320pt; the strip's height is app-wide. Tab drags are
-resolved by `TabDragController` against the rows and a few drop zones (the
-main area, the column, the strip, the far edge for swapping, and the edges
-and middle of each leaf of the main area), each only for tabs allowed there. A file tab can also leave the window: past its edge the
+Where the two start: the column's width is per session (`sideColumnWidth`),
+or the last one chosen anywhere, and the strip's height is app-wide. Both are
+only where the leaf opens. After that each is a share of the area, and there
+is no longer a rule that the column may grow until the terminal has 320pt:
+the minimum of any split is 160 by 100. Tab drags are resolved by
+`TabDragController` against the rows and against each split on screen (its
+edges and its middle), each only for tabs allowed there. A file tab can also leave the window: past its edge the
 ghost becomes a small window that follows the pointer (`TabTearOffGhost`, a
 borderless panel, since the overlay is clipped to the window), and letting go
 there opens the file in a preview window at that spot. The way back is

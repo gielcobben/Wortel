@@ -57,9 +57,8 @@ scripts/check-terminals.sh   # every terminal test, in throwaway copies, about 7
 | Busy state, dots, notifications | `docs/agent-signals.md`. Run `scripts/verify-agent-status.py` before it ships |
 | `Wortel/UI/`, the sidebar | `docs/architecture/window-and-sidebar.md`, and `../DESIGN.md` for anything that is drawn |
 | `Wortel/Settings/`, a new setting | `docs/architecture/settings.md` |
-| Tabs, the side column, the bottom strip, `Wortel/Browser/` | `docs/architecture/workspace-tabs.md` |
-| Splits of the main area: `SplitLayout`, `SplitTreeView`, `SplitPane.swift`, a tab drag's landing | `docs/architecture/workspace-tabs.md` ("Splits of the main area"). Run `scripts/try-splits.sh` |
-| `Wortel/Git/` | `docs/architecture/git-panel.md` |
+| Tabs, `Wortel/Browser/` | `docs/architecture/workspace-tabs.md` |
+| Splits, the side column and the bottom strip among them: `SplitLayout`, `SplitTreeView`, `SplitLeaf.swift`, `SplitPane.swift`, `MainArea.swift`, `BottomStrip.swift`, a row's two looks, a tab drag's landing | `docs/architecture/workspace-tabs.md` ("One tree of splits"). Run `scripts/try-splits.sh`, and `scripts/try-switch.sh --side --widths` when a session switch is involved || `Wortel/Git/` | `docs/architecture/git-panel.md` |
 | Anything about worktrees | `docs/worktrees.md` (the model), `docs/architecture/worktrees.md` (the code) |
 | `Wortel/Files/`, `Wortel/Preview/`, `Wortel/Markdown/` | `docs/architecture/files-and-previews.md`, `docs/file-preview.md` |
 | `Wortel/Keeper/`, `WortelKeeper/` | `docs/architecture/keeper.md`, `../docs/incidents.md` |
@@ -137,9 +136,11 @@ Skills are in `../.agents/skills/` (Claude Code reads them through
   `docs/architecture/settings.md` before adding a row), no user-config
   loading. The
   *terminal* has no tabs and no splits of its own: sessions are Wortel's tabs,
-  and libghostty's tab/split actions still return `false`. The tabs, the side
-  column, the strip and the splits of the main area are all Wortel's (see
-  **Tabs and the workspace**), not libghostty's. Splits are on the branch
+  and libghostty's tab/split actions still return `false`. The tabs and the
+  splits that hold them are all Wortel's (see **Tabs and the workspace**),
+  not libghostty's. Everything beside the sidebar is one tree of splits, and
+  the side column and the strip are two of them, the ones Wortel opens for
+  you: there is no separate pane for either. Splits are on the branch
   `flexible-panes`, not released (`../docs/decisions.md`, 2026-11-26).
 - Resources are shipped as **folder references** (`Resources/terminfo`,
   `Resources/ghostty`) landing in `Contents/Resources/`; the Zig core locates

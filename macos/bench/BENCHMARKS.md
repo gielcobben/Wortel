@@ -118,7 +118,11 @@ step with the column shut, 5.2 ms with it open, 5.3 ms on the divider, with
 libghostty's frame at every step 6.8, 6.9 and 7.3. `--panes`: a pane sliding
 open or shut has about one turn of the run loop over 8.3 ms, where it had
 10 to 15. A machine that is busy moves every figure: at a load of 20 they
-double.
+double. Those figures are from while the side column was a pane of the
+window's split view. On the branch `flexible-panes` it is a split of the
+window's tree since 2026-11-26 and opens in one cut, and the divider round
+and the column's half of `--panes` have not been brought along
+(`docs/debugging.md`). Nothing was measured again.
 
 `./scripts/try-switch.sh` is the same idea for a session switch: 72 returns
 to a session with the side column open, at six paces, and where its terminal

@@ -3,20 +3,37 @@
 Part of the app's architecture record; the index is in `macos/AGENTS.md`.
 Paths are relative to `macos/`.
 
-**UI shell** (`Wortel/UI/`) — three AppKit split panes (`MainSplitViewController`)
-hosting SwiftUI content, in an AppKit window (`AppDelegate`). The titlebar is
+**UI shell** (`Wortel/UI/`) — two AppKit split panes (`MainSplitViewController`)
+hosting SwiftUI content, in an AppKit window (`AppDelegate`): the sidebar, and
+everything beside it (`MainAreaController`, the tree of splits,
+`workspace-tabs.md`). There were three until 2026-11-26, on the branch
+`flexible-panes`: the side column was a pane of its own here and the strip a
+pane inside the middle one. Both are splits of the tree now, so what is left
+for AppKit's split view is the one thing that isn't a split. The content
+pane has the lower holding priority, so it takes a sidebar drag and every
+window resize, and the splits share what it is given. The split view
+autosaves as `window-split` (it was `main-split` with three panes, and builds
+share the defaults), with the sidebar's width carried over once. The titlebar is
 Wortel's own (`TitleBars.swift`): the window keeps an *empty* toolbar only for
-its height and the centred traffic lights, the titlebar is transparent, and each
-pane draws its row of a flat grey band (the ChatGPT app's look). The sidebar
+its height and the centred traffic lights, the titlebar is transparent, and the
+sidebar and each split along the top of the window draw their row of a flat
+grey band (the ChatGPT app's look). A split lower down has a row on its page
+instead (`SplitLeafView`). The sidebar
 toggle and Back/Forward are the exception: one set laid over all the rows
 (`SidebarControls`, in `BackdropController`), placed on every layout pass and
 split resize (the first real layout at launch sends no resize) so
-the arrows ride the sidebar's edge as it opens and closes and the rows to the
-right clear them (`leadingClearance`). The reason for the own titlebar is
+the arrows ride the sidebar's edge as it opens and closes and the row to the
+right clears them (`leadingClearance`). Which row that is, is the tree's to
+say: `MainAreaController.titlebarRows` lists the rows along the top with where
+each starts, `updateLeadingInsets` gives each the room it needs, and only the
+leftmost needs any. It is the main row's as a rule, the side column's when
+that is on the left, and a made split's when one was dropped there. It runs
+again after every layout of the tree (`onPlaced`), since a split that moves
+changes which row is leftmost. The reason for the own titlebar is
 that on macOS 26+ every toolbar item, custom views included, sits on a Liquid
 Glass capsule, and AppKit has no switch to stop that. The window's vibrancy is
 one behind-window material under everything (`BackdropController`); only the
-pages (terminal, column) are opaque. While the list runs past the window its
+pages (each split's, under its row) are opaque. While the list runs past the window its
 bottom edge fades (`SidebarScrollView`, a layer mask), and the mask takes
 vibrancy away from everything in the list: a grey there is an NSColor label
 colour, never SwiftUI's `.secondary`/`.tertiary`, or it draws dark on dark
@@ -47,10 +64,15 @@ of the main area, then all of them again), and taking the keyboard then put
 you in a terminal you had not gone to (2026-11-26, `workspace-tabs.md`). A
 session switch doesn't wait for that,
 though: `SessionManager.onSwitch` runs
-`MainSplitViewController.show` in the same turn as the selection, which lays
-out the session's column and strip first and only then shows its terminal,
-with resizes held throughout, so the terminal is shown at its final size and
-the one being left is never resized. Waking a dropped terminal holds resizes
+`MainSplitViewController.show` in the same turn as the selection. It points
+the panel and the file tree at the session, has the tree take that session's
+splits and give every leaf its frame at once (`MainAreaController.applyNow`,
+`SplitTreeView.placeNow`: the side column and the strip are leaves, so this
+is where they open or close for the switch), lays out the main row only, and
+only then shows the terminal, with resizes held throughout. So the terminal
+is shown at its final size and the one being left is never resized. The
+sidebar and the pages of the other splits lay out when the frame is drawn:
+the whole window laid out here as well made a switch up to 130 ms slower. Waking a dropped terminal holds resizes
 until it is restored and swapped in, for the same reason.
 
 **Several windows** (`MainWindowController`, `SessionWindow`, `WindowStore`,

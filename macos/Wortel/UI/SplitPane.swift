@@ -166,6 +166,7 @@ final class SplitPaneController: NSViewController {
                              active: git.activeTab(in: region))
         }
         bar.unzoom.isHidden = git.zoomedRegion != region
+        bar.strip.isKeyRow = git.keyRegion == region
         let active = showing ? git.activeTab(in: region) : nil
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
         let surface = git.session === session

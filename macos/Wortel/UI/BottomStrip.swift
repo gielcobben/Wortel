@@ -365,6 +365,9 @@ final class TabDragController {
     var paneDrop: (NSPoint) -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? = { _ in nil }
     /// Whether the main area is split into panes.
     var isSplit: () -> Bool = { false }
+    /// Whether a pane has the room on screen to be split in two on an edge
+    /// (`MainAreaController.hasRoom`).
+    var hasRoom: (TabRegion, SplitLayout.Edge) -> Bool = { _, _ in true }
     /// How many tabs a row holds: a pane can't be split from its only tab.
     var tabCount: (TabRegion) -> Int = { _ in 0 }
     var onSplit: (SideTab, TabRegion, SplitLayout.Edge) -> Void = { _, _, _ in }
@@ -763,13 +766,41 @@ final class TabDragController {
     private func paneLanding(_ hit: (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?),
                              tab: SideTab) -> Target? {
         guard tab.fits(hit.region) || (hit.edge != nil && tab != .session) else { return nil }
-        if let edge = hit.edge, let half = hit.half {
+        // A pane too small to be two has no edges to split on: all of it is
+        // its middle.
+        if let edge = hit.edge, let half = hit.half, hasRoom(hit.region, edge) {
             // A pane split from its own only tab would be the same pane.
             if regionOf(tab) == hit.region, tabCount(hit.region) <= 1 { return nil }
             return .split(hit.region, edge, area: half)
         }
+        guard tab.fits(hit.region) else { return nil }
         return .zone(hit.region, area: hit.frame)
     }
+
+    #if DEBUG
+    /// For `SplitProbe`: where `tab`, let go at `point` in the window, would
+    /// land, in words, and the drop made as the end of a drag makes it.
+    func probeDrop(_ tab: SideTab, at point: NSPoint) -> String {
+        draggingSession = tab == .session
+        defer { draggingSession = false }
+        switch resolve(tab: tab, point: point) {
+        case .strip(let region, let index, _)?:
+            onDrop(tab, region, index)
+            return "row \(region.rawValue.prefix(10)) at \(index == .max ? "end" : String(index))"
+        case .zone(let region, _)?:
+            onDrop(tab, region, .max)
+            return "into \(region.rawValue.prefix(10))"
+        case .split(let region, let edge, let area)?:
+            onSplit(tab, region, edge)
+            return "split \(edge.rawValue) of \(region.rawValue.prefix(10)), preview \(Int(area.minX)),\(Int(area.minY)) \(Int(area.width))x\(Int(area.height))"
+        case .swap(let leading, _)?:
+            onSwap(tab, leading)
+            return "column to the \(leading ? "left" : "right")"
+        case .tearOff?, .otherWindow?: return "out of the window"
+        case nil: return "nowhere"
+        }
+    }
+    #endif
 
     /// Outside the window, a file tab becomes a window of its own: the
     /// ghost in the overlay gives way to one that can leave the window.

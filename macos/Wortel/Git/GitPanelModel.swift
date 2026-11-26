@@ -69,9 +69,26 @@ final class GitPanelModel {
             if region.isSplitLeaf, let zoomed = session?.zoomedRegion, zoomed != region { return zoomed }
             return region
         }
-        set { storedRegion = newValue }
+        set {
+            storedRegion = newValue
+            // Only when it moves: this is written on every key typed.
+            if areaInFocus != newValue { areaInFocus = newValue }
+        }
     }
     @ObservationIgnored private var storedRegion: TabRegion = .main
+    /// `storedRegion` again, as something a view can follow.
+    private var areaInFocus: TabRegion = .main
+
+    /// `lastRegion`, for a row to draw whether it is the one you're in: the
+    /// same answer, read in a way that tells the row when it changes. The
+    /// rows of a split main area draw the tab in front a little quieter
+    /// while you're somewhere else, so it shows where ⌘T, ⌘W and ⌘D will act.
+    var keyRegion: TabRegion {
+        _ = areaInFocus
+        _ = zoomedRegion
+        _ = paneTabs
+        return lastRegion
+    }
     private(set) var bottomVisible = false
     /// Bumped when the strip's terminal should take the keyboard.
     private(set) var bottomFocusRequest = 0

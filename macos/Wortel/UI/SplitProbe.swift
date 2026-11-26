@@ -22,7 +22,11 @@ import AppKit
 /// `focus-down`, `move-left` `move-right` `move-up` `move-down` (the tab in
 /// front), `zoom`, `equalize`, `tab` (a terminal tab here), `close` (the tab
 /// in front here), `column`, `strip`, `next` (the next session), `wide`
-/// (drag the first divider 80 points), and `picture:<path>` (the window as
+/// (drag the first divider 80 points), `light` and `dark` (the copy's
+/// appearance, for a picture), `drop:<n>.<where>` (the tab in front
+/// of the area you're in, let go on split number `n` in reading order, at
+/// its `left`, `right`, `up` or `down` edge or its `middle`), and
+/// `picture:<path>` (the window as
 /// its views draw themselves, to a PNG; terminals are drawn by the GPU and
 /// come out as their page colour). `scripts/try-splits.sh` wraps it.
 enum SplitProbe {
@@ -74,8 +78,18 @@ enum SplitProbe {
             case "column": send(#selector(AppDelegate.toggleSideColumn(_:)))
             case "strip": send(#selector(AppDelegate.toggleBottomStrip(_:)))
             case "next": send(#selector(AppDelegate.selectNextSession(_:)))
+            case "light": NSApp.appearance = NSAppearance(named: .aqua)
+            case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
             case "wide":
                 treeView(in: controller)?.dragDivider(0, by: 80)
+            case let drop where drop.hasPrefix("drop:"):
+                let landed = self.drop(String(drop.dropFirst("drop:".count)), controller)
+                await pause(1.2)
+                var entry = state(manager, controller)
+                entry["step"] = step
+                entry["landed"] = landed
+                trail.append(entry)
+                continue
             case let picture where picture.hasPrefix("picture:"):
                 await pause(0.4)
                 draw(controller.window, to: String(picture.dropFirst("picture:".count)))
@@ -96,6 +110,30 @@ enum SplitProbe {
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys, .prettyPrinted]) {
             try? data.write(to: URL(fileURLWithPath: path))
         }
+    }
+
+    /// Let go of the tab in front of the area you're in over a split: `spec`
+    /// is `<n>.<where>`.
+    @MainActor
+    private static func drop(_ spec: String, _ controller: MainWindowController) -> String {
+        let parts = spec.split(separator: ".").map(String.init)
+        let frames = controller.split.mainArea?.paneFrames ?? []
+        guard parts.count == 2, let index = Int(parts[0]), frames.indices.contains(index) else {
+            return "no such split"
+        }
+        let git = controller.gitPanel
+        guard let tab = git.activeTab(in: git.lastRegion) else { return "no tab in front" }
+        // Window coordinates: up is a larger y.
+        let frame = frames[index].frame
+        let point: NSPoint
+        switch parts[1] {
+        case "left": point = NSPoint(x: frame.minX + 10, y: frame.midY)
+        case "right": point = NSPoint(x: frame.maxX - 10, y: frame.midY)
+        case "up": point = NSPoint(x: frame.midX, y: frame.maxY - PaneBar.height - 10)
+        case "down": point = NSPoint(x: frame.midX, y: frame.minY + 10)
+        default: point = NSPoint(x: frame.midX, y: frame.midY)
+        }
+        return controller.split.probeDrop(tab, at: point)
     }
 
     @MainActor

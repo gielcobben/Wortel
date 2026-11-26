@@ -242,6 +242,7 @@ final class MainSplitViewController: NSSplitViewController {
         }
         drag.paneDrop = { [weak mainArea] point in mainArea?.paneDrop(at: point) }
         drag.isSplit = { [weak self] in self?.git.splitLayout.isSplit ?? false }
+        drag.hasRoom = { [weak mainArea] region, edge in mainArea?.hasRoom(toSplit: region, on: edge) ?? true }
         drag.tabCount = { [weak self] region in self?.git.tabs(in: region).count ?? 0 }
         drag.onSplit = { [weak self] tab, region, edge in
             self?.git.splitDropped(tab, beside: region, on: edge, isNew: false)
@@ -361,6 +362,13 @@ final class MainSplitViewController: NSSplitViewController {
 
     /// Resolves tab drags across both tab rows. Held for the window's life.
     private var tabDrag: TabDragController?
+
+    #if DEBUG
+    /// For `SplitProbe`: a tab let go at a point in the window.
+    func probeDrop(_ tab: SideTab, at point: NSPoint) -> String {
+        tabDrag?.probeDrop(tab, at: point) ?? "no drag controller"
+    }
+    #endif
 
     /// Open files dropped on a row or an area, from `index` in that row: set by
     /// AppDelegate, which decides what each file's tab shows (its diff).

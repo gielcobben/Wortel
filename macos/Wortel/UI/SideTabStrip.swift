@@ -46,6 +46,16 @@ final class SideTabStrip: NSView {
     /// the titlebar band: the tab in front is raised with the page's own
     /// colour there.
     var isOnPage = false
+    /// Whether this is the row of the area you're in. Only the rows of a
+    /// split main area are ever told otherwise: there, the tab in front of a
+    /// split you're not in is drawn with a quiet title, so the one you are
+    /// in can be told from its neighbours.
+    var isKeyRow = true {
+        didSet {
+            guard isKeyRow != oldValue else { return }
+            tabViews.forEach { $0.refreshState() }
+        }
+    }
     /// A tab double-clicked: the preview tab, kept.
     var onKeep: (SideTab) -> Void = { _ in }
     /// A tab is being dragged; `point` is in window coordinates. The drag is
@@ -186,6 +196,7 @@ final class SideTabStrip: NSView {
         view.onMove = { [weak self] region in self?.onMove(item.tab, region) }
         view.onSplit = { [weak self] edge in self?.onSplit(item.tab, edge) }
         view.isOnPage = { [weak self] in self?.isOnPage ?? false }
+        view.isKeyRow = { [weak self] in self?.isKeyRow ?? true }
         view.onKeep = { [weak self] in self?.onKeep(item.tab) }
         view.onDrag = { [weak self, weak view] phase, point in
             guard let self, let view else { return }
@@ -418,6 +429,9 @@ private final class SideTabView: NSControl, TabTitleProviding {
     var onMove: (TabRegion) -> Void = { _ in }
     var onSplit: (SplitLayout.Edge) -> Void = { _ in }
     var isOnPage: () -> Bool = { false }
+    var isKeyRow: () -> Bool = { true }
+
+    func refreshState() { applyState() }
     var onKeep: () -> Void = {}
     var onDrag: (SideTabStrip.DragPhase, NSPoint) -> Void = { _, _ in }
     var stripRegion: () -> TabRegion = { .side }
@@ -544,8 +558,9 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
     private func applyState() {
         closeButton.isHidden = pinned || !(isActive || hovering)
-        label.textColor = isActive ? .labelColor : .secondaryLabelColor
-        icon.contentTintColor = isActive ? .labelColor : .secondaryLabelColor
+        let strong = isActive && isKeyRow()
+        label.textColor = strong ? .labelColor : .secondaryLabelColor
+        icon.contentTintColor = strong ? .labelColor : .secondaryLabelColor
         needsDisplay = true
     }
 

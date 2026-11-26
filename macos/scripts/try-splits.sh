@@ -3,7 +3,7 @@
 # of it: where each split is, where each terminal's view is against its
 # split, what the terminal was told, and who has the keyboard.
 #
-#   scripts/try-splits.sh [path/to/Wortel.app] [--keep] [--picture] [steps...]
+#   scripts/try-splits.sh [path/to/Wortel.app] [--keep] [--picture] [--relaunch] [steps...]
 #
 # Runs a copy beside yours, never your Wortel. A Debug build does the
 # splitting itself when asked by a notification addressed to its pid
@@ -11,17 +11,26 @@
 # splits right, one down, a zoom and back, a drag, an equalize, the keyboard
 # around the splits, a session switch away and back, and every split closed.
 #
+# --relaunch quits the copy after the steps the way a person quits, starts
+# it again, and checks that the same splits are back with the same tabs, and
+# every terminal on screen at the size of its view.
+#
+# HIBERNATE_AFTER=0.3 in the environment gives the copy a hibernation clock
+# that short, so a session switched away from (`next`) has usually been
+# hibernated by the time the steps come back to it, splits and all.
+#
 # --picture leaves the window as its views draw it after the steps in
 # $TMPDIR/wortel-splits.png (terminals are the GPU's and come out as their
 # page colour; the rows, the tabs and the dividers are what it is for).
 # Needs the display awake.
 set -u
 
-app="" keep=0 picture=0 steps=()
+app="" keep=0 picture=0 relaunch=0 steps=()
 while (( $# )); do
   case $1 in
     --keep) keep=1 ;;
     --picture) picture=1 ;;
+    --relaunch) relaunch=1 ;;
     *.app|*/Wortel.app) app=$1 ;;
     *) steps+=($1) ;;
   esac
@@ -72,7 +81,7 @@ codesign --force --deep --sign - "$copy" 2>/dev/null
 ( cd "$work/repo" && git init -q && seq 1 40 > f1.txt && git add -A . \
   && git -c user.name=probe -c user.email=probe@example.com commit -qm init && print changed >> f1.txt )
 
-open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 "$copy"
+open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 ${HIBERNATE_AFTER:+--env} ${HIBERNATE_AFTER:+WORTEL_HIBERNATE_AFTER=$HIBERNATE_AFTER} "$copy"
 wait_for 20 test -s "$data/instance.lock" || { print -u2 "the copy did not start"; cleanup; exit 2; }
 apppid=$(cat "$data/instance.lock")
 wait_for 20 w list || { print -u2 "the copy does not answer"; cleanup; exit 2; }
@@ -100,6 +109,7 @@ def line(state):
     print("%-12s area=%-10s zoom=%-10s keyboard=%-10s %s" % (
         state.get("step", "end"), state.get("area", "")[:10], state.get("zoomed", "")[:10] or "-",
         str(state.get("keyboardIn", "-"))[:10], splits))
+    if "landed" in state: print("    landed:", state["landed"])
     for t in state.get("terminals", []):
         if t["hidden"]:
             if t["keyboard"]:
@@ -124,6 +134,40 @@ print("faults:", faults)
 sys.exit(1 if faults else 0)
 PY
 code=$?
+if (( relaunch )); then
+  cp "$data/result.json" "$data/before.json"
+  rm -f "$data/result.json"
+  osascript -e "tell application \"$copy\" to quit" >/dev/null 2>&1
+  for _ in $(seq 1 50); do kill -0 $apppid 2>/dev/null || break; sleep 0.2; done
+  kill -0 $apppid 2>/dev/null && { print -u2 "the copy did not quit"; cleanup; exit 2; }
+  open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 "$copy"
+  wait_for 20 w list || { print -u2 "the copy did not come back"; cleanup; exit 2; }
+  apppid=$(cat "$data/instance.lock")
+  pause 3
+  osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.split.$apppid', '$data/result.json', \$(), true)" >/dev/null
+  wait_for 30 test -s "$data/result.json" || { print -u2 "no result after the relaunch"; cleanup; exit 2; }
+  /usr/bin/python3 - "$data/before.json" "$data/result.json" <<'PY'
+import json, sys
+before, after = (json.load(open(p)) for p in sys.argv[1:3])
+def shape(state): return [(s["region"], s["frame"], s["tabs"], s["front"]) for s in state.get("splits", [])]
+faults = 0
+if shape(before) != shape(after):
+    faults += 1
+    print("FAULT the splits changed over a relaunch")
+    print("  before:", shape(before))
+    print("  after: ", shape(after))
+for t in after.get("terminals", []):
+    if t["hidden"]: continue
+    if t["told"] != t["view"] or t.get("inside") is False or not t["gridFits"]:
+        faults += 1
+        print("FAULT after the relaunch %s at %s: told %s, view %s, inside %s" % (
+            t["tab"][:18], t["frame"], t["told"], t["view"], t.get("inside")))
+shown = [t for t in after.get("terminals", []) if not t["hidden"]]
+print("relaunch: %d splits back, %d terminals on screen, faults: %d" % (len(after.get("splits", [])), len(shown), faults))
+sys.exit(1 if faults else 0)
+PY
+  (( $? )) && code=1
+fi
 (( picture )) && [[ -s ${TMPDIR:-/tmp}/wortel-splits.png ]] && print "picture: ${TMPDIR:-/tmp}/wortel-splits.png"
 (( keep )) && print "left open: pid $apppid, data $data, copy $copy" || cleanup
 exit $code

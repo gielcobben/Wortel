@@ -122,6 +122,7 @@ final class MainAreaController: NSViewController {
                                  active: git.activeMainTab ?? .session)
         }
         mainBar.unzoom.isHidden = git.zoomedRegion != .main
+        mainBar.strip.isKeyRow = git.keyRegion == .main
 
         var views: [SplitLayout.Leaf: NSView] = [.main: mainLeaf]
         var made = false

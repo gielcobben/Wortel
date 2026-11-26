@@ -133,11 +133,16 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         }
     }
 
-    func pick(_ number: Int, at point: CGPoint, reply: @escaping (MarkTie?) -> Void) {
+    func pick(_ number: Int, at point: CGPoint, unless picked: [Int], reply: @escaping (MarkPick?) -> Void) {
         let zoom = zoom
-        call("return window.__wortelMarkup ? window.__wortelMarkup.pick(n, x, y) : null",
-             arguments: ["n": number, "x": point.x / zoom, "y": point.y / zoom]) { [weak self] body in
-            reply(self?.tie(number, from: body, kind: "element"))
+        call("return window.__wortelMarkup ? window.__wortelMarkup.pick(n, x, y, picked) : null",
+             arguments: ["n": number, "x": point.x / zoom, "y": point.y / zoom, "picked": picked]) { [weak self] body in
+            // Only a number that was asked about: the page's answer is read
+            // with the same suspicion as a report.
+            if let already = (body as? [String: Any])?["already"] as? Int {
+                return reply(picked.contains(already) ? .already(already) : nil)
+            }
+            reply(self?.tie(number, from: body, kind: "element").map(MarkPick.tied))
         }
     }
 

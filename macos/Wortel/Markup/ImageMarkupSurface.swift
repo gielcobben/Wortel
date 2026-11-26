@@ -75,7 +75,7 @@ final class ImageMarkupSurface: MarkupSurface {
     }
 
     func probe(at point: CGPoint, reply: @escaping (CGRect?) -> Void) { reply(nil) }
-    func pick(_ number: Int, at point: CGPoint, reply: @escaping (MarkTie?) -> Void) { reply(nil) }
+    func pick(_ number: Int, at point: CGPoint, unless picked: [Int], reply: @escaping (MarkPick?) -> Void) { reply(nil) }
 
     func tie(_ number: Int, to box: CGRect, reply: @escaping (MarkTie?) -> Void) {
         // Drawn wholly beside the picture: there is nothing there to mark.

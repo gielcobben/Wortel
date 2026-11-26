@@ -427,6 +427,42 @@ not built was in place 8 ms after the click. Those are off-screen
 windows with events handed to the views; how the eased page scroll looks
 under a hand was not seen.
 
+**A selected chip looks like a selected token**, as Mail's address tokens
+and `NSTokenField` do: solid in its mark's colour, its number and name on
+it, and no selection painted behind or around it. The system's selection
+was a block of the line's height and the chip's width with its gaps, with
+the capsule floating in it; the owner did not like it. A chip is drawn by
+its own cell (`MarkChipCell`), which asks the text view whether its
+character is selected, and the note's layout (`NoteLayoutManager`) clips
+the chips out of every selection fill, so words in the same selection
+keep the system's highlight. This holds for a chip clicked alone, a
+dragged or Shift-arrow range with words in it, and ⌘A. A change of
+selection, of first responder or of key window redraws the chips it
+touched (`NoteTextView.setSelectedRanges`), since a cell is not drawn
+again for a change of selection alone. What selection means is unchanged:
+typing replaces a selected chip and ⌫ removes it.
+
+The colours are `MarkDrawing.chip(_:selected:emphasised:)`, pure and
+tested. Selected where typing would go: the mark's colour, solid, with
+white words where white has 3:1 on it and near-black where it does not.
+Measured on macOS 27, light and dark: white is 3.2 to 4.2 on red, blue,
+purple and pink, and 1.9 to 2.3 on orange, green and teal, which get
+black (over 9). No mark colour reaches 4.5 with white. Selected in a window
+that is not key, or with the keyboard elsewhere: the fill at 40% with the
+label's colour for the words, as the system dims a selection it is not
+acting on (at 50%, white on orange, green and teal in the dark was under
+4.5 over the bar). One trap found on the way: `fillBackgroundRectArray`
+hands over the layout manager's own scratch array, and asking it for a
+chip's rect first wrote over the selection's rects, so the selection was
+filled over that chip alone. The rects are copied before anything else.
+
+**The pointer over a chip is the arrow**, since a chip is clicked and not
+typed into; over the words and the gaps between them it is the I-beam
+(`NoteTextView.cursor(at:)`). It is set on every move over a chip, and the
+text view's own handling of the move is skipped there, since that is what
+would put the I-beam back. The arrow covers the chip's 3pt clear edges
+too.
+
 A chip has 3pt of clear room either side, as part of itself, so two chips
 or a chip and a word do not touch. The text is lifted to the middle of its
 line: a line is 22pt to hold a chip, the caret is as tall as the line, and
@@ -472,17 +508,39 @@ comes back.
   (`MarkStroke.points(for:drawn:straight:)`), and `MarkStroke.path(for:through:)`
   makes the line of them, for the layer on screen and for every picture
   alike. A highlighter is 14pt wide at 35%, its ends cut square. A box is
-  a 2pt dashed line (6 on, 4 off, `MarkPen.dash`), on screen and in every
-  picture: a picked element is outlined solid, and a drawn box in a solid
-  line was the same rectangle, with nothing to say which of the two is
-  tied to an element.
-- **Shift straightens** whichever is in hand: a line in steps of 45 degrees
-  with the pen, the highlighter and the arrow, a square with the box.
+  the pen's solid 3pt line with 4pt corners. It was a 2pt dashed line for
+  a day, to tell it from a picked element's solid outline; the owner saw
+  both and kept the solid line (`docs/decisions.md`, 2026-11-25). What
+  still tells the two apart: a picked element's outline is 2pt and sits
+  just outside the element, and its badge is on the element's corner; a
+  box is 3pt, drawn where the hand put it, with its badge where the drag
+  began.
+- **Shift straightens** the pen, the highlighter and the arrow: a line in
+  steps of 45 degrees. It does nothing to a box being drawn: an area does
+  not need to be square, and a rectangle says it as well (the owner,
+  2026-11-25). Resizing a box by a handle is different: there Shift keeps
+  its proportions, as it does everywhere on a Mac.
 - **A mark is called by what it was drawn with**: "area 2", "box 3",
   "arrow 4", "highlight 5", on its chip and in what is copied, and
   `details.json` has it as `shape`.
 - **A click still picks an element** of a page with any pen in hand. Only a
   drag draws.
+- **A click on an element already picked makes no second mark.** Its chip
+  is selected in the note instead (`MarkupNoteBar.selectChip`, scrolled
+  into view in a long note), and no number is used: the overlay takes one
+  before it asks and gives it back. The overlay names the picked marks
+  whose chips are in the note (`MarkupSurface.pick(_:at:unless:reply:)`),
+  the script answers `{already: n}` when the clicked element is one of
+  theirs, and the adapter turns that into `MarkPick.already`, trusting
+  only a number it asked about. Only picked marks count: a drawing is tied
+  to an element too, as its anchor, and that element can still be picked.
+  A picked mark whose chip was deleted does not count either, so its
+  element can be picked again. No reveal: the element was just clicked
+  where it is. Checked 2026-11-25 with the real adapter and script over a
+  fixture page: the button clicked twice is one mark and the next number
+  is still 2, with chip 1 selected; a paragraph with a box drawn on it is
+  picked as a new mark, and a second click on it selects that chip; the
+  button picked again after its chip was deleted is a new mark.
 - **Move** takes a drawn mark by anywhere in its box and carries it. Let
   go, it is tied again to what is under it there (the same call that tied
   it first) and pictured again; it keeps its number and its chip. A picked
@@ -613,6 +671,15 @@ looked at.
   captured as really drawn on macOS 27 over a paragraph, light and dark, at
   260, 384 and 640pt, and its corner looked at enlarged; such a capture is
   of an inactive window.
+- The pointer over a chip. Which cursor the note would set at a point (a
+  chip, its clear edge, a word, a gap, past the line's end) was checked in
+  the real file mount on 2026-11-25; the pointer itself, and that it does
+  not flicker, need a real pointer in a key window.
+- A selected chip in a key window. Captured as really drawn on 2026-11-25,
+  light and dark, a chip alone, a range of two chips and the word between,
+  ⌘A, and the selection moved off a chip; the solid look only with a
+  window that answers `isKeyWindow` with yes, since a capture's window is
+  not key.
 - That Claude Code and Codex each read a picture from the cache folder
   without asking.
 

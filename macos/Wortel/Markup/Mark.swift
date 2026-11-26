@@ -47,18 +47,7 @@ enum MarkPen: String, CaseIterable {
     }
 
     /// How wide its line is, and how much of what is under it shows through.
-    var width: CGFloat {
-        switch self {
-        case .highlighter: return 14
-        case .box: return 2
-        case .pen, .arrow: return MarkStroke.width
-        }
-    }
-
-    /// A box is dashed. A picked element is outlined solid, and a drawn box
-    /// in a solid line was the same rectangle: nothing said which of the
-    /// two was tied to an element and which was only an area.
-    var dash: [CGFloat]? { self == .box ? [6, 4] : nil }
+    var width: CGFloat { self == .highlighter ? 14 : MarkStroke.width }
     var opacity: CGFloat { self == .highlighter ? 0.35 : 1 }
 }
 

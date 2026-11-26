@@ -122,7 +122,11 @@ every repository under a folder:
 ```
 
 The repository comes from *where you ran the command*, not from whatever the
-sidebar is pointing at. The new session's id goes to stdout:
+sidebar is pointing at. So does the row's place in the sidebar: the folder
+that covers that directory (a worktree counts as its repository's), else the
+folder of the session you ran it in when the directory is that session's own,
+else the top level. The new row goes right after the session you ran it in,
+and closing it takes you back there. The new session's id goes to stdout:
 
 ```sh
 id=$(wortel new --cwd ~/Developer/lijn)

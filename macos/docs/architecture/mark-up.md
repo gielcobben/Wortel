@@ -73,6 +73,19 @@ listener a document), a resize, the page changing itself (a
 and `stop` and posts nothing while there are no marks. A report is a flat
 list of numbers, read by `WebMarkReport` as if it could be anything.
 
+**A page moves things with no word of it.** A transition or an animation
+runs for its length with no event a step, and a picture that arrives late
+pushes down what is under it; neither is a scroll, a resize or a mutation.
+So whatever begins or ends such a move starts a look every frame
+(`follow`): a transition's or an animation's own events, a `load` anywhere
+in the document, a scroll (which is what most often sets a page moving),
+turning mark-up on, and a mark being made. The look posts only when a
+mark's place changed, goes on while an animation with an end is running
+(`document.getAnimations()`, so a script's own animation counts) and for
+400 ms after the last change, and then stops. The page itself growing or
+shrinking is heard too (a `ResizeObserver` on the root), which is how
+something arriving late is noticed when no mark is on it.
+
 **What a page says about itself is not trusted.** An element's name, id,
 selector and text are whatever the page's author wrote, and what is copied
 is pasted into a terminal. Every string from the page is cut to a length
@@ -88,6 +101,18 @@ cut off where the panel is (the report carries the clip). An element that
 left the page is looked for again by its selector, since a page that draws
 itself anew replaces its elements with like ones. One that is not found has
 no place: its mark is not drawn, and its chip and its picture stay.
+
+**A drawn area follows the block under its middle**, not the element that
+holds all of it (`blockUnder`). The element that holds an area whole is
+often the whole column, and the column stays where it is when the text in
+it moves: a paragraph added above, a picture arriving, the text set larger
+or wrapped by a narrower window. Between two blocks the area takes one a
+quarter of the way in from a side. A word in bold or a link is a run of a
+line and not a block, so the paragraph is taken; a picture in a line is a
+box of its own. Never a block inside a box that cuts off (a scrolling
+panel, a frame) when the area reaches out of that box: it would be cut off
+with it. What is copied still names the element that holds the area whole
+and what lies inside it.
 
 Measured 2026-11-25 (macOS 27.0.1, 120 Hz, a throwaway harness with a clear
 window, scroll events handed to the web view):
@@ -110,6 +135,10 @@ window, scroll events handed to the web view):
   as cmux does, was not needed.
 - **The world is separate**: a global set in it is `undefined` to the page,
   and so is its message handler. It reaches a same-site frame's document.
+
+**Turned on again, no mark is drawn until the page has said where it is
+now** (`WebMarkupSurface.activate` forgets the last report). What the page
+last said is from before mark-up went off, and it has scrolled since.
 
 Checked the same day with the app's own layer, session, adapter and script
 over a fixture page, driven by events handed to the layer: a click picked
@@ -160,12 +189,20 @@ its image view. Weak, all of it.
   view's bounds notification moves the marks in the frame the rows move.
   A file is rewritten under its preview all day, so a mark remembers what
   its row held (`DiffView.Coordinator.key(ofRow:)`: the text and which side
-  of a diff, not the number) and after a change looks for that row within
-  400 either way. A line that is gone has no place; its chip and picture
-  stay. The whole file is pictured by scrolling the table a screen at a
-  time and putting the scroll back, all in one turn of the run loop, so
-  nothing on screen moves (`ViewPicture.tiles`). As wide as the view, so
-  one very long line does not shrink the rest.
+  of a diff, not the number) and what the four rows either side of it held
+  (`MarkAnchor`), and after a change looks for that row within 400 either
+  way. Code is full of lines that read the same, so of the rows that hold
+  what the mark's did, the one whose neighbours agree most is its row,
+  then the nearest. Where several hold it and none has a neighbour left,
+  the mark has no place: a guess would put it on the wrong line. A line
+  that is gone has no place either; its chip and picture stay, and it is
+  found if the line comes back. A mark looks for its row when the rows
+  change and when its layer comes back (`activate`), since the file may
+  have been rewritten while mark-up was off. The whole file is pictured
+  by scrolling the table a screen at a time and putting the scroll back,
+  all in one turn of the run loop, so nothing on screen moves
+  (`ViewPicture.tiles`). As wide as the view, so one very long line does
+  not shrink the rest.
 - **An image** (`ImageMarkupSurface`). Every mark is in the picture's own
   points; only a resize moves it. A mark's picture is cut from the file's
   own pixels, not from the screen: a screenshot shown at half its size
@@ -179,7 +216,9 @@ its image view. Weak, all of it.
   stack through a second preference, empty unless mark-up is on. A frame in
   the stack does not change when the document scrolls, so scrolling costs
   no SwiftUI update. A block that is not built has no frame and its mark is
-  not drawn, which is right: it is out of view.
+  not drawn, which is right: it is out of view. A block is known again
+  after a rewrite the way a row is (`MarkAnchor`, 60 blocks either way),
+  and looked for when the blocks change and when the layer comes back.
 - **The picture of the whole, for Markdown, is what is in view**, and the
   copied text calls it a part. Measured 2026-11-25: scrolled 4,000pt down,
   the stack had drawn nothing by the end of that turn of the run loop and
@@ -207,6 +246,69 @@ is back where it was; an image's mark is in the picture's points and its
 picture in its pixels. And against the real `MarkdownView` in a clear
 window: frames for the 9 built blocks of 129, a mark tied to its block,
 moved by a scroll in the same call, a picture with the text in it.
+
+## Off, something changes, on again
+
+The owner's report (2026-11-25): mark-up turned off, a scroll, mark-up on
+again, and sometimes the marks were not where they belonged. Turning it
+off takes the layer and the adapter's observers away, so whatever changes
+meanwhile is heard by nobody. A scroll alone was not it. Measured for
+every kind of preview, a scroll while off (40pt, a screen, out of view and
+back, at the top and far down, glided and jumped) left every mark on its
+content within 0.5pt from the first frame the layer drew. What did move
+marks, each measured the same day in throwaway harnesses (the real views,
+adapters and layer in a clear window; the ink read from the layer's own
+sublayers at the end of every turn of the run loop, which is what the
+window server is told; the content found again by its pixels in a picture
+of the preview, or for a page by asking the element):
+
+| Kind | What happened while off, or on | Before | After |
+| --- | --- | --- | --- |
+| Source | 3 lines added above the marks while off | 57pt (3 rows) above their lines, for good | on them |
+| Source | The same while on | 95pt (5 rows) above: another line that read the same | on them |
+| Source | 2 functions removed above, while on | 228 and 266pt below | on them |
+| Markdown | 3 paragraphs added above while off | 226 and 395pt above their paragraphs, for good | on them |
+| A page | A paragraph added above two drawn areas | 76pt above their words | on them |
+| A page | A picture arriving late above them | 180pt above | on them |
+| A page | ⌘+ to 1.5 with drawn areas 1,500pt down | 195 and 209pt off their paragraphs | on them |
+| A page | The window made narrower | up to 204pt off | on them |
+| A page | A fixed header sliding away over 300 ms | its mark left 30pt off | follows it |
+| A page | The same, mark-up turned on 60 ms into the slide | 10pt off, for good | follows it |
+| A page | A button moved 50px by a CSS animation, or by a script's after a scroll | 50pt off, for good | follows it |
+| A page | A scroll while off, on a page whose main thread is busy | 40pt off for a frame (17 ms), then right | not drawn, then right |
+| An image | A resize, a tab behind another, the view made anew | on it | on it |
+
+"For good" is until the next scroll or change that happened to be heard.
+
+Three causes, and what changed:
+
+- **A file's marks were not looked for again when the layer came back.**
+  The adapters only heard of a rewrite while they were listening. After a
+  copy mark-up is off with the note kept, and the agent that was handed
+  the note edits that very file. For Markdown the document says where its
+  blocks are before the new layer is in its window, so nothing was heard
+  after either. Now `activate` looks for every mark's row or block.
+- **A row was known by its text alone.** In code the nearest line that
+  reads the same is often another one. Now by its neighbours too
+  (`MarkAnchor`).
+- **A page was only asked when it scrolled, resized or changed itself.**
+  It moves things without doing any of those, and a drawn area was tied
+  to whatever held all of it, which is often the column. Now the script
+  looks while something moves (`follow`), an area follows the block under
+  its middle, and the last report is forgotten when mark-up is turned on.
+
+Two traps for the next person. A fixture whose lines all differ: the first
+tests numbered their lines, every one unlike the rest, and a mark found
+its line every time. And looking for this in the scroll: what changes
+while mark-up is off is the file or the page, and a harness that only
+scrolls finds every mark in its place.
+
+Also checked, and right before and after: the type size changed while off
+(the same placement as changed while on, for source, Markdown and a page),
+a tab kept built behind another and one made anew, a file rewritten while
+on, scrolling with mark-up on a step at a time (Markdown in 25pt steps and
+in jumps of thousands of points, source in 13pt steps: 0.2pt at most, one
+turn of the run loop after each step), and a document with pictures in it.
 
 ## When it ends
 
@@ -446,10 +548,23 @@ page's listeners included. What stays is the note's text and the names of
 its pictures. Off, with a note kept, the page's script holds which elements
 the marks are on and nothing runs.
 
-There is no repeating timer anywhere in it.
+There is no repeating timer anywhere in it. A page's script asks for a
+frame at a time while something in the page moves and for 400 ms after
+(`follow`), with mark-up on and a mark made; a page that is still is not
+looked at.
 
 ## Not verified
 
+- The off, change, on measurements above in the app itself. They are from
+  harnesses that mount the real views, adapters and layer; scrolls were
+  made by setting the scroll position, not by a hand, and the app was not
+  driven. Whether the owner's report was one of the causes found is not
+  known: none of them needs a scroll.
+- How long a real site keeps the page's script looking (`follow`). On the
+  fixture it stops 400 ms after the last move.
+- A drawn area's block in a page with frames from its own site and shadow
+  roots: the code goes through them, and only a plain document was
+  measured.
 - How the marks follow a page under a hand: a trackpad, a wheel mouse,
   momentum, the bounce at a page's end. The numbers above are from events
   handed to a web view in a clear window.
@@ -472,8 +587,12 @@ There is no repeating timer anywhere in it.
 - A mark on content that scrolls under a sticky header draws over the
   header.
 - The last of a page sits under the note bar when scrolled to its end.
-- An element moved by a CSS animation alone is followed at its next
-  report, not during.
+- A script's own animation that nothing announces (started by a timer:
+  no scroll, no change to the page, no event) is followed from the next
+  thing that is heard, not from its start. Measured 2026-11-25: a button
+  moved 50px that way keeps its mark 50pt off until then.
+- A mark on a line or a block that reads the same as others, with every
+  neighbour rewritten too, is not drawn.
 - Marks and notes are memory only, gone after a relaunch.
 - In a file, a mark does not follow a code block or a wide table scrolled
   sideways inside a Markdown document, and a paragraph rewrapped by a

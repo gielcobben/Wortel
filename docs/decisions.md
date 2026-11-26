@@ -2829,6 +2829,33 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   offset in a block. When the line or block is gone the mark is not
   drawn, and its chip and picture stay: the note is still about what was
   there.
+- **2026-11-25. A mark knows its line by its neighbours, and where that
+  is not enough it is not drawn.** A line's text was all a mark knew it
+  by, and the nearest line that read the same took its place. Code is
+  full of such lines: measured, three lines added above two marks put
+  both five rows off. So a mark remembers the four rows either side of
+  its own, and of the rows that read the same the one whose neighbours
+  agree most is its row. Where several read the same and none has a
+  neighbour left, the mark has no place until its line is back. Nearest
+  was the other choice there; a mark on the wrong line says something
+  about that line, and one that is not drawn says nothing false.
+- **2026-11-25. A drawn area on a page follows the block under its
+  middle.** It was tied to the element that held all of it, which made
+  what is copied about it right and its place wrong: that element is
+  often the whole column, and text moves inside a column that stays put
+  (measured: 76pt after a paragraph was added above, 209pt after ⌘+ far
+  down a page). What is copied still names the element that holds it
+  whole. The middle and not the corner, since an area is drawn around
+  something and its corner is beside that thing.
+- **2026-11-25. A page is looked at every frame only while something in
+  it moves.** A transition, an animation and a picture arriving move
+  things with no scroll, resize or mutation to hear. Looking every frame
+  for as long as mark-up is on would catch all of it and was left out:
+  it is a timer by another name, on every page, for the few that move.
+  The look starts from what announces a move (a transition's or an
+  animation's events, a load, a scroll, mark-up turned on) and ends 400
+  ms after the last one. What it misses is a script's animation that
+  nothing announces, which is in the known limits.
 
 ## Running processes
 

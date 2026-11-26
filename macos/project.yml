@@ -522,8 +522,10 @@ targets:
       - path: Wortel/Markup/MarkupSurface.swift
       - path: Wortel/Markup/MarkDrawing.swift
       # Mark-up over a file: a mark that finds its row again after the file
-      # is rewritten, a picture cut from an image's own pixels, and a whole
-      # file pictured by scrolling a table that has to be back where it was.
+      # is rewritten (among rows that read the same, by its neighbours), a
+      # picture cut from an image's own pixels, and a whole file pictured by
+      # scrolling a table that has to be back where it was.
+      - path: Wortel/Markup/MarkAnchor.swift
       - path: Wortel/Markup/LinesMarkupSurface.swift
       - path: Wortel/Markup/ImageMarkupSurface.swift
       - path: Wortel/Markup/BlocksMarkupSurface.swift

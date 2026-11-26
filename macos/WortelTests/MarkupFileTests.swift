@@ -136,6 +136,105 @@ final class MarkupFileTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * 20, accuracy: 0.5)
     }
 
+    func testAMarkFindsItsLineWhenTheFileWasRewrittenWhileMarkUpWasOff() throws {
+        var texts = numbered(60)
+        let host = show(diff(texts))
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+        let height = try XCTUnwrap(views.table).rowHeight
+        XCTAssertNotNil(tie(surface, 1, to: CGRect(x: 80, y: height * 9 + 2, width: 100, height: 10)))
+
+        // A copy turns mark-up off and keeps the note. The agent that was
+        // handed it adds three lines above, with nothing listening.
+        surface.deactivate(forgetting: false)
+        texts.insert(contentsOf: ["// one", "// two", "// three"], at: 2)
+        host.rootView = diff(texts)
+        settle()
+
+        // Turned on again, the mark is on its line.
+        surface.activate(moved: {})
+        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * 12, accuracy: 0.5)
+    }
+
+    func testAMarkOnALineLikeManyOthersFindsItsOwn() throws {
+        // Code as code is: every function ends in the same three lines.
+        var texts = (1...12).flatMap { ["func f\($0)() {", "    work(\($0))", "    return 0", "}", ""] }
+        let host = show(diff(texts))
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+        let height = try XCTUnwrap(views.table).rowHeight
+        // On the brace that closes the third function, row 13.
+        XCTAssertEqual(texts[13], "}")
+        XCTAssertNotNil(tie(surface, 1, to: CGRect(x: 80, y: height * 13 + 2, width: 100, height: 10)))
+
+        // Three lines added above. The nearest brace to row 13 is now the
+        // second function's, at row 11; the mark's own is at 16.
+        texts.insert(contentsOf: ["// one", "// two", "// three"], at: 0)
+        host.rootView = diff(texts)
+        settle()
+        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * 16, accuracy: 0.5)
+
+        // The first two functions removed: ten rows up.
+        texts.removeSubrange(3..<13)
+        host.rootView = diff(texts)
+        settle()
+        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * 6, accuracy: 0.5)
+    }
+
+    func testAMarkOnRenderedMarkdownFindsItsBlockWhenTheFileWasRewrittenWhileMarkUpWasOff() throws {
+        // The stack as `MarkdownView` signs it in: a view as large as the
+        // blocks, in a scroll view, and each block's frame in it.
+        let size = NSSize(width: 600, height: 400)
+        window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                          backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let root = NSView(frame: NSRect(origin: .zero, size: size))
+        window.contentView = root
+        let scroll = NSScrollView(frame: root.bounds)
+        let stack = Layer(frame: NSRect(x: 0, y: 0, width: 600, height: 2000))
+        scroll.documentView = stack
+        root.addSubview(scroll)
+        layer = Layer(frame: root.bounds)
+        root.addSubview(layer)
+        settle()
+
+        var texts = ["# Title", "one", "two", "three", "four", "five"]
+        func signIn() {
+            let held = texts
+            views.stack = stack
+            views.blockFrames = Dictionary(uniqueKeysWithValues: held.indices.map {
+                ($0, CGRect(x: 20, y: CGFloat($0) * 50, width: 500, height: 40))
+            })
+            views.blockKey = { held.indices.contains($0) ? held[$0].hashValue : nil }
+            views.changed()
+        }
+        signIn()
+        let surface: any MarkupSurface = BlocksMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+        // On "three", the fourth block.
+        XCTAssertNotNil(tie(surface, 1, to: CGRect(x: 40, y: 155, width: 100, height: 20)))
+        let before = try XCTUnwrap(surface.placement(of: 1)).origin.y
+
+        // Off with the note kept, and two paragraphs added above it. The
+        // document says where its blocks are before the layer is back in
+        // its window, so no word of the change comes after.
+        surface.deactivate(forgetting: false)
+        texts.insert(contentsOf: ["new", "newer"], at: 1)
+        signIn()
+        surface.activate(moved: {})
+        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, before + 100, accuracy: 0.5)
+
+        // And when the paragraph itself is gone, the mark has no place.
+        surface.deactivate(forgetting: false)
+        texts.removeAll { $0 == "three" }
+        signIn()
+        surface.activate(moved: {})
+        XCTAssertNil(surface.placement(of: 1))
+    }
+
     func testAMarkGrowsWithTheText() throws {
         let host = show(diff(numbered(40)))
         let surface: any MarkupSurface = LinesMarkupSurface(views: views)

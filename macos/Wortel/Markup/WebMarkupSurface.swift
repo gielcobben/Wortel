@@ -51,6 +51,13 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         self.moved = moved
         guard let webView, !isActive else { return }
         isActive = true
+        // What the page last said is from before mark-up was turned off,
+        // and the page has scrolled since. Nothing is known, and no mark
+        // is drawn, until it says where they are now: on a page whose main
+        // thread was busy the marks otherwise stood a scroll away from
+        // their content for a frame or more (measured 2026-11-25: 40pt off
+        // at 17 ms, right at 42 ms).
+        latest = WebMarkReport()
         webView.configuration.userContentController
             .add(self, contentWorld: Self.world, name: WebMarkupScript.handler)
         call("\(WebMarkupScript.source); window.__wortelMarkup.start(); return window.__wortelMarkup.report()") {

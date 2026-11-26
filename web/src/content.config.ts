@@ -40,6 +40,15 @@ const releases = defineCollection({
     title: z.string().min(1),
     /** One line, used as the lead in the Sparkle dialog. Optional. */
     summary: z.string().optional(),
+    /**
+     * A beta: offered only to copies on the beta channel (release.sh
+     * --publish --beta). Its note still renders for Sparkle's dialog, but
+     * the changelog, its pages, the feed and the sitemap leave it out,
+     * because everyone else never gets that version: the next regular
+     * release's note tells them what it carried. Use `publicRelease` as the
+     * filter, so the four of them can't disagree.
+     */
+    beta: z.boolean().default(false),
   }),
 });
 
@@ -79,6 +88,9 @@ const legal = defineCollection({
 });
 
 export const collections = { releases, legal };
+
+/** The releases everyone is offered: every one but a beta. */
+export const publicRelease = ({ data }: { data: { beta: boolean } }) => !data.beta;
 
 /**
  * Sort key for CalVer strings (`2026.32.2`). Compares component by component

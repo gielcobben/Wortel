@@ -209,7 +209,9 @@ final class UpdateNotice: NSObject, NSPopoverDelegate {
                 self?.popover?.close()
                 Updater.shared.restartToUpdate()
             },
-            whatsNew: { [weak self] in
+            // A beta's note is not on wortel.sh/updates (`beta: true` keeps it
+            // off), so the link would land on the newest regular release's.
+            whatsNew: Updater.shared.readyIsBeta ? nil : { [weak self] in
                 self?.popover?.close()
                 NSWorkspace.shared.open(Self.notesURL(for: version))
             }))
@@ -235,7 +237,8 @@ final class UpdateNotice: NSObject, NSPopoverDelegate {
 private struct UpdateNoticeView: View {
     let version: String
     let restart: () -> Void
-    let whatsNew: () -> Void
+    /// nil for a beta, which has no page of notes to open.
+    let whatsNew: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -249,9 +252,11 @@ private struct UpdateNoticeView: View {
             }
             Divider()
             HStack {
-                Button("What's New", action: whatsNew)
-                    .buttonStyle(.link)
-                    .font(.system(size: 12))
+                if let whatsNew {
+                    Button("What's New", action: whatsNew)
+                        .buttonStyle(.link)
+                        .font(.system(size: 12))
+                }
                 Spacer()
                 Button("Restart Now", action: restart)
                     .keyboardShortcut(.defaultAction)

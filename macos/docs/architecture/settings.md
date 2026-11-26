@@ -32,11 +32,16 @@ A row that survives gets a dated line in `docs/decisions.md`.
 | Commit box in Source Control | `AppSettings.showsCommitBox`, `git.showsCommitBox`, on unless turned off | `SourceControlPanel` |
 | Open servers in default browser | `AppSettings.opensServersInDefaultBrowser`, `browser.opensServersInDefaultBrowser` | `RunningJobsPopover`, whose row menu has the same switch, and a ⌘-clicked `localhost` link (`AppDelegate`, `onOpenLocalServer`) |
 | Update automatically | Sparkle's own preferences, through `Updater.updatesAutomatically` and `setUpdatesAutomatically` | Sparkle |
+| Beta updates | `WortelBetaUpdates` in the app's defaults, through `Updater.getsBetaUpdates` and `setGetsBetaUpdates` | `Updater.allowedChannels(for:)`, which Sparkle asks on each check |
 | Share anonymous usage data | `TelemetrySettings.isEnabledByUser`, through `Telemetry.setReporting` | `TelemetrySettings.isEnabled` |
 
-The last two are the Updates tab, and are absent on a build where they can do
+The last three are the Updates tab, and are absent on a build where they can do
 nothing (a development build has no updater and never reports): absent, not
-greyed. The usage-data
+greyed. Beta updates is absent everywhere else too: it shows only on a beta
+build (`Updater.isBetaBuild`) or a Mac that has ever been on the channel
+(`Updater.hasBetaChoice`), so turning it off doesn't take the switch away. The first
+launch of a beta build turns it on, once (`Updater.joinBetaOnce`), so a tester
+is never asked to find it; it is there so they can leave. The usage-data
 switch is also in the sidebar's ⓘ, which is where the first-run notice and
 the privacy page point.
 

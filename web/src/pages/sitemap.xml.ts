@@ -14,6 +14,7 @@ import type { APIRoute } from 'astro';
 import { getCollection } from 'astro:content';
 import { execFileSync } from 'node:child_process';
 import { SITE } from '../data/site';
+import { publicRelease } from '../content.config';
 
 // ---- lastmod ---------------------------------------------------------------
 // A date a crawler can act on, which means a date that moves when the CONTENT
@@ -92,7 +93,7 @@ export const GET: APIRoute = async () => {
   // /updates does not need git: the page IS the release folder, so the newest
   // release date is exactly when it last changed, and it is already a real date
   // in the frontmatter.
-  const releases = await getCollection('releases');
+  const releases = await getCollection('releases', publicRelease);
   const newestRelease = releases
     .map((entry) => entry.data.date)
     .sort((a, b) => b.getTime() - a.getTime())[0];

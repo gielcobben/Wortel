@@ -227,10 +227,13 @@ with it the one state a leaf could be in that a made split could not.
   closes them (`putAway`), and the keyboard goes back to the main row, or
   stays in the split when something else is left in it. `toggleCloses` is
   what the menu item reads for its title.
-- **⌃⌘1, ⌃⌘2, ⌃⌘3, ⌃⇧G** are `activate`: the pane in front in the column or
-  the strip is closed by `putAway`, where the whole column used to hide. In
-  the main row it still goes behind the session's terminal, and in a made
-  split it only comes forward.
+- **⌃⌘1, ⌃⌘2, ⌃⌘3, ⌃⇧G** are `activate`, and so are the three pane buttons
+  in the titlebar. One rule, wherever the pane is: not open, it opens in the
+  column's row; open behind another tab or behind a zoom, it comes forward
+  where it is; on screen, it is closed by `putAway`, where the whole column
+  used to hide (`git-panel.md`). Until later on 2026-11-26 a pane in the
+  main row went behind the session's terminal with its tab kept, and one in
+  a made split only came forward.
 - **⌘J** is `toggleBottom`: no strip, a terminal is opened there; a strip,
   and you are not in it, its front tab is brought forward (which ends a zoom
   that covered it) and takes the keyboard; in it, the keyboard goes to the
@@ -371,10 +374,16 @@ The views:
 - **One kind of leaf** (`SplitLeafView`): a row on top and a page under it.
   The row is a `LeafBar`, a `ChromeBarView` with a `strip` of tabs, a
   `leadingClearance`, a `trailingClearance` and an `unzoom` button. One
-  class conforms, `PaneBar`: the tabs, "+" right after the last
-  (`NewTabMenu`: New Terminal, New Browser, Changes, History, Files, each
-  into that row, and no splits since later on 2026-11-26), and nothing else
-  but the button that shows while its split is zoomed. Every leaf has one, wired the same way
+  class conforms, `PaneBar`: the tabs, "+" right after the last, and
+  nothing else but the button that shows while its split is zoomed. That
+  button takes no room while it is hidden (`ZoomedButton`: its width is 0
+  then, and the strip runs to the row's end). The "+" is one click
+  (`PaneBar.addTab`): a new terminal in that row. Its right-click is
+  `NewTabMenu.fill`, built as it opens: New Terminal, New Browser, Changes,
+  History and Files, each into that row, then Split Right and Split Down
+  for a terminal in a split beside or under that row's split. Until
+  2026-11-26 a click on "+" opened that list, which made everything in it
+  two clicks. Every leaf has one, wired the same way
   (`PaneBar.wire(to:home:region:)`). There were four until 2026-11-26:
   `MainBar` showed the session's name as a plain title until the row held
   more than the terminal and carried the session's "…", what it runs and
@@ -393,6 +402,18 @@ The views:
   holds the main row's and the side column's bars (`mainBar`, `sideBar`,
   both `PaneBar`) and fills their strips (`syncColumn`); `MainAreaController`
   wires them.
+- **A row short of room gives way in a fixed order** (`SideTabStrip.plan`).
+  Each tab starts as wide as its title, up to 240pt. When they do not fit:
+  first every tab behind the one in front, the session's pinned tab aside,
+  gives up the room it keeps after its title for a close button
+  (`SideTabView.canHug`, `huggingWidth`, `isHugging`). Such a tab ends 6pt
+  after its title, and its close button shows over its glyph while the
+  pointer is on it, as Safari's does. Then the tabs that still can shrink
+  together, down to 130pt or their title, whichever is less. Only then does
+  the row scroll, with "+" pinned past the visible end. The first step is
+  from 2026-11-26: it is what lets Changes and Files both keep their names
+  in a 440pt split under the window's six buttons. The session's own tab
+  never keeps that room at all, since it is never closed (`b7675b2`).
 - **The row has two looks, by where the tree put the leaf.**
   `MainAreaController.placed` runs after every layout and sets
   `SplitLeafView.isAtTop` for each leaf on screen (its frame starts at the
@@ -477,14 +498,13 @@ Making one, and dropping on one:
 
 - ⌘D and ⇧⌘D (`AppDelegate.splitRight`, `splitDown`) put a new terminal in a
   split beside the leaf you're in (`GitPanelModel.currentLeaf`). From Changes
-  that is a split beside Changes, from the strip one beside the strip. The
-  two buttons at the trailing end of the titlebar
-  (`WindowControls.splitRight`, `splitDown`) send the same two actions, so
-  they are the keys as buttons. Split Right and Split Down in a tab's own
-  menu move that tab into a split (`SideTabStrip.onSplit`). They were also
-  items in `NewTabMenu` and in the session's "…" until later on 2026-11-26,
-  and were taken out of both: "+" adds tabs, "…" is the session, and a
-  split is the buttons. All of them go through the same
+  that is a split beside Changes, from the strip one beside the strip. Split
+  Right and Split Down in the right-click of a row's "+" (`NewTabMenu.fill`)
+  do the same for that row's split. In a tab's own menu they move that tab
+  into a split (`SideTabStrip.onSplit`). There is no split button: two sat
+  at the trailing end of the titlebar for a few hours on 2026-11-26 and
+  went when the pane buttons came, and the session's "…" has had no split
+  items since the same day. All of them go through the same
   `GitPanelModel.split`, which asks the window
   where the room comes from (`roomToSplit`, `MainAreaController.room`). A
   leaf that is two minimums and a gap wide (or high) is halved. One that is
@@ -539,8 +559,8 @@ The keyboard:
   (`MainSplitViewController.region(at:)`), so ⌘T, ⌘W, ⇧⌘T and ⇧⌘L act there.
   Two places answer nil, so a press there leaves you where you were: a
   divider, and any of the window's controls (`WindowControls`), which lie
-  over the end of whichever row is under them. Without the second, the
-  Split Right button would always split the split in the corner.
+  over the end of whichever row is under them. Without the second, a press
+  in the corner would move you to the split under it first.
   Closing the split you're in sends the keyboard to the main row, or to
   whatever is zoomed.
 - Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the

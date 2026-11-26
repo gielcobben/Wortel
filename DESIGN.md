@@ -261,7 +261,9 @@ own because macOS 26 and later put every toolbar item on a glass capsule, and
 there is no switch for that.
 
 **Every split's row is the same thing** (`PaneBar`): its tabs, a "+" right
-after the last one, and nothing else. No row has a button of its own. The
+after the last one, and nothing else. The "+" is one click: a new terminal in
+that split. A right-click on it lists the rest of what a tab can be there,
+and Split Right and Split Down. No row has a button of its own. The
 one exception is temporary: a zoomed split has one button at the end of its
 row, to show the others again. The main row is no different. The session's
 own terminal is a tab named after the session, pinned: it has no close
@@ -271,13 +273,15 @@ its terminal shows that one tab, never a bare title.
 **The titlebar has two ends, and they are the window's, not a row's**
 (`WindowControls`, one overlay over the whole titlebar). At the leading end,
 by the traffic lights: the sidebar's toggle, then Back and Forward, which
-ride the sidebar's edge. At the trailing end, four: what the session is
-running, Split Right, Split Down, and the session's "…" menu. They stay in
-their corners whatever the splits do. The row under each end makes room for
-it: the leftmost titlebar row for the leading end, the rightmost for the
-trailing one. The first and the last of the four were on the main row until
-2026-11-26, which put them in the middle of the window as soon as a split
-could sit to the right of it. A button for one
+ride the sidebar's edge. At the trailing end, six, in two groups. First what
+a session opens beside its terminal, one click each: Changes, History, Files
+and a new browser. Then, after a wider gap, what the session is running, and
+the session's "…" menu at the edge, where a "more" button usually is. They
+stay in their corners whatever the splits do. The row under each end makes
+room for it: the leftmost titlebar row for the leading end, the rightmost
+for the trailing one. What the session is running and its "…" were on the
+main row until 2026-11-26, which put them in the middle of the window as
+soon as a split could sit to the right of it. A button for one
 split's own row is the thing not to add back: if it is about the session or
 the window, it goes in a corner, and if it is about the split, it is a key
 or a menu item. There is no button for the side column. One sat in the
@@ -285,14 +289,28 @@ trailing corner for an hour and was taken out: with every split movable
 there is no side column to show or hide, only Changes and Files, which ⌥⌘B
 opens and closes (`docs/decisions.md`).
 
-**Three controls, three meanings.** A row's "+" adds a tab to that split:
-a terminal, a browser, Changes, History, Files. The two split buttons make a
-new split beside or under the split you are in, as ⌘D and ⇧⌘D do. The "…"
-is the session itself: rename, pin, close, what its sidebar row's menu has.
-None of them repeats another. Until 2026-11-26 the "…" also listed New
-Terminal, New Browser and the two splits, and every "+" listed the splits
-too. Before adding an item to one of the three, check it is not already what
-another one is for.
+**One click for what you open.** A pane's button is that pane's command
+(⌃⌘1, ⌃⌘2, ⌃⌘3) and follows one rule wherever the pane is: not open, it opens
+beside the terminal; open behind another tab or behind a zoom, it comes
+forward; on screen, it closes. The button is lit (`selectedFill`) while the
+pane is a tab anywhere in the session, and its tooltip says Show or Close.
+The globe opens a new browser where a browser opens by itself, beside the
+work and not over the tab you are in. The "…" is the session itself: rename,
+pin, close, what its sidebar row's menu has.
+
+What was tried and went, all on 2026-11-26. A "+" that listed everything a
+tab can be: two clicks for Changes, which had been one. The "…" repeating
+what "+" opens. Split Right and Split Down as buttons in this corner: with
+the six they made eight, and eight left no room for two named tabs in
+the row under them. A split has no button now. It is ⌘D and ⇧⌘D, a tab let
+go on an edge, or a right-click on a tab or on a "+".
+
+**The corner is paid for by the row under it**, so every point there counts.
+The six buttons sit 2pt apart, with 8pt between the two groups. The row
+clears them, the 8pt to the window's edge, and 4pt before its own "+". A
+row's zoom button takes no room while it is hidden. Before adding a button
+here, render Changes and Files in a split at the 440pt they open at and
+check both tabs still show their names.
 
 A split's row has one of two looks, by where it is (`SplitLeafView`):
 
@@ -332,9 +350,16 @@ the row slides on hover, as the name does.
 ### Tabs
 
 One tab shape for every row: 10, a 16pt glyph, 8, the title, 4, a 20pt close
-button, 4. Sized to its title, between 130 and 240pt, 4pt apart. When a row
-overflows it scrolls under 20pt faded edges, with "+" pinned after the last
-tab.
+button, 4. Sized to its title, between 130 and 240pt, 4pt apart. The
+session's own tab is never closed, so it has no room kept for a close
+button: the same inset after its title as before its glyph.
+
+When a row is short of room, it gives way in this order. First the tabs
+behind the one in front give up the room each keeps for its close button:
+the tab ends 6pt after its title, and on hover the close button shows where
+the glyph is, as Safari's does. Then the titles shrink together, down to the
+readable minimum. Only then does the row scroll, under 20pt faded edges, with
+"+" pinned after the last tab.
 
 ### Side column
 

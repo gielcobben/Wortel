@@ -19,45 +19,59 @@ its height and the centred traffic lights, the titlebar is transparent, and the
 sidebar and each split along the top of the window draw their row of a flat
 grey band (the ChatGPT app's look). A split lower down has a row on its page
 instead (`SplitLeafView`). Every one of those rows is a `PaneBar`: tabs and
-a "+", no buttons of its own.
+a "+" (one click, a new terminal there), no buttons of its own.
 
 What is not a row's is the window's: one overlay laid over all the rows
 (`WindowControls`, in `BackdropController`; it was `SidebarControls` until
 2026-11-26, when it had only the leading end). Only its buttons take clicks.
 The rest falls through to the row under it, which moves the window. A press
 on one of its buttons is not a press in the split under it:
-`MainSplitViewController.region(at:)` answers nil there, or Split Right
-would first make the corner's split the one you are in and then split that
-one.
+`MainSplitViewController.region(at:)` answers nil there, or every press in
+the corner would first make the corner's split the one you are in. (Found
+when Split Right was a button here for a few hours, and split the wrong
+split.)
 
 - **The leading end**: the sidebar's toggle beside the traffic lights, and
   Back and Forward. They are placed on every layout pass and split resize
   (the first real layout at launch sends no resize) so the arrows ride the
   sidebar's edge as it opens and closes (`WindowControls.place`).
-- **The trailing end**: four buttons, in the owner's order: Split Right and
-  Split Down (`splitRight`, `splitDown`), then what the session is running
-  (`RunningButton`) and the session's "…" menu at the edge. `TitleBarController` wires them. The two split
-  buttons send `AppDelegate.splitRight` and `splitDown`, the menu's own
-  actions, so they split the split you are in with the same room check and
-  the same sound as ⌘D. The "…" is `SessionActions.menu`, the sidebar row's
-  menu, and nothing else: until later on 2026-11-26 it also had New
-  Terminal, New Browser, the two splits and Terminal Below, which a row's
-  "+" (`NewTabMenu`) and the split buttons already say. Until 2026-11-26
-  the first and the last were on the main row (`MainBar`), the side
-  column's row (`SideColumnBar`) had the column's toggle, and the strip's row
-  (`BottomBar`) a chevron to hide it. All three classes are gone. With
-  splits, those rows can be anywhere, and their buttons were in the middle
-  of the window. The column's toggle sat here for an hour that day and was
-  taken out: nothing is hidden with its tabs kept any more, so there is
-  nothing for a toggle to show (`workspace-tabs.md`, "Nothing is hidden").
-  ⌥⌘B opens Changes and Files and closes them.
+- **The trailing end**: six buttons in two groups, 2pt apart with 8pt
+  between the groups. `TitleBarController` wires them.
+  - Changes, History and Files (`panes`, one button per `InspectorPane`).
+    Each sends the menu's own command (`AppDelegate.action(showing:)`: ⌃⌘1,
+    ⌃⌘2, ⌃⌘3), so the button and the key are one thing
+    (`GitPanelModel.activate`, `git-panel.md`). `observePanes` lights a
+    button while its pane is a tab anywhere in the session
+    (`GitPanelModel.isOpen`) and sets its tooltip to Show or Close
+    (`activateHides`).
+  - The globe (`browser`, `AppDelegate.newBrowserBeside`): a new browser
+    where a browser opens by itself (`WorkspaceTabs.home(for:)`), not in the
+    split you are in. ⇧⌘L is the one that opens there.
+  - What the session is running (`RunningButton`), and the session's "…" at
+    the edge. The "…" is `SessionActions.menu`, the sidebar row's menu, and
+    nothing else.
+
+  How it got here, all on 2026-11-26. The running button and the "…" were on
+  the main row (`MainBar`), the side column's row (`SideColumnBar`) had the
+  column's toggle, and the strip's row (`BottomBar`) a chevron to hide it.
+  All three classes are gone: with splits, those rows can be anywhere, and
+  their buttons were in the middle of the window. The column's toggle sat
+  here for an hour and was taken out, since nothing is hidden with its tabs
+  kept any more (`workspace-tabs.md`, "Nothing is hidden"). Split Right and
+  Split Down sat here for a few hours. The panes and the browser came when
+  the owner found them two clicks away in a row's "+", and with them the
+  corner was eight buttons, which left the row under it no room for two
+  named tabs at the 440pt Changes and Files open at. The split buttons
+  went (`../../../docs/decisions.md`).
 
 Who clears what is the tree's to say. `MainAreaController.titlebarRows` lists
 the rows along the top with where each starts and ends, and
 `MainSplitViewController.updateLeadingInsets` gives each row two numbers: a
 `leadingClearance`, how far the leading controls reach into it, and a
 `trailingClearance`, how far the trailing ones do
-(`WindowControls.trailingWidth`). Only the leftmost row gets any of the
+(`WindowControls.trailingWidth`: the buttons, the 8pt to the window's edge,
+and 4pt before the row's own "+", which a lit pane button would otherwise
+touch). Only the leftmost row gets any of the
 first and only the rightmost any of the second. Which rows those are changes
 with the splits: the main row and the split with Changes as a rule, the
 other way round when that one is on the left, one row for both when a split is

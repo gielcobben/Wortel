@@ -17,9 +17,10 @@ import SwiftUI
 @MainActor
 final class PaneBar: ChromeBarView, LeafBar {
     let strip = SideTabStrip()
-    let add = HoverFillButton.glyph("plus", "New Tab")
+    let add = HoverFillButton.glyph("plus", "New Terminal")
     let unzoom = ZoomedButton()
     private var stripLeading: NSLayoutConstraint!
+    private var stripTrailing: NSLayoutConstraint!
     private var unzoomTrailing: NSLayoutConstraint!
     /// Room for the sidebar's controls when this row is the leftmost in the
     /// titlebar with the sidebar collapsed.
@@ -47,11 +48,15 @@ final class PaneBar: ChromeBarView, LeafBar {
         addSubview(unzoom)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         unzoomTrailing = unzoom.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)
+        stripTrailing = strip.trailingAnchor.constraint(equalTo: unzoom.leadingAnchor, constant: 0)
+        unzoom.onVisibility = { [unowned self] in
+            stripTrailing.constant = unzoom.isHidden ? 0 : -8
+        }
         NSLayoutConstraint.activate([
             stripLeading,
             strip.topAnchor.constraint(equalTo: topAnchor),
             strip.bottomAnchor.constraint(equalTo: bottomAnchor),
-            strip.trailingAnchor.constraint(equalTo: unzoom.leadingAnchor, constant: -8),
+            stripTrailing,
             unzoomTrailing,
             unzoom.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -70,6 +75,11 @@ final class PaneBar: ChromeBarView, LeafBar {
         strip.preview = { [weak home] tab in TitleBarController.preview(for: tab, in: home?.selected) }
         add.target = self
         add.action = #selector(addTab(_:))
+        // The rest of what can be a tab here, for a right-click: a pane or a
+        // browser in this split and no other. Filled when it opens.
+        let menu = NSMenu()
+        menu.delegate = self
+        add.menu = menu
         self.git = git
         self.region = region
     }
@@ -77,9 +87,20 @@ final class PaneBar: ChromeBarView, LeafBar {
     private weak var git: GitPanelModel?
     private var region: TabRegion = .main
 
+    /// One click, one terminal, in this split. Until 2026-11-26 the "+"
+    /// opened a menu of everything a tab can be, so each was two clicks; the
+    /// panes and the browser have buttons in the titlebar now
+    /// (`WindowControls`).
     @objc private func addTab(_ sender: NSView) {
+        git?.open(.terminal(UUID()), in: region)
+    }
+}
+
+extension PaneBar: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
         guard let git else { return }
-        NewTabMenu.popUp(from: sender, git: git, region: region)
+        NewTabMenu.fill(menu, git: git, region: region)
     }
 }
 
@@ -94,14 +115,30 @@ final class ZoomedButton: HoverFillButton {
                         accessibilityDescription: "Show All Splits")?.withSymbolConfiguration(Chrome.glyph)
         toolTip = "Show All Splits (⇧⌘↩)"
         translatesAutoresizingMaskIntoConstraints = false
+        width = widthAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: Chrome.controlSize),
+            width,
             heightAnchor.constraint(equalToConstant: Chrome.controlSize),
         ])
         isSelected = true
         isHidden = true
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    private var width: NSLayoutConstraint!
+    /// Told when it shows or hides, for the row to give its tabs the room.
+    var onVisibility: () -> Void = {}
+
+    /// No room while hidden: a row kept 36 points at its end for a button
+    /// only a zoomed split shows, which is what two named tabs lacked under
+    /// the window's buttons.
+    override var isHidden: Bool {
+        didSet {
+            guard isHidden != oldValue else { return }
+            width.constant = isHidden ? 0 : Chrome.controlSize
+            onVisibility()
+        }
+    }
 }
 
 // MARK: - A split

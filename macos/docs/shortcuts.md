@@ -106,17 +106,25 @@ the right edge, ⌘J under the terminal.
 Every split's row is the same: its tabs, then "+". The session's own terminal
 is a tab too, named after the session, with no close button.
 
-Three controls, and each means one thing:
+What you open is one click:
 
-- **"+" in a row** adds a tab to that split: New Terminal, New Browser,
-  Changes, History, Files.
-- **The two split buttons** at the right end of the titlebar make a new split
-  beside or under the split you're in. They are ⌘D and ⇧⌘D as buttons.
-- **"…"** at the edge is the session itself: rename, pin, close and the rest
-  of what its sidebar row's menu has.
+- **"+" in a row** is a new terminal in that split. A right-click on it lists
+  the rest of what a tab can be there (New Terminal, New Browser, Changes,
+  History, Files), and Split Right and Split Down.
+- **Changes, History and Files** each have a button at the right end of the
+  titlebar. A button is its pane's key (⌃⌘1, ⌃⌘2, ⌃⌘3) and is lit while that
+  pane is open anywhere in the session. Its tooltip says what a click does
+  next, Show or Close.
+- **The globe** beside them opens a new browser next to your terminal, where
+  browsers open by themselves, not over the tab you are in. ⇧⌘L opens one in
+  the split you're in.
+- After a gap come the button that shows what the session is running, and
+  **"…"** at the edge, which is the session itself: rename, pin, close and
+  the rest of what its sidebar row's menu has.
 
-The button between the split buttons and "…" shows what the session is
-running.
+There is no split button. For a few hours on 2026-11-26 there were two, and
+with the six above they left the row under them no room for two named tabs.
+How to split is under Tabs.
 
 **Nothing is hidden.** A split is on screen while it holds a tab and gone when
 it holds none. Until 2026-11-26, ⌥⌘B and ⌘J hid the side column and the
@@ -175,11 +183,13 @@ Splits were added on 2026-11-26 and are not in a release yet.
 | Focus the list | ⌥⌘L | |
 | The selected file in the preview tab, or close it (in Changes or Files) | Space | Finder (Quick Look) |
 
-Each opens its pane or brings it forward. Pressed with the pane already in
-front, it closes that pane's tab, where it used to hide the whole side
-column: closing a pane loses nothing. Two exceptions. A pane that shares a
-row with your session's terminal goes behind the terminal instead. And a pane
-you dragged into a split of its own only comes forward.
+One rule, wherever the pane is. Not open, it opens in a split at the right
+edge, beside your terminal. Open but behind another tab, or behind a zoomed
+split, it comes forward. On screen, it closes: closing a pane loses nothing.
+The buttons at the right end of the titlebar are these same commands. (Until
+2026-11-26 a pane that shared a row with your session's terminal went behind
+the terminal with its tab kept, and one you had dragged into a split of its
+own only ever came forward.)
 While a file is in front, a click or ↑/↓ in Changes or Files shows the picked
 file in the preview tab (italic title). A double-click on a file opens it
 there too, and a double-click on the file it already shows keeps it as a tab.
@@ -216,12 +226,21 @@ when the row has no room either do they beep and do nothing: a split is
 never laid out under 160 by 100 points while there is room. A split is there only while it has tabs, so closing its
 last tab closes the split and its neighbours take the room.
 
-Split Right and Split Down are in three places. The Tab menu and the two
-buttons at the right end of the titlebar are ⌘D and ⇧⌘D: a new terminal in a
-split beside or under the one you're in. A tab's right-click menu has them
-too, and there they move that tab into a new split. All of them beep the same
-way when there is no room. They are no longer in a row's "+", which only adds
-tabs, or in the session's "…", which is only about the session. The session's
+How to split:
+
+- ⌘D and ⇧⌘D, also in the Tab menu: a new terminal in a split beside or under
+  the one you're in.
+- A right-click on a row's "+", then Split Right or Split Down: the same,
+  beside or under that row's split.
+- A right-click on a tab, then Split Right or Split Down: that tab moves into
+  a new split.
+- Let go of a tab, or a file out of Changes or Files, on the edge of a split.
+- `wortel split`, from a script or an agent.
+- Changes, History and Files make a split at the right edge when there is
+  none, from their button or their key.
+
+The ones that open a terminal beep the same way when there is no room. The
+session's "…" has no split items: it is only about the session. The session's
 own terminal stays in the main row and can't be split off.
 
 That right-click menu no longer has Move to Main Area, Move to Side Column

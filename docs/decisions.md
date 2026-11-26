@@ -330,6 +330,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   open in another split is not opened a second time. ⌃⌘1, ⌃⌘2, ⌃⌘3 and
   ⌃⇧G are the same toggle for one pane: in front already, in that split or
   in the strip, its tab is closed, where it used to hide the whole column.
+  (In every split since later that day: "One click", at the end.)
   **⌘J** (View ▸ Terminal Below, also ⌃`) makes a strip under the main row
   with a terminal in it when there is none. With one, it takes the keyboard
   to it, and from it back to the main row. It never hides anything. To
@@ -370,7 +371,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the three splits back after a relaunch. WortelTests pass, three
   expectations changed to "on screen from the moment it holds a tab" and
   one test new for `showHidden`. Not looked at by eye. **Three controls,
-  three meanings, and nothing said twice.** The owner, right after: "New
+  three meanings, and nothing said twice.** (This arrangement lasted a few
+  hours. The split buttons went and the "+" changed in "One click", the
+  next part, which is the rule now. Kept as what was tried.) The owner,
+  right after: "New
   Terminal, or Terminal below are just splits right? So maybe we should
   show split icons in the toolbar and not in the ellipses menu". They then
   saw that New Terminal, New Browser, Changes, History and Files were in
@@ -400,7 +404,64 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (2026-11-26, a throwaway copy): the app builds, and `try-splits.sh
   --picture column focus-left right down` ran with 0 faults, the picture
   showing the four controls in the corner. The unit tests were not run
-  again for this: it changes no rule.
+  again for this: it changes no rule. **One click for what you open.** The
+  owner, after living with it: "I really don't like i have to click twice
+  for changes, files, browser, or history. Can we make that one simple
+  click?" A row's "+" had become one list of everything a tab can be, so
+  each of them was a click to open the list and a click to pick. Before
+  the splits, Changes and Files were one button away: "a downgrade that
+  opening files or changes or whatever now takes 2 events". So the things
+  a session opens beside its terminal got buttons, at the trailing end of
+  the titlebar: Changes, History, Files and a new browser, then, after a
+  wider gap, what the session is running and the "…" at the edge. That
+  made eight with the two split buttons, and eight did not fit. Measured
+  in a render: with Changes and Files in a split at the 440pt they open
+  at, the row under the buttons cut "Changes" short and scrolled Files out
+  of sight. The owner, on that choice: "maybe we don't need the split
+  button, but then how do you split?" The split buttons went, a few hours
+  after they came. **How you split now:** ⌘D and ⇧⌘D, a tab let go on an
+  edge, a right-click on a tab, a right-click on a "+", the Tab menu,
+  `wortel split`. And each pane button makes a split when there is none.
+  **A pane's button** sends the menu's own command (⌃⌘1, ⌃⌘2, ⌃⌘3), is lit
+  while that pane is a tab anywhere in the session, and its tooltip says
+  Show or Close. **One rule for a pane's command, wherever the pane is**
+  (`GitPanelModel.activate`): not open, it opens in the split Changes and
+  Files open in; open behind another tab or behind a zoom, it comes
+  forward; on screen, it closes. Before, a pane in the main row was
+  swapped for the terminal with its tab kept, and one in a split made by
+  hand only ever came forward. A lit button that did nothing, or two kinds
+  of off, would not have been a button. `activateHides` is the same rule
+  for the menu's Show and Hide. **The globe** opens a browser where a
+  browser opens by itself (beside the terminal, until one has been moved
+  elsewhere), not over the tab you are in: a button is pressed to see a
+  page next to the work. ⇧⌘L still opens one in the split you are in. **A
+  row's "+" is one click too: a new terminal in that split.** A
+  right-click on it lists the rest of what a tab can be there (New
+  Terminal, New Browser, Changes, History, Files), and Split Right and
+  Split Down for a terminal in a split beside or under that one. So "+"
+  no longer means "a tab, pick which", and the "three meanings" above are
+  now: "+" is a terminal here, the corner is what you open and the
+  session, and a split is a key, a drag or a right-click. What it gives
+  up: the split buttons were the only way to split that was on screen in
+  the window itself, and by the mouse a pane or a browser into one particular split
+  is two steps again (the right-click on its "+"). **Why six fit.** The
+  buttons are 2pt apart. A row's zoom button takes no room while it is
+  hidden, where it kept 36pt at every row's end for a button only a zoomed
+  split shows. And a row short of room first has the tabs behind the front
+  one give up the room each keeps for its close button, which shows in
+  place of the tab's glyph on hover instead, as Safari's does, before any
+  title is cut or the row scrolls (`SideTabStrip.plan`). The row clears
+  the buttons, 8pt to the window's edge and 4pt before its own "+"
+  (`WindowControls.trailingWidth`). A press on the window's controls still
+  counts as going nowhere. Verified (2026-11-26, throwaway copies): the
+  app builds. `try-splits.sh` renders of the plain window, of Changes and
+  Files in a 440pt split (both tabs named, six buttons, Changes and Files
+  lit) and of a zoomed split were looked at. `try-splits.sh column right
+  down focus-left zoom zoom tab close strip equalize resize:900x560 wide
+  column`: 0 faults. `try-switch.sh --side --widths`: 0 of 72 wrong. Not
+  verified, since each needs a pointer: a click on any of the buttons or
+  on a "+", the right-click menu, and the close button on hover over a
+  tab that gave up its room.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -418,10 +479,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   "The product". **The rules.** A split is a part of the window beside the
   sidebar with a tab row of its own (in this first version: a part of the
   main area that was split off). It is made by ⌘D or ⇧⌘D, by Split
-  Right or Split Down in a tab's menu (that tab moves into it), by the two
-  split buttons at the end of the titlebar (in this first version they were
-  items in a row's "+" and in the session's "…"; the entry above, at its
-  end), or by letting go of a tab or a file on an edge.
+  Right or Split Down in a tab's menu (that tab moves into it), from a
+  right-click on a row's "+" (in this first version they were items in a
+  row's "+" and in the session's "…", and for a few hours buttons at the
+  end of the titlebar: the entry above, at its end), or by letting go of a
+  tab or a file on an edge.
   It is there only while it has tabs: closing its last one takes it away
   and its siblings take the room. Sizes are shares, so a window resize
   keeps them, and no split is laid out under 160 by 100 points while there
@@ -1244,9 +1306,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   moves, the arrows ride the sidebar's edge and stop beside the toggle, and
   the rows to the right are pushed along by the same number every frame.
   **Since 2026-11-26** on the branch `flexible-panes` the same overlay is
-  `WindowControls` and has a trailing end as well: what the session is
-  running, Split Right and Split Down, and its "…" (the first entry of
-  "Window, terminal and keys").
+  `WindowControls` and has a trailing end as well: Changes, History, Files
+  and a new browser, what the session is running, and its "…" (the first
+  entry of "Window, terminal and keys").
 - **2026-11-18. A new session at the top level goes on top.** It went after
   the selected row, so in a list nobody arranges a new row turned up in the
   middle. Now that list reads newest first, as a list of chats does. In a

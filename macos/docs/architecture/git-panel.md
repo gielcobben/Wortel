@@ -210,10 +210,17 @@ chosen anywhere, so a new session inherits your habit instead of snapping to
 Changes. `lastSourceControlPane` is tracked separately so ⌘⌥G coming back from
 Files lands on History if that's where you were. One rule drives all three
 openers — the View menu, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
-not open → open on that pane, another in front → bring this one forward, this
-one in front → close its tab (`putAway`; until 2026-11-26 that hid the whole
-column). In the strip it is the same. In the main row the pane goes behind
-the session's terminal instead, and in a made split it only comes forward.
+not open → open it, in the column's row; open behind another tab, or behind a
+zoom on another split → bring it forward where it is; on screen → close its
+tab (`putAway`; until 2026-11-26 that hid the whole column). It is the same
+rule wherever the pane is, since later that day: before, a pane in the main
+row was swapped for the session's terminal with its tab kept, and one in a
+made split only ever came forward. `activateHides` is the rule read without
+acting, for the menu's Show or Hide. The three buttons at the trailing end
+of the titlebar send the same commands: `isOpen` lights a button while its
+pane is a tab in any split, and `activateHides` picks its tooltip, Show or
+Close. A lit button that did nothing, or two kinds of off, is why the rule
+could not differ by place.
 
 **How wide** the column opens is per *session* and the same for every tab in
 it (`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width

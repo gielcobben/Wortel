@@ -221,6 +221,8 @@ final class SideTabStrip: NSView {
     /// where the "+" goes.
     private struct Plan {
         var tabs: [NSRect]
+        /// Which tabs gave up the room kept for their close button.
+        var hugging: [Bool]
         var contentWidth: CGFloat
         var visibleWidth: CGFloat
         var accessory: NSRect?
@@ -233,13 +235,26 @@ final class SideTabStrip: NSView {
         let gaps = Self.gap * CGFloat(max(tabViews.count - 1, 0))
         // Each tab as wide as its title, up to the maximum, and never
         // narrower than that title or the readable minimum, whichever is less.
-        let natural = tabViews.map { min(ceil($0.fittingWidth), Self.maxTabWidth) }
+        var natural = tabViews.map { min(ceil($0.fittingWidth), Self.maxTabWidth) }
+        let available = max(0, room - gaps)
+        // Short of room, the tabs behind the one in front first give up the
+        // room each keeps for its close button (it shows in place of their
+        // glyph on hover instead, as Safari's does): two named tabs fit where
+        // one and a half did, before any title is cut or the row scrolls.
+        var hugging = tabViews.map { _ in false }
+        if natural.reduce(0, +) > available {
+            for (index, view) in tabViews.enumerated() where view.canHug {
+                let hugged = min(ceil(view.huggingWidth), Self.maxTabWidth)
+                guard hugged < natural[index] else { continue }
+                natural[index] = hugged
+                hugging[index] = true
+            }
+        }
         let floors = natural.map { min($0, Self.minTabWidth) }
         var widths = natural
         // Short of room, the tabs that can give way shrink together; one that
         // reaches its floor stays there and the rest take up the difference.
         // Once they're all at their floors, the row scrolls.
-        let available = max(0, room - gaps)
         for _ in widths.indices where widths.reduce(0, +) > available {
             let giving = widths.indices.filter { widths[$0] > floors[$0] }
             let fixed = widths.indices.filter { widths[$0] <= floors[$0] }.map { widths[$0] }.reduce(0, +)
@@ -261,7 +276,8 @@ final class SideTabStrip: NSView {
             accessory = NSRect(x: visibleWidth + Self.gap * 2, y: ((bounds.height - size.height) / 2).rounded(),
                                width: size.width, height: size.height)
         }
-        return Plan(tabs: frames, contentWidth: contentWidth, visibleWidth: visibleWidth, accessory: accessory)
+        return Plan(tabs: frames, hugging: hugging, contentWidth: contentWidth,
+                    visibleWidth: visibleWidth, accessory: accessory)
     }
 
     /// The width the row was last laid out at: narrowing it (a divider drag,
@@ -281,6 +297,7 @@ final class SideTabStrip: NSView {
         content.frame = NSRect(x: 0, y: 0, width: max(plan.contentWidth, plan.visibleWidth),
                                height: bounds.height)
         for (view, frame) in zip(tabViews, plan.tabs) { view.frame = frame }
+        for (view, hugs) in zip(tabViews, plan.hugging) { view.isHugging = hugs }
         if let frame = plan.accessory { trailingAccessory?.frame = frame }
         updateFade()
     }
@@ -454,6 +471,23 @@ private final class SideTabView: NSControl, TabTitleProviding {
     private var hovering = false {
         didSet { if hovering != oldValue { applyState() } }
     }
+    /// Set by the row when it is short of room: no room is kept after the
+    /// title, and the close button shows where the glyph is while the
+    /// pointer is over the tab.
+    var isHugging = false {
+        didSet {
+            guard isHugging != oldValue else { return }
+            needsLayout = true
+            applyState()
+        }
+    }
+    /// A tab behind the one in front, that can be closed: the only kind that
+    /// keeps room for a button it isn't showing.
+    var canHug: Bool { !isActive && !pinned }
+    /// As wide as its title, and a little after it: less than the inset
+    /// before its glyph, since nothing is drawn at a quiet tab's end.
+    var huggingWidth: CGFloat { Self.inset + Self.glyph + Self.glyphGap + titleWidth + Self.huggingInset }
+    private static let huggingInset: CGFloat = 6
 
     init(tab: SideTab, pinned: Bool = false) {
         self.tab = tab
@@ -518,7 +552,8 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
     /// What follows the title: the close button and its gaps, or the inset.
     private var trailingRoom: CGFloat {
-        pinned ? Self.inset : Self.closeGap + Self.closeSize + Self.endInset
+        if isHugging { return Self.huggingInset }
+        return pinned ? Self.inset : Self.closeGap + Self.closeSize + Self.endInset
     }
 
     /// Only what changed: a row is updated whole whenever any tab in it
@@ -561,7 +596,9 @@ private final class SideTabView: NSControl, TabTitleProviding {
         super.layout()
         let h = bounds.height
         icon.frame = NSRect(x: Self.inset, y: (h - 18) / 2, width: Self.glyph, height: 18)
-        let closeX = bounds.width - Self.endInset - Self.closeSize
+        // Over the glyph when the tab keeps no room for it at its end.
+        let closeX = isHugging ? Self.inset - (Self.closeSize - Self.glyph) / 2
+            : bounds.width - Self.endInset - Self.closeSize
         closeButton.frame = NSRect(x: closeX, y: (h - Self.closeSize) / 2,
                                    width: Self.closeSize, height: Self.closeSize)
         let labelX = Self.inset + Self.glyph + Self.glyphGap
@@ -573,6 +610,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
     private func applyState() {
         closeButton.isHidden = pinned || !(isActive || hovering)
+        icon.isHidden = isHugging && !closeButton.isHidden
         let strong = isActive && isKeyRow()
         label.textColor = strong ? .labelColor : .secondaryLabelColor
         icon.contentTintColor = strong ? .labelColor : .secondaryLabelColor

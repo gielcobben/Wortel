@@ -282,30 +282,45 @@ final class WindowControls: NSView {
     let history = HistoryButtons()
     private var historyLeading: NSLayoutConstraint!
 
-    // The trailing end: what the session is running, the two ways to split,
-    // and the session's "…". Three controls and three meanings, with nothing
-    // said twice: a row's "+" adds a tab to that split (a terminal, a
-    // browser, Changes, History, Files), these two make a new split beside
-    // or under the split you're in, and "…" is the session itself (rename,
-    // pin, close). The splits were items in "…" and in every "+", and "…"
-    // also repeated New Terminal and New Browser from "+": the owner, on
-    // seeing it, asked for the splits as buttons and then noticed the rest
-    // was already in "+".
+    // The trailing end. First the things a session can have open beside its
+    // terminal, one click each: Changes, History and Files, lit while open
+    // (the click is ⌃⌘1, ⌃⌘2 and ⌃⌘3: open it, bring it forward, close it
+    // when it is what you are looking at), and a new browser. Then what the
+    // session is running, and the session's "…" at the edge, where a "more"
+    // button usually is.
+    //
+    // The panes and the browser were items in every row's "+", two clicks
+    // each, which the owner called a downgrade: before the splits, Changes
+    // and Files were a button away. The "+" is a new terminal now, one
+    // click too, and the rest of what it listed is its right-click.
+    //
+    // Split Right and Split Down sat here for a few hours, between these
+    // two groups. Eight buttons left no room for two named tabs in the row
+    // under them at the width Changes and Files open at, and the owner, on
+    // seeing the choice: "maybe we don't need the split button". A split is
+    // ⌘D and ⇧⌘D, a tab let go on an edge, and a right-click on a tab or a
+    // "+"; and each of these buttons makes one already.
     //
     // They were on the main row, which was right while that row was the
     // window's fixed middle and put them in the middle of the window once
     // any split could sit beside any other. (A toggle for the side column
     // sat here for an hour: with every split movable there is no side
-    // column to toggle, only Changes and Files, which ⌥⌘B opens and closes.)
+    // column to toggle.)
+    let panes: [(pane: InspectorPane, button: HoverFillButton)] = InspectorPane.allCases.map {
+        ($0, HoverFillButton.glyph($0.symbol, $0.title))
+    }
+    let browser = HoverFillButton.glyph("globe", "New Browser")
     let running = RunningButton()
-    let splitRight = HoverFillButton.glyph("rectangle.split.2x1", "Split Right (⌘D)")
-    let splitDown = HoverFillButton.glyph("rectangle.split.1x2", "Split Down (⇧⌘D)")
     let more = HoverFillButton.glyph("ellipsis", "Session")
     private let trailing = NSStackView()
 
     /// How much of the titlebar's trailing end the session's controls take,
     /// for the row under them to clear (`LeafBar.trailingClearance`).
-    var trailingWidth: CGFloat { trailing.fittingSize.width + 8 }
+    ///
+    /// Their width, the 8 points to the window's edge, and 4 more between
+    /// them and the row's own "+" (or its zoom button), which a lit pane
+    /// button otherwise touches.
+    var trailingWidth: CGFloat { trailing.fittingSize.width + 12 }
 
     /// Where the arrows start when the sidebar is shut: past the toggle.
     private static let restingX = Chrome.trafficLightInset + Chrome.controlSize + 8
@@ -316,10 +331,11 @@ final class WindowControls: NSView {
         history.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toggle)
         addSubview(history)
-        // The two layout buttons, then the session's two with "…" at the
-        // edge, where a "more" button usually is (the owner's order).
-        for button in [splitRight, splitDown, running, more] { trailing.addArrangedSubview(button) }
-        trailing.spacing = 4
+        // What to open, then the session's two, a wider gap between. Close
+        // set: every point here is one the row under it doesn't have.
+        for button in panes.map(\.button) + [browser, running, more] { trailing.addArrangedSubview(button) }
+        trailing.spacing = 2
+        trailing.setCustomSpacing(8, after: browser)
         trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(trailing)
         historyLeading = history.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.restingX)
@@ -574,17 +590,17 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
         windowControls.running.target = self
         windowControls.running.action = #selector(openRunningJobs(_:))
-        // The menu's own actions, so the key and the button are one thing:
-        // the split you're in, the room check, the sound when there is none.
-        windowControls.splitRight.action = #selector(AppDelegate.splitRight(_:))
-        windowControls.splitDown.action = #selector(AppDelegate.splitDown(_:))
         windowControls.more.target = self
         windowControls.more.action = #selector(presentSessionMenu(_:))
-
+        for (pane, button) in windowControls.panes {
+            button.action = AppDelegate.action(showing: pane)
+        }
+        windowControls.browser.action = #selector(AppDelegate.newBrowserBeside(_:))
     }
 
     func start() {
         observeColumn()
+        observePanes()
         observeProcesses()
         observeHistory()
     }
@@ -601,6 +617,23 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     // MARK: Side column
+
+    /// A pane's button is lit while the pane is a tab somewhere in the
+    /// session, and says what a click does next.
+    private func observePanes() {
+        withObservationTracking {
+            for (pane, button) in windowControls.panes {
+                button.isSelected = git.isOpen(pane)
+                let label = (git.activateHides(pane) ? "Close " : "Show ") + pane.title
+                if button.toolTip != label {
+                    button.toolTip = label
+                    button.setAccessibilityLabel(label)
+                }
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observePanes() }
+        }
+    }
 
     private func observeColumn() {
         withObservationTracking {
@@ -786,8 +819,9 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 /// brings that tab to the front.
 @MainActor
 enum NewTabMenu {
-    static func popUp(from sender: NSView, git: GitPanelModel, region: TabRegion) {
-        let menu = NSMenu()
+    /// Everything a tab can be, opened in `region`: what a right-click on a
+    /// row's "+" lists.
+    static func fill(_ menu: NSMenu, git: GitPanelModel, region: TabRegion) {
         menu.autoenablesItems = false
 
         // The shortcut that opens a terminal *there*: ⌘T opens one in the area
@@ -808,8 +842,6 @@ enum NewTabMenu {
         browser.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(browser)
 
-        // Tabs only: a new split is the two buttons at the end of the
-        // titlebar, and a tab's own menu splits it off.
         menu.addItem(.separator())
         for pane in InspectorPane.allCases {
             let item = ClosureMenuItem(title: pane.title) {
@@ -823,9 +855,18 @@ enum NewTabMenu {
             menu.addItem(item)
         }
 
-        // Hung from the button the native way, its leading edge under the
-        // button's, as a toolbar's pull-down opens. (It used to open leftward,
-        // its trailing edge on the "+", back over the tabs.)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+        // A terminal in a split of its own, beside this one or under it:
+        // the mouse's way to what ⌘D and ⇧⌘D do.
+        menu.addItem(.separator())
+        let splitRight = ClosureMenuItem(title: "Split Right") { git.split(region, on: .right) }
+        splitRight.setGlyph("rectangle.split.2x1")
+        splitRight.keyEquivalent = "d"
+        splitRight.keyEquivalentModifierMask = [.command]
+        menu.addItem(splitRight)
+        let splitDown = ClosureMenuItem(title: "Split Down") { git.split(region, on: .down) }
+        splitDown.setGlyph("rectangle.split.1x2")
+        splitDown.keyEquivalent = "d"
+        splitDown.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(splitDown)
     }
 }

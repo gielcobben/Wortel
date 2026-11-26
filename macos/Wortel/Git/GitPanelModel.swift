@@ -749,64 +749,44 @@ final class GitPanelModel {
         if unsized != unsizedLeaves { unsizedLeaves = unsized }
     }
 
-    /// One pane command: ⌘⌥G, ⌘⌥E, or their View-menu items.
-    /// Each means both "show me this pane" and "toggle, if it's already what's
-    /// on screen":
-    ///
-    /// - hidden → open on that pane
-    /// - showing a *different* pane → swap in place, don't close
-    /// - showing that pane → close
-    ///
-    /// A pane in the main row or the strip toggles there, against the terminal
-    /// or the strip being up.
-    /// Whether `activate(_:)` would put the pane away rather than bring it up,
-    /// by the same rules in the same order: what the menu calls it, Show or
-    /// Hide, has to be what the key then does.
+    /// Whether `activate(_:)` would close the pane rather than bring it up:
+    /// what the menu calls it, Show or Hide, and what its button in the
+    /// titlebar says, has to be what the key or the click then does.
     func activateHides(_ requested: InspectorPane) -> Bool {
-        // In a pane of the main area there is nothing to put it away to:
-        // the command only ever brings it forward there.
-        if paneRegion(of: .pane(requested)) != nil { return false }
-        if mainTabs.contains(.pane(requested)) { return activeMainTab == .pane(requested) }
-        if bottomTabs.contains(.pane(requested)) {
-            return bottomVisible && activeBottomTab == .pane(requested)
-        }
-        return isVisible && activeTab == .pane(requested)
+        let tab = SideTab.pane(requested)
+        guard let region = session?.workspace.region(of: tab) else { return false }
+        // Behind a zoomed split it isn't on screen: the command shows it.
+        if let zoomedRegion, zoomedRegion != region { return false }
+        return isShowing(region) && activeTab(in: region) == tab
     }
 
-    /// The pane of the main area whose row has `tab`, if one does.
-    private func paneRegion(of tab: SideTab) -> TabRegion? {
-        paneTabs.first { $0.value.tabs.contains(tab) }.map { .pane($0.key) }
+    /// Whether `pane` is a tab of this session, in any split: what its
+    /// button in the titlebar is lit by.
+    func isOpen(_ pane: InspectorPane) -> Bool {
+        let tab = SideTab.pane(pane)
+        return tabs.contains(tab) || mainTabs.contains(tab) || bottomTabs.contains(tab)
+            || paneTabs.values.contains { $0.tabs.contains(tab) }
     }
 
+    /// One rule, wherever the pane is: not open, it opens (in the split
+    /// Changes and Files open in); open behind another tab or a zoom, it
+    /// comes forward; on screen, it closes. A pane holds nothing a close
+    /// loses.
+    ///
+    /// Until 2026-11-26 a pane in the main row was swapped for the terminal
+    /// with its tab kept, and one in a split made by hand only ever came
+    /// forward. Its button in the titlebar is lit while it is open, and a
+    /// lit button that did nothing, or two kinds of off, was not a button.
     func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
-        // In a pane of the main area: forward, there. Already in front, it
-        // stays: a pane's row has no terminal of the session's to go back
-        // to, and closing the tab is not what a Show command is for. (It
-        // still ends a zoom that was hiding it.)
-        if let region = paneRegion(of: .pane(requested)) {
-            bringForward(.pane(requested), in: region)
-            return
-        }
-        // In the main area's row: the same toggle, against the terminal.
-        if mainTabs.contains(.pane(requested)) {
-            selectMain(activeMainTab == .pane(requested) ? .session : .pane(requested))
-            return
-        }
-        // In the strip or the side column: in front already, it is put
-        // away, which is closing it (a pane holds nothing a close loses, and
-        // nothing is hidden with its tabs kept any more).
-        if bottomTabs.contains(.pane(requested)) {
-            if bottomVisible && activeBottomTab == .pane(requested) {
-                putAway([.pane(requested)], from: .bottom)
-            } else {
-                selectBottom(.pane(requested))
-            }
-            return
-        }
-        if isVisible && activeTab == .pane(requested) {
-            putAway([.pane(requested)], from: .side)
-        } else {
+        let tab = SideTab.pane(requested)
+        guard let region = session?.workspace.region(of: tab) else { return show(requested, via: origin) }
+        if activateHides(requested) {
+            putAway([tab], from: region)
+        } else if region == .side {
+            // Through `show`, which counts a pane put in front of someone.
             show(requested, via: origin)
+        } else {
+            bringForward(tab, in: region)
         }
     }
 

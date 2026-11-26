@@ -47,14 +47,27 @@ enum MarkPen: String, CaseIterable {
     }
 
     /// How wide its line is, and how much of what is under it shows through.
-    var width: CGFloat { self == .highlighter ? 14 : MarkStroke.width }
+    var width: CGFloat {
+        switch self {
+        case .highlighter: return 14
+        case .box: return 2
+        case .pen, .arrow: return MarkStroke.width
+        }
+    }
+
+    /// A box is dashed. A picked element is outlined solid, and a drawn box
+    /// in a solid line was the same rectangle: nothing said which of the
+    /// two was tied to an element and which was only an area.
+    var dash: [CGFloat]? { self == .box ? [6, 4] : nil }
     var opacity: CGFloat { self == .highlighter ? 0.35 : 1 }
 }
 
 /// The tool in hand while marking up: one of the pens, or the one that
 /// moves a drawing already made.
 enum MarkupTool: Equatable, CaseIterable {
-    case pen, box, arrow, highlighter, move
+    // The box first: it is what is in hand to begin with. Most marks say
+    // "this area", and a box says it exactly, where a hand's loop is rough.
+    case box, pen, arrow, highlighter, move
 
     /// What it draws with, or nil for the one that draws nothing.
     var pen: MarkPen? {

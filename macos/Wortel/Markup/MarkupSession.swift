@@ -48,7 +48,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
 
     /// The tool in hand. Kept with the note: what you were drawing with is
     /// what you draw with when the tab comes back.
-    @ObservationIgnored var tool = MarkupTool.pen {
+    @ObservationIgnored var tool = MarkupTool.box {
         didSet { if tool != oldValue { overlay?.toolChanged() } }
     }
 
@@ -111,7 +111,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         known = [:]
         nextNumber = 1
         copies = 0
-        tool = .pen
+        tool = .box
         if let folder { Self.open.remove(folder.path) }
         folder = nil
         undo.removeAllActions()

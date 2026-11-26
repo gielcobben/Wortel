@@ -271,18 +271,28 @@ its terminal shows that one tab, never a bare title.
 **The titlebar has two ends, and they are the window's, not a row's**
 (`WindowControls`, one overlay over the whole titlebar). At the leading end,
 by the traffic lights: the sidebar's toggle, then Back and Forward, which
-ride the sidebar's edge. At the trailing end, two buttons: what the session
-is running, and the session's "…" menu. They stay in their corners whatever
-the splits do. The row under each end makes room for it: the leftmost titlebar
-row for the leading end, the rightmost for the trailing one. These buttons
-were on the main row until 2026-11-26, which put them in the middle of the
-window as soon as a split could sit to the right of it. A button for one
+ride the sidebar's edge. At the trailing end, four: what the session is
+running, Split Right, Split Down, and the session's "…" menu. They stay in
+their corners whatever the splits do. The row under each end makes room for
+it: the leftmost titlebar row for the leading end, the rightmost for the
+trailing one. The first and the last of the four were on the main row until
+2026-11-26, which put them in the middle of the window as soon as a split
+could sit to the right of it. A button for one
 split's own row is the thing not to add back: if it is about the session or
 the window, it goes in a corner, and if it is about the split, it is a key
 or a menu item. There is no button for the side column. One sat in the
 trailing corner for an hour and was taken out: with every split movable
 there is no side column to show or hide, only Changes and Files, which ⌥⌘B
 opens and closes (`docs/decisions.md`).
+
+**Three controls, three meanings.** A row's "+" adds a tab to that split:
+a terminal, a browser, Changes, History, Files. The two split buttons make a
+new split beside or under the split you are in, as ⌘D and ⇧⌘D do. The "…"
+is the session itself: rename, pin, close, what its sidebar row's menu has.
+None of them repeats another. Until 2026-11-26 the "…" also listed New
+Terminal, New Browser and the two splits, and every "+" listed the splits
+too. Before adding an item to one of the three, check it is not already what
+another one is for.
 
 A split's row has one of two looks, by where it is (`SplitLeafView`):
 

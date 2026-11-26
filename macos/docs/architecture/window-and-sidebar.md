@@ -24,15 +24,26 @@ a "+", no buttons of its own.
 What is not a row's is the window's: one overlay laid over all the rows
 (`WindowControls`, in `BackdropController`; it was `SidebarControls` until
 2026-11-26, when it had only the leading end). Only its buttons take clicks.
-The rest falls through to the row under it, which moves the window.
+The rest falls through to the row under it, which moves the window. A press
+on one of its buttons is not a press in the split under it:
+`MainSplitViewController.region(at:)` answers nil there, or Split Right
+would first make the corner's split the one you are in and then split that
+one.
 
 - **The leading end**: the sidebar's toggle beside the traffic lights, and
   Back and Forward. They are placed on every layout pass and split resize
   (the first real layout at launch sends no resize) so the arrows ride the
   sidebar's edge as it opens and closes (`WindowControls.place`).
-- **The trailing end**: two buttons, what the session is running
-  (`RunningButton`) and the session's "…" menu. `TitleBarController` wires
-  them. Until 2026-11-26 they were on the main row (`MainBar`), the side
+- **The trailing end**: four buttons. What the session is running
+  (`RunningButton`), Split Right and Split Down (`splitRight`, `splitDown`),
+  and the session's "…" menu. `TitleBarController` wires them. The two split
+  buttons send `AppDelegate.splitRight` and `splitDown`, the menu's own
+  actions, so they split the split you are in with the same room check and
+  the same sound as ⌘D. The "…" is `SessionActions.menu`, the sidebar row's
+  menu, and nothing else: until later on 2026-11-26 it also had New
+  Terminal, New Browser, the two splits and Terminal Below, which a row's
+  "+" (`NewTabMenu`) and the split buttons already say. Until 2026-11-26
+  the first and the last were on the main row (`MainBar`), the side
   column's row (`SideColumnBar`) had the column's toggle, and the strip's row
   (`BottomBar`) a chevron to hide it. All three classes are gone. With
   splits, those rows can be anywhere, and their buttons were in the middle

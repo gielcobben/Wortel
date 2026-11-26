@@ -282,15 +282,24 @@ final class WindowControls: NSView {
     let history = HistoryButtons()
     private var historyLeading: NSLayoutConstraint!
 
-    // The trailing end, the session's own: what it is running and its "…"
-    // menu. They were on the main row, which was right while that row was
-    // the window's fixed middle and put them in the middle of the window
-    // once any split could sit beside any other. A row is a split's tabs
-    // and its "+" and nothing else; what belongs to the session is here,
-    // where it stays whatever the splits do. (A toggle for the side column
+    // The trailing end: what the session is running, the two ways to split,
+    // and the session's "…". Three controls and three meanings, with nothing
+    // said twice: a row's "+" adds a tab to that split (a terminal, a
+    // browser, Changes, History, Files), these two make a new split beside
+    // or under the split you're in, and "…" is the session itself (rename,
+    // pin, close). The splits were items in "…" and in every "+", and "…"
+    // also repeated New Terminal and New Browser from "+": the owner, on
+    // seeing it, asked for the splits as buttons and then noticed the rest
+    // was already in "+".
+    //
+    // They were on the main row, which was right while that row was the
+    // window's fixed middle and put them in the middle of the window once
+    // any split could sit beside any other. (A toggle for the side column
     // sat here for an hour: with every split movable there is no side
     // column to toggle, only Changes and Files, which ⌥⌘B opens and closes.)
     let running = RunningButton()
+    let splitRight = HoverFillButton.glyph("rectangle.split.2x1", "Split Right (⌘D)")
+    let splitDown = HoverFillButton.glyph("rectangle.split.1x2", "Split Down (⇧⌘D)")
     let more = HoverFillButton.glyph("ellipsis", "Session")
     private let trailing = NSStackView()
 
@@ -307,7 +316,7 @@ final class WindowControls: NSView {
         history.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toggle)
         addSubview(history)
-        for button in [running, more] { trailing.addArrangedSubview(button) }
+        for button in [running, splitRight, splitDown, more] { trailing.addArrangedSubview(button) }
         trailing.spacing = 4
         trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(trailing)
@@ -563,6 +572,10 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
         windowControls.running.target = self
         windowControls.running.action = #selector(openRunningJobs(_:))
+        // The menu's own actions, so the key and the button are one thing:
+        // the split you're in, the room check, the sound when there is none.
+        windowControls.splitRight.action = #selector(AppDelegate.splitRight(_:))
+        windowControls.splitDown.action = #selector(AppDelegate.splitDown(_:))
         windowControls.more.target = self
         windowControls.more.action = #selector(presentSessionMenu(_:))
 
@@ -680,57 +693,16 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     /// The session's "…": its own actions, as ChatGPT's menu is the
-    /// conversation's. Native, small, glyphs that show, shortcuts on the right.
-    /// The titles are short on purpose: the longest title decides the menu's
-    /// width, and inside a session's own menu "Hide Strip" needs no more words to say
-    /// it's about this session. Below its own three items it
-    /// is the sidebar row's menu (SessionActions), so the two always agree.
+    /// conversation's. It is the sidebar row's menu (SessionActions), so the
+    /// two always agree, and it is here for when the sidebar is hidden.
     @objc private func presentSessionMenu(_ sender: NSView) {
         guard let session = home.selected else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        // What used to be glyphs on the row: a terminal in the main area, and
-        // the strip under it.
-        let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
-            self?.git.openMainTerminal()
-        }
-        Self.setGlyph("apple.terminal", on: terminal)
-        terminal.keyEquivalent = "t"
-        terminal.keyEquivalentModifierMask = [.command]
-        menu.addItem(terminal)
-        let browser = ClosureMenuItem(title: "New Browser") { [weak self] in
-            self?.git.openBrowser(at: nil, in: .main)
-        }
-        Self.setGlyph("globe", on: browser)
-        browser.keyEquivalent = "l"
-        browser.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(browser)
-        // A terminal in a split of its own, beside the main row or under it.
-        let splitRight = ClosureMenuItem(title: "Split Right") { [weak self] in
-            self?.git.split(.main, on: .right)
-        }
-        Self.setGlyph("rectangle.split.2x1", on: splitRight)
-        splitRight.keyEquivalent = "d"
-        splitRight.keyEquivalentModifierMask = [.command]
-        menu.addItem(splitRight)
-        let splitDown = ClosureMenuItem(title: "Split Down") { [weak self] in
-            self?.git.split(.main, on: .down)
-        }
-        Self.setGlyph("rectangle.split.1x2", on: splitDown)
-        splitDown.keyEquivalent = "d"
-        splitDown.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(splitDown)
-        let strip = ClosureMenuItem(title: "Terminal Below") { [weak self] in
-            self?.git.toggleBottom()
-        }
-        Self.setGlyph("rectangle.bottomthird.inset.filled", on: strip)
-        strip.keyEquivalent = "j"
-        strip.keyEquivalentModifierMask = [.command]
-        menu.addItem(strip)
-        menu.addItem(.separator())
-
-        // The rest is the session's own menu, the one its sidebar row has.
+        // The session's own menu, the one its sidebar row has, and nothing
+        // else: what opens in a split is in that split's "+", and a new
+        // split is the two buttons beside this one.
         let actions = SessionActions.menu(for: session, manager: manager)
         for item in actions.items {
             actions.removeItem(item)
@@ -834,21 +806,8 @@ enum NewTabMenu {
         browser.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(browser)
 
-        // A terminal in a split of its own: beside this one, when the row is
-        // a part of the main area, and beside the main row from the column
-        // or the strip.
-        menu.addItem(.separator())
-        let splitRight = ClosureMenuItem(title: "Split Right") { git.split(region, on: .right) }
-        splitRight.setGlyph("rectangle.split.2x1")
-        splitRight.keyEquivalent = "d"
-        splitRight.keyEquivalentModifierMask = [.command]
-        menu.addItem(splitRight)
-        let splitDown = ClosureMenuItem(title: "Split Down") { git.split(region, on: .down) }
-        splitDown.setGlyph("rectangle.split.1x2")
-        splitDown.keyEquivalent = "d"
-        splitDown.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(splitDown)
-
+        // Tabs only: a new split is the two buttons at the end of the
+        // titlebar, and a tab's own menu splits it off.
         menu.addItem(.separator())
         for pane in InspectorPane.allCases {
             let item = ClosureMenuItem(title: pane.title) {

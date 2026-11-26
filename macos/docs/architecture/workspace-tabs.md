@@ -372,8 +372,9 @@ The views:
   The row is a `LeafBar`, a `ChromeBarView` with a `strip` of tabs, a
   `leadingClearance`, a `trailingClearance` and an `unzoom` button. One
   class conforms, `PaneBar`: the tabs, "+" right after the last
-  (`NewTabMenu`), and nothing else but the button that shows while its
-  split is zoomed. Every leaf has one, wired the same way
+  (`NewTabMenu`: New Terminal, New Browser, Changes, History, Files, each
+  into that row, and no splits since later on 2026-11-26), and nothing else
+  but the button that shows while its split is zoomed. Every leaf has one, wired the same way
   (`PaneBar.wire(to:home:region:)`). There were four until 2026-11-26:
   `MainBar` showed the session's name as a plain title until the row held
   more than the terminal and carried the session's "…", what it runs and
@@ -476,9 +477,15 @@ Making one, and dropping on one:
 
 - ⌘D and ⇧⌘D (`AppDelegate.splitRight`, `splitDown`) put a new terminal in a
   split beside the leaf you're in (`GitPanelModel.currentLeaf`). From Changes
-  that is a split beside Changes, from the strip one beside the strip. Split
-  Right and Split Down in a tab's menu, in `NewTabMenu` and in the session's
-  "…" go through the same `GitPanelModel.split`, which asks the window
+  that is a split beside Changes, from the strip one beside the strip. The
+  two buttons at the trailing end of the titlebar
+  (`WindowControls.splitRight`, `splitDown`) send the same two actions, so
+  they are the keys as buttons. Split Right and Split Down in a tab's own
+  menu move that tab into a split (`SideTabStrip.onSplit`). They were also
+  items in `NewTabMenu` and in the session's "…" until later on 2026-11-26,
+  and were taken out of both: "+" adds tabs, "…" is the session, and a
+  split is the buttons. All of them go through the same
+  `GitPanelModel.split`, which asks the window
   where the room comes from (`roomToSplit`, `MainAreaController.room`). A
   leaf that is two minimums and a gap wide (or high) is halved. One that is
   not takes the new split's room from the whole row or column it is in, an
@@ -527,11 +534,13 @@ The keyboard:
   it (`SplitLayout.neighbour`, the upper or left one on a tie). With no leaf
   there, focus stops. A moved tab has one more answer: toward the edge the
   column opens on it goes to the column, and down to the strip, when that
-  one has no tabs, which makes it. The session's own tab sent toward the
-  column still flips `sideColumnLeading` here, the one place the old swap is
-  left (above).
+  one has no tabs, which makes it. The session's own tab goes nowhere.
 - A click in a split makes it the area you're in
   (`MainSplitViewController.region(at:)`), so ⌘T, ⌘W, ⇧⌘T and ⇧⌘L act there.
+  Two places answer nil, so a press there leaves you where you were: a
+  divider, and any of the window's controls (`WindowControls`), which lie
+  over the end of whichever row is under them. Without the second, the
+  Split Right button would always split the split in the corner.
   Closing the split you're in sends the keyboard to the main row, or to
   whatever is zoomed.
 - Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the

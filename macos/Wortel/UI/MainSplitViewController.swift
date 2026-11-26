@@ -452,6 +452,11 @@ extension MainSplitViewController {
     /// web page, a pane or the file tree never report typing of their own.
     func region(at point: NSPoint) -> TabRegion? {
         guard let mainArea, !mainArea.isOnDivider(point) else { return nil }
+        // Nor for the window's own controls, laid over the end of whichever
+        // row is under them: a press on Split Right is not you going to the
+        // split in the corner, and it would split that one instead of yours.
+        let controls = titleBars.windowControls
+        if let above = controls.superview, controls.hitTest(above.convert(point, from: nil)) != nil { return nil }
         return mainArea.paneDrop(at: point)?.region
     }
 }

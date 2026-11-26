@@ -104,9 +104,18 @@ each. A session starts with one, its terminal. You make more with ⌘D and ⇧�
 the right edge, ⌘J under the terminal.
 
 Every split's row is the same: its tabs, then "+". The session's own terminal
-is a tab too, named after the session, with no close button. What belongs to
-the session is at the right end of the titlebar: what it is running, and its
-"…" menu.
+is a tab too, named after the session, with no close button.
+
+Three controls, and each means one thing:
+
+- **"+" in a row** adds a tab to that split: New Terminal, New Browser,
+  Changes, History, Files.
+- **The two split buttons** at the right end of the titlebar make a new split
+  beside or under the split you're in. They are ⌘D and ⇧⌘D as buttons.
+- **"…"** beside them is the session itself: rename, pin, close and the rest
+  of what its sidebar row's menu has.
+
+The button before those three shows what the session is running.
 
 **Nothing is hidden.** A split is on screen while it holds a tab and gone when
 it holds none. Until 2026-11-26, ⌥⌘B and ⌘J hid the side column and the
@@ -206,10 +215,13 @@ when the row has no room either do they beep and do nothing: a split is
 never laid out under 160 by 100 points while there is room. A split is there only while it has tabs, so closing its
 last tab closes the split and its neighbours take the room.
 
-Split Right and Split Down are also in a tab's right-click menu, where they
-move that tab into a new split, and in every row's "+" and the session's "…",
-where they open a new terminal. They beep the same way when there is no room.
-The session's own terminal stays in the main row and can't be split off.
+Split Right and Split Down are in three places. The Tab menu and the two
+buttons at the right end of the titlebar are ⌘D and ⇧⌘D: a new terminal in a
+split beside or under the one you're in. A tab's right-click menu has them
+too, and there they move that tab into a new split. All of them beep the same
+way when there is no room. They are no longer in a row's "+", which only adds
+tabs, or in the session's "…", which is only about the session. The session's
+own terminal stays in the main row and can't be split off.
 
 That right-click menu no longer has Move to Main Area, Move to Side Column
 and Move to Bottom Strip. There are no named places to move to, only splits.

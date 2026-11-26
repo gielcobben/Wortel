@@ -295,7 +295,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   stay there whatever the splits do, and the rightmost titlebar row makes
   room for them as the leftmost does for the others
   (`LeafBar.trailingClearance`). The strip's chevron has no successor:
-  ⌘J, and the strip's item in the "…". Two picks the owner made when asked. A
+  ⌘J. Two picks the owner made when asked. A
   lone terminal shows a tab too, always a tab and never a bare title: the
   session's own terminal is a tab named after the session, pinned, so no
   close button and no menu, and it cannot leave its row. And a new session
@@ -341,7 +341,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Column (⌘D does it); and a tab's right-click Move to Main Area, Side
   Column or Bottom Strip (a tab goes to another split by a drag or by ⌃⌘
   with an arrow, and Split Right and Split Down are still in that menu).
-  The strip's item in the session's "…" is Terminal Below. No menu and no
+  The strip's item in the session's "…" became Terminal Below, and left
+  the "…" with the rest of it later that day (below). No menu and no
   tooltip says "side column" or "bottom strip" any more. In these docs the
   two words now mean only where Changes and Files, and ⌘J's terminal, open
   by default (`docs/glossary.md`). A session saved by a build that could
@@ -368,7 +369,37 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   back to the main row, goes to the strip; a zoom and back; 0 faults, and
   the three splits back after a relaunch. WortelTests pass, three
   expectations changed to "on screen from the moment it holds a tab" and
-  one test new for `showHidden`. Not looked at by eye.
+  one test new for `showHidden`. Not looked at by eye. **Three controls,
+  three meanings, and nothing said twice.** The owner, right after: "New
+  Terminal, or Terminal below are just splits right? So maybe we should
+  show split icons in the toolbar and not in the ellipses menu". They then
+  saw that New Terminal, New Browser, Changes, History and Files were in
+  every row's "+" already. The "…" had grown a second job: beside the
+  session's own actions it repeated what "+" opens and offered the two
+  splits, and every "+" offered the two splits again. Now each control
+  means one thing. **A row's "+"** adds a tab to that split and only that:
+  New Terminal, New Browser, Changes, History, Files. **Two buttons at the
+  trailing end of the titlebar**, between what the session is running and
+  the "…", make a split: Split Right (⌘D) and Split Down (⇧⌘D). They send
+  the menu's own actions, so the button and the key are one thing: the
+  split you are in, the same room check, the same sound when there is no
+  room. **The "…"** is the session itself and nothing else, the menu its
+  sidebar row has (rename, pin, close and the rest), there for when the
+  sidebar is hidden. New Terminal, New Browser, Split Right, Split Down and
+  Terminal Below left it. A tab's right-click keeps Split Right and Split
+  Down, which mean something else there: that tab into a split of its own.
+  One rule had to follow. A click anywhere in a split makes it the split
+  you are in, and the window's controls lie over the end of whichever row
+  is under them, so a press on Split Right would first have moved you to
+  the corner's split and then split that one. A press on any of the
+  window's controls no longer counts as going anywhere
+  (`MainSplitViewController.region(at:)`). The trailing end now holds four
+  controls where the session's row once held three, which is the cost: the
+  rightmost titlebar row gives up that much more of its width. Verified
+  (2026-11-26, a throwaway copy): the app builds, and `try-splits.sh
+  --picture column focus-left right down` ran with 0 faults, the picture
+  showing the four controls in the corner. The unit tests were not run
+  again for this: it changes no rule.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -386,8 +417,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   "The product". **The rules.** A split is a part of the window beside the
   sidebar with a tab row of its own (in this first version: a part of the
   main area that was split off). It is made by ⌘D or ⇧⌘D, by Split
-  Right or Split Down in a tab's menu (that tab moves into it), in a row's
-  "+" or the session's "…", or by letting go of a tab or a file on an edge.
+  Right or Split Down in a tab's menu (that tab moves into it), by the two
+  split buttons at the end of the titlebar (in this first version they were
+  items in a row's "+" and in the session's "…"; the entry above, at its
+  end), or by letting go of a tab or a file on an edge.
   It is there only while it has tabs: closing its last one takes it away
   and its siblings take the room. Sizes are shares, so a window resize
   keeps them, and no split is laid out under 160 by 100 points while there
@@ -1211,8 +1244,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the rows to the right are pushed along by the same number every frame.
   **Since 2026-11-26** on the branch `flexible-panes` the same overlay is
   `WindowControls` and has a trailing end as well: what the session is
-  running, its "…" and the side column's toggle, which were on rows until
-  then (the first entry of "Window, terminal and keys").
+  running, Split Right and Split Down, and its "…" (the first entry of
+  "Window, terminal and keys").
 - **2026-11-18. A new session at the top level goes on top.** It went after
   the selected row, so in a list nobody arranges a new row turned up in the
   middle. Now that list reads newest first, as a list of chats does. In a

@@ -147,11 +147,27 @@ file, so `BrowserDownloads.stop` removes it. A Debug build saves to
 (`BrowserDownloadsFolder`, read in `main.swift` before the launch scrub
 removes every `WORTEL_` variable).
 
-A file or browser opened without saying where goes where you last *moved* one
-of its kind in that session, or dropped one from a list (`WorkspaceTabs.home(for:)`;
-until then the main area for a file, the column for a browser). ⌥-click puts
-it in the other place once (`elsewhere(for:)`: out of the main area, else into
-it) without teaching that.
+**Where a thing opens when nothing says where** (`WorkspaceTabs.home(for:)`):
+a file in the main row, and everything else you look at beside your work in
+the column's row, a browser like Changes, History and Files. That is the
+whole rule since 2026-11-26. ⇧⌘B follows it too (`AppDelegate.newBrowserHere`
+asks `home(for:)`): it opened its browser over the tab you were in, the one
+of ⇧⌘C, ⇧⌘H, ⇧⌘F and ⇧⌘B that did. ⌥-click puts a file or a server in the
+other place once (`elsewhere(for:)`: out of the main row, else into it). To
+have a thing in a split of your choosing you say so: that split's "+", a
+split button, ⌥⌘T and its letter, or a drag.
+
+Until that date there was a memory. A file or a browser opened where you had
+last *moved* one of its kind in that session, or dropped one from a list
+(`habits`, `learnHome`). It was taken out on the owner's instruction: where
+the next one opened depended on something done a while ago, and a browser
+followed a rule no pane had. The released app still has it. What is left of
+it in the code is inert: `WorkspaceTabs.habits` is neither read nor written
+and stays so that a saved session still decodes, and the `recordsHabit`
+parameters of `move`, `split` and their callers do nothing. Do not read
+either as a rule. The preview tab is not this: a file looked at from a list
+goes where the preview tab is (`peekRegion`), which is that tab's place and
+not a memory of where files go.
 
 One file tab per session can be the **preview tab** (`WorkspaceTabs.peek`,
 `Session.peekTab`, not persisted): a file looked at from Changes or Files,
@@ -226,8 +242,9 @@ with it the one state a leaf could be in that a made split could not.
   opens Changes and Files there (not one that is already open in another
   split), brings the pane last used forward (Changes when that was History)
   and focuses it. With any of Changes, History or Files in that row it
-  closes them (`putAway`), and the keyboard goes back to the main row, or
-  stays in the split when something else is left in it. `toggleCloses` is
+  closes them (`putAway`), and the keyboard goes back to the split you were
+  in before (`regionBefore`), or stays in the split when something else is
+  left in it. `toggleCloses` is
   what the menu item reads for its title.
 - **⇧⌘C, ⇧⌘H, ⇧⌘F, ⌃⇧G** (and ⌃⌘1, ⌃⌘2, ⌃⌘3, what the first three were until
   2026-11-26) are `activate`. One rule, wherever the pane is: not open, it opens in the
@@ -324,7 +341,8 @@ The model:
   The main row keeps its tabs in order and takes every other terminal and
   file, in reading order. The column's row keeps its panes and browsers and
   takes every other pane and browser (`goesBeside`). The strip, every made
-  split, the zoom and the habits are left out of the new value, and
+  split and the zoom are left out of the new value (and the unused `habits`
+  field with them), and
   `normalized` builds the tree from the two rows, so the column's leaf is
   there only if its row has tabs and comes back `unsized`, to be given its
   usual width by the window. Nothing is closed: every tab of `allTabs` but
@@ -334,11 +352,12 @@ The model:
   each row's own front stays when it is still in that row.
   `GitPanelModel.resetLayout` wraps it like any change (mirror, save, the
   repo, the keyboard to the row `keeping` landed in), with no animation.
-  `canResetLayout` dims the menu item unless there is a zoom, any split
-  at all, or a main row that would change. Any split, so that a session
-  that only had a divider dragged can be reset: the size a split opens at
-  is the window's to know, so with the one split already as it opens the
-  item is on and does nothing. A second
+  The menu item is on whenever there is a session
+  (`AppDelegate.validateMenuItem`). It was dimmed when there was nothing to
+  put back (`canResetLayout`, gone), and a dimmed item is not in the
+  command palette at all, which lists only enabled items: the owner looked
+  for it and could not find it. With nothing to put back it does nothing.
+  It has an icon in the palette (`PaletteCommands`). A second
   preset is a case of `Preset` and a branch in `arranged`. It cannot be
   undone, which is why it has no key (`../../../docs/decisions.md`).
 - The session's terminal never leaves the main row, and a split's only tab
@@ -451,6 +470,18 @@ The views:
   before the slide, without animating that, so a tab does not slide to its
   narrow width still laid out for the wide one. Anything new the plan
   reads off a tab view must not be something the plan writes.
+- **Bringing the front tab into view measures against the width the row is
+  going to** (`SideTabStrip.revealActive(animated:width:)`, called from
+  `update` with `plan().visibleWidth`). While a new tab slides in, the
+  visible part of the row is still as narrow as it was. Measured against
+  that, the new tab in front looked out of view, the row scrolled to it,
+  and scrolled back as the row widened: with room for every tab, the tab
+  you already had went 58pt out and back each time one was added. Anything
+  that asks "is this in view" during a slide has to ask it of the end
+  state. `SideTabStrip.motionSample` (Debug) reads the presentation layers,
+  and the probe's `trace-blank` and `trace-tab` sample it every 20 ms
+  (`../debugging.md`): that is how it was found, and how to check a change
+  to the row's motion.
 - **The empty tab** (`SideTab.blank(id)`, `Wortel/UI/NewTabPage.swift`,
   since 2026-11-26). A tab that is nothing yet, titled "New Tab". A row's
   "+" opens one at the end of its row, in front (`openBlank`), and a row
@@ -489,7 +520,7 @@ The views:
   terminal and bumps `newTabFocusRequest`; and on a click in the page.
   `settle` also takes the keyboard from a terminal the empty tab covers
   (`onClearKeyboard`), so nothing is typed into a terminal that cannot be
-  seen. It is in no row's habits (`kind` is nil) and is not
+  seen. It is not
   counted as a tab opened (`TabOpenedKind`): what it becomes is. It is
   saved as `"new:<uuid>"` with the other tabs, so it is back after a
   relaunch, and a build from before it reads that as no tab and drops it.
@@ -593,8 +624,7 @@ Making one, and dropping on one:
   not takes the new split's room from the whole row or column it is in, an
   equal share from every part (`SplitLayout.insertSpreading`): ⌘D in a side
   column 280pt wide did nothing before that. Only when that row has no room
-  either do they beep and do nothing. A command teaches no habit
-  (`home(for:)`); a drop does.
+  either do they beep and do nothing.
 - The rows a drag can land in all come from `MainAreaController.rows`: every
   leaf on screen, the main row among them. Until the main row always showed
   its tabs it was a static entry of its own, with a drop slot standing in
@@ -638,13 +668,20 @@ The keyboard:
   column opens on it goes to the column, and down to the strip, when that
   one has no tabs, which makes it. The session's own tab goes nowhere.
 - A click in a split makes it the area you're in
-  (`MainSplitViewController.region(at:)`), so ⌘T, ⌘W, ⇧⌘T and ⇧⌘B act there.
+  (`MainSplitViewController.region(at:)`), so ⌥⌘T, ⌘T, ⌘W and ⇧⌘T act there.
   Two places answer nil, so a press there leaves you where you were: a
   divider, and any of the window's controls (`WindowControls`), which lie
   over the end of whichever row is under them. Without the second, a press
   in the corner would move you to the split under it first.
-  Closing the split you're in sends the keyboard to the main row, or to
-  whatever is zoomed.
+  When the split you're in closes under you, the keyboard goes to the split
+  you were in before it (`GitPanelModel.regionBefore`): what is zoomed if
+  something is, else the latest entry of `regionTrail` that still exists
+  and is on screen, else the main row. `lastRegion`'s setter keeps the
+  trail, the last twelve splits you were in, each once. It covers a made
+  split closing with its last tab, the column going when Changes and Files
+  are put away or its last tab closes, and the strip's last tab closing.
+  Until 2026-11-26 all of those went to the main row, so ⌘D three times and
+  then ⌘W put you two splits away from where you had just been.
 - Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the
   titlebar), the tree view gives one leaf the whole area and hides the rest.
   ⇧⌘↩ from the column or the strip zooms that one. The hidden rows answer

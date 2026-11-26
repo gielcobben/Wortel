@@ -129,6 +129,24 @@ enum SplitProbe {
                 entry["landed"] = landed
                 trail.append(entry)
                 continue
+            case "trace-blank", "trace-tab":
+                // A tab added to the row you're in, and the row's motion
+                // sampled through the animation: what moves that should not.
+                let region = git.lastRegion
+                let strip = controller.split.mainArea?.rows.first { $0.region == region }?.strip
+                var samples = ["before  " + (strip?.motionSample ?? "no row")]
+                if step == "trace-blank" { git.openBlank(in: region) } else { send(#selector(AppDelegate.newTerminalHere(_:))) }
+                for index in 0..<14 {
+                    await pause(0.02)
+                    samples.append(String(format: "%3dms  ", (index + 1) * 20) + (strip?.motionSample ?? ""))
+                }
+                await pause(0.8)
+                samples.append("after   " + (strip?.motionSample ?? ""))
+                var entry = state(manager, controller)
+                entry["step"] = step
+                entry["landed"] = "\n      " + samples.joined(separator: "\n      ")
+                trail.append(entry)
+                continue
             case let typed where typed.hasPrefix("type:"):
                 // A plain key to whatever has the keyboard in the window, as
                 // the window would hand it on. Never posted to the system.

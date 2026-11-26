@@ -28,8 +28,7 @@ not on your `PATH` in Terminal.app or iTerm, by design.
 
 Opens a file as a tab, the same view a double-click in the Files pane gives
 you: source, diff, or rendered Markdown depending on the file. It opens beside
-the session's terminal tab, or wherever you last moved a file tab to in that
-session. (It was the side column until 2026-11-17.)
+the session's terminal tab. (It was the side column until 2026-11-17.)
 
 ```sh
 wortel open README.md                  # relative to where you are

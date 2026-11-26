@@ -70,12 +70,29 @@ final class GitPanelModel {
             return region
         }
         set {
+            if storedRegion != newValue {
+                // Where you were, for when the split you are going to closes.
+                regionTrail.removeAll { $0 == storedRegion || $0 == newValue }
+                regionTrail.append(storedRegion)
+                if regionTrail.count > 12 { regionTrail.removeFirst() }
+            }
             storedRegion = newValue
             // Only when it moves: this is written on every key typed.
             if areaInFocus != newValue { areaInFocus = newValue }
         }
     }
     @ObservationIgnored private var storedRegion: TabRegion = .main
+    /// The splits you were in before this one, the latest last.
+    @ObservationIgnored private var regionTrail: [TabRegion] = []
+
+    /// Where the keyboard goes when `gone` closes under you: what is zoomed,
+    /// else the split you were in before it that is still on screen, else
+    /// the main row. It always went to the main row: ⌘D three times and ⌘W
+    /// put you two splits away from where you had just been.
+    private func regionBefore(_ gone: TabRegion) -> TabRegion {
+        if let zoomedRegion, zoomedRegion != gone { return zoomedRegion }
+        return regionTrail.last { $0 != gone && exists($0) && isShowing($0) } ?? .main
+    }
     /// `storedRegion` again, as something a view can follow.
     private var areaInFocus: TabRegion = .main
 
@@ -788,7 +805,7 @@ final class GitPanelModel {
         let wasThere = lastRegion == region
         for tab in tabs { close(tab) }
         resolveCurrent()
-        if wasThere { focus(isShowing(region) ? region : .main) }
+        if wasThere { focus(isShowing(region) ? region : regionBefore(region)) }
     }
 
     /// Show a pane without the toggle — for the paths where a click can only
@@ -948,9 +965,9 @@ final class GitPanelModel {
         resolveCurrent()
         // A pane that went with its last tab, while you were in it: the
         // place itself is gone, whatever the tab was, so the keyboard goes
-        // to the main area (or to what is zoomed over it).
+        // to the split you were in before it (or to what is zoomed).
         if case .pane = region, wasIn == region, !exists(region) {
-            focus(zoomedRegion ?? .main)
+            focus(regionBefore(region))
             return
         }
         // Only what can hold the keyboard: a terminal, or a browser's page.
@@ -964,8 +981,9 @@ final class GitPanelModel {
             focusFront(of: region)
         } else if (region == .side && !isVisible) || (region == .bottom && !bottomVisible) {
             // The column or the strip went with its last tab, or was hidden
-            // already: back to the main area, or to what is zoomed over it.
-            focus(zoomedRegion ?? .main)
+            // already: back to the split you were in before it, or to what
+            // is zoomed.
+            focus(regionBefore(region))
         } else {
             // A leaf behind a zoom, or a pane that went while you were
             // somewhere else: a tab that closed out of sight (its shell
@@ -1391,19 +1409,6 @@ final class GitPanelModel {
         resolveCurrent()
         lastRegion = front.flatMap { session.workspace.region(of: $0) } ?? .main
         focusFront(of: lastRegion)
-    }
-
-    /// Whether there is anything for Reset Layout to put back: any split
-    /// at all, a zoom, or a tab out of its place. Any split, because a
-    /// divider somebody dragged is a thing to put back too, and what size
-    /// a split opens at is the window's to know, not the model's: with the
-    /// one split beside the terminal already as it opens, the item is on
-    /// and does nothing, which is better than off when it would help.
-    var canResetLayout: Bool {
-        guard let session else { return false }
-        let workspace = session.workspace
-        return workspace.zoomed != nil || workspace.layout.isSplit
-            || workspace.main != workspace.arranged(as: .standard).main
     }
 
     /// Every part of the main area the same size as its siblings.

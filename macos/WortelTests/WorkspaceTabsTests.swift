@@ -133,27 +133,31 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.elsewhere(for: file), .side)
     }
 
-    /// A file dropped into a row from a list is a choice of where files go.
-    func testDroppingAFileFromAListMakesItsRowHome() {
+    /// A file dropped into a row goes there, and that says nothing about
+    /// where the next file opens: there is no memory of where you put one.
+    func testDroppingAFileFromAListDoesNotMoveWhereFilesOpen() {
         var tabs = WorkspaceTabs()
         tabs.placeDropped(.file("/tmp/a.md"), in: .side, at: 0)
         XCTAssertEqual(tabs.region(of: .file("/tmp/a.md")), .side)
-        XCTAssertEqual(tabs.home(for: .file("/tmp/b.md")), .side)
-        XCTAssertEqual(tabs.elsewhere(for: .file("/tmp/b.md")), .main)
+        XCTAssertEqual(tabs.home(for: .file("/tmp/b.md")), .main)
+        XCTAssertEqual(tabs.elsewhere(for: .file("/tmp/b.md")), .side)
+        XCTAssertTrue(tabs.habits.isEmpty)
     }
 
-    /// Moving one to another row is where the next of its kind opens, and
-    /// only its kind.
-    func testMovingATabMakesItsRowHomeForItsKind() {
+    /// One rule for where a thing opens when nothing says where: a file in
+    /// the main row, a browser beside it. Moving one somewhere changes
+    /// where that one is and nothing else.
+    func testMovingATabDoesNotMoveWhereItsKindOpens() {
         var tabs = WorkspaceTabs()
         let browser = SideTab.browser(UUID())
         tabs.place(browser, in: .side, at: 0)
         tabs.move(browser, to: .main, at: .max)
-        XCTAssertEqual(tabs.home(for: .browser(UUID())), .main)
-        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .main, "files keep their own habit")
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), .side)
+        XCTAssertEqual(tabs.home(for: .file("/tmp/a.md")), .main)
 
         tabs.move(browser, to: .bottom, at: 0)
-        XCTAssertEqual(tabs.home(for: .browser(UUID())), .bottom, "the last move wins")
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), .side)
+        XCTAssertTrue(tabs.habits.isEmpty)
     }
 
     /// A move asked for once (⌥-click) isn't a habit.
@@ -1039,13 +1043,14 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertTrue(tabs.showsSessionTerminal)
     }
 
-    /// A file or a browser split off by a drag makes the pane where its kind
-    /// opens; a command (`recordsHabit: false`) doesn't.
-    func testSplittingByADragTeachesWhereItsKindGoes() {
+    /// A file split off, by a drag or by a command, is in its pane and the
+    /// next file still opens where files open.
+    func testSplittingAFileOffDoesNotMoveWhereFilesOpen() {
         var tabs = column()
         let pane = tabs.split(.main, on: .right, placing: fileA)!
-        XCTAssertEqual(tabs.habits[.file], pane)
-        XCTAssertEqual(tabs.home(for: fileB), pane)
+        XCTAssertEqual(tabs.region(of: fileA), pane)
+        XCTAssertTrue(tabs.habits.isEmpty)
+        XCTAssertEqual(tabs.home(for: fileB), .main)
 
         var once = column()
         let other = once.split(.main, on: .right, placing: fileA, recordsHabit: false)
@@ -1231,12 +1236,13 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(tabs.front(of: pane), files)
     }
 
-    func testMovingIntoAPaneTeachesWhereItsKindGoes() {
+    func testMovingIntoAPaneDoesNotMoveWhereItsKindOpens() {
         var tabs = column()
         let pane = splitOff(changes, from: &tabs)
         tabs.place(fileA, in: .main, at: .max)
         tabs.move(fileA, to: pane, at: .max)
-        XCTAssertEqual(tabs.home(for: fileB), pane)
+        XCTAssertEqual(tabs.region(of: fileA), pane)
+        XCTAssertEqual(tabs.home(for: fileB), .main)
     }
 
     // MARK: In front, and the zoom
@@ -1480,14 +1486,15 @@ final class WorkspaceTabsTests: XCTestCase {
 
     // MARK: Where things open
 
-    /// A habit for a pane that has gone is no habit: the kind's own start.
-    func testAHabitForAPaneThatHasGoneFallsBack() {
+    /// Where a kind opens is the same with one of it in a pane, and after
+    /// that pane has gone.
+    func testWhereAKindOpensDoesNotFollowAPane() {
         var tabs = column()
         let pane = tabs.split(.main, on: .right, placing: fileA)!
         let browser = SideTab.browser(UUID())
         tabs.placeDropped(browser, in: pane, at: .max)
-        XCTAssertEqual(tabs.home(for: fileB), pane)
-        XCTAssertEqual(tabs.home(for: .browser(UUID())), pane)
+        XCTAssertEqual(tabs.home(for: fileB), .main)
+        XCTAssertEqual(tabs.home(for: .browser(UUID())), .side)
 
         tabs.close(fileA)
         tabs.close(browser)
@@ -1502,7 +1509,7 @@ final class WorkspaceTabsTests: XCTestCase {
         var tabs = column()
         let pane = tabs.split(.main, on: .right, placing: fileA)!
         XCTAssertEqual(tabs.elsewhere(for: fileA), .main)
-        XCTAssertEqual(tabs.elsewhere(for: fileB), .main, "it would open in the pane")
+        XCTAssertEqual(tabs.elsewhere(for: fileB), .side, "it would open in the main row")
         tabs.place(fileC, in: .main, at: .max)
         XCTAssertEqual(tabs.elsewhere(for: fileC), .side)
         tabs.close(fileA)
@@ -1645,14 +1652,14 @@ final class WorkspaceTabsTests: XCTestCase {
 
     // MARK: The preview tab in a pane
 
-    /// With files at home in a pane, the preview opens there, and the next
-    /// file takes its place in that pane's row.
+    /// A preview shown in a pane, and the next file takes its place in
+    /// that pane's row: it follows the preview tab, wherever that is.
     func testThePreviewSwapsInPlaceInAPane() {
         var tabs = column()
         let pane = splitOff(a, from: &tabs)
         let id = pane.paneID!
         tabs.place(terminal(), in: pane, at: .max)
-        XCTAssertEqual(tabs.peekRegion(for: b, avoiding: .side), pane, "where files go")
+        XCTAssertEqual(tabs.peekRegion(for: b, avoiding: .side), .main, "where files open")
 
         XCTAssertNil(tabs.showPeek(b, in: pane))
         XCTAssertEqual(tabs.peek, b)
@@ -1677,11 +1684,9 @@ final class WorkspaceTabsTests: XCTestCase {
         var tabs = column()
         let pane = splitOff(changes, from: &tabs)
         XCTAssertEqual(tabs.peekRegion(for: a, avoiding: pane), .main)
-        tabs.habits[.file] = pane
-        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: pane), .main, "not over the list")
-        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: .side), pane)
+        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: .side), .main)
+        XCTAssertEqual(tabs.peekRegion(for: a, avoiding: .main), .side, "not over the list")
         // The preview tab's own row, wherever it is.
-        tabs.habits[.file] = nil
         tabs.showPeek(a, in: pane)
         XCTAssertEqual(tabs.peekRegion(for: b, avoiding: .side), pane)
         XCTAssertEqual(tabs.peekRegion(for: b, avoiding: pane), .main)

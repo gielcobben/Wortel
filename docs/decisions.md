@@ -535,13 +535,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   window", the terminal alone, and that would have ended every shell in a
   split: a way back that ends your dev server is not a way back. Empty
   tabs do go, since they hold nothing. The tab you were looking at stays
-  in front where it lands, and the keyboard goes with it. Sizes, the zoom
-  and the habits (where a kind of tab opens) go back too: they are the
-  layout. Which edge Changes and Files take stays: that was a choice, not
-  a mess. The item is dimmed when there is nothing to put back: no split,
-  no zoom, and no tab that would move (`GitPanelModel.canResetLayout`).
-  With any split it is on, since a dragged divider is a thing to put back
-  too; on a layout that is already the preset it then does nothing. **No key.** It is for when you are
+  in front where it lands, and the keyboard goes with it. Sizes and the
+  zoom go back too: they are the layout. (So did the habits, where a kind
+  of tab opened, until they went altogether later that day.) Which edge
+  Changes and Files take stays: that was a choice, not a mess. The item
+  was dimmed at first when there was nothing to put back. It is never
+  dimmed while there is a session now, and with nothing to put back it
+  does nothing ("Five things from the owner's list", at the end). **No key.** It is for when you are
   lost, not for every day, and it takes away an arrangement somebody made.
   **An enum of one.** `Preset` has the one case, so that a second preset
   is a case and a branch and not a second mechanism. The menu has one item
@@ -675,7 +675,67 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (it reopened the empty tab before the fix); ⌥⌘T with an empty tab in the
   row brings that one forward; Escape closes it and the keyboard is in the
   main row's terminal, also when the split closes with it. Not verified:
-  the real keyboard.
+  the real keyboard. **Five things from the owner's list, the same day.**
+  *Close goes back to where you were.* The owner: "if i do cmd+d cmd+d
+  cmd+d then cmd+w the focus is on the main window instead of the previous
+  split." When the split you are in closed, the keyboard always went to
+  the main row. It goes to the split you were in before it now, the latest
+  of the last twelve that is still on screen (`GitPanelModel.regionTrail`,
+  `regionBefore`). The same when Changes and Files are put away from under
+  you, and when the strip's last tab closes. What is zoomed still wins.
+  *A tab added to a row made the row scroll and come back.* The owner:
+  "when opening a new tab the other excisting tab animates weirdly even if
+  there is plety of space." A second cause, beside the one fixed under
+  "One shape for the keys". The row checks that the tab in front is in
+  view, and measured it against the visible width as it was while the
+  slide was still widening it. The new tab looked out of view, the row
+  scrolled to it, and scrolled back as it widened. Measured with a new
+  probe step that samples the row's drawn position every 20 ms: with room
+  for every tab, the tab you had went 58 points out and back (0, 58, 26,
+  13, 4, 2, 0). It measures against the width the row is going to now, and
+  the same sample reads 0 throughout. *One rule for where a thing opens,
+  and no memory.* The owner: "i feel like the browser pane has some other
+  rules than other panes, we should remove all rules and make sure
+  everything is the same and consistent now. The user is in control." Two
+  rules went. A file or a browser opened where you had last moved one of
+  its kind, per session (2026-11-17, under "Files, previews, browser"), so
+  where the next one opened depended on something you did a while ago,
+  and a browser followed a rule no pane had. And ⇧⌘B opened its browser
+  over the tab you were in, the one of the four keys that did. Now, when
+  nothing says where: a file opens in the main row, and a browser in the
+  split beside your work, where Changes, History and Files open. ⇧⌘B opens
+  it there too, as ⇧⌘C, ⇧⌘H, ⇧⌘F and a ⌘-clicked address do. To have any
+  of them in a split of your choosing, say so: that split's "+", a split
+  button, ⌥⌘T and the letter, or move it. This takes out a behaviour that
+  is in the released app, on the owner's instruction: there a file or a
+  browser opens where you last moved one. The cost is the person who
+  moved a browser under the terminal once and has every next one open
+  there: they now move each one, or open it there. What is kept: ⌥-click
+  still means the other place, once. And a file looked at from Changes or
+  Files still shows in the preview tab wherever that tab is, which is the
+  tab's place and not a memory. The field that held the memory stays in
+  the saved session, unread, so an older file still decodes. *Reset Layout
+  could not be found.* The owner: "where was the reset windows or default
+  preset? I can't find that anywhere." It is in View, after Equalize
+  Splits, and it was dimmed whenever there was nothing to put back, which
+  also kept it out of the command palette (⇧⌘P lists only what is
+  enabled). It is never dimmed while there is a session now, it has an
+  icon in the palette, and with nothing to put back it does nothing.
+  *Should the family be ⌥⌘ and a letter?* The owner: "should all be
+  cmd+option+T,B,H,C ?" Answered, not built: ⌥⌘H is Hide Others across
+  macOS, and ⌥⌘D shows and hides the Dock, so ⌥⌘ cannot be the family.
+  The one-modifier answer would be New Tab on ⇧⌘T with Reopen Closed Tab
+  moved to ⌥⌘T. That was offered to the owner and is not decided.
+  Verified (2026-11-26, throwaway copies): WortelTests, 1939 tests, 0
+  failures after the eight that described the memory were rewritten, run
+  before the change to Reset Layout's dimming and the palette icons.
+  `right right right close close close`: the keyboard goes back through
+  the splits in order. `trace-blank` with room: the row's scroll position
+  is 0 at every sample; in a row short of room it scrolls one way only,
+  62 to 163. `key:shift+cmd+b` from the main row twice: two browsers in
+  the split beside, none over the terminal. `right down blank close strip
+  key:shift+cmd+c close close reset next next --relaunch`: 0 faults. Not
+  verified: any of it by hand in the real app.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -2272,6 +2332,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   window docking) teaches where files go, and ⌥ means "the other place"
   rather than "the main area". The habit stays per session.
   Browsers still start in the column, beside what they show.
+  **Until 2026-11-26** on the branch `flexible-panes`: there nothing
+  teaches where files or browsers go any more. A file opens beside the
+  terminal's tab and a browser in the split beside, every time (the first
+  entry of "Window, terminal and keys", at its end). ⌥ still means the
+  other place.
 - **2026-11-16. A preview window has the main window's chrome**: its own 40pt
   row on the glass, the file tab's header in it, and a file button of its own
   in place of the system's proxy icon. No system window tabs for previews.

@@ -1832,10 +1832,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         StoredFlag.changesDiff.value.toggle()
     }
 
-    /// ⇧⌘B (and ⇧⌘L, what it was): a new browser in the row you're in.
+    /// ⇧⌘B (and ⇧⌘L, what it was): a new browser where ⇧⌘C, ⇧⌘H and ⇧⌘F
+    /// open theirs, in the split beside your work, and where a ⌘-clicked
+    /// address opens one. It opened over the tab you were in, the one of the
+    /// four that did. In a split of your choosing: its "+", or ⌥⌘T and B.
     @objc func newBrowserHere(_ sender: Any?) {
         focusMainWindow()
-        gitPanel.openBrowser(at: nil, in: focusedRegion())
+        guard let session = manager.selected else { return }
+        gitPanel.openBrowser(at: nil, in: session.workspace.home(for: .browser(UUID())))
     }
 
     /// ⌘L: the address field of the browser in front, the area you're in
@@ -2563,8 +2567,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(equalizeSplits(_:)) {
             return gitPanel.splitLayout.isSplit && !gitPanel.splitLayout.isEqualized
         }
+        // Never dimmed while there is a session: the owner looked for it and
+        // could not find it, and a dimmed item is not in the palette at all.
+        // With nothing to put back it does nothing.
         if menuItem.action == #selector(resetLayout(_:)) {
-            return gitPanel.canResetLayout
+            return manager.selected != nil
         }
         if menuItem.action == #selector(focusSplitLeft(_:)) || menuItem.action == #selector(focusSplitRight(_:))
             || menuItem.action == #selector(focusSplitUp(_:)) || menuItem.action == #selector(focusSplitDown(_:)) {

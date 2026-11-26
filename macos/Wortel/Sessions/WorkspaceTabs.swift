@@ -76,7 +76,9 @@ struct WorkspaceTabs: Equatable, Sendable {
     var activeBottom: SideTab?
     var bottomVisible = false
     var closed: [ClosedTab] = []
-    /// Where you last moved a tab of each kind: where the next one opens.
+    /// Where you last moved a tab of each kind. No longer read or written
+    /// (`home(for:)`): kept so a saved session's value still decodes, and
+    /// is carried until a layout reset drops it.
     var habits: [TabKind: TabRegion] = [:]
     /// For a tab opened into a row and not left since: what was in front of
     /// that row when it opened. Not persisted; it is about the last few
@@ -212,15 +214,20 @@ struct WorkspaceTabs: Equatable, Sendable {
         }
     }
 
-    /// Where a new tab opens when nothing says where: the row you last moved
-    /// one of its kind to, or else where its kind starts. A file starts in
-    /// the main area, where there's room to read it; a browser starts in the
-    /// column, beside what it's showing you the result of.
+    /// Where a new tab opens when nothing says where: a file in the main
+    /// row, where there is room to read it, and everything you look at
+    /// beside your work (a browser, like Changes, History and Files) in the
+    /// split beside it.
+    ///
+    /// Until 2026-11-26 a file and a browser opened where you had last
+    /// moved one of its kind (`habits`). A browser then followed a rule no
+    /// other tab had, and where the next one opened depended on something
+    /// you did a while ago. The owner: "we should remove all rules and make
+    /// sure everything is the same and consistent now. The user is in
+    /// control." To have one somewhere else, open it there (the "+", a
+    /// split button, ⌥⌘T) or move it.
     func home(for tab: SideTab) -> TabRegion {
-        guard let kind = tab.kind else { return .side }
-        // A habit for a pane that has since gone is no habit.
-        if let habit = habits[kind], exists(habit) { return habit }
-        return kind == .file ? .main : .side
+        tab.kind == .file ? .main : .side
     }
 
     /// Where ⌥ sends a tab, just this once: away from the main area if it's
@@ -229,18 +236,11 @@ struct WorkspaceTabs: Equatable, Sendable {
         (region(of: tab) ?? home(for: tab)) == .main ? .side : .main
     }
 
-    /// A tab of a habit kind dropped into a row from outside the rows (a file
-    /// dragged out of a list): opened there, and its kind's home is there now,
-    /// as if it had been dragged between rows.
+    /// A tab dropped into a row from outside the rows (a file dragged out
+    /// of a list): opened there, in front.
     mutating func placeDropped(_ tab: SideTab, in region: TabRegion, at index: Int) {
         guard place(tab, in: region, at: index) else { return }
         bringForward(opened: tab)
-        learnHome(of: tab, in: region)
-    }
-
-    /// `region` is where `tab`'s kind opens from now on, if it has a kind.
-    private mutating func learnHome(of tab: SideTab, in region: TabRegion) {
-        if let kind = tab.kind { habits[kind] = region }
     }
 
     func region(of tab: SideTab) -> TabRegion? {
@@ -486,9 +486,6 @@ struct WorkspaceTabs: Equatable, Sendable {
         let target = from.region == region && from.index < index ? index - 1 : index
         place(tab, in: region, at: target)
         bringForward(tab)
-        // Taken to another row: that's where its kind lives now. A reorder
-        // says nothing about where things belong.
-        if recordsHabit, from.region != region { learnHome(of: tab, in: region) }
         return true
     }
 
@@ -538,7 +535,6 @@ struct WorkspaceTabs: Equatable, Sendable {
         panes[id] = PaneTabs(tabs: [tab], active: tab)
         // A new pane is something to look at, and a zoom would hide it.
         if !keepsZoom { zoomed = nil }
-        if recordsHabit { learnHome(of: tab, in: .pane(id)) }
         return .pane(id)
     }
 

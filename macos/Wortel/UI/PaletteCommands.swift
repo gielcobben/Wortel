@@ -95,6 +95,8 @@ enum PaletteCommands {
         "splitDown:": "rectangle.split.1x2",
         "zoomSplit:": "arrow.up.left.and.arrow.down.right",
         "equalizeSplits:": "rectangle.split.3x1",
+        "resetLayout:": "arrow.counterclockwise",
+        "newTabHere:": "plus.square.dashed",
         "focusSplitLeft:": "arrow.left",
         "focusSplitRight:": "arrow.right",
         "focusSplitUp:": "arrow.up",

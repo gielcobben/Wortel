@@ -171,7 +171,12 @@ final class SideTabStrip: NSView {
             needsLayout = true
             layoutSubtreeIfNeeded()
         }
-        if orderChanged || activeChanged { revealActive(animated: hadTabs) }
+        // Against the width the row is going to: while a tab slides in, the
+        // visible part is still as narrow as it was, the new tab in front
+        // looks out of view, and the row scrolled to it and back again as it
+        // widened. With room for every tab, the tab you had slid 58 points
+        // out and back each time one was added.
+        if orderChanged || activeChanged { revealActive(animated: hadTabs, width: plan().visibleWidth) }
     }
 
     /// A tab as it looks in front of a row on the band, for a drag that
@@ -345,10 +350,31 @@ final class SideTabStrip: NSView {
     // MARK: Scrolling
 
     /// Scroll so the tab in front is in view, with a little room beside it.
-    private func revealActive(animated: Bool) {
+    #if DEBUG
+    /// For `SplitProbe`: where the row's parts are drawn right now, in the
+    /// middle of an animation included (the presentation layers).
+    var motionSample: String {
+        func shown(_ view: NSView) -> NSRect { view.layer?.presentation()?.frame ?? view.frame }
+        let clip = scroll.contentView
+        let clipX = clip.layer?.presentation()?.bounds.origin.x ?? clip.bounds.origin.x
+        let tabs = tabViews.map { view -> String in
+            let frame = shown(view)
+            return String(format: "%.0f+%.0f/%.1f", frame.minX, frame.width,
+                          view.layer?.presentation()?.opacity ?? Float(view.alphaValue))
+        }
+        let plus = trailingAccessory.map { shown($0).minX } ?? -1
+        return String(format: "clip %.0f scroll %.0f plus %.0f | ", clipX, shown(scroll).width, plus)
+            + tabs.joined(separator: "  ")
+    }
+    #endif
+
+    /// `width` is how wide the visible part is, when that is not what it is
+    /// right now: its width at the end of a slide in progress.
+    private func revealActive(animated: Bool, width: CGFloat? = nil) {
         guard let view = tabViews.first(where: { $0.tab == active }) else { return }
         let clip = scroll.contentView
-        let visible = clip.bounds
+        var visible = clip.bounds
+        if let width { visible.size.width = width }
         let wanted = view.frame.insetBy(dx: -Self.fade, dy: 0)
         var x = visible.origin.x
         if wanted.minX < visible.minX {

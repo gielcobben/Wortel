@@ -113,8 +113,9 @@ is a tab too, named after the session, with no close button.
 
 **"+" in a row opens an empty tab in that split**, titled New Tab. ⌥⌘T is the
 same thing as a key, in the split you're in (Tab ▸ New Tab). Its page
-lists what the tab can become, each with the key that opens the same thing
-without asking:
+lists what the tab can become. Each has a key that opens the same thing
+without asking, in its usual place (a terminal in the split you're in, the
+other four in the split beside your work):
 
 | On the page | Key that skips the page |
 |---|---|
@@ -192,8 +193,9 @@ away from you. Your terminal's split gets every terminal and file as tabs.
 Changes, History, Files and browsers go into one split at the right edge, at
 its usual size. Every other split is gone, and so is a zoom. Nothing is
 closed: every terminal keeps running, as a tab. The tab you were looking at
-stays in front. It has no key on purpose, because it cannot be undone. The
-item is dimmed when there is only the terminal and nothing to put back.
+stays in front. It has no key on purpose, because it cannot be undone. It
+is in View, after Equalize Splits, and in the command palette (⇧⌘P, type
+"reset"). It is never dimmed: with nothing to put back it does nothing.
 
 Sizes are shares of the window. Make the window wider and every split gets
 wider, Changes too. Before 2026-11-26 the side column kept its width and the
@@ -230,8 +232,8 @@ there too, and a double-click on the file it already shows keeps it as a tab.
 ## Tabs
 
 These act on the tab row you're in: the split you last clicked or typed in,
-picked a tab in, or moved to with ⌘] / ⌘[ or ⌃⌥⌘ and an arrow. ⌘T, ⌘W, ⇧⌘T
-and ⇧⌘B act in whichever split you're in.
+picked a tab in, or moved to with ⌘] / ⌘[ or ⌃⌥⌘ and an arrow. ⌥⌘T, ⌘T, ⌘W
+and ⇧⌘T act in whichever split you're in.
 
 | Action | Shortcut | Same as |
 |---|---|---|
@@ -240,7 +242,7 @@ and ⇧⌘B act in whichever split you're in.
 | Split right: a new terminal in a split beside the one you're in | ⌘D | iTerm, Ghostty, Warp, cmux |
 | Split down: the same, under it | ⇧⌘D | iTerm, Ghostty, Warp, cmux |
 | New terminal below: one more tab in the split under the main terminal | ⌃⇧` | VS Code, Zed (new terminal) |
-| New browser tab here | ⇧⌘B (also ⇧⌘L) | the Claude app (⇧⌘B); cmux (⇧⌘L) |
+| New browser tab, in the split beside your work | ⇧⌘B (also ⇧⌘L) | the Claude app (⇧⌘B); cmux (⇧⌘L) |
 | Close tab | ⌘W | everyone |
 | Reopen closed tab | ⇧⌘T | Safari, Chrome, VS Code, Zed, iTerm, Ghostty, Warp, cmux |
 | Next / previous tab | ⇧⌘] / ⇧⌘[ (also ⌃Tab / ⌃⇧Tab, ⌥⌘→ / ⌥⌘←) | Safari, Chrome, Finder, Xcode, Terminal, iTerm, Ghostty; VS Code, Zed |
@@ -361,11 +363,13 @@ else, so the keyboard is never stuck in a page.
 With a file and a page both showing, ⌘F takes the one in the area you're in.
 With neither showing, ⌘F is left to the terminal.
 
-A file opens in the main area and a browser in the column until you drag one
-somewhere else (between rows, or onto a row from a list or a preview window);
-after that, that kind opens where you last put one, per session. ⌥-click opens
-it in the other place: out of the main area if it's there or would go there,
-into the main area otherwise.
+A file opens beside your terminal's tab, and a browser in the split beside
+your work, where Changes, History and Files open. Every time: Wortel no
+longer remembers where you last moved one (it did until 2026-11-26, and the
+released app still does). To have one somewhere else, open it there with
+that split's "+" or with ⌥⌘T and its letter, or move it. ⌥-click opens it in
+the other place, this once: out of the main row if it's there or would go
+there, into the main row otherwise.
 
 ## Deliberately different
 

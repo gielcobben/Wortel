@@ -3,7 +3,7 @@ import CoreText
 
 /// How a mark is drawn into a picture: its ink or its outline, and its
 /// numbered badge. The layer on screen draws the same shapes with layers
-/// (`MarkupOverlayView`); the sizes they share are here.
+/// (`MarkLayer`); the sizes they share are here.
 ///
 /// Every function draws into a context counted from the bottom-left, as
 /// CoreGraphics counts, and takes points counted from the top-left with the
@@ -141,11 +141,7 @@ enum MarkDrawing {
         if badge {
             var centre = placement.badge(of: mark.shape)
             // Whole, also on a mark at the picture's very edge.
-            if let bounds {
-                let half = Self.badge * unit / 2
-                centre.x = min(max(centre.x, bounds.minX + half), max(bounds.maxX - half, bounds.minX + half))
-                centre.y = min(max(centre.y, bounds.minY + half), max(bounds.maxY - half, bounds.minY + half))
-            }
+            if let bounds { centre = centre.held(in: bounds, inset: Self.badge * unit / 2) }
             self.badge(mark.number, centre: turned(centre),
                        diameter: Self.badge * unit, colour: colour, in: context)
         }
@@ -202,15 +198,11 @@ enum MarkBadge {
     /// the foot of the preview and a pin under it points at nothing anyone
     /// can see. A circle is not: it is on its mark, wherever that is.
     static func spot(for corner: CGPoint, of box: CGRect, in clip: CGRect, above floor: CGFloat = .infinity) -> Spot {
-        func held(_ point: CGPoint, _ inset: CGFloat, in clip: CGRect) -> CGPoint {
-            CGPoint(x: min(max(point.x, clip.minX + inset), max(clip.maxX - inset, clip.minX + inset)),
-                    y: min(max(point.y, clip.minY + inset), max(clip.maxY - inset, clip.minY + inset)))
-        }
         let shown = box.intersection(clip)
         // Any of the mark still showing: the badge on its corner, or as
         // near as the edge lets it, a circle as ever.
         if !shown.isNull, shown.width > 0.5, shown.height > 0.5 {
-            return Spot(centre: held(corner, MarkDrawing.badge / 2, in: clip), toward: nil)
+            return Spot(centre: corner.held(in: clip, inset: MarkDrawing.badge / 2), toward: nil)
         }
         // Far enough in for the point to show. Toward the nearest of the
         // mark and not its corner: a mark straight above is pointed
@@ -219,8 +211,8 @@ enum MarkBadge {
         // Only where that leaves room for a pin at all: a box that scrolls
         // inside the page may be wholly under the bar.
         if floor < room.maxY, floor - room.minY >= (reach + margin) * 2 { room.size.height = floor - room.minY }
-        let centre = held(corner, reach + margin, in: room)
-        let nearest = CGPoint(x: min(max(centre.x, box.minX), box.maxX), y: min(max(centre.y, box.minY), box.maxY))
+        let centre = corner.held(in: room, inset: reach + margin)
+        let nearest = centre.held(in: box)
         guard nearest != centre else { return Spot(centre: centre, toward: nil) }
         return Spot(centre: centre, toward: atan2(nearest.y - centre.y, nearest.x - centre.x))
     }
@@ -337,9 +329,7 @@ enum MarkupPicture {
     static func inked(_ image: CGImage, showing rect: CGRect, mark: Mark, at placement: MarkPlacement,
                       colour: CGColor) -> CGImage {
         guard rect.width >= 1, rect.height >= 1,
-              let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
+              let context = CGContext.picture(width: image.width, height: image.height) else { return image }
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         context.scaleBy(x: CGFloat(image.width) / rect.width, y: CGFloat(image.height) / rect.height)
         var moved = placement
@@ -347,5 +337,15 @@ enum MarkupPicture {
         moved.origin.y -= rect.minY
         MarkDrawing.draw(mark, at: moved, colour: colour, in: context, height: rect.height, badge: false)
         return context.makeImage() ?? image
+    }
+}
+
+extension CGContext {
+    /// A bitmap to draw a picture into: sRGB, eight bits a channel, with
+    /// alpha. Every picture mark-up makes is drawn into one of these.
+    static func picture(width: Int, height: Int) -> CGContext? {
+        CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
     }
 }

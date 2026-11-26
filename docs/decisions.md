@@ -2856,6 +2856,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   below is kept above the note bar. And a press on a pin brings its mark
   into view, as its chip's click does: a thing that points somewhere is
   pressed to go there.
+- **2026-11-26. The mark-up adapters' protocol has no extension with
+  defaults.** A default in an extension is what a call through
+  `any MarkupSurface` runs whatever the adapter implements, which is how
+  every mark on a file was once tied to nothing while the tests passed. The
+  rule was "every member the layer calls is a requirement"; a rule kept by
+  remembering is kept until someone forgets. Without the extension an
+  adapter that leaves a requirement out does not compile, and the price is
+  a line in an adapter that has nothing to do for it.
 - **2026-11-25. In rendered Markdown the picture of the whole is what is in
   view.** A page and a file's source are pictured whole, as decided above:
   a page by its PDF, a table by scrolling it a screen at a time inside one

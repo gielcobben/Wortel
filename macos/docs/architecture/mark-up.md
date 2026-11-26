@@ -50,26 +50,62 @@ So a mark moves and zooms with its content with no arithmetic of its own.
 `deactivate`.** That rule is what makes "off costs nothing" checkable.
 
 **Everything the layer calls on an adapter is a requirement of the
-protocol**, never only a default in its extension. A member that is only
-in the extension is the adapter's own when the adapter is held by its
+protocol**, never only a default in an extension of it. A member that is
+only in an extension is the adapter's own when the adapter is held by its
 type, and the extension's when it is held as `any MarkupSurface`, which is
 how the layer holds it. `attach(to:)` was such a member: the file
 adapters' tests called them by their type and passed, and in the app no
 mark on a file was tied to anything (found by the owner's hand,
 2026-11-25, and then reproduced with the layer mounted the way
 `PreviewContent` mounts it). The tests hold every adapter by its protocol
-now.
+now. Since 2026-11-26 the protocol has no extension at all: an adapter
+with nothing to do for a requirement says so in a line (`attach(to:)` over
+a page, `reveal` over an image), every adapter answers the sixteen in the
+order the protocol lists them, and one left out does not compile.
+
+## Where things are
+
+All of it is in `Wortel/Markup/`.
+
+| For | Look in |
+| --- | --- |
+| What a mark is, where it is now, what is written down about it | `Mark.swift`: `Mark`, `MarkPen`, `MarkupTool`, `MarkPlacement`, `MarkReveal`, `MarkDetails`, `MarkText` |
+| A stroke's geometry: click or drag, each pen's points and line, its area, a drawing's handles and what dragging one does | `MarkStroke.swift` |
+| A mark drawn into a picture, a chip's colours, where a badge sits and when it is a pin, the picture of the whole | `MarkDrawing.swift`: `MarkDrawing`, `MarkBadge`, `MarkupPicture` |
+| On and off, which marks exist, the note's text, Return | `MarkupSession.swift` |
+| What is copied, and where its files go | `MarkupNote.swift`, `MarkupStore.swift` |
+| The layer coming and going, its layout and the bar's place, the marks kept on their content, pins, scrolling handed on | `MarkupOverlayView.swift` |
+| The pointer, the outline of what a click would pick, the press, Esc | `MarkupOverlayView+Mouse.swift` |
+| A click picked, a stroke drawn, tied and pictured | `MarkupOverlayView+Marking.swift` |
+| The Move tool: carrying, selecting, resizing | `MarkupOverlayView+Move.swift` |
+| One mark on screen, and the selection's outline and handles | `MarkLayer.swift`, `MarkSelectionLayer.swift` |
+| The note bar: its card, the tools, Copy | `MarkupNoteBar.swift` |
+| The note's text view and its layout | `NoteTextView.swift`: `NoteTextView`, `NoteLayoutManager` |
+| A chip | `MarkChip.swift`: `MarkChipAttachment`, `MarkChipCell`, `MarkChip` |
+| The header's button, and the layer's mount over a file | `MarkupButton.swift`, `MarkupOverlayHost.swift` |
+| What an adapter answers, and the words it answers in | `MarkupSurface.swift`: `MarkupSurface`, `MarkTie`, `MarkPick`, `MarkCapture`, `MarkupWhole`, `MarkupCanvas` |
+| A page | `WebMarkupSurface.swift`, `WebMarkupScript.swift`, `WebMarkReport.swift` |
+| Source and Diff, rendered Markdown, an image | `LinesMarkupSurface.swift`, `BlocksMarkupSurface.swift`, `ImageMarkupSurface.swift` |
+| What those three share: where they find a file's views, how they hear one move, what the two over a scroll view ask of it | `MarkupViews.swift`: `MarkupViews`, `ViewWatch` |
+| Pictures of the app's own views | `ViewPicture.swift` |
+| A mark's row or block known again after a rewrite | `MarkAnchor.swift` |
+
+The tests are `WortelTests/MarkupTests.swift` (the parts with no window in
+them) and `WortelTests/MarkupFileTests.swift` (the file adapters against
+the real views, in a window that is never shown). A tested file is listed
+in the test target in `project.yml`.
 
 ## A page
 
 `WebMarkupScript` runs in a content world of Wortel's own
-(`WebMarkupSurface.world`). It only reads: no element is added to the page,
-no attribute set. It says what is under a point (through same-site frames
-and open shadow roots; a frame from another site is one thing), remembers
-the element a mark is tied to, and posts where those elements are whenever
-that may have changed: a scroll anywhere in the page (one capturing
-listener a document), a resize, the page changing itself (a
-`MutationObserver`, at most once a frame). It listens only between `start`
+(`WebMarkupSurface.world`). It only reads, and scrolls when a mark is to be
+brought into view: no element is added to the page, no attribute set. It
+says what is under a point (through same-site frames and open shadow
+roots; a frame from another site is one thing), remembers the element a
+mark is tied to, and posts where those elements are whenever that may have
+changed: a scroll anywhere in the page (one capturing listener a
+document), a resize, the page changing itself (a `MutationObserver`, at
+most once a frame). It listens only between `start`
 and `stop` and posts nothing while there are no marks. A report is a flat
 list of numbers, read by `WebMarkReport` as if it could be anything.
 
@@ -591,12 +627,13 @@ comes back.
   line stays as wide as it was. An arrow's end moves alone, in steps of 45
   degrees with Shift. Let go, it is tied and pictured again as a move is.
   The geometry is `MarkStroke.handles`, `handle(at:)` and `resized`, pure
-  and tested; the layer only hands the mouse to them. The selection is
-  layers of the overlay, placed again whenever the marks are, and is in
-  no picture.
+  and tested; the layer only hands the mouse to them
+  (`MarkupOverlayView+Move.swift`). The selection is a layer of the
+  overlay (`MarkSelectionLayer`), placed again whenever the marks are, and
+  is in no picture.
 - **Esc goes one step at a time**: what is in hand (a drawing being
   carried, a handle, a stroke) is put back, then the selection is
-  dropped, then mark-up is left (`MarkupOverlayView.cancelStroke`).
+  dropped, then mark-up is left (`MarkupOverlayView.stepBack`).
 - **The pointer on a chip shows its mark**: every other mark stands back
   to a quarter while it rests there (`pointOut`).
 

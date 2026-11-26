@@ -42,10 +42,17 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
 
     var view: NSView? { webView }
     var picksThings: Bool { true }
+    var scrollsInside: Bool { false }
+    var readingColumn: CGRect? { nil }
 
+    /// The view's points per CSS pixel.
     private var zoom: CGFloat { max(webView?.pageZoom ?? 1, 0.01) }
 
     // MARK: - On and off
+
+    /// The layer has the web view's own frame (`MarkupOverlayView.follow`),
+    /// so the two share coordinates and there is nothing to convert.
+    func attach(to layer: NSView) {}
 
     func activate(moved: @escaping () -> Void) {
         self.moved = moved
@@ -73,7 +80,7 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
             // holds which elements it was on.
             if forgetting {
                 latest = WebMarkReport()
-                call("if (window.__wortelMarkup) { window.__wortelMarkup.destroy() } return 1") { _ in }
+                ask("destroy()")
             }
             return
         }
@@ -83,8 +90,7 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         // With a note to come back to, the script keeps which elements its
         // marks are on and nothing else: no listener, no observer. With
         // none, it takes itself out of the page.
-        call(forgetting ? "if (window.__wortelMarkup) { window.__wortelMarkup.destroy() } return 1"
-                        : "if (window.__wortelMarkup) { window.__wortelMarkup.stop() } return 1") { _ in }
+        ask(forgetting ? "destroy()" : "stop()")
         if forgetting { latest = WebMarkReport() }
     }
 
@@ -113,6 +119,30 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         }
     }
 
+    /// Call one of the script's functions, where the script is in the page.
+    /// Nil where it is not: the page went elsewhere, or mark-up was never
+    /// on here.
+    private func ask(_ function: String, arguments: [String: Any] = [:], reply: @escaping (Any?) -> Void = { _ in }) {
+        call("return window.__wortelMarkup ? window.__wortelMarkup.\(function) : null",
+             arguments: arguments, reply: reply)
+    }
+
+    private static func rect(_ body: Any?) -> CGRect? {
+        guard let values = body as? [Double], values.count == 4,
+              values.allSatisfy({ $0.isFinite && abs($0) < 1e7 }) else { return nil }
+        return CGRect(x: values[0], y: values[1], width: max(values[2], 0), height: max(values[3], 0))
+    }
+
+    /// A string the page gave, cut to a length and with nothing in it that
+    /// a terminal would act on (`MarkText`): the page's author chose it.
+    private static func text(_ value: Any?, most: Int, lines: Bool = false) -> String? {
+        guard let text = value as? String else { return nil }
+        let clean = MarkText.clean(String(text.prefix(most)), lines: lines)
+        return clean.isEmpty ? nil : clean
+    }
+
+    // MARK: - Marks
+
     func probe(at point: CGPoint, reply: @escaping (CGRect?) -> Void) {
         guard isActive else { return reply(nil) }
         if probing {
@@ -121,8 +151,7 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         }
         probing = true
         let zoom = zoom
-        call("return window.__wortelMarkup ? window.__wortelMarkup.probe(x, y) : null",
-             arguments: ["x": point.x / zoom, "y": point.y / zoom]) { [weak self] body in
+        ask("probe(x, y)", arguments: ["x": point.x / zoom, "y": point.y / zoom]) { [weak self] body in
             guard let self else { return }
             self.probing = false
             reply(Self.rect(body).map { $0.applying(CGAffineTransform(scaleX: zoom, y: zoom)) })
@@ -135,29 +164,29 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
 
     func pick(_ number: Int, at point: CGPoint, unless picked: [Int], reply: @escaping (MarkPick?) -> Void) {
         let zoom = zoom
-        call("return window.__wortelMarkup ? window.__wortelMarkup.pick(n, x, y, picked) : null",
-             arguments: ["n": number, "x": point.x / zoom, "y": point.y / zoom, "picked": picked]) { [weak self] body in
+        ask("pick(n, x, y, picked)",
+            arguments: ["n": number, "x": point.x / zoom, "y": point.y / zoom, "picked": picked]) { [weak self] body in
             // Only a number that was asked about: the page's answer is read
             // with the same suspicion as a report.
             if let already = (body as? [String: Any])?["already"] as? Int {
                 return reply(picked.contains(already) ? .already(already) : nil)
             }
-            reply(self?.tie(number, from: body, kind: "element").map(MarkPick.tied))
+            reply(self?.tie(number, from: body).map(MarkPick.tied))
         }
     }
 
     func tie(_ number: Int, to box: CGRect, reply: @escaping (MarkTie?) -> Void) {
         let zoom = zoom
-        call("return window.__wortelMarkup ? window.__wortelMarkup.tie(n, l, t, w, h) : null",
-             arguments: ["n": number, "l": box.minX / zoom, "t": box.minY / zoom,
-                         "w": box.width / zoom, "h": box.height / zoom]) { [weak self] body in
-            reply(self?.tie(number, from: body, kind: "area"))
+        ask("tie(n, l, t, w, h)",
+            arguments: ["n": number, "l": box.minX / zoom, "t": box.minY / zoom,
+                        "w": box.width / zoom, "h": box.height / zoom]) { [weak self] body in
+            reply(self?.tie(number, from: body))
         }
     }
 
     /// The page's answer to a pick or a tie, read with the same suspicion as
     /// a report.
-    private func tie(_ number: Int, from body: Any?, kind: String) -> MarkTie? {
+    private func tie(_ number: Int, from body: Any?) -> MarkTie? {
         guard let answer = body as? [String: Any],
               let rect = Self.rect(answer["rect"]), let clip = Self.rect(answer["clip"]) else { return nil }
         let fixed = answer["fixed"] as? Bool ?? false
@@ -170,7 +199,6 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
 
         let raw = answer["details"] as? [String: Any] ?? [:]
         var details = MarkDetails()
-        details.kind = kind
         details.tag = Self.text(raw["tag"], most: 40)
         details.role = Self.text(raw["role"], most: 40)
         details.text = Self.text(raw["text"], most: 220)
@@ -194,27 +222,16 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         return MarkTie(placement: placement, name: Self.text(raw["name"], most: 120), details: details)
     }
 
-    private static func rect(_ body: Any?) -> CGRect? {
-        guard let values = body as? [Double], values.count == 4,
-              values.allSatisfy({ $0.isFinite && abs($0) < 1e7 }) else { return nil }
-        return CGRect(x: values[0], y: values[1], width: max(values[2], 0), height: max(values[3], 0))
-    }
-
-    /// A string the page gave, cut to a length and with nothing in it that
-    /// a terminal would act on (`MarkText`): the page's author chose it.
-    private static func text(_ value: Any?, most: Int, lines: Bool = false) -> String? {
-        guard let text = value as? String else { return nil }
-        let clean = MarkText.clean(String(text.prefix(most)), lines: lines)
-        return clean.isEmpty ? nil : clean
-    }
-
     func placement(of number: Int) -> MarkPlacement? {
         latest.placement(of: number, zoom: zoom)
     }
 
-    func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
-        latest.wouldScroll(deltaX: deltaX, deltaY: deltaY)
+    func forget(_ number: Int) {
+        latest.marks[number] = nil
+        ask("forget(n)", arguments: ["n": number])
     }
+
+    // MARK: - Scrolling
 
     /// Measured by the page itself, at the moment it scrolls: the last
     /// report may be a resize or a scroll behind.
@@ -224,15 +241,14 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         if case .area(let box, _) = mark.shape {
             part = [Double(box.minX), Double(box.minY), Double(box.width), Double(box.height)]
         }
-        call("if (window.__wortelMarkup) { window.__wortelMarkup.reveal(n, part, below, smooth) } return 1",
-             arguments: ["n": mark.number, "part": part, "below": Double(covered / zoom),
-                         "smooth": !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion]) { _ in }
+        ask("reveal(n, part, below, smooth)",
+            arguments: ["n": mark.number, "part": part, "below": Double(covered / zoom),
+                        "smooth": !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion])
     }
 
-    func forget(_ number: Int) {
-        latest.marks[number] = nil
-        call("if (window.__wortelMarkup) { window.__wortelMarkup.forget(n) } return 1",
-             arguments: ["n": number]) { _ in }
+    /// Not at the page's end that way, by its last report.
+    func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        latest.wouldScroll(deltaX: deltaX, deltaY: deltaY)
     }
 
     // MARK: - Pictures
@@ -260,7 +276,7 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         guard let webView else { return reply(nil) }
         // Where the marks are first, then the page: asked in this order so
         // the two describe the same moment as nearly as two calls can.
-        call("return window.__wortelMarkup ? window.__wortelMarkup.report() : null") { body in
+        ask("report()") { body in
             guard let body, let report = WebMarkReport(body) else { return reply(nil) }
             webView.createPDF(configuration: WKPDFConfiguration()) { result in
                 MainActor.assumeIsolated {

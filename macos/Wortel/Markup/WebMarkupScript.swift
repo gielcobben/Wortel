@@ -5,8 +5,9 @@ import Foundation
 /// It runs in a world of Wortel's own (`WebMarkupSurface.world`), so the page's
 /// scripts see neither `__wortelMarkup` nor the message handler it posts to
 /// (measured 2026-11-25), and it changes nothing in the page: no element is
-/// added, no attribute set, no style touched. It only reads. The marks
-/// themselves are drawn by the app, over the web view.
+/// added, no attribute set, no style touched. It only reads, and scrolls when
+/// a mark is to be brought into view. The marks themselves are drawn by the
+/// app, over the web view.
 ///
 /// What it does: says what is under a point, remembers the element a mark is
 /// tied to, and reports where those elements are whenever that may have
@@ -24,18 +25,30 @@ import Foundation
 /// until the next scroll: a fixed header sliding away over 300 ms, 30pt;
 /// a button moved 50px by a CSS animation or by a script's, 50pt; mark-up
 /// turned on 60 ms into the header's slide, 10pt.
+///
+/// Its JavaScript keeps to `var` and `function` on purpose: leave it so. It
+/// reads from top to bottom: where things are, what an element is called,
+/// the report, the look every frame, the listeners, tying a mark, and
+/// bringing one into view. The table at its end is what the app calls
+/// (`WebMarkupSurface`).
 enum WebMarkupScript {
     static let handler = "wortelMarkup"
 
     static let source = ##"""
     (function () {
       if (window.__wortelMarkup) { return 1; }
+      // A mark by its number: the element it is on, the boxes and frames
+      // that cut it off, whether it stays put, and a selector to find the
+      // element again by.
       var marks = new Map();
       var listening = false;
-      var queued = false;
+      // The documents listened to: the page's, and each frame's a mark is in.
       var watched = [];
       var mutations = null;
       var sizes = null;
+      // A report is owed at the next frame.
+      var queued = false;
+      // The look every frame is running.
       var looking = false;
       var lastPosted = '';
       var lastMoved = 0;
@@ -47,12 +60,20 @@ enum WebMarkupScript {
       // easing's slow end, and past a frame or two that were dropped.
       var patience = 400;
 
+      // Where things are. Every rect is [left, top, width, height] in the
+      // top page's view, in CSS pixels.
+
+      // The frame a window is shown in. None for the top page, and for a
+      // window that will not say.
+      function frameAround(win) {
+        try { return win.frameElement; } catch (e) { return null; }
+      }
+
       // Where a document inside a frame sits in the top page's view.
       function offsetOf(el) {
         var x = 0, y = 0, win = el.ownerDocument.defaultView;
         while (win && win !== window) {
-          var frame = null;
-          try { frame = win.frameElement; } catch (e) {}
+          var frame = frameAround(win);
           if (!frame) { break; }
           var r = frame.getBoundingClientRect();
           x += r.left + frame.clientLeft;
@@ -65,6 +86,14 @@ enum WebMarkupScript {
       function rectOf(el) {
         var r = el.getBoundingClientRect(), o = offsetOf(el);
         return [r.left + o[0], r.top + o[1], r.width, r.height];
+      }
+
+      function isRoot(el) {
+        return !el || el === el.ownerDocument.documentElement || el === el.ownerDocument.body;
+      }
+
+      function isFrame(el) {
+        return el.tagName === 'IFRAME' || el.tagName === 'FRAME';
       }
 
       // The deepest element at a point of the view: through frames of the
@@ -81,7 +110,7 @@ enum WebMarkupScript {
             if (!inner || inner === el) { break; }
             el = inner;
           }
-          if (el.tagName !== 'IFRAME' && el.tagName !== 'FRAME') { break; }
+          if (!isFrame(el)) { break; }
           var content = null;
           try { content = el.contentDocument; } catch (e) {}
           if (!content) { break; }
@@ -93,19 +122,13 @@ enum WebMarkupScript {
         return el;
       }
 
-      function isRoot(el) {
-        return !el || el === el.ownerDocument.documentElement || el === el.ownerDocument.body;
-      }
-
       // What an element is inside: its parent, the host of its shadow root,
       // or the frame its document is in.
       function above(el) {
         if (el.parentElement) { return el.parentElement; }
         var root = el.getRootNode ? el.getRootNode() : null;
         if (root && root.host) { return root.host; }
-        var frame = null;
-        try { frame = el.ownerDocument.defaultView.frameElement; } catch (e) {}
-        return frame;
+        return frameAround(el.ownerDocument.defaultView);
       }
 
       // Whether `el` is `top` or inside it, through shadow roots and frames.
@@ -117,13 +140,19 @@ enum WebMarkupScript {
         return false;
       }
 
-      function cuts(el) {
-        if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') { return true; }
-        if (isRoot(el)) { return false; }
+      // Whether a box scrolls or clips what is inside it.
+      function clips(el) {
         var style = el.ownerDocument.defaultView.getComputedStyle(el);
         return /(auto|scroll|hidden|clip)/.test(style.overflowX + ' ' + style.overflowY);
       }
 
+      // Whether what is inside `el` is cut off where `el` ends.
+      function cuts(el) {
+        if (isFrame(el)) { return true; }
+        return !isRoot(el) && clips(el);
+      }
+
+      // What has a box of its own in a line of text.
       var solid = /^(img|svg|video|canvas|picture|iframe|object|embed|input|button|select|textarea)$/i;
 
       // What a drawn area is on, to follow: the block under its middle.
@@ -162,28 +191,26 @@ enum WebMarkupScript {
       function chainOf(el) {
         var chain = [], fixed = false, node = el;
         for (var guard = 0; node && guard < 400; guard++) {
-          var view = node.ownerDocument.defaultView;
-          if (view.getComputedStyle(node).position === 'fixed') { fixed = true; }
+          var win = node.ownerDocument.defaultView;
+          if (win.getComputedStyle(node).position === 'fixed') { fixed = true; }
           var parent = node.parentElement;
           if (!parent) {
             var root = node.getRootNode ? node.getRootNode() : null;
             if (root && root.host) { node = root.host; continue; }
-            var frame = null;
-            try { frame = view.frameElement; } catch (e) {}
+            var frame = frameAround(win);
             if (!frame) { break; }
             chain.push(frame);
             node = frame;
             continue;
           }
-          if (!isRoot(parent)) {
-            var style = parent.ownerDocument.defaultView.getComputedStyle(parent);
-            if (/(auto|scroll|hidden|clip)/.test(style.overflowX + ' ' + style.overflowY)) { chain.push(parent); }
-          }
+          if (!isRoot(parent) && clips(parent)) { chain.push(parent); }
           node = parent;
         }
         return {chain: chain, fixed: fixed};
       }
 
+      // The part of the view a mark may show in: what every box of its
+      // chain leaves of the window.
       function clipOf(mark) {
         var l = 0, t = 0, r = window.innerWidth, b = window.innerHeight;
         for (var i = 0; i < mark.chain.length; i++) {
@@ -198,6 +225,8 @@ enum WebMarkupScript {
         }
         return [l, t, Math.max(0, r - l), Math.max(0, b - t)];
       }
+
+      // What an element is called, for the note and the details file.
 
       function textOf(el, most) {
         var text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -262,6 +291,7 @@ enum WebMarkupScript {
         return parts.join(' > ');
       }
 
+      // The styles someone asking for a change would name, and no others.
       function stylesOf(el) {
         var s = el.ownerDocument.defaultView.getComputedStyle(el), out = {};
         out['font'] = s.fontWeight + ' ' + s.fontSize + '/' + s.lineHeight + ' ' +
@@ -281,9 +311,9 @@ enum WebMarkupScript {
         return out;
       }
 
+      // The selector of the frame an element is in, when it is in one.
       function frameOf(el) {
-        var frame = null;
-        try { frame = el.ownerDocument.defaultView.frameElement; } catch (e) {}
+        var frame = frameAround(el.ownerDocument.defaultView);
         return frame && el.ownerDocument !== document ? selectorOf(frame) : null;
       }
 
@@ -312,32 +342,7 @@ enum WebMarkupScript {
         return out;
       }
 
-      function watch(doc) {
-        if (!listening || watched.indexOf(doc) >= 0) { return; }
-        doc.addEventListener('scroll', scrolled, {capture: true, passive: true});
-        moves.forEach(function (name) { doc.addEventListener(name, follow, {capture: true, passive: true}); });
-        watched.push(doc);
-      }
-
-      function keep(number, el) {
-        // Tied again (a drawing that was moved): let go of what it was on.
-        var was = marks.get(number);
-        if (was && sizes && was.el.isConnected && was.el !== el && !isRoot(was.el)) { sizes.unobserve(was.el); }
-        var around = chainOf(el);
-        var mark = {el: el, chain: around.chain, fixed: around.fixed,
-                    selector: el.ownerDocument === document ? selectorOf(el) : null};
-        marks.set(number, mark);
-        watch(el.ownerDocument);
-        if (sizes) { sizes.observe(el); }
-        // It may be on its way somewhere: a part of the page still coming in.
-        follow();
-        return mark;
-      }
-
-      function answer(mark) {
-        return {rect: rectOf(mark.el), clip: clipOf(mark), fixed: mark.fixed,
-                scroll: [window.scrollX, window.scrollY]};
-      }
+      // The report: where every mark is now.
 
       // An element that left the page is looked for again by its selector:
       // a page that draws itself anew replaces its elements with like ones.
@@ -353,6 +358,10 @@ enum WebMarkupScript {
         if (sizes) { sizes.observe(mark.el); }
       }
 
+      // One flat list of numbers, as `WebMarkReport` reads it: the page's
+      // scroll, the view's size and the page's, then ten a mark: its
+      // number, its rect, its clip, and its flags (1 for an element that is
+      // gone, 2 for one that stays put).
       function report() {
         var root = document.documentElement, body = document.body;
         var out = [window.scrollX, window.scrollY, window.innerWidth, window.innerHeight,
@@ -381,14 +390,14 @@ enum WebMarkupScript {
         send(report());
       }
 
-      // Every scroll is answered at once, moved or not: the app is waiting
-      // to hear. And a scroll is what most often sets a page moving (a
-      // part that comes in as it is reached, by a script's own animation,
-      // which has no event to hear), so the look begins too.
-      function scrolled() {
-        post();
-        follow();
+      // At the next frame, and once for however many changes came before it.
+      function later() {
+        if (queued || marks.size === 0) { return; }
+        queued = true;
+        requestAnimationFrame(function () { queued = false; post(); });
       }
+
+      // The look every frame, for what moves with no word of it.
 
       // Whether an animation with an end is running on the page's own
       // clock. One without an end (a spinner) would keep the look going
@@ -420,10 +429,22 @@ enum WebMarkupScript {
         });
       }
 
-      function later() {
-        if (queued || marks.size === 0) { return; }
-        queued = true;
-        requestAnimationFrame(function () { queued = false; post(); });
+      // Every scroll is answered at once, moved or not: the app is waiting
+      // to hear. And a scroll is what most often sets a page moving (a
+      // part that comes in as it is reached, by a script's own animation,
+      // which has no event to hear), so the look begins too.
+      function scrolled() {
+        post();
+        follow();
+      }
+
+      // Listening, between `start` and `stop` and never outside them.
+
+      function watch(doc) {
+        if (!listening || watched.indexOf(doc) >= 0) { return; }
+        doc.addEventListener('scroll', scrolled, {capture: true, passive: true});
+        moves.forEach(function (name) { doc.addEventListener(name, follow, {capture: true, passive: true}); });
+        watched.push(doc);
       }
 
       function start() {
@@ -461,6 +482,88 @@ enum WebMarkupScript {
         if (sizes) { sizes.disconnect(); sizes = null; }
         return 1;
       }
+
+      // Tying a mark to an element.
+
+      function keep(number, el) {
+        // Tied again (a drawing that was moved): let go of what it was on.
+        var was = marks.get(number);
+        if (was && sizes && was.el.isConnected && was.el !== el && !isRoot(was.el)) { sizes.unobserve(was.el); }
+        var around = chainOf(el);
+        var mark = {el: el, chain: around.chain, fixed: around.fixed,
+                    selector: el.ownerDocument === document ? selectorOf(el) : null};
+        marks.set(number, mark);
+        watch(el.ownerDocument);
+        if (sizes) { sizes.observe(el); }
+        // It may be on its way somewhere: a part of the page still coming in.
+        follow();
+        return mark;
+      }
+
+      // Where a mark just tied is, so it is drawn before the next report.
+      function answer(mark) {
+        return {rect: rectOf(mark.el), clip: clipOf(mark), fixed: mark.fixed,
+                scroll: [window.scrollX, window.scrollY]};
+      }
+
+      // What a click at a point would pick, to outline it.
+      function probe(x, y) {
+        var el = deepest(x, y);
+        return isRoot(el) ? null : rectOf(el);
+      }
+
+      // An element picked before is that mark again, not a second one.
+      // Only the marks named in `picked` count: a drawing is tied to an
+      // element too, and that element can still be picked.
+      function pick(number, x, y, picked) {
+        var el = deepest(x, y);
+        if (isRoot(el)) { return null; }
+        for (var i = 0; picked && i < picked.length; i++) {
+          var was = marks.get(picked[i]);
+          if (was && !was.el.isConnected) { rebind(was); }
+          if (was && was.el === el) { return {already: picked[i]}; }
+        }
+        var out = answer(keep(number, el));
+        out.details = detailsOf(el);
+        return out;
+      }
+
+      // A drawn area: followed by the block under its middle, and
+      // described by the element that holds all of it.
+      function tie(number, l, t, w, h) {
+        var under = deepest(l + w / 2, t + h / 2) || document.body || document.documentElement;
+        // What holds all of the area: that is what is said about it.
+        var el = under;
+        for (var guard = 0; guard < 400; guard++) {
+          var r = rectOf(el);
+          if (r[0] <= l + 0.5 && r[1] <= t + 0.5 && r[0] + r[2] >= l + w - 0.5 && r[1] + r[3] >= t + h - 0.5) { break; }
+          var up = above(el);
+          if (!up) { break; }
+          el = up;
+        }
+        // The middle of an area around a few paragraphs is as likely
+        // between two of them as on one: then a quarter of the way in,
+        // from each side in turn.
+        var on = blockUnder(under, el);
+        var tries = [[0.5, 0.25], [0.5, 0.75], [0.25, 0.5], [0.75, 0.5]];
+        for (var i = 0; i < tries.length && on === el; i++) {
+          var hit = deepest(l + w * tries[i][0], t + h * tries[i][1]);
+          if (hit && isInside(hit, el)) { on = blockUnder(hit, el); }
+        }
+        var out = answer(keep(number, on));
+        out.details = {tag: el.tagName.toLowerCase(), selector: selectorOf(el), frame: frameOf(el),
+                       elements: inside(el, l, t, w, h)};
+        return out;
+      }
+
+      function forget(number) {
+        var mark = marks.get(number);
+        if (mark && sizes && mark.el.isConnected && !isRoot(mark.el)) { sizes.unobserve(mark.el); }
+        marks.delete(number);
+        return 1;
+      }
+
+      // Bringing a mark into view.
 
       // How far a box has to move to show in a room: `MarkReveal.shift`,
       // the same rule in the page's own units. Nothing when it is inside;
@@ -514,102 +617,52 @@ enum WebMarkupScript {
         return end - top < 80 ? [0, bottom] : [top, end];
       }
 
-      window.__wortelMarkup = {
-        start: start,
-        stop: stop,
-        report: report,
-        probe: function (x, y) {
-          var el = deepest(x, y);
-          return isRoot(el) ? null : rectOf(el);
-        },
-        // An element picked before is that mark again, not a second one.
-        // Only the marks named in `picked` count: a drawing is tied to an
-        // element too, and that element can still be picked.
-        pick: function (number, x, y, picked) {
-          var el = deepest(x, y);
-          if (isRoot(el)) { return null; }
-          for (var i = 0; picked && i < picked.length; i++) {
-            var was = marks.get(picked[i]);
-            if (was && !was.el.isConnected) { rebind(was); }
-            if (was && was.el === el) { return {already: picked[i]}; }
+      // The mark's own box (`part`, from its element's corner, or the
+      // whole element) into what shows: each scrolling box it is inside,
+      // then the window less the note bar (`below`) and what the page
+      // keeps over its own edges. Not `scrollIntoView`: that centres the
+      // element, which for a drawn box is whatever holds all of it, and
+      // it counts what the note bar and a fixed header cover as shown.
+      function reveal(number, part, below, smooth) {
+        var mark = marks.get(number);
+        if (!mark || !mark.el.isConnected) { return 0; }
+        var r = rectOf(mark.el);
+        var box = part ? [r[0] + part[0], r[1] + part[1], part[2], part[3]] : r;
+        var how = smooth ? 'smooth' : 'instant';
+        for (var i = 0; i < mark.chain.length; i++) {
+          var holder = mark.chain[i], scroller = holder;
+          if (!holder.isConnected) { continue; }
+          if (isFrame(holder)) {
+            scroller = null;
+            try { scroller = holder.contentDocument.scrollingElement; } catch (e) {}
+          } else {
+            var style = holder.ownerDocument.defaultView.getComputedStyle(holder);
+            if (!/(auto|scroll)/.test(style.overflowX + ' ' + style.overflowY)) { scroller = null; }
           }
-          var out = answer(keep(number, el));
-          out.details = detailsOf(el);
-          return out;
-        },
-        tie: function (number, l, t, w, h) {
-          var under = deepest(l + w / 2, t + h / 2) || document.body || document.documentElement;
-          // What holds all of the area: that is what is said about it.
-          var el = under;
-          for (var guard = 0; guard < 400; guard++) {
-            var r = rectOf(el);
-            if (r[0] <= l + 0.5 && r[1] <= t + 0.5 && r[0] + r[2] >= l + w - 0.5 && r[1] + r[3] >= t + h - 0.5) { break; }
-            var up = above(el);
-            if (!up) { break; }
-            el = up;
-          }
-          // The middle of an area around a few paragraphs is as likely
-          // between two of them as on one: then a quarter of the way in,
-          // from each side in turn.
-          var on = blockUnder(under, el);
-          var tries = [[0.5, 0.25], [0.5, 0.75], [0.25, 0.5], [0.75, 0.5]];
-          for (var i = 0; i < tries.length && on === el; i++) {
-            var hit = deepest(l + w * tries[i][0], t + h * tries[i][1]);
-            if (hit && isInside(hit, el)) { on = blockUnder(hit, el); }
-          }
-          var out = answer(keep(number, on));
-          out.details = {tag: el.tagName.toLowerCase(), selector: selectorOf(el), frame: frameOf(el),
-                         elements: inside(el, l, t, w, h)};
-          return out;
-        },
-        // The mark's own box (`part`, from its element's corner, or the
-        // whole element) into what shows: each scrolling box it is inside,
-        // then the window less the note bar (`below`) and what the page
-        // keeps over its own edges. Not `scrollIntoView`: that centres the
-        // element, which for a drawn box is whatever holds all of it, and
-        // it counts what the note bar and a fixed header cover as shown.
-        reveal: function (number, part, below, smooth) {
-          var mark = marks.get(number);
-          if (!mark || !mark.el.isConnected) { return 0; }
-          var r = rectOf(mark.el);
-          var box = part ? [r[0] + part[0], r[1] + part[1], part[2], part[3]] : r;
-          var how = smooth ? 'smooth' : 'instant';
-          for (var i = 0; i < mark.chain.length; i++) {
-            var holder = mark.chain[i], scroller = holder;
-            if (!holder.isConnected) { continue; }
-            if (holder.tagName === 'IFRAME' || holder.tagName === 'FRAME') {
-              scroller = null;
-              try { scroller = holder.contentDocument.scrollingElement; } catch (e) {}
-            } else {
-              var style = holder.ownerDocument.defaultView.getComputedStyle(holder);
-              if (!/(auto|scroll)/.test(style.overflowX + ' ' + style.overflowY)) { scroller = null; }
-            }
-            if (!scroller) { continue; }
-            var h = rectOf(holder);
-            box = slide(scroller, box, shift(box, [h[0] + holder.clientLeft, h[1] + holder.clientTop,
-                                                   holder.clientWidth, holder.clientHeight]), how);
-          }
-          if (mark.fixed) { return 1; }
-          var edges = covered(mark, Math.max(0, window.innerHeight - (below || 0)));
-          var d = shift(box, [0, edges[0], window.innerWidth, Math.max(0, edges[1] - edges[0])]);
-          if (d[0] || d[1]) {
-            window.scrollTo({left: window.scrollX - d[0], top: window.scrollY - d[1], behavior: how});
-          }
-          return 1;
-        },
-        forget: function (number) {
-          var mark = marks.get(number);
-          if (mark && sizes && mark.el.isConnected && !isRoot(mark.el)) { sizes.unobserve(mark.el); }
-          marks.delete(number);
-          return 1;
-        },
-        destroy: function () {
-          stop();
-          marks.clear();
-          delete window.__wortelMarkup;
-          return 1;
+          if (!scroller) { continue; }
+          var h = rectOf(holder);
+          box = slide(scroller, box, shift(box, [h[0] + holder.clientLeft, h[1] + holder.clientTop,
+                                                 holder.clientWidth, holder.clientHeight]), how);
         }
-      };
+        if (mark.fixed) { return 1; }
+        var edges = covered(mark, Math.max(0, window.innerHeight - (below || 0)));
+        var d = shift(box, [0, edges[0], window.innerWidth, Math.max(0, edges[1] - edges[0])]);
+        if (d[0] || d[1]) {
+          window.scrollTo({left: window.scrollX - d[0], top: window.scrollY - d[1], behavior: how});
+        }
+        return 1;
+      }
+
+      // Out of the page: nothing is left of the script.
+      function destroy() {
+        stop();
+        marks.clear();
+        delete window.__wortelMarkup;
+        return 1;
+      }
+
+      window.__wortelMarkup = {start: start, stop: stop, report: report, probe: probe, pick: pick, tie: tie,
+                               reveal: reveal, forget: forget, destroy: destroy};
       return 1;
     })()
     """##

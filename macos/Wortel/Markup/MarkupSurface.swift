@@ -13,6 +13,15 @@ import AppKit
 /// **Everything an adapter registers (a script, a message handler, an
 /// observer) is added in `activate` and removed in `deactivate`.** That is
 /// what makes "mark-up off costs nothing" a thing to check, not to hope.
+///
+/// **Everything the layer calls on an adapter is a requirement here, and
+/// there is no extension with defaults.** A member that is only in an
+/// extension is the adapter's own when the adapter is held by its type, and
+/// the extension's when it is held as `any MarkupSurface`, which is how the
+/// layer holds it. `attach(to:)` was such a member: every file's mark was
+/// tied to nothing, while the adapters' tests, which called them by their
+/// type, passed (found by hand, 2026-11-25). An adapter that has nothing to
+/// do for a requirement says so, in the same order as here.
 @MainActor
 protocol MarkupSurface: AnyObject {
     /// The view the marks lie over. Scrolling is passed on to it.
@@ -20,29 +29,20 @@ protocol MarkupSurface: AnyObject {
     /// Whether a click picks a thing here (an element of a page). Where it
     /// does not, only a drag makes a mark.
     var picksThings: Bool { get }
-
-    /// Where the marks are drawn, told before `activate`. A requirement
-    /// and not only a default below: declared in the extension alone, a
-    /// call through `any MarkupSurface` runs the empty default whatever
-    /// the adapter implements, and every file's mark was then tied to
-    /// nothing (found by hand, 2026-11-25; the adapters' own tests call
-    /// them by their type and saw none of it).
-    func attach(to layer: NSView)
     /// Whether scrolling goes to whatever is under the pointer inside
     /// `view` (a code block that scrolls sideways within a document), not
     /// to `view` itself.
     var scrollsInside: Bool { get }
-
     /// The column the preview is read in, where it has one narrower than
     /// itself (rendered Markdown): the note bar lines up with it. Nil for
     /// a preview that is read edge to edge.
     var readingColumn: CGRect? { get }
-    /// Bring a mark's own box into the part of `view` that shows, if it is
-    /// not wholly there: its chip was clicked. The bottom `covered` points
-    /// are under the note bar and do not count as shown. Where it goes is
-    /// `MarkReveal.shift`.
-    func reveal(_ mark: Mark, coveredBelow covered: CGFloat)
 
+    /// Where the marks are drawn, told before `activate`. A page's layer
+    /// has its web view's own frame, so the two share coordinates. A file's
+    /// layer is placed by SwiftUI over views SwiftUI also places, so its
+    /// adapters convert through this view.
+    func attach(to layer: NSView)
     /// Start telling where the marks are. `moved` is called whenever a
     /// placement may have changed.
     func activate(moved: @escaping () -> Void)
@@ -61,7 +61,14 @@ protocol MarkupSurface: AnyObject {
     /// Where a mark is now, or nil when what it was tied to is gone or has
     /// not been reported yet.
     func placement(of number: Int) -> MarkPlacement?
+    /// Let go of what mark `number` was tied to: no undo brings it back.
     func forget(_ number: Int)
+
+    /// Bring a mark's own box into the part of `view` that shows, if it is
+    /// not wholly there: its chip was clicked, or its pin. The bottom
+    /// `covered` points are under the note bar and do not count as shown.
+    /// Where it goes is `MarkReveal.shift`.
+    func reveal(_ mark: Mark, coveredBelow covered: CGFloat)
     /// Whether scrolling by this much should move the marks. Where it
     /// should and no word of it comes, the marks are behind their content.
     func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool
@@ -79,58 +86,6 @@ protocol MarkupSurface: AnyObject {
 struct MarkCapture {
     var image: CGImage
     var showing: CGRect
-}
-
-extension MarkupSurface {
-    /// Where the marks are drawn. A page's layer has its web view's own
-    /// frame, so the two share coordinates and there is nothing to do. A
-    /// file's layer is placed by SwiftUI over views SwiftUI also places, so
-    /// its adapters convert through this view.
-    func attach(to layer: NSView) {}
-    var scrollsInside: Bool { false }
-    var readingColumn: CGRect? { nil }
-}
-
-/// The views a file's preview is drawn with, as they come and go.
-///
-/// A file tab's views are rebuilt whenever the tab comes back from behind
-/// others; its marks must not be. So the adapter that ties marks to a
-/// file's content lives with the session, and the views register here as
-/// they are made: the table of Source and Diff, the stack of rendered
-/// Markdown, the picture of an image. Weak, all of it: nothing here keeps
-/// a view alive.
-@MainActor
-final class MarkupViews {
-    // Source and Diff (`DiffView`).
-    weak var table: NSTableView?
-    /// What a row holds, as a number that changes when its line does, so a
-    /// mark can tell its line from another that took its place.
-    var rowKey: (Int) -> Int? = { _ in nil }
-
-    // Rendered Markdown (`MarkdownView`).
-    /// A view exactly as large as the stack of blocks, inside the scroll
-    /// view: block frames are measured from its top-left.
-    weak var stack: NSView?
-    /// Where each block that is built sits in the stack. The stack is
-    /// lazy: a block far out of view is not here.
-    var blockFrames: [Int: CGRect] = [:]
-    var blockKey: (Int) -> Int? = { _ in nil }
-    /// The document's type scale: ⌘+ moves it, and a mark with it.
-    var blockScale: CGFloat = 1
-    /// Scroll a block into the middle of the view. Only the document's own
-    /// scroll reader can: a block that is not built has no frame to scroll
-    /// to. It lands near, not exactly: the mark is placed once the block
-    /// has its frame (`BlocksMarkupSurface.reveal`).
-    var revealBlock: (Int) -> Void = { _ in }
-
-    // An image, or an SVG's picture (`ImagePreview`).
-    weak var image: NSImageView?
-
-    /// What is shown changed under the marks: a file rewritten, a block
-    /// built or measured, the text resized.
-    var onChange: () -> Void = {}
-
-    func changed() { onChange() }
 }
 
 /// What a mark was tied to, and what there is to say about it.
@@ -209,10 +164,7 @@ final class MarkupCanvas: @unchecked Sendable {
     init?(part: CGRect, isPart: Bool, wholeHeight: CGFloat, background: CGColor) {
         let density = MarkupPicture.density(for: part.size)
         let width = Int((part.width * density).rounded(.up)), height = Int((part.height * density).rounded(.up))
-        guard width >= 1, height >= 1,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        guard width >= 1, height >= 1, let context = CGContext.picture(width: width, height: height) else { return nil }
         context.setFillColor(background)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.scaleBy(x: density, y: density)

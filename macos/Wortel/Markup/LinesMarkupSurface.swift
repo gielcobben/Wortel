@@ -1,103 +1,5 @@
 import AppKit
 
-/// Pictures of views the app draws itself, for mark-up over a file.
-@MainActor
-enum ViewPicture {
-    /// The page's own colour, as this view shows it. A file's views draw no
-    /// background of their own (the page behind them does), so a picture of
-    /// one alone would be dark text on nothing.
-    static func background(of view: NSView) -> CGColor {
-        var colour = CGColor(gray: 1, alpha: 1)
-        view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            colour = Chrome.content.usingColorSpace(.sRGB)?.cgColor ?? Chrome.content.cgColor
-        }
-        return colour
-    }
-
-    /// What `view` shows in `rect` (its own coordinates), on the page's
-    /// colour. The mark-up layer is never in it: it is no part of `view`.
-    static func capture(_ view: NSView, rect: CGRect) -> CGImage? {
-        guard rect.width >= 1, rect.height >= 1,
-              let rep = view.bitmapImageRepForCachingDisplay(in: rect) else { return nil }
-        view.cacheDisplay(in: rect, to: rep)
-        guard let shot = rep.cgImage else { return nil }
-        return onBackground(shot, background(of: view))
-    }
-
-    /// The most pixels a side of a mark's picture has. What a file says its
-    /// size is, is the file's to say: an SVG can declare any width, and a
-    /// mark across it must not ask for a bitmap that large.
-    static let mostPixels = 4096
-
-    /// `image` on a colour, made smaller when a side is over `mostPixels`.
-    static func onBackground(_ image: CGImage, _ background: CGColor) -> CGImage? {
-        let shrink = min(1, CGFloat(mostPixels) / CGFloat(max(image.width, 1)),
-                         CGFloat(mostPixels) / CGFloat(max(image.height, 1)))
-        let width = max(Int((CGFloat(image.width) * shrink).rounded()), 1)
-        let height = max(Int((CGFloat(image.height) * shrink).rounded()), 1)
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        let all = CGRect(x: 0, y: 0, width: width, height: height)
-        context.setFillColor(background)
-        context.fill(all)
-        context.draw(image, in: all)
-        return context.makeImage()
-    }
-
-    /// Draw a stretch of what a scroll view scrolls into a canvas, a
-    /// screen at a time: scroll, let the views lay out, take a picture,
-    /// and put the scroll back where it was.
-    ///
-    /// All in one turn of the run loop, so nothing on screen moves: the
-    /// window is only drawn again after the scroll is back. `top` and
-    /// `bottom` are in the document view's coordinates; `place` says where
-    /// a stretch of the document belongs in the canvas's whole.
-    static func tiles(of scroll: NSScrollView, from top: CGFloat, to bottom: CGFloat,
-                      into canvas: MarkupCanvas, place: (CGRect) -> CGRect) {
-        let clip = scroll.contentView
-        let start = clip.bounds.origin
-        defer {
-            clip.scroll(to: start)
-            scroll.reflectScrolledClipView(clip)
-            scroll.layoutSubtreeIfNeeded()
-        }
-        var y = top
-        for _ in 0..<64 where y < bottom {
-            let wanted = NSRect(x: start.x, y: y, width: clip.bounds.width, height: clip.bounds.height)
-            clip.scroll(to: clip.constrainBoundsRect(wanted).origin)
-            scroll.reflectScrolledClipView(clip)
-            scroll.layoutSubtreeIfNeeded()
-            scroll.displayIfNeeded()
-            let shown = scroll.documentVisibleRect
-            if let image = capture(clip, rect: clip.bounds) {
-                canvas.draw(image, at: place(shown))
-            }
-            // At the document's end the scroll stops short of what was asked.
-            guard shown.maxY > y + 1 else { break }
-            y = shown.maxY
-        }
-    }
-}
-
-extension NSScrollView {
-    /// Move what is scrolled by `shift`, measured in `view`'s points, as
-    /// far as the document lets it go. At once: the rows of a table and the
-    /// blocks of a document are the app's own and are drawn in this frame.
-    func slide(by shift: CGVector, measuredIn view: NSView) {
-        guard shift.dx != 0 || shift.dy != 0 else { return }
-        let clip = contentView
-        // Through two points, so a flipped view and one that is not agree.
-        let zero = clip.convert(NSPoint.zero, from: view)
-        let moved = clip.convert(NSPoint(x: shift.dx, y: shift.dy), from: view)
-        var bounds = clip.bounds
-        bounds.origin.x -= moved.x - zero.x
-        bounds.origin.y -= moved.y - zero.y
-        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
-        reflectScrolledClipView(clip)
-    }
-}
-
 /// Mark-up over a file's source or its diff: `DiffView`'s table.
 ///
 /// A mark is tied to a row. The table and its scroll view are the app's
@@ -118,8 +20,7 @@ final class LinesMarkupSurface: MarkupSurface {
     private let views: MarkupViews
     private weak var layer: NSView?
     private var moved: (() -> Void)?
-    private var observers: [NSObjectProtocol] = []
-    private weak var observed: NSView?
+    private let watch = ViewWatch()
 
     private struct Tie {
         /// The row, and what it and the rows around it held.
@@ -144,6 +45,10 @@ final class LinesMarkupSurface: MarkupSurface {
 
     var view: NSView? { scroll }
     var picksThings: Bool { false }
+    var scrollsInside: Bool { false }
+    var readingColumn: CGRect? { nil }
+
+    // MARK: - On and off
 
     func attach(to layer: NSView) { self.layer = layer }
 
@@ -162,29 +67,14 @@ final class LinesMarkupSurface: MarkupSurface {
     func deactivate(forgetting: Bool) {
         moved = nil
         views.onChange = {}
-        stopObserving()
+        watch.stop()
         if forgetting { ties = [:] }
     }
 
     /// Watch the clip view that is there now: the table is rebuilt with its
     /// tab, and the new one has a clip view of its own.
     private func observe() {
-        guard let clip = scroll?.contentView, clip !== observed else { return }
-        stopObserving()
-        observed = clip
-        clip.postsBoundsChangedNotifications = true
-        clip.postsFrameChangedNotifications = true
-        for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: clip, queue: nil) {
-                [weak self] _ in MainActor.assumeIsolated { self?.moved?() }
-            })
-        }
-    }
-
-    private func stopObserving() {
-        observers.forEach(NotificationCenter.default.removeObserver)
-        observers = []
-        observed = nil
+        watch.watch(scroll?.contentView, scrolling: true) { [weak self] in self?.moved?() }
     }
 
     /// The rows changed: a file rewritten, the text resized, the table
@@ -220,23 +110,24 @@ final class LinesMarkupSurface: MarkupSurface {
     }
 
     func placement(of number: Int) -> MarkPlacement? {
-        guard let tie = ties[number], !tie.lost, let table, let layer, let clip = scroll?.contentView,
+        guard let tie = ties[number], !tie.lost, let table, let layer, let scroll,
               tie.row < table.numberOfRows else { return nil }
         let row = table.rect(ofRow: tie.row)
         return MarkPlacement(origin: layer.convert(row.origin, from: table), size: row.size,
                              scale: table.rowHeight / tie.rowHeight,
-                             clip: layer.convert(clip.bounds, from: clip).intersection(layer.bounds))
+                             clip: scroll.clip(in: layer).intersection(layer.bounds))
     }
 
     func forget(_ number: Int) { ties[number] = nil }
+
+    // MARK: - Scrolling
 
     /// The mark's box, not its first row: a box over eight lines whose
     /// first was in view was left half under the note bar, which the row
     /// alone could not tell.
     func reveal(_ mark: Mark, coveredBelow covered: CGFloat) {
         guard let layer, let scroll, let placement = placement(of: mark.number) else { return }
-        let room = MarkReveal.room(layer.bounds.size, coveredBelow: covered).intersection(placement.clip)
-        scroll.slide(by: MarkReveal.shift(placement.box(of: mark.shape), into: room), measuredIn: layer)
+        scroll.reveal(placement.box(of: mark.shape), within: placement.clip, of: layer, coveredBelow: covered)
     }
 
     /// A table's marks move in the frame its rows do. Nothing is ever owed.
@@ -245,12 +136,8 @@ final class LinesMarkupSurface: MarkupSurface {
     // MARK: - Pictures
 
     func capture(_ rect: CGRect, reply: @escaping (MarkCapture?) -> Void) {
-        guard let layer, let clip = scroll?.contentView else { return reply(nil) }
-        let shown = layer.convert(clip.bounds, from: clip).intersection(rect).integral
-        guard !shown.isNull, let image = ViewPicture.capture(clip, rect: clip.convert(shown, from: layer)) else {
-            return reply(nil)
-        }
-        reply(MarkCapture(image: image, showing: shown))
+        guard let layer, let scroll else { return reply(nil) }
+        reply(ViewPicture.capture(rect, of: scroll, under: layer))
     }
 
     func whole(_ marks: [Mark], reply: @escaping (MarkupWhole?) -> Void) {

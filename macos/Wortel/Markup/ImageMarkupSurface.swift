@@ -15,8 +15,7 @@ final class ImageMarkupSurface: MarkupSurface {
     private let views: MarkupViews
     private weak var layer: NSView?
     private var moved: (() -> Void)?
-    private var observer: NSObjectProtocol?
-    private weak var observed: NSView?
+    private let watch = ViewWatch()
     private var tied: Set<Int> = []
 
     init(views: MarkupViews) {
@@ -25,41 +24,39 @@ final class ImageMarkupSurface: MarkupSurface {
 
     var view: NSView? { views.image }
     var picksThings: Bool { false }
+    var scrollsInside: Bool { false }
+    var readingColumn: CGRect? { nil }
+
+    // MARK: - On and off
 
     func attach(to layer: NSView) { self.layer = layer }
 
     func activate(moved: @escaping () -> Void) {
         self.moved = moved
-        views.onChange = { [weak self] in
-            self?.observe()
-            self?.moved?()
-        }
+        views.onChange = { [weak self] in self?.changed() }
         observe()
     }
 
     func deactivate(forgetting: Bool) {
         moved = nil
         views.onChange = {}
-        stopObserving()
+        watch.stop()
         if forgetting { tied = [] }
     }
 
+    /// Watch the image view that is there now: it is made anew with its
+    /// tab.
     private func observe() {
-        guard let image = views.image, image !== observed else { return }
-        stopObserving()
-        observed = image
-        image.postsFrameChangedNotifications = true
-        observer = NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification, object: image, queue: nil) {
-                [weak self] _ in MainActor.assumeIsolated { self?.moved?() }
-            }
+        watch.watch(views.image) { [weak self] in self?.moved?() }
     }
 
-    private func stopObserving() {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
-        observer = nil
-        observed = nil
+    /// The image view is another one, or shows another picture.
+    private func changed() {
+        observe()
+        moved?()
     }
+
+    // MARK: - Marks
 
     /// Where the picture is drawn in the layer, and how large one of its
     /// points is. The view scales it down to fit and never up, centred.
@@ -92,8 +89,13 @@ final class ImageMarkupSurface: MarkupSurface {
     }
 
     func forget(_ number: Int) { tied.remove(number) }
+
+    // MARK: - Scrolling
+
     /// A picture is fitted to its view: all of it is always in view.
     func reveal(_ mark: Mark, coveredBelow covered: CGFloat) {}
+
+    /// Nothing scrolls here, so nothing is ever owed.
     func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool { false }
 
     // MARK: - Pictures

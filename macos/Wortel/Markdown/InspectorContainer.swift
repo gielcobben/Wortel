@@ -79,7 +79,7 @@ final class SideColumnController: NSViewController {
     private func sync() {
         let tab = git.activeTab
         // A hidden column shows no terminal: it would keep the keyboard.
-        let terminal = git.isVisible ? tab?.terminalID : nil
+        let terminal = git.isShowing(.side) ? tab?.terminalID : nil
         // Only for the session the panel is pointed at: its tabs are that
         // session's. The two differ for a moment whenever the panel follows
         // a turn later (a session whose worktree is still being made is

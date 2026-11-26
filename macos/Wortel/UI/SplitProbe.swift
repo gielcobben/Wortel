@@ -21,7 +21,8 @@ import AppKit
 /// of the area you're in), `focus-left` `focus-right` `focus-up`
 /// `focus-down`, `move-left` `move-right` `move-up` `move-down` (the tab in
 /// front), `zoom`, `equalize`, `tab` (a terminal tab here), `close` (the tab
-/// in front here), `column`, `strip`, `next` (the next session), `wide`
+/// in front here), `column`, `strip`, `sidebar` (hide or show it), `swap`
+/// (the side split to the other side), `next` (the next session), `wide`
 /// (drag the first divider 80 points), `resize:<w>x<h>` (the window to that
 /// size in points, in twenty steps), `light` and `dark` (the copy's
 /// appearance, for a picture), `drop:<n>.<where>` (the tab in front
@@ -78,6 +79,8 @@ enum SplitProbe {
             case "close": send(#selector(AppDelegate.closeSession(_:)))
             case "column": send(#selector(AppDelegate.toggleSideColumn(_:)))
             case "strip": send(#selector(AppDelegate.toggleBottomStrip(_:)))
+            case "sidebar": send(#selector(AppDelegate.toggleSessionSidebar(_:)))
+            case "swap": send(#selector(AppDelegate.toggleColumnSide(_:)))
             case "next": send(#selector(AppDelegate.selectNextSession(_:)))
             case "light": NSApp.appearance = NSAppearance(named: .aqua)
             case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -145,7 +148,7 @@ enum SplitProbe {
         switch parts[1] {
         case "left": point = NSPoint(x: frame.minX + 10, y: frame.midY)
         case "right": point = NSPoint(x: frame.maxX - 10, y: frame.midY)
-        case "up": point = NSPoint(x: frame.midX, y: frame.maxY - PaneBar.height - 10)
+        case "up": point = NSPoint(x: frame.midX, y: frame.maxY - Chrome.titlebarHeight - 10)
         case "down": point = NSPoint(x: frame.midX, y: frame.minY + 10)
         default: point = NSPoint(x: frame.midX, y: frame.midY)
         }

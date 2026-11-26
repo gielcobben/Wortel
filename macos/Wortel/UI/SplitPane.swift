@@ -2,55 +2,48 @@ import AppKit
 import Observation
 import SwiftUI
 
-// MARK: - A pane's row
+// MARK: - A split's row
 
-/// The row of a pane in a split main area: its tabs with "+" right after the
-/// last one, on the strip's faint band. The same row the bottom strip has,
-/// because it is the same thing in another place: a row of tabs that is not
-/// in the titlebar.
+/// The row of a split somebody made (⌘D, a tab let go on an edge): its tabs
+/// with "+" right after the last one. Along the top of the window it is a
+/// titlebar row like the main row's and the side split's; lower down, the
+/// strip's kind of row (`SplitLeafView`).
 ///
-/// Nothing at the trailing end until the pane is zoomed: then one button
-/// says so, and puts the others back. A double-click on the row's empty part
-/// zooms the pane and unzooms it, as a double-click on the titlebar zooms the
-/// window.
+/// Nothing at the trailing end until the split is zoomed: then one button
+/// says so, and puts the others back.
 @MainActor
-final class PaneBar: FilledView {
-    static let height: CGFloat = 36
-
+final class PaneBar: ChromeBarView, LeafBar {
     let strip = SideTabStrip()
     let add = HoverFillButton.glyph("plus", "New Tab")
-    let unzoom = HoverFillButton.glyph("arrow.down.right.and.arrow.up.left", "Show All Splits (⇧⌘↩)")
-    var onDoubleClick: () -> Void = {}
+    let unzoom = ZoomedButton()
+    private var stripLeading: NSLayoutConstraint!
+    /// As every row's: room for the sidebar's controls when this row is the
+    /// leftmost in the titlebar with the sidebar collapsed.
+    var leadingClearance: CGFloat = 0 {
+        didSet {
+            let constant = max(8, leadingClearance)
+            if abs(stripLeading.constant - constant) > 0.01 { stripLeading.constant = constant }
+        }
+    }
 
     init(region: TabRegion) {
-        super.init(color: Chrome.stripBand)
+        super.init()
         strip.region = region
-        strip.isOnPage = true
         strip.translatesAutoresizingMaskIntoConstraints = false
         strip.trailingAccessory = add
-        unzoom.isSelected = true
-        unzoom.isHidden = true
-        let trailing = NSStackView(views: [unzoom])
-        trailing.spacing = 4
-        trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(strip)
-        addSubview(trailing)
+        addSubview(unzoom)
+        stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         NSLayoutConstraint.activate([
-            strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            stripLeading,
             strip.topAnchor.constraint(equalTo: topAnchor),
             strip.bottomAnchor.constraint(equalTo: bottomAnchor),
-            strip.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -8),
-            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
+            strip.trailingAnchor.constraint(equalTo: unzoom.leadingAnchor, constant: -8),
+            unzoom.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            unzoom.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
-    override var mouseDownCanMoveWindow: Bool { false }
-
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 { onDoubleClick() }
-    }
 
     /// Wire the row to the panel the way every row is wired: picking, closing,
     /// keeping and moving are the panel's, by region.
@@ -62,11 +55,8 @@ final class PaneBar: FilledView {
         strip.onMove = { [weak git] tab, destination in git?.move(tab, to: destination, at: .max) }
         strip.onSplit = { [weak git] tab, edge in git?.split(region, on: edge, with: tab) }
         strip.preview = { [weak home] tab in TitleBarController.preview(for: tab, in: home?.selected) }
-        onDoubleClick = { [weak git] in git?.toggleZoom(region) }
         add.target = self
         add.action = #selector(addTab(_:))
-        unzoom.target = self
-        unzoom.action = #selector(unzoomPressed)
         self.git = git
         self.region = region
     }
@@ -78,25 +68,46 @@ final class PaneBar: FilledView {
         guard let git else { return }
         NewTabMenu.popUp(from: sender, git: git, region: region)
     }
-
-    @objc private func unzoomPressed() { git?.toggleZoom(region) }
 }
 
-// MARK: - A pane
+/// The button a zoomed split's row shows, the only sign that there are others
+/// behind it: pressing it shows them all again. Hidden otherwise. Every row
+/// has one (`LeafBar.unzoom`).
+@MainActor
+final class ZoomedButton: HoverFillButton {
+    init() {
+        super.init(frame: .zero)
+        image = NSImage(systemSymbolName: "arrow.down.right.and.arrow.up.left",
+                        accessibilityDescription: "Show All Splits")?.withSymbolConfiguration(Chrome.glyph)
+        toolTip = "Show All Splits (⇧⌘↩)"
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: Chrome.controlSize),
+            heightAnchor.constraint(equalToConstant: Chrome.controlSize),
+        ])
+        isSelected = true
+        isHidden = true
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+}
 
-/// A pane split off the main area: its row, a host for its terminals that
-/// works exactly like the side column's and the strip's, and in front of that
-/// the page when the tab in front is not a terminal.
+// MARK: - A split
+
+/// A split somebody made: a host for its terminals that works exactly like
+/// the side split's and the strip's, and in front of that the page when the
+/// tab in front is not a terminal. Its row is `bar`; `leaf` is the two
+/// together, as the window's tree lays them out.
 ///
-/// One per pane, for as long as the pane exists in any session of the window,
-/// so nothing is rebuilt when another pane closes or the session is switched
-/// away from and back: the view is hidden, its terminals stay where they are.
-/// While its session isn't the one on screen the panel has no tabs for it, so
-/// it shows nothing and its terminal is told it can't be seen.
+/// One per split, for as long as the split exists in any session, so nothing
+/// is rebuilt when another split closes or the session is switched away from
+/// and back: the view is hidden, its terminals stay where they are. While its
+/// session isn't the one on screen the panel has no tabs for it, so it shows
+/// nothing and its terminal is told it can't be seen.
 @MainActor
 final class SplitPaneController: NSViewController {
     let id: UUID
     let bar: PaneBar
+    private(set) lazy var leaf = SplitLeafView(bar: bar, body: view)
     private var region: TabRegion { .pane(id) }
     private let host = SideTerminalHostController()
     private let pageHost: NSHostingController<SplitPanePage>
@@ -113,7 +124,7 @@ final class SplitPaneController: NSViewController {
         bar = PaneBar(region: .pane(id))
         pageHost = NSHostingController(rootView: SplitPanePage(region: .pane(id), git: git, files: files,
                                                                previewTabs: previewTabs))
-        // The page has no say in how big the pane is (`SideColumnController`).
+        // The page has no say in how big the split is (`SideColumnController`).
         pageHost.sizingOptions = []
         super.init(nibName: nil, bundle: nil)
     }
@@ -123,30 +134,22 @@ final class SplitPaneController: NSViewController {
         let root = NSView()
         addChild(host)
         addChild(pageHost)
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(bar)
         for body in [host.view, pageHost.view] {
             body.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(body)
             NSLayoutConstraint.activate([
-                body.topAnchor.constraint(equalTo: bar.bottomAnchor),
+                body.topAnchor.constraint(equalTo: root.topAnchor),
                 body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
                 body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
                 body.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             ])
         }
-        NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: root.topAnchor),
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: PaneBar.height),
-        ])
         view = root
         bar.wire(to: git, home: home, region: region)
         observe()
     }
 
-    /// The pane as the selected session has it, applied now rather than a
+    /// The split as the selected session has it, applied now rather than a
     /// turn later by the observer (`MainSplitViewController.show`).
     func applyNow() { sync() }
 
@@ -165,7 +168,6 @@ final class SplitPaneController: NSViewController {
             bar.strip.update(items: git.tabs(in: region).map { TitleBarController.stripItem(for: $0, in: session) },
                              active: git.activeTab(in: region))
         }
-        bar.unzoom.isHidden = git.zoomedRegion != region
         bar.strip.isKeyRow = git.keyRegion == region
         let active = showing ? git.activeTab(in: region) : nil
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
@@ -177,8 +179,8 @@ final class SplitPaneController: NSViewController {
     }
 }
 
-/// A pane, a file or a web page in a split pane: `TabContent`, as in every
-/// other row.
+/// A pane, a file or a web page in a split: `TabContent`, as in every other
+/// row.
 struct SplitPanePage: View {
     let region: TabRegion
     @Bindable var git: GitPanelModel

@@ -169,22 +169,17 @@ final class GitPanelModel {
 
     /// Whether the Files pane is on screen, in any row: the one thing the
     /// file tree's upkeep is for.
-    ///
-    /// TODO(unify): this and `needsRepo` read the column and the strip by
-    /// whether they are up, not by `isShowing`, because their own panes
-    /// still draw them beside a zoomed leaf. Once the tree's view hides
-    /// them under a zoom, both should ask `isShowing`.
     var showsFiles: Bool {
-        (isVisible && activeTab == .pane(.files)) || (isShowing(.main) && activeMainTab == .pane(.files))
-            || (bottomVisible && activeBottomTab == .pane(.files))
+        (isShowing(.side) && activeTab == .pane(.files)) || (isShowing(.main) && activeMainTab == .pane(.files))
+            || (isShowing(.bottom) && activeBottomTab == .pane(.files))
             || shownPaneFronts.contains(.pane(.files))
     }
 
     /// Whether a repo view could be on screen anywhere, which is when resolving
     /// and refreshing the repo is worth doing.
     private var needsRepo: Bool {
-        isVisible || (isShowing(.main) && activeMainTab?.pane != nil)
-            || (bottomVisible && activeBottomTab?.pane != nil)
+        isShowing(.side) || (isShowing(.main) && activeMainTab?.pane != nil)
+            || (isShowing(.bottom) && activeBottomTab?.pane != nil)
             || shownPaneFronts.contains { $0.pane != nil }
     }
 

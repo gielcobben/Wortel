@@ -45,7 +45,12 @@ final class SideTabStrip: NSView {
     /// Whether the row sits on a page (the strip's, a pane's) rather than in
     /// the titlebar band: the tab in front is raised with the page's own
     /// colour there.
-    var isOnPage = false
+    var isOnPage = false {
+        didSet {
+            guard isOnPage != oldValue else { return }
+            tabViews.forEach { $0.refreshState() }
+        }
+    }
     /// Whether this is the row of the area you're in. Only the rows of a
     /// split main area are ever told otherwise: there, the tab in front of a
     /// split you're not in is drawn with a quiet title, so the one you are
@@ -575,7 +580,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
                 // The strip's row is on the page; the main area's and the
                 // column's are on the titlebar band, which is the window's
                 // vibrancy.
-                let fill = stripRegion() == .bottom || isOnPage() ? Chrome.raised : Chrome.raisedOnBand
+                let fill = isOnPage() ? Chrome.raised : Chrome.raisedOnBand
                 layer.backgroundColor = fill.cgColor
                 layer.borderWidth = 0.5
                 layer.borderColor = Chrome.hairlineStrong.cgColor

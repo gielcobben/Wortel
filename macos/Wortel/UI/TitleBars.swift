@@ -78,6 +78,20 @@ class ChromeBarView: FilledView {
         }
     }
 
+    /// Whether the row is in the titlebar, which is what a `ChromeBarView`
+    /// is unless told otherwise. A split's row is one only while its split is
+    /// along the top of the window (`SplitLeafView`); lower down it is a row
+    /// on a page, with no line under it, that doesn't move the window.
+    var isTitlebar = true {
+        didSet {
+            guard isTitlebar != oldValue else { return }
+            bottomLine.isHidden = !isTitlebar
+        }
+    }
+
+    /// A double-click on the empty part of a row that isn't in the titlebar.
+    var onRowDoubleClick: () -> Void = {}
+
     override var mouseDownCanMoveWindow: Bool { false }
 
     // MARK: Moving the window
@@ -89,6 +103,10 @@ class ChromeBarView: FilledView {
     /// window-server drag never delivers the second click of a double-click.
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+        guard isTitlebar else {
+            if event.clickCount == 2 { onRowDoubleClick() }
+            return
+        }
         if event.clickCount == 2 {
             switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
             case "Minimize": window.performMiniaturize(nil)
@@ -322,9 +340,10 @@ final class SidebarControls: NSView {
 /// and on the keyboard, not on the row: a titlebar full of glyphs is a titlebar
 /// nobody can read.
 @MainActor
-final class MainBar: ChromeBarView {
+final class MainBar: ChromeBarView, LeafBar {
     let title = PassthroughLabel(labelWithString: "")
     let strip = SideTabStrip()
+    let unzoom = ZoomedButton()
     let more = HoverFillButton.glyph("ellipsis", "Session")
     let running = RunningButton()
     let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
@@ -360,7 +379,7 @@ final class MainBar: ChromeBarView {
         strip.setContentHuggingPriority(.init(1), for: .horizontal)
         strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
 
-        let trailing = NSStackView(views: [more, running, sideDivider, sideToggle])
+        let trailing = NSStackView(views: [unzoom, more, running, sideDivider, sideToggle])
         trailing.spacing = 4
         let row = NSStackView(views: [title, strip, trailing])
         row.spacing = 8
@@ -407,8 +426,9 @@ final class MainBar: ChromeBarView {
 /// Over the side column: its tabs with "+" right after the last one, as in
 /// ChatGPT's right pane, and the column's toggle at the far end.
 @MainActor
-final class SideColumnBar: ChromeBarView {
+final class SideColumnBar: ChromeBarView, LeafBar {
     let strip = SideTabStrip()
+    let unzoom = ZoomedButton()
     let add = HoverFillButton.glyph("plus", "New Tab")
     let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column (⌥⌘B)")
     private var stripLeading: NSLayoutConstraint!
@@ -427,6 +447,7 @@ final class SideColumnBar: ChromeBarView {
         strip.translatesAutoresizingMaskIntoConstraints = false
         strip.trailingAccessory = add
         addSubview(strip)
+        addSubview(unzoom)
         addSubview(toggle)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         NSLayoutConstraint.activate([
@@ -435,7 +456,9 @@ final class SideColumnBar: ChromeBarView {
             // that stopped short of the hairline sat half a point low.
             strip.topAnchor.constraint(equalTo: topAnchor),
             strip.bottomAnchor.constraint(equalTo: bottomAnchor),
-            strip.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -8),
+            strip.trailingAnchor.constraint(equalTo: unzoom.leadingAnchor, constant: -8),
+            unzoom.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -4),
+            unzoom.centerYAnchor.constraint(equalTo: centerYAnchor),
             toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -710,12 +733,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     private func syncColumn() {
         mainBar.setShowsSideToggle(!git.isVisible)
         mainBar.title.stringValue = home.selected?.name ?? "Wortel"
-        // A plain title until the row holds more than the session's terminal,
-        // and again once the main area is split: every pane then has a row of
-        // its own under the titlebar, the main row's included (`PaneBar`).
-        // TODO(unify): `hasPanes`, not `isSplit`: the column and the strip are
-        // leaves of the tree now and have rows of their own already.
-        mainBar.setShowsTabs(git.mainTabs.count > 1 && !git.splitLayout.hasPanes)
+        // A plain title until the row holds more than the session's terminal.
+        mainBar.setShowsTabs(git.mainTabs.count > 1)
         let session = home.selected
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)

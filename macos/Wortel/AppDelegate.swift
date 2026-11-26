@@ -1966,12 +1966,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func moveFocusedTab(_ direction: SplitLayout.Edge) {
         let from = focusedRegion()
         guard let tab = gitPanel.activeTab(in: from) else { return }
-        // Down from the column is the strip, and sideways from the strip is
-        // nowhere, as both were before the main area could be split; every
-        // other move goes to what is there.
-        if from == .bottom, direction.axis == .row { return }
-        let target = from == .side && direction == .down ? .bottom
-            : neighbouringArea(of: from, toward: direction, showingOnly: false)
+        let target = neighbouringArea(of: from, toward: direction, showingOnly: false)
         guard let target else { return }
         if tab == .session {
             // The session's terminal stays in the main row: sent toward the
@@ -1982,33 +1977,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.move(tab, to: target, at: .max)
     }
 
-    /// The area beside `region` on `edge`'s side, as the window is laid out:
-    /// the next split of the main area, and past the main area's own edge the
-    /// column on its side and the strip underneath. From the column or the
-    /// strip, the split of the main area nearest to it. `showingOnly` leaves
-    /// out a column or a strip that is hidden; a tab moved toward one opens
-    /// it, as it always has.
+    /// The split beside `region` on `edge`'s side, as the window is laid out.
+    /// With none there and `showingOnly` false (a tab being moved, not the
+    /// keyboard), past the edge the side split is on is the side split and
+    /// down is the strip, when they aren't showing: a tab sent toward one
+    /// opens it, as it always has.
     private func neighbouringArea(of region: TabRegion, toward edge: SplitLayout.Edge,
                                   showingOnly: Bool) -> TabRegion? {
-        let main = splitController?.mainArea
-        let columnEdge: SplitLayout.Edge = gitPanel.columnLeading ? .left : .right
-        let hasColumn = !showingOnly || gitPanel.isVisible
-        let hasStrip = !showingOnly || gitPanel.bottomVisible
-        switch region {
-        case .main, .pane:
-            if let split = main?.neighbour(of: region, toward: edge) { return split }
-            if edge == columnEdge { return hasColumn ? .side : nil }
-            if edge == .down { return hasStrip ? .bottom : nil }
-            return nil
-        case .side:
-            // Back toward the main area: the side of it the column is on.
-            guard edge.axis == .row, edge != columnEdge else { return nil }
-            return main?.edgeSplit(on: columnEdge) ?? .main
-        case .bottom:
-            if edge == .up { return main?.edgeSplit(on: .down) ?? .main }
-            if edge == columnEdge { return hasColumn ? .side : nil }
-            return nil
-        }
+        if let split = splitController?.mainArea?.neighbour(of: region, toward: edge) { return split }
+        guard !showingOnly else { return nil }
+        let sideEdge: SplitLayout.Edge = gitPanel.columnLeading ? .left : .right
+        if edge == sideEdge, region != .side, !gitPanel.isVisible { return .side }
+        if edge == .down, region != .bottom, !gitPanel.bottomVisible { return .bottom }
+        return nil
     }
 
     // MARK: - Splits of the main area
@@ -2043,12 +2024,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc func zoomSplit(_ sender: Any?) {
-        // TODO(unify): the column and the strip are still drawn by panes of
-        // their own, which can't show one alone. Until the tree's view draws
-        // them, a zoom asked for from one of them is the main row's, as it
-        // was. (`toggleZoom()` with no region would zoom the leaf you're in.)
-        let here = gitPanel.lastRegion
-        gitPanel.toggleZoom(here == .side || here == .bottom ? .main : nil)
+        gitPanel.toggleZoom()
     }
     @objc func equalizeSplits(_ sender: Any?) { gitPanel.equalizeSplits() }
 
@@ -2574,13 +2550,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(zoomSplit(_:)) {
             menuItem.title = gitPanel.zoomedRegion == nil ? "Zoom Split" : "Show All Splits"
-            // TODO(unify): `hasPanes`, not `isSplit`, here and for Equalize:
-            // a column or a strip is a leaf now, and until the tree's view
-            // draws them a session with only those has nothing to zoom.
-            return gitPanel.splitLayout.hasPanes
+            return gitPanel.zoomedRegion != nil || visibleRegions.count > 1
         }
         if menuItem.action == #selector(equalizeSplits(_:)) {
-            return gitPanel.splitLayout.hasPanes && !gitPanel.splitLayout.isEqualized
+            return gitPanel.splitLayout.isSplit && !gitPanel.splitLayout.isEqualized
         }
         if menuItem.action == #selector(focusSplitLeft(_:)) || menuItem.action == #selector(focusSplitRight(_:))
             || menuItem.action == #selector(focusSplitUp(_:)) || menuItem.action == #selector(focusSplitDown(_:)) {

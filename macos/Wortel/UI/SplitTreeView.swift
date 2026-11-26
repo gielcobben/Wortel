@@ -103,7 +103,20 @@ final class SplitTreeView: NSView {
         place()
     }
 
+    /// The leaves were given their frames: which are along the top, and so
+    /// have their rows in the titlebar, may have changed.
+    var onPlaced: () -> Void = {}
+
+    /// Give every leaf its frame now, without waiting for the layout pass:
+    /// a session switch wants the terminal at its size before it is shown.
+    func placeNow() { place() }
+
     private func place() {
+        placeLeaves()
+        onPlaced()
+    }
+
+    private func placeLeaves() {
         if let zoomed = effectiveZoom {
             for (leaf, view) in leafViews {
                 view.isHidden = leaf != zoomed

@@ -72,6 +72,9 @@ enum DataDirectory {
     /// (`ChatFolder`, `AgentSkill`): a Debug build on its own folder keeps its
     /// agents' folders inside it and leaves the installed app's skill alone.
     static let custom: String? = {
+        // `wasGiven` is read from the same environment, before anything can
+        // clear it, so it is settled here, ahead of the first caller.
+        _ = wasGiven
         #if WORTEL_TESTS
         // The unit tests compile this file themselves (project.yml sets the
         // flag on that target only). What they drive reaches the data folder
@@ -92,6 +95,14 @@ enum DataDirectory {
             currentDirectory: FileManager.default.currentDirectoryPath,
             fileExists: { FileManager.default.fileExists(atPath: $0) })
     }()
+
+    /// Whether `WORTEL_DATA_DIR` was in the environment this process was
+    /// launched with, as opposed to the folder being a Debug build's default.
+    /// `custom` is non-nil for both, and main.swift puts the variable back for
+    /// both, so the variable cannot tell them apart later; this can. It is what
+    /// separates a throwaway copy started by a test script from an everyday
+    /// Debug build (see `AppDelegate`'s probes).
+    static let wasGiven: Bool = !(ProcessInfo.processInfo.environment[variable]?.isEmpty ?? true)
 
     /// The decision, apart from the process it is made in.
     static func resolve(environment: String?, debugBuild: Bool, applicationSupport: String,

@@ -1207,58 +1207,11 @@ final class SessionManager {
         // answer, so the session follows the last pane chosen anywhere
         // rather than being pinned to a guess made here.
         session.inspectorPane = entry.inspectorPane.flatMap(InspectorPane.init(rawValue:))
-        // The column's tabs. A file from before the column had them said only
-        // whether it was up and on which pane, and that becomes a strip of
-        // one: a session with Changes open opens on a Changes tab, and one
-        // that never had the column up starts with none, which is also what
-        // makes its first ⌘⌥G open the pane you'd expect.
-        var tabs = WorkspaceTabs(
-            main: (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:)),
-            activeMain: entry.activeMainTab.flatMap(SideTab.init(rawValue:)),
-            side: (entry.sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
-            activeSide: entry.activeSideTab.flatMap(SideTab.init(rawValue:)),
-            sideVisible: session.gitPanelVisible,
-            bottom: (entry.bottomTabs ?? []).compactMap(Self.stripTab),
-            activeBottom: entry.activeBottomTab.flatMap(Self.stripTab),
-            bottomVisible: entry.bottomVisible ?? false,
-            closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)),
-            habits: Dictionary(uniqueKeysWithValues: (entry.tabHabits ?? [:]).compactMap { key, value in
-                TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
-            }),
-            // Before the tree is put right: it is the edge a column with no
-            // leaf of its own yet is given one at.
-            sideLeading: entry.sideColumnLeading ?? false)
-        // The panes split off the main area. A pane whose key isn't an id is
-        // dropped here; one the tree has no leaf for, a leaf with no pane and
-        // a tree that couldn't be read are `normalized`'s, which never leaves
-        // a tab (a terminal with a shell in the keeper) without a row.
-        for (key, pane) in entry.paneTabs ?? [:] {
-            guard let id = UUID(uuidString: key) else { continue }
-            tabs.panes[id] = WorkspaceTabs.PaneTabs(
-                tabs: pane.tabs.compactMap(SideTab.init(rawValue:)),
-                active: pane.active.flatMap(SideTab.init(rawValue:)))
-        }
-        // The tree as it was saved, or none. A file from before the column
-        // and the strip were leaves of it has their tabs and no place for
-        // them (no tree at all, or one of panes only): `normalized` puts
-        // each where it opens, to be sized by the window when it is shown.
-        tabs.layout = entry.splitLayout ?? SplitLayout()
-        // A share that was saved is not a guess, whatever making `tabs`
-        // put in the tree it had before this one.
-        tabs.unsized = []
-        if entry.sideTabs == nil, session.gitPanelVisible {
-            let pane = session.inspectorPane ?? GitPanelModel.defaultPane
-            tabs.side = [.pane(pane)]
-            tabs.activeSide = .pane(pane)
-        }
-        // A column or a strip an older build had hidden with its tabs kept:
-        // its panes closed, anything else in it on screen. Nothing is hidden
-        // any more (`WorkspaceTabs.showHidden`).
-        tabs.showHidden()
-        // Whatever the file said, made consistent: the terminal in the main
-        // row exactly once, what's in front something the row has, an empty
-        // column or strip hidden. See `WorkspaceTabs.normalized`.
-        session.workspace = tabs.normalized()
+        // The column's, the strip's, the main row's and the panes' tabs and
+        // the tree they share, made consistent (`PersistedSession.restoredTabs`,
+        // where each step is told). Pure, so a test runs the same steps.
+        session.workspace = entry.restoredTabs(panelVisible: session.gitPanelVisible,
+                                               defaultPane: GitPanelModel.defaultPane)
         session.sideColumnWidth = entry.sideColumnWidth
         // A checkout that's gone (a worktree removed since) is forgotten:
         // the panes follow the terminal again.
@@ -6201,12 +6154,6 @@ final class SessionManager {
             return (ended.marker, ended.conversationID)
         }
         return (nil, nil)
-    }
-
-    /// A strip tab as saved: a `SideTab` raw value, or, in files from when the
-    /// strip held terminals only, a bare UUID.
-    private static func stripTab(_ raw: String) -> SideTab? {
-        SideTab(rawValue: raw) ?? UUID(uuidString: raw).map { .terminal($0) }
     }
 
     private func scheduleSave() {

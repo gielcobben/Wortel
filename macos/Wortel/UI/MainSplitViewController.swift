@@ -153,6 +153,8 @@ final class MainSplitViewController: NSSplitViewController {
         drag.hasRoom = { [weak mainArea] region, edge in mainArea?.hasRoom(toSplit: region, on: edge) ?? true }
         drag.tabCount = { [weak self] region in self?.git.tabs(in: region).count ?? 0 }
         drag.regionOf = { [weak self] tab in self?.git.session?.workspace.region(of: tab) }
+        // So a drop is refused when the session changed under the drag.
+        drag.sessionOnScreen = { [weak self] in self?.git.session }
         // ⌘D, ⇧⌘D and Split Right / Split Down in any menu: where the new
         // split's room comes from, and the system's sound where there is
         // none to be had.

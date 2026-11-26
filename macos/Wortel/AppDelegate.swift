@@ -25,10 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Deliberately not `NSApp.keyWindow`: a preview window can be key, and a
     /// sheet about a session belongs on the window the session is in.
     static var mainWindow: NSWindow? { (NSApp.delegate as? AppDelegate)?.window }
-    /// The active window's split: sessions, the main area, the side column.
+    /// The active window's split: sessions and the main area with its splits.
     private var splitController: MainSplitViewController? { active?.split }
-    /// Drives the active window's side column. Whether it's up follows that
-    /// window's session (see GitPanelModel); new sessions start hidden.
+    /// Drives the active window's layout of splits and their tabs. Each
+    /// session has its own (see GitPanelModel).
     private var gitPanel: GitPanelModel { active?.gitPanel ?? idleGitPanel }
     /// The active window's Files pane.
     private var fileTree: FileTreeModel { active?.fileTree ?? idleFileTree }
@@ -71,11 +71,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.runtime = runtime
         #if DEBUG
         AppearanceTestHook.install()
-        // These two drive the app: they resize its window, switch its
-        // sessions and, for one check, close them all. Only ever a
-        // throwaway copy, which is one with a data folder of its own; a
-        // Debug build is also what runs every day.
-        if DataDirectory.custom != nil { ResizeBench.install() }
+        // The probes drive the app: they resize its window, switch its
+        // sessions, close tabs and sessions and run menu commands. Only a
+        // throwaway copy gets them, one whose data folder was asked for with
+        // WORTEL_DATA_DIR, as the test scripts do. A Debug build's default
+        // folder (`Wortel Dev`) is not enough: that is every contributor's
+        // everyday build, and a probe answers any local process.
+        if DataDirectory.wasGiven { ResizeBench.install() }
         #endif
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
@@ -124,8 +126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let first = addController(for: manager.windows[0])
         #if DEBUG
         // The first window's panel: the probe measures the session in front
-        // of a one-window copy.
-        if DataDirectory.custom != nil {
+        // of a one-window copy. Same gate as the bench above.
+        if DataDirectory.wasGiven {
             SwitchProbe.install(manager: manager, git: first.gitPanel)
             SplitProbe.install(manager: manager, controller: first)
         }

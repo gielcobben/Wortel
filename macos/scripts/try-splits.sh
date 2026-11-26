@@ -60,12 +60,26 @@ tree() {
     for (n = 0; n < 8; n++) for (x in p) if (p[x] in s) s[x]=1
     for (x in s) printf "%s ", x}'
 }
+cleaned=0
 cleanup() {
+  (( cleaned )) && return
+  cleaned=1
+  # Only this copy: its pid is the one its own data folder holds, its keeper
+  # is found by the copy's path, and with no copy path there is nothing of
+  # it to look for (an empty one would match any Wortel's keeper).
+  [[ -n $work ]] || return
   [[ -n $apppid ]] && kill $apppid 2>/dev/null
   sleep 1
   for k in $(pgrep -f "$copy/Contents/Resources/bin/wortel-keeper"); do kill -9 $(tree $k) 2>/dev/null; done
   rm -rf "$work" "$data"
 }
+# Ctrl-C, a kill or a closed terminal cleans up as a failed step does; any
+# other way out too, unless --keep asked for the copy to stay. A second
+# cleanup (the interrupt's, then the exit's) does nothing.
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
+trap '(( keep )) || cleanup' EXIT
 w() { env -u WORTEL_SESSION_ID WORTEL_DATA_DIR=$data "$wortel" "$@"; }
 pause() { perl -e "select(undef,undef,undef,$1)"; }
 wait_for() { # seconds, then a command that succeeds when ready

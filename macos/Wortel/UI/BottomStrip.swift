@@ -8,8 +8,8 @@ import SwiftUI
 /// split's, and in front of that the pane or file when one of those is the
 /// tab in front. Its row is `bar`; `leaf` is the two together, a split of
 /// the window's tree like any other. What is the strip's own is that ⌘J
-/// tucks it away with its tabs kept, and that it opens under the main row
-/// at the height below.
+/// makes it under the main row, at the height below, or goes to it when it
+/// is already there; nothing hides it with its tabs kept.
 @MainActor
 final class BottomPaneController: NSViewController {
     /// How tall the strip opens: the height it was last dragged to, in any
@@ -46,6 +46,11 @@ final class BottomPaneController: NSViewController {
         self.git = git
         paneHost = NSHostingController(rootView: BottomAreaPane(git: git, files: files,
                                                                 previewTabs: previewTabs))
+        // The leaf's frame is set by hand (`SplitTreeView`), and the default
+        // turns the page's minimum size into required constraints: a page
+        // taller than its leaf (an empty tab's in a strip at its minimum)
+        // broke one and drew past the leaf. As the other pages' hosts do.
+        paneHost.sizingOptions = []
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -186,6 +191,10 @@ final class TabDragController {
     var onFileDrop: ([URL], TabRegion, Int) -> Void = { _, _, _ in }
     /// Which row a tab is in now: dropped back on its own area, it stays put.
     var regionOf: (SideTab) -> TabRegion? = { _ in nil }
+    /// The session whose rows are on screen, compared by identity: a drag
+    /// that began in one session and is let go in another lands nowhere
+    /// (see `stillHeld`). nil by default, which compares equal to itself.
+    var sessionOnScreen: () -> AnyObject? = { nil }
     /// A file tab let go outside the window: open it in a window whose
     /// top-left is at this point, in screen coordinates.
     var onTearOff: (SideTab, NSPoint) -> Void = { _, _ in }
@@ -212,10 +221,17 @@ final class TabDragController {
     private var draggedTab: SideTab?
     /// Another window was asked about this drag, so it is told when it ends.
     private var askedElsewhere = false
+    /// The session on screen when the drag began (`sessionOnScreen`).
+    private weak var dragSession: AnyObject?
 
     func handle(_ phase: SideTabStrip.DragPhase, tab: SideTab, view: NSView, point: NSPoint) {
         switch phase {
         case .began:
+            // A drag whose end never came here would leave its overlay drawn
+            // over the window under this one's: it is finished first. (Its
+            // row going away under it lost the end, until the tab kept its
+            // row for the drag.)
+            finish()
             guard let window = view.window, let content = window.contentView else { return }
             let overlay = TabDragOverlay(frame: content.bounds)
             overlay.autoresizingMask = [.width, .height]
@@ -229,13 +245,19 @@ final class TabDragController {
             dragWindow = window
             canTearOff = { if case .file = tab { return true } else { return false } }()
             draggedTab = tab
+            dragSession = sessionOnScreen()
             source = view
             view.alphaValue = 0.35
             update(tab: tab, point: point)
         case .moved:
             update(tab: tab, point: point)
         case .ended:
-            let landing = target
+            // Main-queue work runs during a drag: the tab can have closed,
+            // or another session come in front, while it was held. Its drop
+            // would then be made in the session on screen, with a tab that
+            // isn't that session's. Another window that was showing where it
+            // would land is told the drag was cancelled, by `finish`.
+            let landing = stillHeld(tab) ? target : nil
             let screen = view.window?.convertPoint(toScreen: point)
             let topLeft = screen.flatMap { tearOff?.windowTopLeft(for: $0) }
             if case .otherWindow? = landing, let screen {
@@ -254,6 +276,12 @@ final class TabDragController {
         case .cancelled:
             finish()
         }
+    }
+
+    /// Whether the tab let go is still in a row of the session it was
+    /// picked up in, and that session is still the one on screen.
+    private func stillHeld(_ tab: SideTab) -> Bool {
+        sessionOnScreen() === dragSession && regionOf(tab) != nil
     }
 
     /// Whether the tab being dragged is the session's own, which reads the
@@ -280,6 +308,8 @@ final class TabDragController {
         let tab = SideTab.file(first.resolvingSymlinksInPath().standardizedFileURL.path)
         switch phase {
         case .began:
+            // As for a tab: nothing of an earlier drag left drawn.
+            finish()
             guard let content = window.contentView else { return }
             let overlay = TabDragOverlay(frame: content.bounds)
             overlay.autoresizingMask = [.width, .height]
@@ -563,6 +593,7 @@ final class TabDragController {
         }
         askedElsewhere = false
         draggedTab = nil
+        dragSession = nil
         docking = false
         tearOff?.hide()
         tearOff = nil

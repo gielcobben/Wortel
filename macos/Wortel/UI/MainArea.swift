@@ -9,11 +9,13 @@ import SwiftUI
 /// page below. The main row (the session's own terminal and what shares its
 /// row), the side split (Changes, History, Files) and the strip are leaves
 /// like any split somebody makes with ⌘D. What is still theirs is where they
-/// open and at what size, and that ⌥⌘B and ⌘J tuck two of them away with
-/// their tabs kept. They used to be separate AppKit split panes around a
-/// main area that could itself be split, which made two kinds of thing out
-/// of one: a column that couldn't be split or dragged onto, beside splits
-/// that could.
+/// open and at what size. ⌥⌘B opens Changes and Files in the side split and
+/// closes them; ⌘J opens a terminal in the strip, or goes to it. Until
+/// 2026-11-26 those two keys hid the side split and the strip with their tabs
+/// kept, and nothing is hidden that way now. They used to be separate
+/// AppKit split panes around a main area that could itself be split, which
+/// made two kinds of thing out of one: a column that couldn't be split or
+/// dragged onto, beside splits that could.
 ///
 /// A leaf along the top of the window has its row in the titlebar, so the
 /// terminal with Changes beside it looks as it always did; one lower down
@@ -68,6 +70,12 @@ final class MainAreaController: NSViewController {
         self.previewTabs = previewTabs
         paneHost = NSHostingController(rootView: MainAreaPane(git: git, files: files,
                                                               previewTabs: previewTabs))
+        // The leaf's frame is set by hand (`SplitTreeView`), and the default
+        // turns the page's minimum size into required constraints: a page
+        // taller than its leaf (an empty tab's in a main row squeezed by
+        // ⇧⌘D twice) broke one and drew past the leaf. As the other pages'
+        // hosts do.
+        paneHost.sizingOptions = []
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -93,8 +101,16 @@ final class MainAreaController: NSViewController {
             wire(leaf.bar, region: region)
         }
         tree.setLeaves(fixedLeaves)
+        // Before the divider moves. Taken in `onLayoutChanged` it was the
+        // frame after the first step, which the tree has already made: a
+        // flick of one step was never remembered.
+        tree.onDividerPressed = { [weak self] in
+            guard let self else { return }
+            self.framesBeforeDrag = self.rememberedFrames
+        }
         tree.onLayoutChanged = { [weak self] layout in
             guard let self else { return }
+            // A drag that came without a press (the probe's).
             if self.framesBeforeDrag == nil { self.framesBeforeDrag = self.rememberedFrames }
             self.git.setSplitLayout(layout)
         }
@@ -180,8 +196,19 @@ final class MainAreaController: NSViewController {
                    slides: slides(zoomed: zoomed))
         dressRows(zoomed: zoomed)
 
-        // A split no session has any more is let go of. One that another
-        // session of this window has stays, hidden: see `SplitPaneController`.
+        // Which splits no session has any more, asked a turn later, outside
+        // this observer. Asked here, every session's `paneTabs` was read
+        // inside it, and any split change of any session in any window
+        // synced this window again. The list of sessions is still read
+        // here, so a session that closes is noticed.
+        _ = manager.sessions
+        DispatchQueue.main.async { [weak self] in self?.letGoOfDeadPanes() }
+        if made { onRowsChanged() }
+    }
+
+    /// A split no session has any more is let go of. One that another
+    /// session of this window has stays, hidden: see `SplitPaneController`.
+    private func letGoOfDeadPanes() {
         let dead = panes.keys.filter { id in !manager.sessions.contains { $0.paneTabs[id] != nil } }
         for id in dead {
             guard let pane = panes.removeValue(forKey: id) else { continue }
@@ -194,7 +221,7 @@ final class MainAreaController: NSViewController {
                 pane.removeFromParent()
             }
         }
-        if made || !dead.isEmpty { onRowsChanged() }
+        if !dead.isEmpty { onRowsChanged() }
     }
 
     /// The side split and the strip as they were at the last sync, for
@@ -203,9 +230,10 @@ final class MainAreaController: NSViewController {
     private weak var sessionBefore: Session?
     private var zoomedBefore: TabRegion?
 
-    /// Whether this change slides: the side split or the strip opened or put
-    /// away by hand (⌥⌘B, ⌘J, a tab opened there), as they always have. Not
-    /// a session switch, which is instant, and not with a zoom in it.
+    /// Whether this change slides: the side split or the strip opened or
+    /// emptied by hand (⌥⌘B, ⌘J, a tab opened there or its last one
+    /// closed), as they always have. Not a session switch, which is
+    /// instant, and not with a zoom in it.
     private func slides(zoomed: TabRegion?) -> Bool {
         let hidden = git.hiddenLeaves
         let shown = Set(git.splitLayout.leaves.filter { ($0 == .side || $0 == .bottom) && !hidden.contains($0) })
@@ -410,12 +438,19 @@ final class MainAreaController: NSViewController {
     /// nobody left under the least a split is laid out at (⌘D in a side
     /// split 280 points wide used to do nothing but beep); and nowhere
     /// otherwise.
+    ///
+    /// Measured in the layout without its zoom, which is the one the split
+    /// is made in: a split made by a key ends the zoom. Measured on screen,
+    /// the zoomed split was the whole area and always had room, and a side
+    /// split 300 points wide was halved into two of about 145.
     func room(toSplit region: TabRegion, on edge: SplitLayout.Edge) -> GitPanelModel.SplitRoom {
-        if hasRoom(toSplit: region, on: edge) { return .halves }
+        let before = git.splitLayout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves
+        // Not in the layout: nothing to measure, and it may.
+        guard let here = before[region.leaf] else { return .halves }
+        if hasRoom(toSplit: here, on: edge) { return .halves }
         var layout = git.splitLayout
         let standIn = SplitLayout.Leaf.pane(UUID())
-        guard git.zoomedRegion == nil, layout.insertSpreading(standIn, beside: region.leaf, on: edge) else { return .none }
-        let before = git.splitLayout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves
+        guard layout.insertSpreading(standIn, beside: region.leaf, on: edge) else { return .none }
         let after = layout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves
         let minimum = tree.metrics.minimum
         // Everybody the new split took from, and the new split: none of
@@ -450,9 +485,11 @@ final class MainAreaController: NSViewController {
 
     /// The size `session`'s own terminal has when the session is shown in
     /// this window as the window is now: its main row's page in its own
-    /// tree. nil when that row would be out of sight behind a zoom. For a
-    /// terminal out of sight to follow a window resize with
-    /// (`SurfaceView.sizeWhenShown`).
+    /// tree. Behind a zoom on another split, the size it has when the zoom
+    /// ends, which is the next size it is shown at: nil there sent the
+    /// terminal back to following the window by the whole of its change,
+    /// and it was resized again when the zoom ended. For a terminal out of
+    /// sight to follow a window resize with (`SurfaceView.sizeWhenShown`).
     func terminalSize(of session: Session) -> NSSize? {
         let workspace = session.workspace
         let bounds = tree.bounds
@@ -460,9 +497,8 @@ final class MainAreaController: NSViewController {
         let frame: NSRect?
         switch workspace.zoomed {
         case .main?: frame = bounds
-        case nil: frame = workspace.layout.frames(in: bounds, metrics: tree.metrics,
-                                                  hidden: workspace.hiddenLeaves).leaves[.main]
-        default: frame = nil
+        default: frame = workspace.layout.frames(in: bounds, metrics: tree.metrics,
+                                                 hidden: workspace.hiddenLeaves).leaves[.main]
         }
         guard let frame else { return nil }
         let row = frame.minY < 0.5 ? Chrome.titlebarHeight : SplitLeafView.rowHeight

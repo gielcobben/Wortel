@@ -213,6 +213,7 @@ final class SideTabStrip: NSView {
             guard let self, let view else { return }
             self.onDrag(phase, item.tab, view, point)
         }
+        view.strip = { [weak self] in self }
         view.stripRegion = { [weak self] in self?.region ?? .side }
         view.preview = { [weak self] in self?.preview(item.tab) }
         content.addSubview(view)
@@ -526,6 +527,9 @@ private final class SideTabView: NSControl, TabTitleProviding {
     func refreshState() { applyState() }
     var onKeep: () -> Void = {}
     var onDrag: (SideTabStrip.DragPhase, NSPoint) -> Void = { _, _ in }
+    /// The row the tab is in, kept by `mouseDown` for as long as it tracks a
+    /// drag. Asked, not held: the row holds its tabs.
+    var strip: () -> SideTabStrip? = { nil }
     var stripRegion: () -> TabRegion = { .side }
     var showsTrailingDivider = false {
         didSet { divider.isHidden = !showsTrailingDivider }
@@ -772,7 +776,18 @@ private final class SideTabView: NSControl, TabTitleProviding {
         // A double-click keeps the preview tab, as in Xcode and VS Code.
         if event.clickCount == 2 { onKeep() }
         guard let window else { return }
-        let start = event.locationInWindow
+        // Kept, with this tab, until the mouse-up. `nextEvent` runs the main
+        // queue while it waits, so the row can go meanwhile (a pane's only
+        // tab, its server exited: the pane closes and its row is freed half
+        // a second later). The row is what hands the drag on, and gone, the
+        // drag's end never reached the controller, which left the ghost and
+        // the lit zone drawn over the window.
+        withExtendedLifetime((self, strip())) {
+            trackDrag(from: event.locationInWindow, in: window)
+        }
+    }
+
+    private func trackDrag(from start: NSPoint, in window: NSWindow) {
         var dragging = false
         // Escape abandons a drag; the rest of it, to the mouse-up, is ignored.
         var cancelled = false
@@ -809,8 +824,11 @@ private final class SideTabView: NSControl, TabTitleProviding {
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })
         // Into a pane of its own, beside the one it is in. Other panes are
         // reached by dragging: a menu would have to name them. Not for a
-        // pane's only tab, which would be split from itself.
-        if stripRegion().paneID == nil || tabCount() > 1 {
+        // split's only tab, which would be split from itself: the side
+        // split's and the strip's as much as a pane's (`WorkspaceTabs.split`
+        // refuses it). The main row always holds the session's own tab, so
+        // any other tab there is one of at least two.
+        if tabCount() > 1 {
             menu.addItem(.separator())
             menu.addItem(ClosureMenuItem(title: "Split Right") { [weak self] in self?.onSplit(.right) })
             menu.addItem(ClosureMenuItem(title: "Split Down") { [weak self] in self?.onSplit(.down) })

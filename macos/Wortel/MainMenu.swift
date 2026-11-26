@@ -464,12 +464,13 @@ enum MainMenu {
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
 
-        // The workspace: the three areas, their tabs, and moving between them.
-        // Aligned with what people already know (see docs/shortcuts.md): ⌘B /
-        // ⌥⌘B / ⌘J for the sidebar, the column and the strip as in VS Code, Zed
-        // and ChatGPT; ⇧⌘[ / ⇧⌘] for tabs as in every Mac app (⌃Tab and
-        // ⌥⌘←/→ too); ⌘[ / ⌘] between areas as in iTerm and Ghostty; ⌃⌘1-3
-        // for the panes, numbered as git apps number theirs; ⌃⌘arrows to move a
+        // The workspace: the splits, their tabs, and moving between them.
+        // Aligned with what people already know (see docs/shortcuts.md): ⌘B
+        // hides the sidebar, ⌥⌘B opens and closes Changes and Files and ⌘J is
+        // the terminal below, as in VS Code, Zed and ChatGPT; ⇧⌘[ / ⇧⌘] for
+        // tabs as in every Mac app (⌃Tab and ⌥⌘←/→ too); ⌘[ / ⌘] between
+        // splits as in iTerm and Ghostty; ⇧⌘C, ⇧⌘H and ⇧⌘F for the panes
+        // (⌃⌘1-3 were theirs, and stay as hidden items); ⌃⌘arrows to move a
         // tab as VS Code moves an editor. Everything is ⌘-based but the Control
         // keys those apps use, which the terminal gives up nothing for:
         // Control+letter and Option+letter stay the shell's.
@@ -494,16 +495,16 @@ enum MainMenu {
         // With the keyboard in a browser's page these are Forward and Back
         // while the page has somewhere to go, as in Safari and Chrome (and as
         // cmux splits the same two keys); see AppDelegate.focusNextArea.
-        let focusNext = viewMenu.addItem(withTitle: "Focus Next Area", action: #selector(AppDelegate.focusNextArea(_:)), keyEquivalent: "]")
+        let focusNext = viewMenu.addItem(withTitle: "Focus Next Split", action: #selector(AppDelegate.focusNextArea(_:)), keyEquivalent: "]")
         focusNext.keyEquivalentModifierMask = [.command]
-        let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Area", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
+        let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Split", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
         focusPrevious.keyEquivalentModifierMask = [.command]
         // By direction, across the splits of the main area and on into the
         // column and the strip. ⌥⌘ with an arrow, every other terminal's keys
         // for this, are the sessions and the tabs here, and ⌃⌘ moves a tab;
         // ⌃⌥⌘ is what was free.
-        let focusSplit = NSMenuItem(title: "Focus Area", action: nil, keyEquivalent: "")
-        let focusSplitMenu = NSMenu(title: "Focus Area")
+        let focusSplit = NSMenuItem(title: "Focus Split", action: nil, keyEquivalent: "")
+        let focusSplitMenu = NSMenu(title: "Focus Split")
         for (title, action, key) in [
             ("Left", #selector(AppDelegate.focusSplitLeft(_:)), NSLeftArrowFunctionKey),
             ("Right", #selector(AppDelegate.focusSplitRight(_:)), NSRightArrowFunctionKey),

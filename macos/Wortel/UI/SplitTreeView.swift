@@ -28,6 +28,9 @@ final class SplitTreeView: NSView {
     private var leafViews: [SplitLayout.Leaf: NSView] = [:]
     private var dividerViews: [SplitDividerView] = []
 
+    /// A divider was pressed, before anything moves: the moment to note
+    /// the sizes it may change.
+    var onDividerPressed: () -> Void = {}
     /// A divider was dragged: the layout as it now is.
     var onLayoutChanged: (SplitLayout) -> Void = { _ in }
     /// The drag is over: the moment to save.
@@ -42,6 +45,10 @@ final class SplitTreeView: NSView {
     /// in `views` now stays a subview, hidden: it is another session's pane,
     /// and its terminals stay in the window. `discard` takes one out for good.
     func setLeaves(_ views: [SplitLayout.Leaf: NSView]) {
+        // Laid out again only when the leaves' views changed: every sync
+        // hands them over, a divider's drag syncs on every step, and each
+        // of those laid the whole tree out a second time.
+        let changed = views.count != leafViews.count || views.contains { leafViews[$0.key] !== $0.value }
         for (_, view) in views where view.superview !== self {
             view.translatesAutoresizingMaskIntoConstraints = true
             view.autoresizingMask = []
@@ -54,7 +61,7 @@ final class SplitTreeView: NSView {
             view.isHidden = true
         }
         leafViews = views
-        needsLayout = true
+        if changed { needsLayout = true }
     }
 
     /// A pane that is gone: its view leaves the window.
@@ -137,7 +144,18 @@ final class SplitTreeView: NSView {
         onPlaced()
         SurfaceView.holdResizes()
         let began = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
+            guard self != nil else {
+                // The tree went away mid-slide (its window closed within the
+                // slide). Returning alone left this timer waking the main
+                // thread 120 times a second until quit, and the hold on
+                // every terminal in every window to the watchdog's two
+                // seconds. `finishSlide` can't run, so its two parts are
+                // done here.
+                timer.invalidate()
+                MainActor.assumeIsolated { SurfaceView.releaseResizes() }
+                return
+            }
             MainActor.assumeIsolated {
                 guard let self, let slide = self.sliding else { return }
                 let progress = min(1, (CACurrentMediaTime() - began) / duration)
@@ -226,6 +244,14 @@ final class SplitTreeView: NSView {
         return zoomed
     }
 
+    /// Leaving the window lands a slide under way: one left running held
+    /// every terminal's resizing until the watchdog let go, and its timer
+    /// kept firing.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { finishSlide() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
     override func layout() {
         super.layout()
         if let slide = sliding {
@@ -274,6 +300,7 @@ final class SplitTreeView: NSView {
         }
         while dividerViews.count < frames.dividers.count {
             let divider = SplitDividerView()
+            divider.onPress = { [weak self] in self?.onDividerPressed() }
             divider.onDrag = { [weak self] divider, position in self?.drag(divider, to: position) }
             divider.onRelease = { [weak self] in self?.onDividerReleased() }
             divider.onDoubleClick = { [weak self] in self?.onDividerDoubleClicked() }
@@ -326,6 +353,10 @@ final class SplitTreeView: NSView {
 private final class SplitDividerView: NSView {
     static let reach: CGFloat = 4
 
+    /// How far one increment or decrement from VoiceOver moves it.
+    static let accessibilityStep: CGFloat = 20
+
+    var onPress: () -> Void = {}
     var onDrag: (SplitLayout.Divider, CGFloat) -> Void = { _, _ in }
     var onRelease: () -> Void = {}
     var onDoubleClick: () -> Void = {}
@@ -341,6 +372,12 @@ private final class SplitDividerView: NSView {
     init() {
         super.init(frame: .zero)
         addSubview(line)
+        // A splitter VoiceOver can move, as NSSplitView's dividers were
+        // before the tree drew its own: without this the tree's dividers
+        // were not there for VoiceOver at all.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.splitter)
+        setAccessibilityLabel("Divider")
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
@@ -360,6 +397,27 @@ private final class SplitDividerView: NSView {
         line.frame = divider.axis == .row
             ? NSRect(x: Self.reach, y: 0, width: divider.rect.width, height: frame.height)
             : NSRect(x: 0, y: Self.reach, width: frame.width, height: divider.rect.height)
+        // A line between splits side by side stands upright.
+        setAccessibilityOrientation(divider.axis == .row ? .vertical : .horizontal)
+        setAccessibilityValue(NSNumber(value: Double(position(of: divider))))
+    }
+
+    /// Where the line is along its axis, in the tree's coordinates.
+    private func position(of divider: SplitLayout.Divider) -> CGFloat {
+        divider.axis == .row ? divider.rect.minX : divider.rect.minY
+    }
+
+    // VoiceOver's increment and decrement: a drag of one step, through the
+    // same path as the pointer's, so it is saved and remembered like one.
+    override func accessibilityPerformIncrement() -> Bool { step(by: Self.accessibilityStep) }
+    override func accessibilityPerformDecrement() -> Bool { step(by: -Self.accessibilityStep) }
+
+    private func step(by delta: CGFloat) -> Bool {
+        guard let divider, !isHidden else { return false }
+        onPress()
+        onDrag(divider, position(of: divider) + delta)
+        onRelease()
+        return true
     }
 
     private var cursor: NSCursor {
@@ -394,6 +452,7 @@ private final class SplitDividerView: NSView {
         let point = tree.convert(event.locationInWindow, from: nil)
         grab = divider.axis == .row ? point.x - divider.rect.minX : point.y - divider.rect.minY
         dragged = false
+        onPress()
     }
 
     override func mouseDragged(with event: NSEvent) {

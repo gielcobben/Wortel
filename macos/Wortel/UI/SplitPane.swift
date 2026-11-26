@@ -198,7 +198,20 @@ final class SplitPaneController: NSViewController {
         }
     }
 
+    /// Out of the session on screen, and already hidden for it.
+    private var parked = false
+
     private func sync() {
+        // Another session's split: hidden once, the first time it is found
+        // out of the session on screen (which takes its terminal off the
+        // screen and the keyboard off it), and left alone after that. Every
+        // split ever shown in the window has one of these, and each did all
+        // of this again for every tab change of the session on screen.
+        // What it reads here is all it watches while parked, and the split
+        // coming back into the session on screen changes it.
+        let inSession = git.paneTabs[id] != nil
+        if !inSession, parked { return }
+        parked = !inSession
         let session = home.selected
         let showing = git.isShowing(region)
         if showing {
@@ -224,7 +237,15 @@ struct SplitPanePage: View {
     let previewTabs: PreviewTabs
 
     var body: some View {
-        TabContent(tab: git.isShowing(region) ? git.activeTab(in: region) : nil, region: region,
-                   git: git, files: files, previewTabs: previewTabs)
+        // Another session's split shows nothing (its row has no tabs here,
+        // so `TabContent` built nothing for it either), and reads no more
+        // than this: every hidden page used to be worked out again on each
+        // tab change of the session on screen.
+        if let id = region.paneID, git.paneTabs[id] == nil {
+            Color.clear
+        } else {
+            TabContent(tab: git.isShowing(region) ? git.activeTab(in: region) : nil, region: region,
+                       git: git, files: files, previewTabs: previewTabs)
+        }
     }
 }

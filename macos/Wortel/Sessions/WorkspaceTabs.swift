@@ -2,7 +2,7 @@ import Foundation
 
 /// Where a session's tabs are: the main row, the side column's row, the
 /// strip's and the rows of the panes split off, what's in front of each,
-/// which of the two that can hide are showing, and what ⌘⇧T can bring back.
+/// and what ⌘⇧T can bring back.
 ///
 /// The rules, in one pure value so they can be tested without a window:
 ///
@@ -14,18 +14,17 @@ import Foundation
 /// - Any tab goes in any row, except the session's terminal (`SideTab.fits`).
 /// - Putting a tab in a row brings it to the front there and shows the row.
 ///   Taking out the one in front brings its neighbour forward, the one to its
-///   right first. The column and the strip hide when they're left empty; the
+///   right first. The column and the strip go when they're left empty; the
 ///   main row never is, it always has the terminal.
 /// - Except when you close a tab you opened and haven't left since: then
 ///   what was in front of its row when it opened comes back (a file opened
 ///   from Changes returns you to Changes), as a browser returns you to the tab
 ///   that opened one. Switching to another tab in that row ends it, and from
 ///   then on the neighbour rule applies.
-/// - Moving a file or a browser to another row, or dropping one onto a row
-///   from outside the rows, makes that row where the next one of its kind
-///   opens (`home(for:)`): drag one browser to the main area and browsers
-///   open there. Until then a file opens in the main area and a browser in
-///   the column; everything else opens where it's asked to.
+/// - A file opens in the main row and a browser in the split beside your
+///   work, every time (`home(for:)`); everything else opens where it's
+///   asked to. Until 2026-11-26 moving one made its row where the next of
+///   its kind opened (`habits`).
 /// - A closed tab is remembered, newest last, 25 at most, with where it was.
 ///   Reopening prefers the last one closed in the row you're in; a terminal
 ///   comes back as a new shell (a new id) in its old place.
@@ -47,19 +46,20 @@ import Foundation
 /// - Nothing is put into a pane that isn't there. A tab put in the column or
 ///   the strip makes its leaf.
 /// - A pane's row follows the rules above: any tab but the session's
-///   terminal, one in front, the neighbour or the opener coming forward. It
-///   is never hidden while it exists.
+///   terminal, one in front, the neighbour or the opener coming forward.
+/// - Nothing is hidden with its tabs kept: a leaf is on screen while it has
+///   tabs. Until 2026-11-26 the column and the strip could be, and a file
+///   saved then is put right as it is read (`showHidden`).
 /// - Splitting takes a tab from wherever it is, or a new one, and gives it a
-///   pane beside the leaf asked about. Asked about a leaf that is hidden or
-///   has gone, it splits the main row. A leaf's only tab can't be split off
-///   its own leaf: that would be the same leaf in the same place.
+///   pane beside the leaf asked about. Asked about a leaf that has gone, it
+///   splits the main row. A leaf's only tab can't be split off its own
+///   leaf: that would be the same leaf in the same place.
 /// - One leaf can be zoomed: shown alone, the others kept as they are.
-///   Bringing a tab forward in another leaf, showing the column or the
-///   strip, or splitting, ends it (a split made by `wortel split` doesn't:
-///   it waits behind the zoom). A zoom is about now, so it isn't saved.
-/// - A habit that points at a pane which has gone is no habit: the kind
-///   opens where it starts. A tab closed in a pane that has gone reopens in
-///   the row you're in, or in the main row.
+///   Bringing a tab forward in another leaf, or splitting, ends it (a split
+///   made by `wortel split` doesn't: it waits behind the zoom). A zoom is
+///   about now, so it isn't saved.
+/// - A tab closed in a pane that has gone reopens in the row you're in, or
+///   in the main row.
 ///
 /// Session holds the same state as separate properties (they're persisted and
 /// observed individually); `Session.workspace` reads them into this and writes
@@ -179,7 +179,8 @@ struct WorkspaceTabs: Equatable, Sendable {
     var splitRegions: [TabRegion] { layout.leaves.map(TabRegion.init) }
 
     /// The leaves that are in the tree and take no room: a column or a
-    /// strip that is hidden with its tabs kept.
+    /// strip that is hidden with its tabs kept, which only a file from
+    /// before 2026-11-26 has, until `showHidden`.
     var hiddenLeaves: Set<SplitLayout.Leaf> {
         var hidden: Set<SplitLayout.Leaf> = []
         if !sideVisible, layout.contains(.side) { hidden.insert(.side) }
@@ -328,8 +329,8 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// in) stays in front where it lands, and the rows' own fronts where
     /// they can.
     ///
-    /// Sizes, the zoom and the habits (where a kind of tab opens) go back
-    /// too: they are the layout. Which edge Changes and Files take is a
+    /// Sizes, the zoom and the habits (no longer read) go back too: they
+    /// are the layout. Which edge Changes and Files take is a
     /// choice, not a mess, and stays.
     func arranged(as preset: Preset = .standard, keeping front: SideTab? = nil) -> WorkspaceTabs {
         switch preset {
@@ -468,8 +469,8 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// index is one into the row as it was before the tab left it, which is
     /// what a drop between two tabs measures. The tab comes to the front of its
     /// new row. False, and nothing changes, when it isn't allowed there.
-    /// `recordsHabit`: whether taking it to another row is you saying where
-    /// its kind belongs (a drag, Move to) or not (⌥-click, just this once).
+    /// `recordsHabit` is no longer read (`home(for:)`): kept so its call
+    /// sites need not change.
     @discardableResult
     mutating func move(_ tab: SideTab, to region: TabRegion, at index: Int,
                        recordsHabit: Bool = true) -> Bool {
@@ -500,9 +501,8 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// `region` is a leaf that is there and takes room: the main row, a
     /// pane, or the column or the strip while it is showing. Asked about a
     /// pane that has gone, or a column or strip that is hidden or empty, it
-    /// is the main row that is split. `recordsHabit`, as for `move`: whether
-    /// this is you saying where the tab's kind belongs (a drag) or not (a
-    /// command).
+    /// is the main row that is split. `recordsHabit`, as for `move`, is no
+    /// longer read.
     ///
     /// `keepsZoom` is for a pane you didn't make (`wortel split`): a zoom
     /// stays as it is, and the pane is there behind it when the zoom ends.
@@ -564,50 +564,6 @@ struct WorkspaceTabs: Equatable, Sendable {
             bottomVisible = !bottom.isEmpty
         }
         keepFixedLeaves()
-    }
-
-    /// Show or hide the column or the strip with its tabs kept: its leaf
-    /// stays in the tree with the share it has. One with no tabs has nothing
-    /// to show, and stays hidden. Nothing for any other region.
-    ///
-    /// Nothing in the app asks for this since 2026-11-26: ⌥⌘B closes the
-    /// panes and ⌘J goes to the strip, and a tab placed in either shows it
-    /// (`place`, `showHidden`). It is what the hidden set in `SplitLayout`
-    /// is tested through, and what a hidden one from an older file is.
-    ///
-    /// Showing one is asking to see it, so a zoom on another leaf ends, as
-    /// it does for a tab brought forward. Hiding the one that is zoomed
-    /// ends the zoom too: there would be nothing left on screen.
-    mutating func setVisible(_ visible: Bool, in region: TabRegion) {
-        let shows: Bool
-        switch region {
-        case .side:
-            sideVisible = visible && !side.isEmpty
-            shows = sideVisible
-        case .bottom:
-            bottomVisible = visible && !bottom.isEmpty
-            shows = bottomVisible
-        case .main, .pane:
-            return
-        }
-        guard let zoomed else { return }
-        // Shown behind a zoom on another leaf, hidden while it was the one
-        // zoomed, or the last thing beside the zoomed leaf going away.
-        if shows ? zoomed != region : zoomed == region { self.zoomed = nil }
-        if shownLeafCount < 2 { self.zoomed = nil }
-    }
-
-    /// Put the column on the other side: the flag for where its leaf is
-    /// made, and a leaf that is there moves to that outer edge of the whole
-    /// area, keeping the share of the width it had.
-    mutating func setSideLeading(_ leading: Bool) {
-        guard sideLeading != leading else { return }
-        sideLeading = leading
-        guard layout.contains(.side) else { return }
-        let share = layout.share(of: .side, along: .row)
-        layout.remove(.side)
-        layout.insert(.side, atRootEdge: leading ? .left : .right, share: share ?? 1.0 / 3)
-        if share == nil { unsized.insert(.side) }
     }
 
     /// The window has given `leaf` its real size: its share is no guess now.

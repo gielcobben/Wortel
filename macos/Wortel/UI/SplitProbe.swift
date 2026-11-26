@@ -23,8 +23,8 @@ import AppKit
 /// front), `zoom`, `equalize`, `tab` (a terminal tab here), `close` (the tab
 /// in front here), `select:<n>` (the nth tab of the row you're in to the
 /// front), `trace-tab` `trace-blank` `trace-close` (a tab added or closed,
-/// with the row's motion sampled every 20ms), `column`, `strip`, `sidebar` (hide or show it), `swap`
-/// (the side split to the other side), `next` (the next session), `wide`
+/// with the row's motion sampled every 20ms), `column`, `strip`, `sidebar`
+/// (hide or show it), `next` (the next session), `wide`
 /// (drag the first divider 80 points), `resize:<w>x<h>` (the window to that
 /// size in points, in twenty steps), `light` and `dark` (the copy's
 /// appearance, for a picture), `drop:<n>.<where>` (the tab in front
@@ -92,7 +92,6 @@ enum SplitProbe {
             case "column": send(#selector(AppDelegate.toggleSideColumn(_:)))
             case "strip": send(#selector(AppDelegate.toggleBottomStrip(_:)))
             case "sidebar": send(#selector(AppDelegate.toggleSessionSidebar(_:)))
-            case "swap": git.setColumnLeading(!git.columnLeading)
             case "next": send(#selector(AppDelegate.selectNextSession(_:)))
             case "light": NSApp.appearance = NSAppearance(named: .aqua)
             case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)

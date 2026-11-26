@@ -88,8 +88,9 @@ final class Session: Identifiable {
     /// written by GitPanelModel.
     var inspectorPane: InspectorPane?
     /// The side column's tabs, in strip order, and the one in front. Persisted.
-    /// `gitPanelVisible` still says whether the column is up: hiding it keeps the
-    /// tabs, and closing the last tab is what hides it. Read and written by
+    /// `gitPanelVisible` still says whether the column is up, which it is
+    /// exactly while it has tabs: nothing hides it with its tabs kept since
+    /// 2026-11-26 (`WorkspaceTabs.showHidden`). Read and written by
     /// GitPanelModel, which mirrors the focused session's onto the column.
     var sideTabs: [SideTab] = []
     var activeSideTab: SideTab?
@@ -118,16 +119,18 @@ final class Session: Identifiable {
     /// Persisted.
     var sideColumnLeading = false
     /// The strip under the session's terminal: its tabs in order, the one in
-    /// front, and whether it's showing. Hiding keeps them, closing the last
-    /// one hides it. Persisted.
+    /// front, and whether it's showing, which it is exactly while it has
+    /// tabs: closing the last one takes it away. Persisted.
     var bottomTabs: [SideTab] = []
     var activeBottomTab: SideTab?
     var bottomVisible = false
     /// Tabs closed in this session, newest last, for ⌘⇧T. Persisted, so a
     /// relaunch (an update, a crash) doesn't quietly empty it.
     @ObservationIgnored var closedTabs: [ClosedTab] = []
-    /// Where files and browsers open in this session: where you last moved
-    /// one. See `WorkspaceTabs.home(for:)`. Persisted.
+    /// Where you last moved a file and a browser in this session. No longer
+    /// read: since 2026-11-26 a file opens in the main row and a browser
+    /// beside your work, every time (`WorkspaceTabs.home(for:)`). Kept so a
+    /// saved value still round-trips. Persisted.
     @ObservationIgnored var tabHabits: [TabKind: TabRegion] = [:]
     /// Where each recently opened tab came from: `WorkspaceTabs.openers`. Not
     /// persisted.

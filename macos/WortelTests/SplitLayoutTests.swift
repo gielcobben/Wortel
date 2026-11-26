@@ -679,6 +679,20 @@ final class SplitLayoutTests: XCTestCase {
         assertWellFormed(layout)
     }
 
+    /// With a point between them there is no sliver for each side, and
+    /// nothing moves: a weight of zero would read back as an equal share.
+    /// Laid out in one point, 0.3 and 0.7 come to 0 and 1.
+    func testADividerWithNoRoomForTwoSaysNoZero() {
+        var layout = row([(.main, 0.3), (a, 0.7)])
+        let none = CGRect(x: 0, y: 0, width: 2, height: 300)
+        XCTAssertEqual(layout.frames(in: none).leaves[.main]?.width, 0)
+        let before = layout
+        XCTAssertFalse(layout.moveDivider(at: [], index: 0, to: 2, in: none))
+        XCTAssertFalse(layout.resize(.main, to: 1, in: none))
+        XCTAssertEqual(layout, before)
+        assertWellFormed(layout)
+    }
+
     // MARK: - Neighbours
 
     /// Main | a over b | c: every direction from every pane.

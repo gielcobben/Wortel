@@ -134,7 +134,7 @@ fi
 
 cat <<'EOF'
 
-Look over, with the git panel open (⌃⌘1):
+Look over, with the git panel open (⇧⌘C):
   [ ] Changes says "No changes here" with a link to shop-toolbar-proposal
   [ ] Branch list: This folder (main ↑4 ↓1), In other folders, Switch to, Remote
   [ ] me/toolbar-proposal: Show, and "19 changes there"

@@ -312,7 +312,18 @@ final class WindowControls: NSView {
     /// Their width, the 8 points to the window's edge, and 4 more between
     /// them and the row's own "+" (or its zoom button, which is lit and
     /// would otherwise touch the first of them).
-    var trailingWidth: CGFloat { trailing.fittingSize.width + 12 }
+    ///
+    /// Measured once: the four buttons have fixed sizes and are never
+    /// hidden, and this is asked after every layout of the tree, every step
+    /// of a divider's drag among them, where a `fittingSize` is a solve of
+    /// its own. Measure again if a button comes or goes.
+    var trailingWidth: CGFloat {
+        if let measuredTrailingWidth { return measuredTrailingWidth }
+        let width = trailing.fittingSize.width + 12
+        measuredTrailingWidth = width
+        return width
+    }
+    private var measuredTrailingWidth: CGFloat?
 
     /// Where the arrows start when the sidebar is shut: past the toggle.
     private static let restingX = Chrome.trafficLightInset + Chrome.controlSize + 8

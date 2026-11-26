@@ -393,9 +393,10 @@ enum SideTab: Hashable, Sendable {
     }
 }
 
-/// The kinds of tab that open somewhere by habit: a file or a browser opened
-/// without saying where goes where you last moved one of its kind
-/// (`WorkspaceTabs.home(for:)`). Terminals and panes open where you ask.
+/// The kinds of tab with a place of their own to open when nothing says
+/// where: a file in the main row, a browser beside your work, every time
+/// (`WorkspaceTabs.home(for:)`). Until 2026-11-26 each went where you had
+/// last moved one of its kind (`WorkspaceTabs.habits`).
 enum TabKind: String, Sendable {
     case file, browser
 }

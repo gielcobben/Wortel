@@ -607,10 +607,14 @@ struct SplitLayout: Equatable, Sendable {
     /// rewritten from those extents, within the weight they had between
     /// them. So parts that were being held at their minimum keep the size
     /// they are drawn at, and a hidden part keeps the share it had.
+    ///
+    /// Nothing is written when a part would get no room at all: a weight of
+    /// zero is what `tidied` reads as a damaged file and turns into an equal
+    /// share, so the split would jump at the next insert or remove.
     private static func setWeights(of parts: inout [Part], shown: [Int], from extents: [CGFloat]) -> Bool {
         let available = extents.reduce(0, +)
         let weight = shown.reduce(0) { $0 + parts[$1].weight }
-        guard available > 0, weight > 0 else { return false }
+        guard available > 0, weight > 0, extents.allSatisfy({ $0 > 0 }) else { return false }
         for (place, index) in shown.enumerated() {
             parts[index].weight = weight * Double(extents[place] / available)
         }
@@ -639,7 +643,9 @@ struct SplitLayout: Equatable, Sendable {
                 of: Self.minimumSize(of: parts[shown[place]].node, metrics: metrics, hidden: hidden), along: axis)
             let secondMinimum = Self.length(
                 of: Self.minimumSize(of: parts[shown[place + 1]].node, metrics: metrics, hidden: hidden), along: axis)
-            guard both > 0 else { return }
+            // Under two points there is no sliver for each side: one of them
+            // would be saved with a weight of zero (`setWeights`).
+            guard both >= 2 else { return }
             // Too little room for both minimums: the divider may still move, each
             // side keeping at least a sliver, so it is never stuck.
             let low = both >= firstMinimum + secondMinimum ? firstMinimum : min(both, 1)

@@ -422,7 +422,8 @@ Making one, and dropping on one:
   gives each edge of a leaf a band a quarter of it deep, 32pt at least,
   160pt at most and never over a third. In a band the drop is a new split on
   that edge, lit as the frame it would take. In the middle it moves into the
-  leaf, and the label is "Move Here", or "Open Here" for a file.
+  leaf, which lights up with no label (an edge has one: "Split Right", or
+  "Open to the Right" for a file).
 - That holds for every leaf. Until 2026-11-26 the area's own edges stood for
   "open the column", "move the column over" and "open the strip", each with
   a label of its own. Those zones are gone. One special case is left: the

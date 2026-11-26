@@ -179,8 +179,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   order, and resized by its divider. A tab let go on a split's edge makes a
   split there, and on its middle moves in. The area's own edges no longer
   stand for "open the column" and "open the strip": those drop zones and
-  their labels are gone, and every middle says "Move Here", or "Open Here"
-  for a file. ⌃⌘ with an arrow takes the tab in front to the neighbouring
+  their labels are gone. A middle lights up and says nothing: it said "Move
+  Here" until the owner tried it and found the tint enough, the same day. ⌃⌘ with an arrow takes the tab in front to the neighbouring
   split. With none there, toward the side column's edge or down still opens
   the side column or the strip when it is hidden. **Sizes are shares
   everywhere.** On a window resize Changes grows and shrinks with the

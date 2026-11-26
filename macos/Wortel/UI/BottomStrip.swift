@@ -475,11 +475,11 @@ final class TabDragController {
             overlay.marker = overlay.convert(marker, from: nil)
             overlay.zone = nil
         case .zone(_, let area):
-            // Every split says the same thing: the side split and the strip
-            // are splits like the rest.
+            // The split lights up and says nothing: a tab let go on a split
+            // goes into it, and "Move Here" over the tint only said so twice.
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
-            overlay.zoneLabel = draggingFile ? "Open Here" : "Move Here"
+            overlay.zoneLabel = ""
             overlay.zoneEdge = nil
         case .split(_, let edge, let area):
             overlay.marker = nil

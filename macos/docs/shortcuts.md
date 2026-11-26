@@ -7,7 +7,7 @@ The few Control keys are the ones the editors all use (⌃Tab, ⌃`, ⌃⇧G), a
 ⌃⌘ with a number for the panes, where ⌘ alone is taken by the sessions.
 Control and Option with a letter always stay with the shell.
 
-Three rules cover most of it:
+A few rules cover most of it:
 
 - **The layout is an editor's.** ⌘B, ⌥⌘B and ⌘J show and hide the three areas,
   as in VS Code, Cursor, Zed and Codex. The three panes are numbered as git
@@ -15,7 +15,10 @@ Three rules cover most of it:
 - **Up and down for sessions, brackets for tabs.** ⌥⌘↑ / ⌥⌘↓ walk the sidebar,
   as Arc walks its; ⇧⌘[ / ⇧⌘] are previous and next tab, as in every Mac app.
 - **A terminal is a terminal.** ⌘T, ⌘W, ⌘D, ⇧⌘D, ⌘K and ⌘] mean what they mean
-  in iTerm, Ghostty and Warp.
+  in iTerm, Ghostty and Warp. ⌘D and ⇧⌘D split the main area to the right and
+  down, and a split is zoomed and made equal with Ghostty's keys (⇧⌘↩, ⌃⌘=).
+- **Arrows with ⌃ go by direction.** ⌃⌘ and an arrow moves the tab in front
+  to the area on that side, ⌃⌥⌘ and an arrow moves the keyboard there.
 - **A browser is a browser.** ⌘L, ⌘R, ⌘[ and ⌘] mean what they mean in Safari
   and Chrome.
 
@@ -88,8 +91,27 @@ Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 | Show / hide the bottom strip | ⌘J, ⌃` | VS Code, Zed, Codex |
 | Move the side column to the other side | ⇧⌥⌘B | |
 | Focus the next / previous area | ⌘] / ⌘[ | iTerm, Ghostty, Warp (next / previous pane) |
+| Focus the area to the left / right / above / below | ⌃⌥⌘← / ⌃⌥⌘→ / ⌃⌥⌘↑ / ⌃⌥⌘↓ | iTerm, Ghostty (⌥⌘ and an arrow, which are sessions and tabs here) |
+| Zoom the split you're in, and show all of them again | ⇧⌘↩ | Ghostty, cmux |
+| Make the splits equal | ⌃⌘= | Ghostty |
 | Full screen | ⌃⌘F | every Mac app |
 | Show or hide Wortel, from any app | ⌃⌥⌘. | |
+
+The main area can be split into columns and rows, each with a tab row of its
+own (⌘D and ⇧⌘D, under Tabs). The sidebar, the side column and the strip stay
+where they are.
+
+⌘] and ⌘[ walk every area in reading order: the splits left to right and top
+down, the side column before or after them on its side, then the strip.
+⌃⌥⌘ and an arrow goes by direction instead (View ▸ Focus Area), across the
+splits and on into the column and the strip.
+
+A zoomed split is shown alone and the others are kept. A double-click on the
+empty part of a split's row zooms it too, and a button at the end of the row
+brings the others back. A zoom is not kept through a relaunch. The line
+between two splits drags, and a double-click on it makes all of them equal.
+
+Splits were added on 2026-11-26 and are not in a release yet.
 
 ## Panes
 
@@ -103,6 +125,7 @@ Before 2026-11-19, ⇧⌘N was New Worktree Session; that is ⌥⇧⌘N now.
 | The selected file in the preview tab, or close it (in Changes or Files) | Space | Finder (Quick Look) |
 
 Each opens its pane, brings it forward, or closes it when it's already in front.
+A pane that is in a split only comes forward: there is nothing to put it away to.
 While a file is in front, a click or ↑/↓ in Changes or Files shows the picked
 file in the preview tab (italic title). A double-click on a file opens it
 there too, and a double-click on the file it already shows keeps it as a tab.
@@ -110,23 +133,53 @@ there too, and a double-click on the file it already shows keeps it as a tab.
 ## Tabs
 
 These act on the tab row you're in: the area you last clicked or typed in,
-picked a tab in, or moved to with ⌘] / ⌘[.
+picked a tab in, or moved to with ⌘] / ⌘[ or ⌃⌥⌘ and an arrow. A split is an
+area like the others, so ⌘T, ⌘W, ⇧⌘T and ⇧⌘L act in the split you're in.
 
 | Action | Shortcut | Same as |
 |---|---|---|
 | New terminal tab here | ⌘T | everyone (new tab); in a terminal, a new shell where you are |
-| New terminal in the side column | ⌘D | iTerm, Ghostty, Warp, cmux, Terminal (split right) |
-| New terminal in the bottom strip | ⇧⌘D, ⌃⇧` | iTerm, Ghostty, Warp, cmux (split down); VS Code, Zed |
+| Split right: a new terminal in a split beside the area you're in | ⌘D | iTerm, Ghostty, Warp, cmux |
+| Split down: the same, under it | ⇧⌘D | iTerm, Ghostty, Warp, cmux |
+| New terminal in the bottom strip | ⌃⇧` | VS Code, Zed (new terminal) |
+| New terminal in the side column | Tab ▸ New Terminal in Side Column | |
 | New browser tab here | ⇧⌘L | cmux |
 | Close tab | ⌘W | everyone |
 | Reopen closed tab | ⇧⌘T | Safari, Chrome, VS Code, Zed, iTerm, Ghostty, Warp, cmux |
 | Next / previous tab | ⇧⌘] / ⇧⌘[ (also ⌃Tab / ⌃⇧Tab, ⌥⌘→ / ⌥⌘←) | Safari, Chrome, Finder, Xcode, Terminal, iTerm, Ghostty; VS Code, Zed |
 | Tab 1 to 9 | ⌥⌘1 to ⌥⌘9 (9 is the last) | Xcode (inspector tabs) |
-| Move tab left / right | ⌃⌘← / ⌃⌘→ | |
-| Move tab down to the bottom strip / up to the main area | ⌃⌘↓ / ⌃⌘↑ | |
+| Move the tab in front to the area on its left / right | ⌃⌘← / ⌃⌘→ | |
+| Move it to the area below / above | ⌃⌘↓ / ⌃⌘↑ | |
 
 ⌘W closes what you're in. With your session's own terminal in front, that is the
 session, the same as closing a tab in any other terminal ends its shell.
+
+⌘D and ⇧⌘D put the new terminal in a split of its own. From the side column
+or the strip, the split is made beside the main row. Where the area is too
+small to be two they beep and do nothing: a split is never laid out under 160
+by 100 points while there is room. A split is there only while it has tabs, so
+closing its last tab closes the split and its neighbours take the room.
+
+Split Right and Split Down are also in a tab's right-click menu, where they
+move that tab into a new split, and in every row's "+" and the session's "…",
+where they open a new terminal. The session's own terminal stays in the main
+row and can't be split off.
+
+A tab dragged onto the edge of a split makes a new split there, and onto its
+middle moves into it. While the main area is not split, its side edges still
+mean the side column and its lower quarter the strip, as before. The edges
+that had no meaning make a split: the top, the side where the column is
+already showing, the bottom while the strip is showing. A file dragged out of
+Changes or Files lands the same way, except over a terminal, which takes its
+path.
+
+⌃⌘ and an arrow moves the tab in front to the neighbouring split. Past the
+main area's edge it goes to the side column or the strip, as it did before
+there were splits, and from there back into the split along that edge. The
+session's own terminal sent toward the column swaps sides with it.
+
+Before 2026-11-26, ⌘D was a new terminal in the side column and ⇧⌘D one in the
+bottom strip. Both are still in the Tab menu, the strip's on ⌃⇧`.
 
 ## In a terminal
 
@@ -206,6 +259,9 @@ into the main area otherwise.
 - **⌘, is Settings**, as in every Mac app: a short window of switches. Keys
   are not among them; `wortel.conf` decides those. ⌘P finds any session, file
   or command, ⇧⌘P commands only, and so does the Help menu's search field.
+- **⌥⌘ and an arrow are sessions and tabs, not splits.** iTerm and Ghostty
+  move between splits with them. Here that is ⌃⌥⌘ and an arrow, because ⌥⌘
+  was taken and ⌃⌘ and an arrow moves a tab.
 
 ## Deliberately not used
 

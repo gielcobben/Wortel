@@ -40,7 +40,12 @@ the pages that can stand in for a terminal are a SwiftUI view on top that
 takes no clicks unless one is up. The pane calls `show()` again whenever the
 selected session, its being prepared or there being no sessions changes, so
 `show()` early-returns when already showing the surface (otherwise it would
-steal focus from the rename field). A session switch doesn't wait for that,
+steal focus from the rename field). Its `viewDidAppear` gives the terminal
+the keyboard only when nobody has it, which is how a window starts: it also
+runs when the terminal's area comes back from being hidden (a zoomed split
+of the main area, then all of them again), and taking the keyboard then put
+you in a terminal you had not gone to (2026-11-26, `workspace-tabs.md`). A
+session switch doesn't wait for that,
 though: `SessionManager.onSwitch` runs
 `MainSplitViewController.show` in the same turn as the selection, which lays
 out the session's column and strip first and only then shows its terminal,

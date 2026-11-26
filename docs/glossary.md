@@ -15,7 +15,14 @@ carries a directory (its **folder root**), where new sessions in it start. It is
 not a folder on disk, which is why the menu says "Ungroup Sessions".
 
 **Main area.** The middle of the window. Holds the session's own terminal, which
-never leaves it and cannot be closed.
+never leaves it and cannot be closed. It can be divided into splits.
+
+**Split.** A part of the main area that was split off (⌘D, ⇧⌘D), with a tab
+row of its own. The main area is then a tree of columns and rows. The part
+that keeps the session's terminal is the **main row**, and it is always there.
+A split is there only while it has tabs. The side column and the bottom strip
+are not splits. In code a split's row is `TabRegion.pane(id)` and the tree is
+`SplitLayout`: that "pane" means a split, not the pane defined below.
 
 **Start cover.** The empty page over a new session's terminal while the line
 it was made with is still starting. What is typed under it is held.
@@ -25,13 +32,14 @@ previews, browsers. Older docs and some code call it the **inspector**.
 
 **Bottom strip.** The row under the main area (⌘J).
 
-**Tab.** One thing in one of those three rows: a terminal, a pane, a file, a
-browser. The terminal engine has no tabs and no splits of its own. These are
-Wortel's.
+**Tab.** One thing in a row of the main area, the side column, the bottom
+strip or a split: a terminal, a pane, a file, a browser. The terminal engine
+has no tabs and no splits of its own. These are Wortel's.
 
 **Pane.** One of the three git and file views: Changes, History, Files.
 
-**Workspace.** A session's whole arrangement of tabs across the three rows
+**Workspace.** A session's whole arrangement of tabs: the main area's row, the
+column's, the strip's and each split's, and how the main area is divided
 (`WorkspaceTabs`).
 
 **Surface.** One libghostty terminal, and the view that hosts it
@@ -56,7 +64,9 @@ the Trash instead.
 **Owned.** A worktree or branch Wortel made, recorded by a marker in git, never
 guessed from a path. Wortel only ever removes what it owns.
 
-**Window.** A main window: the four places with a sidebar of its own sessions.
+**Window.** A main window: the four places (sidebar, main area, side column,
+bottom strip) with a sidebar of its own sessions. Splits divide the main area
+and add no place.
 A session is in exactly one window and moves between them with its terminal
 running. The **active window** is the one last in front; the commands act on
 its session. Not a preview window, which shows one file.

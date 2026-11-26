@@ -93,16 +93,19 @@ Nothing keeps the canvas current by itself: it is drawn by hand from the app.
 ## The idea
 
 Wortel has a handful of settings, and it is not a small app. It holds
-sessions, tabs in three places, a git client, a file tree, previews, a browser,
-a process list and a command line of its own. The design problem is fitting all
+sessions, tabs in three places, splits of the middle one, a git client, a file
+tree, previews, a browser, a process list and a command line of its own. The design problem is fitting all
 of that into something that still reads as a terminal, with next to no
 preferences to lean on.
 These are the ideas that do it.
 
 **A fixed frame, in every window.** There are four places and only four:
 sessions on the left, the terminal in the middle, the repository beside it, a
-second shell underneath. Tabs live inside those places. There is no grid of
-splits to arrange, so there is no layout to configure and none to get wrong.
+second shell underneath. Tabs live inside those places. The middle one can be
+split into columns and rows, each with a row of tabs of its own, and it is the
+only one that can. The frame around it never moves, so there is still no layout
+to configure: a split is made with one key and is gone when its last tab
+closes. Unsplit, the window is exactly what it was.
 A second window (⇧⌘N) is the same frame again, with a sidebar of its own
 sessions: windows are how work is set apart, never how a layout is built.
 
@@ -167,7 +170,7 @@ Every colour is one of these. The left column is the name on the canvas and in
 | `sidebar-accent` | `Chrome.raisedOnBand`, `pillAlpha` | black 8% | white 8% | A selection on the glass: the session pill, the tab in front of a titlebar row |
 | `secondary` | `Chrome.selectedFill` | black 7% | white 11% | A selected row on a page, a glyph button that is on |
 | `accent` | `Chrome.hoverFill` | black 5% | white 7% | Hover on a control |
-| `muted` | `Chrome.stripBand` | black 3% | white 4% | The bottom strip's tab row. (The palette's footer is the label colour at 3%.) |
+| `muted` | `Chrome.stripBand` | black 3% | white 4% | The bottom strip's tab row, and a split's. (The palette's footer is the label colour at 3%.) |
 | `border` | `Chrome.hairline` | black 7% | white 8% | Hairlines |
 | `input` | `Chrome.hairlineStrong` | black 10% | white 12% | Toolbar dividers, tab edges, field outlines |
 | `popover` | the `.popover` material | 226 at 90% | 37 at 80% | The command palette |
@@ -238,11 +241,20 @@ the app.
 | Any glyph in a row | 14pt regular; 13pt in menus |
 | Sidebar | 234pt on the canvas; drags between 180 and 400 |
 | Side column | 384pt on the canvas; at least 260, and it may grow until the terminal has 320 |
+| The strip's row, a split's row | 36pt, on the strip's band (`PaneBar.height`) |
+| A split | Never laid out under 160 by 100pt while there is room |
+| Between two splits | A 1pt hairline (`Chrome.hairline`), with 4pt either side of it that take the press |
 | Window corners | 18pt |
 
 Each pane draws its own 40pt row of one flat band, with hairlines between
 panes. The titlebar is Wortel's own because macOS 26 and later put every
 toolbar item on a glass capsule, and there is no switch for that.
+
+While the main area is split, every split has a row of its own under the
+titlebar, the strip's row in another place: the same band, the tabs, then "+".
+The main row's tabs move down into theirs, and the titlebar shows the
+session's name. A zoomed split has one button at the end of its row, to show
+the others again.
 
 ### Sidebar
 
@@ -315,6 +327,10 @@ The list selection is the accent only while its list has the keyboard, and
 grey otherwise, as in Finder. Moving between areas with ⌘] blinks a short
 outline around the one that now has the keyboard.
 
+While the main area is split, the tab in front of a split you are not in has a
+quiet title (the secondary label colour, glyph and all). The one you are in
+has the usual one. That is the whole difference: no border, no tint.
+
 ## Motion
 
 | | |
@@ -328,6 +344,7 @@ outline around the one that now has the keyboard.
   showing snaps; it never animates.
 - A terminal does not resize during an animation. It resizes once, when the
   pane lands.
+- A split appears and goes in one cut. So does a zoom.
 - A new session's terminal is under an empty page of its own colour until
   its program has drawn. The page comes off in one cut, with nothing on it
   and no fade.

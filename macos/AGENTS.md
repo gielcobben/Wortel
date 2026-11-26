@@ -58,6 +58,7 @@ scripts/check-terminals.sh   # every terminal test, in throwaway copies, about 7
 | `Wortel/UI/`, the sidebar | `docs/architecture/window-and-sidebar.md`, and `../DESIGN.md` for anything that is drawn |
 | `Wortel/Settings/`, a new setting | `docs/architecture/settings.md` |
 | Tabs, the side column, the bottom strip, `Wortel/Browser/` | `docs/architecture/workspace-tabs.md` |
+| Splits of the main area: `SplitLayout`, `SplitTreeView`, `SplitPane.swift`, a tab drag's landing | `docs/architecture/workspace-tabs.md` ("Splits of the main area"). Run `scripts/try-splits.sh` |
 | `Wortel/Git/` | `docs/architecture/git-panel.md` |
 | Anything about worktrees | `docs/worktrees.md` (the model), `docs/architecture/worktrees.md` (the code) |
 | `Wortel/Files/`, `Wortel/Preview/`, `Wortel/Markdown/` | `docs/architecture/files-and-previews.md`, `docs/file-preview.md` |
@@ -136,9 +137,10 @@ Skills are in `../.agents/skills/` (Claude Code reads them through
   `docs/architecture/settings.md` before adding a row), no user-config
   loading. The
   *terminal* has no tabs and no splits of its own: sessions are Wortel's tabs,
-  and libghostty's tab/split actions still return `false`. The one split is the
-  side column, and its tabs are Wortel's (see **Tabs and the workspace**), not
-  libghostty's.
+  and libghostty's tab/split actions still return `false`. The tabs, the side
+  column, the strip and the splits of the main area are all Wortel's (see
+  **Tabs and the workspace**), not libghostty's. Splits are on the branch
+  `flexible-panes`, not released (`../docs/decisions.md`, 2026-11-26).
 - Resources are shipped as **folder references** (`Resources/terminfo`,
   `Resources/ghostty`) landing in `Contents/Resources/`; the Zig core locates
   them via the `terminfo/78/xterm-ghostty` sentinel. Don't restructure those

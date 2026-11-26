@@ -74,7 +74,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-09-29. "Wortel has no tabs" was reversed.** Tabs in three fixed places:
   the main area, a side column, a bottom strip. Still no splits and no free
   grid. The terminal engine's own tab and split actions still return
-  "unhandled" (`9c864df`, `50ec9ca`).
+  "unhandled" (`9c864df`, `50ec9ca`). "No splits" held until 2026-11-26,
+  when it was reversed on the branch `flexible-panes` (the first entry of
+  "Window, terminal and keys"). The three places and the engine's
+  "unhandled" stand.
 - **2026-08-08. "Deliberately no CLI" was reversed.** The `wortel` command
   exists so that Wortel never needs a per-agent integration (`76ea9f8`).
 - **2026-08-04. No invented benchmark numbers**, on the site or anywhere
@@ -112,6 +115,89 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 
 ## Window, terminal and keys
 
+- **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
+  main area splits into columns and rows.** Not merged and not released.
+  `main`, the released app and the site still have no splits, and this entry
+  is the rule only where the branch is. The owner asked for a window layout
+  that is more flexible, "more like cmux: multiple columns and rows next to
+  each other", in the app's own look. And ⌘D and ⇧⌘D were already standing
+  in for every terminal's split right and split down, as a terminal in the
+  side column and one in the strip. They are the real thing now: a new
+  terminal in a split of its own, beside or under the area you are in
+  (`007dae4` the model, `00d9106` the views and the commands, `843cdd8`).
+  It reverses "Still no splits and no free grid" in the 2026-09-29 entry of
+  "The product". **The rules.** A split is a part of the main area that was
+  split off, with a tab row of its own. It is made by ⌘D or ⇧⌘D, by Split
+  Right or Split Down in a tab's menu (that tab moves into it), in a row's
+  "+" or the session's "…", or by letting go of a tab or a file on an edge.
+  It is there only while it has tabs: closing its last one takes it away
+  and its siblings take the room. Sizes are shares, so a window resize
+  keeps them, and no split is laid out under 160 by 100 points while there
+  is room. ⌘D and ⇧⌘D beep and do nothing where the area is too small to be
+  two. ⇧⌘↩ shows one split alone and then all of them again (not saved),
+  ⌃⌘= makes them equal, ⌘] and ⌘[ walk them in reading order, and the
+  session's own terminal never leaves the main row. Saved per session as
+  `splitLayout` and `paneTabs`, only while split.
+  `macos/docs/architecture/workspace-tabs.md` has the rest. **The frame
+  stays, and only the main area splits.** Sidebar, main area, side column
+  and strip are what they were, and the column and the strip are beside the
+  tree, not in it. So an unsplit session looks and saves exactly as before,
+  and "every window is the same fixed frame of four places" (2026-11-19,
+  below) still holds. **The word is "split", not "pane".** A pane is already
+  Changes, History or Files (`docs/glossary.md`). The code says
+  `TabRegion.pane` and `SplitLayout` for the same thing. **A row per split,
+  not more rows in the titlebar.** While the main area is split every split
+  has its own 36pt row on the strip's band, the main row's included, and the
+  titlebar shows the session's name. A titlebar row lies over the whole main
+  area, not over one split, and a split under another has no titlebar over
+  it at all. The row is the strip's because it is the same thing in another
+  place: a row of tabs that is not in the titlebar. The tab in front of a
+  split you are not in has a quiet title, so the row ⌘T, ⌘W and ⌘D act in
+  can be told from its neighbours. **Equal siblings stay equal.** A second
+  Split Right gives three thirds, not a half and two quarters, which is
+  what every split halving its source comes to. Once a divider has been
+  dragged the sizes are somebody's choice, and a new split halves only the
+  one it came from. **No animation.** A split appears and goes in one cut,
+  so each terminal beside it gets one new size. **⌃⌥⌘ with an arrow moves
+  the keyboard by direction**, across the splits and on into the column and
+  the strip. iTerm and Ghostty use ⌥⌘ with an arrow for this. Those are
+  sessions and tabs here, and ⌃⌘ with an arrow moves a tab, so ⌃⌥⌘ was what
+  was free. ⌃⌘ with an arrow now takes the tab in front to the neighbouring
+  split, and past the main area's edge to the column or the strip as it
+  always did. **One flat view, not split views inside split views**
+  (`SplitTreeView`). Every split is a direct subview whose frame comes from
+  `SplitLayout.frames`, so a split that comes, goes or changes edge never
+  takes another one out of the window on its way. A terminal that left the
+  window would have to be shown again, which is what every terminal host in
+  the app avoids. Nesting `NSSplitView`s because AppKit has them is the
+  trap. **A fix that came with it:** the session's terminal took the
+  keyboard whenever its area reappeared
+  (`TerminalHostViewController.viewDidAppear`), so showing all splits again
+  after a zoom put you in the main terminal. It takes it now only when
+  nobody has it, which is how a window starts. **Limits.** A split's
+  terminal is a side terminal: agent tracking, naming and resume follow the
+  session's own terminal only. A split holds tabs, never another session.
+  Split Right and Split Down in a menu (a tab's, a row's "+", the session's
+  "…") do not check for room the way ⌘D does. **Verified (2026-11-26, macOS
+  27.0):** WortelTests, 1873 tests, 0 failures. In a throwaway copy, with
+  `macos/scripts/try-splits.sh` and the Debug-only `SplitProbe`: three
+  splits, a zoom and back, a divider drag, equalize, the keyboard by
+  direction, a session switch away and back (also with terminals dropped
+  after 0.3 s, `HIBERNATE_AFTER=0.3`), a new tab, drops on edges and
+  middles through the drag's own resolver, every split closed, and a quit
+  and relaunch with four splits. At every step each terminal on screen had
+  been told the size of its view and sat inside its split, and the keyboard
+  was where it was expected: 0 faults. The window's picture (`--picture`)
+  was looked at in dark and in light. **Not checked:** a drag with a real
+  pointer, light mode on a screen, several windows with splits, a split's
+  terminal dropped after its real minute or on a memory warning,
+  `scripts/check-terminals.sh`. **The site changes with the release, not
+  before:** it describes the released app. The places are in
+  `web/src/data/site.ts`: the "One window, four places" feature, and the
+  answers about Ghostty ("tabs, splits and a large configuration file"),
+  about iTerm2 and the others ("no splits"), and "Does Wortel have tabs or
+  split panes?". `web/src/pages/llms.txt.ts` has two lines of its own
+  ("replaces tabs and splits", "no split panes").
 - **2026-11-19. Several windows, each with its own sessions.** "One window"
   had been a principle of design, never something tried and taken out. A
   window owns its sessions (`Session.windowID`), its sidebar lists only

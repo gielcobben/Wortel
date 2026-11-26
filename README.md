@@ -309,9 +309,13 @@ the design is enforced, and pull requests adding them are unlikely to land.
 [`docs/product.md`](docs/product.md) has the reasoning and the questions a new
 feature is held to.
 
-- **No splits.** A session has tabs in three rows (the main area, a side
-  column, a strip under the terminal), not a grid of panes; the sidebar of
-  named sessions is where you switch work.
+- **No layout to build.** The frame is fixed: a sidebar, the main area, a side
+  column, a strip under the terminal. The main area can be split into columns
+  and rows of tabs (`⌘D`, `⇧⌘D`), and that is all that moves. A split holds
+  tabs, never another session: the sidebar of named sessions is where you
+  switch work. The engine's own tab and split actions still return
+  "unhandled". Splits are on the branch `flexible-panes` and not in a release
+  yet ([`docs/decisions.md`](docs/decisions.md), 2026-11-26).
 - **Almost nothing to configure, and no user config.** Settings (⌘,) holds
   the few switches that differ per person. Everything about the terminal
   itself is the bundled read-only `macos/Resources/wortel.conf`, and your real
@@ -341,7 +345,11 @@ feature is held to.
 | `⌘B` / `⌥⌘B` / `⌘J` | Show or hide the sidebar, the side column, the bottom strip |
 | `⇧⌘E` / `⌃⇧G` | Files / source control |
 | `⌘T` | New terminal tab in the area you are in |
-| `⌘D` / `⇧⌘D` | New terminal in the side column / the bottom strip |
+| `⌘D` / `⇧⌘D` | Split right / split down: a new terminal in a split of the main area |
+| `⇧⌘↩` / `⌃⌘=` | Show one split alone, and all of them again / make the splits equal |
+| `⌃⌥⌘` and an arrow | Focus the area in that direction: a split, the side column, the bottom strip |
+| `⌃⌘` and an arrow | Move the tab in front to the area in that direction |
+| `` ⌃⇧` `` | New terminal in the bottom strip |
 | `⇧⌘L` | New browser tab |
 | `⇧⌘T` | Reopen closed tab |
 | `⌃Tab` / `⌃⇧Tab` | Next / previous tab (also `⌥⌘→` / `⌥⌘←`) |

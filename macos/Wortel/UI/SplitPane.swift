@@ -168,7 +168,6 @@ final class SplitPaneController: NSViewController {
             bar.strip.update(items: git.tabs(in: region).map { TitleBarController.stripItem(for: $0, in: session) },
                              active: git.activeTab(in: region))
         }
-        bar.strip.isKeyRow = git.keyRegion == region
         let active = showing ? git.activeTab(in: region) : nil
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
         let surface = git.session === session

@@ -106,8 +106,8 @@ yourself (⌘D and ⇧⌘D, under Tabs).
 
 ⌥⌘B and ⌘J put the side column and the strip away and bring them back with
 the same tabs and the same share of the window. A split you made has no such key: it is
-there while it has tabs. They open and close in one cut. They used to slide,
-and do not yet since they became splits.
+there while it has tabs. The two slide open and shut on those keys, as they
+always have. A split you make or close, a zoom and ⌃⌘= land in one cut.
 
 ⌘] and ⌘[ walk every split on screen in reading order, left to right and top
 down, the side column and the strip where they sit. ⌃⌥⌘ and an arrow goes by

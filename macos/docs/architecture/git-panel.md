@@ -176,11 +176,12 @@ always does. So `GitPanelModel` holds no visibility state of its own. `isVisible
 mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`
 and written back through `setVisible` (the one funnel); `SessionStore` persists
 it. Since 2026-11-26 (branch `flexible-panes`) the column is a split of the
-window's tree, hidden with its tabs kept (`workspace-tabs.md`), and every
-change of visibility is one cut: a session switch, and ⌥⌘B too, which slid
-until then and does not yet. `animatesVisibilityChange` is still set and
-nothing reads it. A divider can no longer be dragged shut, so there is no
-divider-drag dismissal to record.
+window's tree, hidden with its tabs kept (`workspace-tabs.md`). A session
+switch that changes visibility **snaps** the column rather than sliding it
+(`animatesVisibilityChange`, read by `MainAreaController.slides`): switching
+sessions is meant to be instant. ⌥⌘B slides it, as before, and the tree does
+the sliding now (`SplitTreeView`). A divider can no longer be dragged shut,
+so there is no divider-drag dismissal to record.
 
 **Which pane** the column shows (`InspectorPane`: Changes / History / Files) is
 per session for the same reason and by the same mechanism — `pane` mirrors

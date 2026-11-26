@@ -1297,6 +1297,14 @@ final class SurfaceView: NSView {
     /// for one that is out of sight to follow the window by the same amount
     /// (`followWindow`).
     private var windowSizeWhenTold: NSSize?
+
+    /// The size, in points, a session's terminal out of sight would have if
+    /// it were shown now: its session's own tree of splits laid out in the
+    /// window as it is. Set by the app, which has the sessions. Sizes are
+    /// shares of the area, so a terminal beside a side split takes only its
+    /// share of a window's change, and one that followed the window by the
+    /// whole of it was told a width it was never shown at.
+    static var sizeWhenShown: ((SurfaceView) -> NSSize?)?
     private var followWork: DispatchWorkItem?
 
     @objc private func windowDidResize(_ notification: Notification) {
@@ -1329,10 +1337,21 @@ final class SurfaceView: NSView {
             return
         }
         let scale = window?.backingScaleFactor ?? 2
-        let dw = (now.width - then.width) * scale, dh = (now.height - then.height) * scale
-        guard abs(dw) >= 1 || abs(dh) >= 1 else { return }
-        let width = max(40 * scale, CGFloat(told.width) + dw)
-        let height = max(20 * scale, CGFloat(told.height) + dh)
+        let width: CGFloat, height: CGFloat
+        if let shown = Self.sizeWhenShown?(self) {
+            // The app knows the session's own splits: the size its main row
+            // has in the window as it is now, to the point.
+            width = max(40 * scale, shown.width * scale)
+            height = max(20 * scale, shown.height * scale)
+            guard abs(width - CGFloat(told.width)) >= 1 || abs(height - CGFloat(told.height)) >= 1 else { return }
+        } else {
+            // Nobody to ask: by as much as the window changed, which is
+            // right while nothing beside the terminal changes with it.
+            let dw = (now.width - then.width) * scale, dh = (now.height - then.height) * scale
+            guard abs(dw) >= 1 || abs(dh) >= 1 else { return }
+            width = max(40 * scale, CGFloat(told.width) + dw)
+            height = max(20 * scale, CGFloat(told.height) + dh)
+        }
         guard surface != nil else { return followWindowWithoutSurface(width: UInt32(width), height: UInt32(height)) }
         setSurfaceSize(width: UInt32(width), height: UInt32(height))
         // What a change of scale or screen passes on again

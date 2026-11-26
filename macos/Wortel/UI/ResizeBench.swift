@@ -85,11 +85,12 @@ enum ResizeBench {
                 .max(by: { $0.frame.width < $1.frame.width })
         else { return }
         let original = window.frame
-        // Room for the terminal to give up `reach` steps and still be wider
-        // than the least the side column leaves it (320 points,
-        // `ColumnWidth.terminalMinimum`): below that it is the column that
-        // gives, and the round measures the column's panel being laid out at
-        // every step instead of a window following the pointer.
+        // Room for the terminal to give up `reach` steps and still be 360
+        // points wide: narrower than that and a step's cost is splits held
+        // at their minimum, not a window following the pointer. (Sizes are
+        // shares since 2026-11-26, so the side split gives with the terminal
+        // at every step and `besideResized` counts every one; before that it
+        // kept its width and the count was the steps where it didn't.)
         if let terminal = shownTerminal(in: window.contentView) {
             let short = stepWidth * CGFloat(reach) + 360 - terminal.frame.width
             if short > 0 {
@@ -119,7 +120,7 @@ enum ResizeBench {
         // divider between the two, dragged. The window keeps its size and
         // both panes change theirs at every step.
         let split = terminal.flatMap(dividerBesideTerminal)
-        let dividerStart = split.map { $0.view.arrangedSubviews[$0.divider].frame.maxX } ?? 0
+        let dividerStart = split?.start ?? 0
         let total = reach * (split == nil ? 4 : 6)
 
         // Everything the main thread does between one step and the next is
@@ -200,17 +201,14 @@ enum ResizeBench {
                 let within = step % (reach * 2)
                 let distance = CGFloat(within < reach ? within + 1 : reach * 2 - within - 1)
                 let before = terminal?.frame.size
-                let beside = split.map { $0.view.arrangedSubviews[$0.divider + ($0.towardsTerminal > 0 ? 1 : 0)] }
-                let besideBefore = beside?.frame.width
+                let besideBefore = split?.tree.frame(of: .side)?.width
                 if phase == 2, let split {
                     // Towards the terminal: the pane beside it grows.
                     // A third as far, three times: the pane has a widest.
                     let third = reach / 3
                     let lap = within % (third * 2)
                     let moved = CGFloat(lap < third ? lap + 1 : third * 2 - lap - 1)
-                    split.view.setPosition(dividerStart - moved * stepWidth * split.towardsTerminal,
-                                           ofDividerAt: split.divider)
-                    split.view.layoutSubtreeIfNeeded()
+                    split.tree.moveDivider(split.divider, to: dividerStart - moved * stepWidth * split.towardsTerminal)
                 } else {
                     var frame = start
                     frame.size.width = start.width - distance * stepWidth
@@ -225,7 +223,7 @@ enum ResizeBench {
                 // The terminal's own view had not taken its new size by the
                 // time the window's frame was committed.
                 if terminal?.frame.size == before { late += 1 }
-                if phase < 2, let besideBefore, let now = beside?.frame.width, abs(now - besideBefore) > 0.01 {
+                if phase < 2, let besideBefore, let now = split?.tree.frame(of: .side)?.width, abs(now - besideBefore) > 0.01 {
                     besideResized += 1
                 }
                 step += 1
@@ -343,27 +341,22 @@ enum ResizeBench {
         return false
     }
 
-    /// The split view the terminal's pane is in, and the divider between
-    /// that pane and one beside it that is open and is not the sidebar.
+    /// The window's tree of splits the terminal is in, the divider on the
+    /// side split's inner edge when the side split is showing, where that
+    /// divider starts, and which way along it is toward the terminal.
     @MainActor
     private static func dividerBesideTerminal(
         _ terminal: SurfaceView
-    ) -> (view: NSSplitView, divider: Int, towardsTerminal: CGFloat)? {
+    ) -> (tree: SplitTreeView, divider: Int, towardsTerminal: CGFloat, start: CGFloat)? {
         var view: NSView? = terminal
-        while let current = view {
-            if let split = current.superview as? NSSplitView, split.isVertical,
-               split.delegate is MainSplitViewController,
-               let index = split.arrangedSubviews.firstIndex(of: current) {
-                let panes = split.arrangedSubviews
-                func open(_ i: Int) -> Bool { panes.indices.contains(i) && !split.isSubviewCollapsed(panes[i]) && panes[i].frame.width > 1 }
-                // The sidebar is the first pane; the column is on either side.
-                if open(index + 1) { return (split, index, 1) }
-                if index - 1 > 0, open(index - 1) { return (split, index - 1, -1) }
-                return nil
-            }
-            view = current.superview
-        }
-        return nil
+        while let current = view, !(current is SplitTreeView) { view = current.superview }
+        guard let tree = view as? SplitTreeView, let side = tree.frame(of: .side) else { return nil }
+        let dividers = tree.dividerRects
+        guard let index = dividers.firstIndex(where: {
+            abs($0.maxX - side.minX) < 1.5 || abs($0.minX - side.maxX) < 1.5
+        }) else { return nil }
+        let sideOnRight = abs(dividers[index].maxX - side.minX) < 1.5
+        return (tree, index, sideOnRight ? 1 : -1, dividers[index].minX)
     }
 
     /// The largest terminal on screen: the session's own, not a side one.

@@ -196,9 +196,24 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   goes by how many.** With more than two splits on screen the tab in front
   of one you are not in has a quiet title, and so has the main row's title.
   With one or two, as always, nothing is dimmed: the cursor says where you
-  are. **No animation yet.** ⌥⌘B and ⌘J cut where they used to slide. This
-  is a known gap, not a choice: the tree sets every frame in one pass and
-  nothing animates a leaf yet. The sidebar still slides. **Saved.**
+  are. **⌥⌘B and ⌘J still slide.** The first build of the tree cut where
+  they used to slide, because the tree set every frame in one pass. The
+  slide came back the same day. `SplitTreeView.apply` takes `slides`, and
+  then steps every leaf's real frame from where it is to where it goes, the
+  way AppKit's own split view steps a pane open: a timer at 120 a second,
+  0.26 s to open and 0.18 s to close, on the app's curve (`Motion`). Every
+  terminal's resize is held until it lands, so the terminal beside it still
+  gets one new size and not one a frame. The dividers are hidden for its
+  length, the rows take the look of their final place before anything
+  moves, and the leaf that comes or goes is squeezed to nothing against the
+  edge it shares with the neighbour that makes room. It is asked for only
+  when the side column or the strip is opened or put away by hand
+  (`MainAreaController.slides`: ⌥⌘B, ⌘J, a tab opened there), never on a
+  session switch and never with a zoom in the change. One that goes because
+  its last tab closed cuts, as it did before. A split somebody makes or
+  closes, a zoom and equalize still land in one cut. A change during a
+  slide, a window resize under it and a session switch land it first.
+  **Saved.**
   `splitLayout` is written whenever the tree is more than the main row, so
   a session with a column or a strip writes it now. `sideTabs`,
   `bottomTabs`, `gitPanelVisible`, `bottomVisible`, `sideColumnLeading` and
@@ -208,8 +223,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   view's autosave name went from `main-split` to `window-split` (two panes
   instead of three), and the sidebar's width is carried over once.
   `macos/docs/architecture/workspace-tabs.md` has the rest. **Verified
-  (2026-11-26, macOS 27.0, throwaway copies):** WortelTests, 1928 tests, 0
-  failures. `macos/scripts/try-splits.sh`: the side column alone (its
+  (2026-11-26, macOS 27.0, throwaway copies), before the five fixes
+  below:** WortelTests, 1928 tests, 0 failures. `macos/scripts/try-splits.sh`: the side column alone (its
   picture is the window as it has always looked), hidden and shown (back at 440pt), the strip
   likewise (240pt), splits of the main row, of the strip and of the side
   column, a zoom, the keyboard by direction across all of them, a divider
@@ -221,15 +236,30 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   looked for a pane that no longer exists and would have called every
   return right. **Not checked:** `macos/scripts/check-terminals.sh` on this
   build, a drag with a real pointer, several windows, and the look by eye
-  beyond the probe's pictures. **Read from the code, not measured:** a
-  session's terminal out of sight still follows a window resize by the
-  whole change (`SurfaceView.followWindow`, the 2026-11-20 entry below),
-  which was right while the panes beside it kept their width. With a side
-  column beside it the main row now takes only its share, so that terminal
-  is told a size it will not be shown at, and takes the real one when it is
-  shown. And `ResizeBench` (`bench-resize.sh --column`) still looks for the
-  column's divider in the window's split view, where the column no longer
-  is, so its divider round is skipped (`macos/docs/debugging.md`).
+  beyond the probe's pictures. **Five things found while this was
+  written down, fixed the same day.** The slide, above. A session's
+  terminal out of sight followed a window resize by the whole change
+  (`SurfaceView.followWindow`, the 2026-11-20 entry below), which was right
+  while the panes beside it kept their width and wrong once sizes were
+  shares: beside a side column it was told a width it would never be shown
+  at. Now the app is asked (`SurfaceView.sizeWhenShown`,
+  `MainAreaController.terminalSize(of:)`): the session's own tree is laid
+  out in the window as it is, and the terminal is told the size of its main
+  row's page. The old way is kept only for when nobody can say (for one,
+  the main row behind a zoom on another split). `ResizeBench` looked for the
+  column's divider in the window's split view, found none and skipped its
+  divider round in silence. It reads the tree now, and counts the side
+  column changing width at every step of a window round, since it gives
+  with the terminal. Dimming had two owners (`SplitPaneController.sync`
+  wrote `isKeyRow` without the count) and has one, `dressRows`. And
+  `wortel split`'s room check now leaves out a column or a strip that is
+  hidden in that session. **Verified after those (2026-11-26, a throwaway
+  copy):** `try-splits.sh --relaunch column column column strip strip strip
+  right down zoom zoom column column resize:900x560 next next next strip
+  strip`: 0 faults, and the five splits back after the relaunch. **Not run
+  again after them:** the two session-switch runs, which passed before
+  them (`try-switch.sh --side --widths`, 0 of 72), and the rest of
+  `check-terminals.sh`.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -316,8 +346,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   session with four splits keeps four surfaces while it is out of sight. A
   split holds tabs, never another session. ⌃⌥⌘ with an arrow is taken from
   the program in the terminal even when there is nowhere to go, as every
-  disabled menu key here is. The entry above adds its own: ⌥⌘B and ⌘J do
-  not slide yet. **Verified, the first version (2026-11-26, macOS
+  disabled menu key here is. **Verified, the first version (2026-11-26, macOS
   27.0):** WortelTests, 1873 tests, 0 failures. In a throwaway copy, with
   `macos/scripts/try-splits.sh` and the Debug-only `SplitProbe`: three
   splits, a zoom and back, a divider drag, equalize, the keyboard by
@@ -445,9 +474,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   (`2dfae43`, `c20f403`). **Since 2026-11-20 a hidden one follows a window
   resize, once:** see "A terminal out of sight follows its window". **Until
   2026-11-26** on the branch `flexible-panes` the side column and the strip
-  were among the panes that animate. There they open and close in one cut
-  (no slide yet, the first entry of this section), and the sidebar is the
-  one pane that still animates with resizes held.
+  were panes that AppKit animated. There they are splits of one tree, and
+  the tree slides them itself when ⌥⌘B or ⌘J opens or puts one away, with
+  resizes held until it lands (the first entry of this section). The rule
+  is the same: one resize, when it lands.
 - **2026-11-18. A session switch lays out the column and strip before it shows
   the terminal.** SwiftUI showed the terminal first, in the previous session's
   layout, and the column followed 10 to 85 ms later: the terminal was drawn
@@ -757,10 +787,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   shown since is not in the window and does not follow; it is told its own
   last size when it is made. **Until 2026-11-26:** "the panes beside it
   keep their width" is no longer so on the branch `flexible-panes`, where
-  sizes are shares (the first entry of this section). The follow still adds
-  the window's whole change, so with a side column beside it a hidden
-  terminal is told a size it will not be shown at. Read from the code, not
-  measured, and not yet changed.
+  sizes are shares (the first entry of this section). Adding the window's
+  whole change told a terminal beside a side column a width it would not be
+  shown at, so the follow now asks for the size the session's main row has
+  in its own splits, in the window as it is (`SurfaceView.sizeWhenShown`),
+  and adds the window's change only when nobody can say. Still once a
+  window resize. `try-hidden-resize.sh` was not run again.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   **Replaced 2026-11-20:** nothing is lost by dropping a terminal now, so one
   whose agent is at work goes like any other.

@@ -63,12 +63,140 @@ final class SplitTreeView: NSView {
         view.removeFromSuperview()
     }
 
-    func apply(layout: SplitLayout, zoomed: SplitLayout.Leaf?, hidden: Set<SplitLayout.Leaf> = []) {
+    /// `slides`: a leaf that comes onto the screen or leaves it with this
+    /// change does so over a moment instead of in one cut. Asked for when
+    /// the side split or the strip is opened or put away by hand, which have
+    /// always slid; a split somebody makes or closes, a zoom and a session
+    /// switch cut.
+    func apply(layout: SplitLayout, zoomed: SplitLayout.Leaf?, hidden: Set<SplitLayout.Leaf> = [],
+               slides: Bool = false) {
         guard layout != splitLayout || zoomed != self.zoomed || hidden != hiddenLeaves else { return }
+        // One at a time: a change during a slide lands it first.
+        finishSlide()
+        let before = slides && window != nil ? shownFrames : nil
         splitLayout = layout
         self.zoomed = zoomed
         hiddenLeaves = hidden
+        if let before {
+            let after = wantedFrames
+            if Set(before.keys) != Set(after.keys), !after.isEmpty, !before.isEmpty {
+                slide(from: before, to: after)
+                return
+            }
+        }
         needsLayout = true
+    }
+
+    // MARK: Sliding a leaf in or out
+
+    /// A slide under way: where each leaf started and where it ends.
+    private struct Slide {
+        var timer: Timer
+        var starts: [SplitLayout.Leaf: NSRect]
+        var ends: [SplitLayout.Leaf: NSRect]
+        var leaving: Set<SplitLayout.Leaf>
+        var bounds: NSRect
+    }
+    private var sliding: Slide?
+
+    /// The leaves on screen now, where their views are.
+    private var shownFrames: [SplitLayout.Leaf: NSRect] {
+        leafViews.filter { !$0.value.isHidden }.mapValues(\.frame)
+    }
+
+    /// Where the layout puts each leaf that has a view.
+    private var wantedFrames: [SplitLayout.Leaf: NSRect] {
+        if let zoomed = effectiveZoom { return [zoomed: bounds] }
+        return splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).leaves
+            .filter { leafViews[$0.key] != nil }
+    }
+
+    /// Step every leaf from where it is to where it goes, the way AppKit's
+    /// own split view steps a pane open: real frames, a step a frame, with
+    /// every terminal's resizing held until it lands (`Motion.pane`), so a
+    /// terminal beside the one sliding is resized once and not thirty times.
+    private func slide(from before: [SplitLayout.Leaf: NSRect], to after: [SplitLayout.Leaf: NSRect]) {
+        var starts = before, ends = after
+        var leaving = Set<SplitLayout.Leaf>()
+        for (leaf, frame) in after where before[leaf] == nil {
+            starts[leaf] = Self.collapsed(frame, without: before, with: after)
+        }
+        for (leaf, frame) in before where after[leaf] == nil {
+            ends[leaf] = Self.collapsed(frame, without: after, with: before)
+            leaving.insert(leaf)
+        }
+        let opening = leaving.isEmpty
+        let duration = opening ? Motion.opening : Motion.closing
+        dividerViews.forEach { $0.isHidden = true }
+        for (leaf, start) in starts {
+            guard let view = leafViews[leaf] else { continue }
+            view.frame = start
+            view.isHidden = false
+        }
+        // The rows dress for where they will be, before anything moves.
+        onPlaced()
+        SurfaceView.holdResizes()
+        let began = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let slide = self.sliding else { return }
+                let progress = min(1, (CACurrentMediaTime() - began) / duration)
+                guard progress < 1 else { return self.finishSlide() }
+                let eased = Self.ease(CGFloat(progress))
+                for (leaf, start) in slide.starts {
+                    guard let end = slide.ends[leaf], let view = self.leafViews[leaf] else { continue }
+                    view.frame = NSRect(x: (start.minX + (end.minX - start.minX) * eased).rounded(),
+                                        y: (start.minY + (end.minY - start.minY) * eased).rounded(),
+                                        width: (start.width + (end.width - start.width) * eased).rounded(),
+                                        height: (start.height + (end.height - start.height) * eased).rounded())
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        sliding = Slide(timer: timer, starts: starts, ends: ends, leaving: leaving, bounds: bounds)
+    }
+
+    /// Land a slide: every leaf at its frame, the dividers back, and the
+    /// terminals let go of a turn later, when the frames are final.
+    private func finishSlide() {
+        guard let slide = sliding else { return }
+        sliding = nil
+        slide.timer.invalidate()
+        place()
+        DispatchQueue.main.async { SurfaceView.releaseResizes() }
+    }
+
+    /// A leaf that is coming or going, squeezed to nothing against the edge
+    /// it shares with the neighbour that makes room for it: where it starts
+    /// from, or ends. `without` are the frames while it isn't there and
+    /// `with` while it is.
+    private static func collapsed(_ frame: NSRect, without: [SplitLayout.Leaf: NSRect],
+                                  with: [SplitLayout.Leaf: NSRect]) -> NSRect {
+        let centre = NSPoint(x: frame.midX, y: frame.midY)
+        guard let neighbour = without.first(where: { $0.value.contains(centre) }),
+              let beside = with[neighbour.key] else {
+            return NSRect(x: frame.maxX, y: frame.minY, width: 0, height: frame.height)
+        }
+        let room = neighbour.value
+        if frame.minX >= beside.maxX - 2 { return NSRect(x: room.maxX, y: frame.minY, width: 0, height: frame.height) }
+        if frame.maxX <= beside.minX + 2 { return NSRect(x: room.minX, y: frame.minY, width: 0, height: frame.height) }
+        if frame.minY >= beside.maxY - 2 { return NSRect(x: frame.minX, y: room.maxY, width: frame.width, height: 0) }
+        return NSRect(x: frame.minX, y: room.minY, width: frame.width, height: 0)
+    }
+
+    /// `Motion.curve`, cubic-bezier(0.23, 1, 0.32, 1), evaluated: how far
+    /// along a slide is at `time` of its length.
+    private static func ease(_ time: CGFloat) -> CGFloat {
+        func bezier(_ s: CGFloat, _ p1: CGFloat, _ p2: CGFloat) -> CGFloat {
+            let inverse = 1 - s
+            return 3 * inverse * inverse * s * p1 + 3 * inverse * s * s * p2 + s * s * s
+        }
+        var low: CGFloat = 0, high: CGFloat = 1
+        for _ in 0..<24 {
+            let middle = (low + high) / 2
+            if bezier(middle, 0.23, 0.32) < time { low = middle } else { high = middle }
+        }
+        return bezier((low + high) / 2, 1, 1)
     }
 
     /// Where a leaf is, in this view's coordinates. nil when it isn't shown.
@@ -100,6 +228,13 @@ final class SplitTreeView: NSView {
 
     override func layout() {
         super.layout()
+        if let slide = sliding {
+            // The frames are the slide's until it lands. Unless the area
+            // itself changed size under it: then it lands now.
+            guard slide.bounds.size != bounds.size else { return }
+            finishSlide()
+            return
+        }
         place()
     }
 
@@ -109,7 +244,10 @@ final class SplitTreeView: NSView {
 
     /// Give every leaf its frame now, without waiting for the layout pass:
     /// a session switch wants the terminal at its size before it is shown.
-    func placeNow() { place() }
+    func placeNow() {
+        finishSlide()
+        place()
+    }
 
     private func place() {
         placeLeaves()
@@ -155,6 +293,14 @@ final class SplitTreeView: NSView {
     /// For `SplitProbe`: the dividers as laid out, and one of them dragged.
     var dividerRects: [NSRect] {
         splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).dividers.map(\.rect)
+    }
+
+    /// One divider to a position along its axis, as one step of a drag.
+    func moveDivider(_ index: Int, to position: CGFloat) {
+        let dividers = splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).dividers
+        guard dividers.indices.contains(index) else { return }
+        drag(dividers[index], to: position)
+        layoutSubtreeIfNeeded()
     }
 
     func dragDivider(_ index: Int, by delta: CGFloat) {

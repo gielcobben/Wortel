@@ -116,7 +116,7 @@ struct SideColumnPage: View {
     }
 
     /// Whether a page or document for this tab exists already. A hidden
-    /// column keeps showing those (it slides shut with them in it) but makes
+    /// column keeps showing those (it goes with them in it) but makes
     /// none: a restored column that's hidden would otherwise start a web page
     /// or a file watcher nobody can see.
     private func isBuilt(_ tab: SideTab) -> Bool {

@@ -394,6 +394,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         SurfaceView.onKeyboardActivity = { [weak self] surface in
             self?.noteKeyboardActivity(in: surface)
         }
+        // A session out of sight, its window resized: the size its terminal
+        // has in its own splits, which only its window can lay out.
+        SurfaceView.sizeWhenShown = { [weak self] surface in
+            guard let self, let session = self.manager.sessions.first(where: { $0.surfaceView === surface }),
+                  let controller = self.controllers.first(where: { $0.window === surface.window }) else { return nil }
+            return controller.split.mainArea?.terminalSize(of: session)
+        }
         // A click in an area puts you in it, whatever it lands on: a web page,
         // a pane's list or the file tree never take part in the terminals'
         // typing reports, and without this ⌘W after clicking into a browser in
@@ -1959,10 +1966,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.requestCloseSelected()
     }
 
-    /// Move the tab in front of the row you're in to the area in `direction`.
-    /// Sideways crosses between the main area and the column, whichever side
-    /// the column is on; down puts a terminal in the strip, up brings it back
-    /// to the main area. The session's own terminal moving sideways swaps sides.
+    /// Move the tab in front of the row you're in to the split in
+    /// `direction`. With none there, toward the side split's edge opens the
+    /// side split with it and down opens the strip. The session's own
+    /// terminal never leaves its row: sent toward the side split, it trades
+    /// sides with it.
     private func moveFocusedTab(_ direction: SplitLayout.Edge) {
         let from = focusedRegion()
         guard let tab = gitPanel.activeTab(in: from) else { return }
@@ -1995,7 +2003,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // MARK: - Splits of the main area
 
     /// ⌘D and ⇧⌘D: a new terminal in a split of its own, beside or under the
-    /// one you're in. From the column or the strip, beside the main row.
+    /// one you're in, whichever split that is.
     @objc func splitRight(_ sender: Any?) { split(.right) }
     @objc func splitDown(_ sender: Any?) { split(.down) }
 
@@ -2017,7 +2025,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // than none. In the session's own layout, laid out in its window's
         // main area as that is now, because the session may not be the one
         // on screen there, or may have a zoom over its main row.
-        if controller?.split.mainArea?.hasRoom(toSplit: .main, on: edge, in: session.splitLayout) == false {
+        if controller?.split.mainArea?.hasRoom(toSplit: .main, on: edge, in: session.splitLayout,
+                                               hidden: session.workspace.hiddenLeaves) == false {
             return .noRoom
         }
         return git.splitFromCommand(on: edge, placing: tab, in: session) != nil ? .made : .notMade

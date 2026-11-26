@@ -503,14 +503,10 @@ final class TabDragController {
         case .swap(let leading, let area):
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
-            if draggingSession {
-                // The session's terminal trades places with the column.
-                overlay.zoneLabel = leading ? "Move Terminal to the Right" : "Move Terminal to the Left"
-                overlay.zoneEdge = leading ? .minX : .maxX
-            } else {
-                overlay.zoneLabel = leading ? "Move Column to the Left" : "Move Column to the Right"
-                overlay.zoneEdge = leading ? .maxX : .minX
-            }
+            // Only the session's own tab lands here: its terminal trades
+            // sides with the side split.
+            overlay.zoneLabel = leading ? "Move Terminal to the Right" : "Move Terminal to the Left"
+            overlay.zoneEdge = leading ? .minX : .maxX
         case .tearOff, .otherWindow, nil:
             overlay.marker = nil
             overlay.zone = nil

@@ -58,7 +58,8 @@ scripts/check-terminals.sh   # every terminal test, in throwaway copies, about 7
 | `Wortel/UI/`, the sidebar | `docs/architecture/window-and-sidebar.md`, and `../DESIGN.md` for anything that is drawn |
 | `Wortel/Settings/`, a new setting | `docs/architecture/settings.md` |
 | Tabs, `Wortel/Browser/` | `docs/architecture/workspace-tabs.md` |
-| Splits, the side column and the bottom strip among them: `SplitLayout`, `SplitTreeView`, `SplitLeaf.swift`, `SplitPane.swift`, `MainArea.swift`, `BottomStrip.swift`, a row's two looks, a tab drag's landing | `docs/architecture/workspace-tabs.md` ("One tree of splits"). Run `scripts/try-splits.sh`, and `scripts/try-switch.sh --side --widths` when a session switch is involved || `Wortel/Git/` | `docs/architecture/git-panel.md` |
+| Splits, the side column and the bottom strip among them: `SplitLayout`, `SplitTreeView`, `SplitLeaf.swift`, `SplitPane.swift`, `MainArea.swift`, `BottomStrip.swift`, a row's two looks, a tab drag's landing | `docs/architecture/workspace-tabs.md` ("One tree of splits"). Run `scripts/try-splits.sh`, and `scripts/try-switch.sh --side --widths` when a session switch is involved |
+| `Wortel/Git/` | `docs/architecture/git-panel.md` |
 | Anything about worktrees | `docs/worktrees.md` (the model), `docs/architecture/worktrees.md` (the code) |
 | `Wortel/Files/`, `Wortel/Preview/`, `Wortel/Markdown/` | `docs/architecture/files-and-previews.md`, `docs/file-preview.md` |
 | `Wortel/Keeper/`, `WortelKeeper/` | `docs/architecture/keeper.md`, `../docs/incidents.md` |

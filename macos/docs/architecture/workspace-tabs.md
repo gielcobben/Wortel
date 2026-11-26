@@ -366,18 +366,45 @@ The views:
 - **Dimming** (`MainAreaController.dressRows`). With more than two leaves on
   screen, the tab in front of a row you are not in has the secondary label
   colour (`SideTabStrip.isKeyRow`), and the main row's title too. With one or
-  two, nothing is dimmed.
+  two, nothing is dimmed. `dressRows` is the one place that writes
+  `isKeyRow`, for every row. A made split's controller wrote it too at
+  first, without the count, and the two could disagree.
 - **Dividers** are the 1pt gap in `Chrome.hairline`, taking presses 4pt
   either side. A drag moves the divider in the view's own copy of the layout
   (`SplitLayout.moveDivider`), so the split follows the pointer in the same
   event. A double-click equalizes the whole tree, as ⌃⌘= does.
-- **No animation.** A split, a zoom and a divider's double-click each land
-  in one cut, so a terminal gets one new size. That now covers ⌥⌘B and ⌘J
-  as well, which slid while the column and the strip were panes: there is no
-  slide for them yet, and that is a gap to close, not a rule.
-  `GitPanelModel` still sets `animatesVisibilityChange` and
-  `animatesBottomChange`, and nothing reads them. `Motion.pane` is the
-  sidebar's alone for now.
+- **One cut, except the side column and the strip by hand.** A split
+  somebody makes or closes, a zoom, a divider's double-click and a session
+  switch each land in one cut, so a terminal gets one new size.
+- **The slide** (`SplitTreeView.apply(layout:zoomed:hidden:slides:)`).
+  ⌥⌘B and ⌘J slid while the column and the strip were AppKit panes, and
+  they still do: the tree moves the leaves itself. `MainAreaController.slides`
+  asks for it only when the set of those two on screen changed, in the same
+  session, with no zoom before or after, and the model says the change was
+  by hand (`GitPanelModel.animatesVisibilityChange` for the column,
+  `animatesBottomChange` for the strip: ⌥⌘B and ⌘J both ways, and a tab
+  opened there, opening only). A column or strip that goes because its last
+  tab closed cuts. So does anything a session switch changes. The view
+  slides only when a leaf really comes onto the screen or leaves it. It
+  then steps every leaf's real frame from where it is to where it goes, on
+  a timer at 120 a second in the common run loop modes, for `Motion.opening`
+  (0.26 s) or `Motion.closing` (0.18 s), along `Motion.curve` (worked out in
+  `ease`). Real frames, a step a frame, as AppKit's own split view steps a
+  pane open. Around it:
+  - Resizes are held for all of it (`SurfaceView.holdResizes`) and let go a
+    turn after it lands, when the frames are final. The terminal beside the
+    one sliding is resized once.
+  - The dividers are hidden for its length.
+  - `onPlaced` runs before anything moves, so every row has the look of the
+    place it will end in (`isAtTop` is read from the layout, not from the
+    frames in between).
+  - The leaf coming or going starts from, or ends at, nothing: squeezed
+    against the edge it shares with the neighbour that makes room for it
+    (`collapsed`).
+  - A slide is landed at once by another `apply` that changes something, by
+    the tree's own size changing under it (`layout`), and by `placeNow` (a
+    session switch). While one runs, `layout` leaves the frames alone.
+  `Motion.pane` is still the sidebar's alone: that one is AppKit's pane.
 
 Making one, and dropping on one:
 
@@ -447,21 +474,24 @@ Known limits:
 - A made split that emptied is hidden at once and leaves the window half a
   second later (`MainAreaController.syncTree`): a terminal moved out of it
   as its last tab is in its old host until the row it went to has shown it.
-- ⌥⌘B and ⌘J do not slide (above).
 - A column or a strip that was opened in a session out of sight, and never
   shown before the app quit, was saved at its guessed share: `unsized` is
   not saved, so it comes back at a third of the width, not the session's
   width. Read from the code, not tried.
-- A session's terminal out of sight follows a window resize by the whole
-  change (`SurfaceView.followWindow`), which assumed the panes beside it
-  keep their width. With a side column beside it the main row now takes only
-  its share of the change, so that terminal is told a size it will not be
-  shown at, and takes the real one when it is shown. Read from the code, not
-  measured.
-- `SplitPaneController.sync` sets its row's `isKeyRow` without the "more
-  than two" rule that `dressRows` has. With exactly two leaves on screen,
-  one of them a made split, which of the two writes lands last was not
-  checked.
+
+A session out of sight and a window resize. Its terminal follows the window
+once the resize ends (`SurfaceView.followWindow`), and that used to be "by as
+much as the window changed", which was right while the panes beside it kept
+their width. With shares, a terminal beside a side column takes only part of
+the change. So the app is asked instead (`SurfaceView.sizeWhenShown`, set in
+`AppDelegate`): `MainAreaController.terminalSize(of:)` lays the session's own
+tree out in this window as it is now, with that session's hidden leaves, and
+answers with its main row's page (the leaf less its row, a titlebar row along
+the top and 36pt lower down). It answers nothing when the main row is behind
+a zoom on another split, or the terminal is in no window of ours. Then, and
+only then, the old sum is used. A new leaf kind, or a row of another height,
+has to be right in `terminalSize` too, or hidden sessions are told a size a
+few points off.
 
 `scripts/try-splits.sh` is the test. It runs a throwaway copy of a Debug
 build, and `SplitProbe` in it (there only with a data folder of its own)
@@ -478,9 +508,17 @@ drops on an edge and into the strip, the side column moved to the left with
 the sidebar collapsed (`swap`, `sidebar`), and a relaunch: 0 faults.
 `scripts/try-switch.sh --side --widths` the same day: 0 of 72 returns wrong.
 `SwitchProbe` reads the side column's leaf from `SplitTreeView` now and
-drags the divider beside it. Not checked: `scripts/check-terminals.sh` on
-this build, a drag with a real pointer, several windows with splits, and the
-look by eye beyond the probe's pictures.
+drags the divider beside it. All of that was before the slide, the exact
+size for a session out of sight and the one owner for dimming went in. After
+them, the same day: `try-splits.sh --relaunch column column column strip
+strip strip right down zoom zoom column column resize:900x560 next next next
+strip strip`, 0 faults, and the five splits back after the relaunch. The
+script now deletes its copy's defaults before each run: they go by bundle
+id, and a sidebar an earlier run had hidden started the next run hidden. Not
+run again after those changes: `try-switch.sh --side --widths`, and the rest
+of `scripts/check-terminals.sh`, which was not run on the build with one
+tree at all. Not checked: a drag with a real pointer, several windows with
+splits, and the look by eye beyond the probe's pictures.
 
 Things that look like detours and aren't:
 
@@ -516,10 +554,12 @@ Things that look like detours and aren't:
   responder chain and swallow it.
 - **Terminals don't resize during a pane's animation** (`Motion.pane`,
   `SurfaceView.holdResizes`): one resize when it lands instead of one a frame,
-  each of which made the program inside redraw. Since 2026-11-26 the only
-  pane that animates is the sidebar: the side column and the strip are leaves
-  of the tree and open and close in one cut. A terminal is never told a size
-  under 40×20pt, which a collapsing pane used to pass through. A session
+  each of which made the program inside redraw. Since 2026-11-26 two things
+  animate: the sidebar, which is AppKit's pane (`Motion.pane`), and the side
+  column and the strip, which are leaves that the tree slides itself and
+  holds resizes for in the same way (`SplitTreeView`, above). A terminal is
+  never told a size under 40×20pt, which a pane or a leaf closing passes
+  through. A session
   switch holds resizes too, while the tree takes the new session's frames
   (`MainSplitViewController.show`, `MainAreaController.applyNow`).
 

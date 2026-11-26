@@ -75,6 +75,9 @@ wait_for() { # seconds, then a command that succeeds when ready
 }
 
 mkdir -p "$data" "$work/repo"
+# The copy's defaults outlive it (they go by bundle id): a sidebar an earlier
+# run hid would start this one hidden.
+defaults delete com.gielcobben.Wortel.splitprobe >/dev/null 2>&1
 cp -Rc "$app" "$copy"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.gielcobben.Wortel.splitprobe" "$copy/Contents/Info.plist"
 codesign --force --deep --sign - "$copy" 2>/dev/null

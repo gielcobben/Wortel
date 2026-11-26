@@ -640,12 +640,12 @@ final class GitPanelModel {
     /// the panel can show "not a git repository" rather than a blank flash.
     private(set) var resolvedNonRepo = false
 
-    /// Whether the pending `isVisible` change should animate the divider across.
-    /// False when it's the *session* that changed rather than the user toggling:
-    /// switching sessions is meant to be instant, and animating the collapse
-    /// would reflow the terminal every frame for the length of it. Read by
-    /// MainSplitViewController when it applies the change — imperatively, off the
-    /// back of `isVisible`'s own mutation, so it stays out of observation.
+    /// Whether the pending `isVisible` change should slide the side split in
+    /// or out. False when it's the *session* that changed rather than the user
+    /// toggling: switching sessions is meant to be instant. Read by
+    /// `MainAreaController.slides` when it applies the change, imperatively,
+    /// off the back of `isVisible`'s own mutation, so it stays out of
+    /// observation.
     @ObservationIgnored private(set) var animatesVisibilityChange = false
 
     /// The session the panel is pointed at. Weak — the manager owns sessions, and
@@ -1515,15 +1515,6 @@ final class GitPanelModel {
         } else {
             focus(.main)
         }
-    }
-
-    /// The strip's divider was dragged shut: record it like ⌘J would.
-    func bottomCollapsedByDrag() {
-        guard let session, session.bottomVisible else { return }
-        change(session) { $0.setVisible(false, in: .bottom) }
-        mirror(session, animated: false)
-        onStateChanged?()
-        focus(.main)
     }
 
     func openBottomTerminal() {

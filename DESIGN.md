@@ -369,11 +369,16 @@ dimmed, as it never was: the cursor says where you are.
   showing snaps; it never animates.
 - A terminal does not resize during an animation. It resizes once, when the
   pane lands.
-- A split appears and goes in one cut. So does a zoom.
-- **No slide for the side column and the strip yet.** They are splits since
-  2026-11-26, so ⌥⌘B and ⌘J cut too, where they used to slide open and
-  shut. That is a gap, not a decision. The opening and closing times above
-  are the sidebar's for now, which still slides.
+- The side column and the strip slide open and shut when you open or put
+  one away yourself (⌥⌘B, ⌘J, a tab opened there), in the times above, as
+  the sidebar does. They are splits since 2026-11-26 and the tree of splits
+  moves them itself: the one coming or going grows from, or shrinks to,
+  nothing against the edge of the neighbour that makes room. The lines
+  between splits are not drawn while it moves, and each row has the look of
+  where it will end up from the first frame.
+- A split you make or close appears and goes in one cut. So do a zoom,
+  making the splits equal, and a side column or strip that goes because its
+  last tab closed.
 - A new session's terminal is under an empty page of its own colour until
   its program has drawn. The page comes off in one cut, with nothing on it
   and no fade.

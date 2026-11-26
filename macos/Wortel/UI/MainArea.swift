@@ -174,7 +174,8 @@ final class MainAreaController: NSViewController {
         tree.setLeaves(views)
         sizeNewLeaves()
         let zoomed = git.zoomedRegion
-        tree.apply(layout: git.splitLayout, zoomed: zoomed?.leaf, hidden: git.hiddenLeaves)
+        tree.apply(layout: git.splitLayout, zoomed: zoomed?.leaf, hidden: git.hiddenLeaves,
+                   slides: slides(zoomed: zoomed))
         dressRows(zoomed: zoomed)
 
         // A split no session has any more is let go of. One that another
@@ -192,6 +193,29 @@ final class MainAreaController: NSViewController {
             }
         }
         if made || !dead.isEmpty { onRowsChanged() }
+    }
+
+    /// The side split and the strip as they were at the last sync, for
+    /// `slides`.
+    private var shownBefore = Set<SplitLayout.Leaf>()
+    private weak var sessionBefore: Session?
+    private var zoomedBefore: TabRegion?
+
+    /// Whether this change slides: the side split or the strip opened or put
+    /// away by hand (⌥⌘B, ⌘J, a tab opened there), as they always have. Not
+    /// a session switch, which is instant, and not with a zoom in it.
+    private func slides(zoomed: TabRegion?) -> Bool {
+        let hidden = git.hiddenLeaves
+        let shown = Set(git.splitLayout.leaves.filter { ($0 == .side || $0 == .bottom) && !hidden.contains($0) })
+        defer {
+            shownBefore = shown
+            sessionBefore = git.session
+            zoomedBefore = zoomed
+        }
+        guard git.session === sessionBefore, zoomed == nil, zoomedBefore == nil else { return false }
+        let changed = shown.symmetricDifference(shownBefore)
+        return (changed.contains(.side) && git.animatesVisibilityChange)
+            || (changed.contains(.bottom) && git.animatesBottomChange)
     }
 
     /// The side split and the strip, the first time this window lays them
@@ -377,6 +401,27 @@ final class MainAreaController: NSViewController {
         // A leaf's row is part of it: what is split is the page under it.
         return edge.axis == .row ? frame.width >= minimum.width * 2 + tree.metrics.gap
                                  : frame.height >= minimum.height * 2 + tree.metrics.gap
+    }
+
+    /// The size `session`'s own terminal has when the session is shown in
+    /// this window as the window is now: its main row's page in its own
+    /// tree. nil when that row would be out of sight behind a zoom. For a
+    /// terminal out of sight to follow a window resize with
+    /// (`SurfaceView.sizeWhenShown`).
+    func terminalSize(of session: Session) -> NSSize? {
+        let workspace = session.workspace
+        let bounds = tree.bounds
+        guard bounds.width > 1, bounds.height > 1 else { return nil }
+        let frame: NSRect?
+        switch workspace.zoomed {
+        case .main?: frame = bounds
+        case nil: frame = workspace.layout.frames(in: bounds, metrics: tree.metrics,
+                                                  hidden: workspace.hiddenLeaves).leaves[.main]
+        default: frame = nil
+        }
+        guard let frame else { return nil }
+        let row = frame.minY < 0.5 ? Chrome.titlebarHeight : SplitLeafView.rowHeight
+        return NSSize(width: frame.width, height: max(0, frame.height - row))
     }
 
     /// The view of a split, for the edge flash.

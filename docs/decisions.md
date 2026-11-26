@@ -173,12 +173,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   trap. **A fix that came with it:** the session's terminal took the
   keyboard whenever its area reappeared
   (`TerminalHostViewController.viewDidAppear`), so showing all splits again
-  after a zoom put you in the main terminal. It takes it now only when
-  nobody has it, which is how a window starts. **Limits.** A split's
-  terminal is a side terminal: agent tracking, naming and resume follow the
-  session's own terminal only. A split holds tabs, never another session.
-  Split Right and Split Down in a menu (a tab's, a row's "+", the session's
-  "…") do not check for room the way ⌘D does. **Verified (2026-11-26, macOS
+  after a zoom put you in the main terminal, and with a file in front of the
+  split you were in ⌘W then closed the session. It takes it the first time
+  only, which is a window starting, and whoever ends a zoom says where the
+  keyboard goes (`GitPanelModel.toggleZoom`, `onFocusMainTerminal`). **A
+  review of the branch found that and nine smaller things**, all fixed in
+  `04ef2e5`: a file dropped on an edge lost its diff, a press on a divider
+  moved the area you're in, a tab let go under its own row split upward
+  where it used to be a drag abandoned. **Limits.** A split's terminal is a
+  side terminal: agent tracking, naming and resume follow the session's own
+  terminal only, and like a terminal in the side column it is never
+  hibernated, so a session with four splits keeps four surfaces while it is
+  out of sight. A split holds tabs, never another session. ⌃⌥⌘ with an
+  arrow is taken from the program in the terminal even when there is
+  nowhere to go, as every disabled menu key here is. **Verified (2026-11-26, macOS
   27.0):** WortelTests, 1873 tests, 0 failures. In a throwaway copy, with
   `macos/scripts/try-splits.sh` and the Debug-only `SplitProbe`: three
   splits, a zoom and back, a divider drag, equalize, the keyboard by
@@ -188,10 +196,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   and relaunch with four splits. At every step each terminal on screen had
   been told the size of its view and sat inside its split, and the keyboard
   was where it was expected: 0 faults. The window's picture (`--picture`)
-  was looked at in dark and in light. **Not checked:** a drag with a real
-  pointer, light mode on a screen, several windows with splits, a split's
-  terminal dropped after its real minute or on a memory warning,
-  `scripts/check-terminals.sh`. **The site changes with the release, not
+  was looked at in dark and in light. After the review's fixes: the tour
+  again, a zoom ended by closing the zoomed split's last tab (keyboard and
+  area in the main terminal), a split's only terminal moved into the main
+  row, a drop on its own row's top edge (nowhere), 0 faults. **Not
+  checked:** a drag with a real pointer, light mode on a screen, several
+  windows with splits, the un-zoom with a file in front and the dropped
+  file's diff by hand. **The site changes with the release, not
   before:** it describes the released app. The places are in
   `web/src/data/site.ts`: the "One window, four places" feature, and the
   answers about Ghostty ("tabs, splits and a large configuration file"),

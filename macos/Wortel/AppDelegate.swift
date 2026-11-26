@@ -2027,14 +2027,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func split(_ edge: SplitLayout.Edge) {
         focusMainWindow()
         guard manager.selected != nil else { return }
-        let from = focusedRegion()
-        // Not when there's no room for two: a split that opens too small to
-        // use is worse than none (and the terminal in it starts a few
-        // columns wide).
-        guard splitController?.mainArea?.hasRoom(toSplit: from.isSplitLeaf ? from : .main, on: edge) != false else {
-            NSSound.beep()
-            return
-        }
         gitPanel.split(on: edge)
     }
 

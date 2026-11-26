@@ -243,6 +243,13 @@ final class MainSplitViewController: NSSplitViewController {
         drag.paneDrop = { [weak mainArea] point in mainArea?.paneDrop(at: point) }
         drag.isSplit = { [weak self] in self?.git.splitLayout.isSplit ?? false }
         drag.hasRoom = { [weak mainArea] region, edge in mainArea?.hasRoom(toSplit: region, on: edge) ?? true }
+        // ⌘D, ⇧⌘D and Split Right / Split Down in any menu: refused, with
+        // the system's sound, where the split would be too small to use.
+        git.allowsSplit = { [weak mainArea] region, edge in
+            guard mainArea?.hasRoom(toSplit: region, on: edge) == false else { return true }
+            NSSound.beep()
+            return false
+        }
         drag.tabCount = { [weak self] region in self?.git.tabs(in: region).count ?? 0 }
         drag.onSplit = { [weak self] tab, region, edge in
             self?.git.splitDropped(tab, beside: region, on: edge, isNew: false)

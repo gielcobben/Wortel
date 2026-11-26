@@ -197,7 +197,9 @@ The model:
   `splitFromCommand` (`wortel split`: a split beside the main row of any
   session of the window, on screen or not, that takes no keyboard and is no
   stop on Back's trail; `../cli.md`),
-  `closePane`, `toggleZoom`, `equalizeSplits`, and for a divider's drag
+  `toggleZoom`, `equalizeSplits`, `allowsSplit` (the window's answer to
+  "is there room for two", asked before a split made by a key or a menu;
+  a no is the system's sound), and for a divider's drag
   `setSplitLayout` (every step, writes the layout only) and
   `commitSplitLayout` (once, saves). `lastRegion` never answers with a split
   that has gone or that a zoom hides. `keyRegion` is the same answer, read so
@@ -289,15 +291,22 @@ The keyboard:
   covered, so it gives up the keyboard
   (`keepKeyboardOffCoveredTerminal`). Showing all of them again leaves you
   where you were: `TerminalHostViewController.viewDidAppear` takes the
-  keyboard only when nobody has it.
+  keyboard the first time only (it also runs each time the main row comes
+  back from being hidden), `toggleZoom` keeps the area it read while the
+  zoom was on, and `onFocusMainTerminal` lays the main area out first when
+  the change that sends the keyboard there has also just ended the zoom
+  that hid it.
 
 Known limits:
 
 - A split's terminal is a side terminal. Agent tracking, naming and resume
   follow the session's own terminal only.
 - A split holds tabs, never another session.
-- Tab ▸ Move Tab still reads "Down to Bottom Strip" and "Up to Main Area",
-  though ⌃⌘↓ and ⌃⌘↑ now go to a split when one is there.
+- A split's terminal is never hibernated, as a terminal in the side column
+  isn't: `HibernationPolicy` is only told about a session's own terminal.
+- A split that emptied is hidden at once and leaves the window half a second
+  later (`MainAreaController.syncPanes`): a terminal moved out of it as its
+  last tab is in its old host until the row it went to has shown it.
 
 `scripts/try-splits.sh` is the test. It runs a throwaway copy of a Debug
 build, and `SplitProbe` in it (there only with a data folder of its own)
@@ -309,7 +318,7 @@ macOS 27.0: the tour (three splits, zoom and back, a divider drag, equalize,
 focus by direction, a session switch away and back, a new tab, a tab moved,
 every split closed), drops on edges and middles, and a quit and relaunch
 with four splits, 0 faults in each. Not checked: a drag with a real pointer,
-several windows with splits, `scripts/check-terminals.sh`.
+several windows with splits.
 
 Things that look like detours and aren't:
 

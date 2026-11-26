@@ -923,12 +923,6 @@ final class GitPanelModel {
     /// `target` is for a tab closing in a session that isn't the focused one,
     /// which is what a side shell exiting in the background looks like.
     func close(_ tab: SideTab, in target: Session? = nil) {
-        close(tab, in: target, handsBack: true)
-    }
-
-    /// `handsBack`: whether the keyboard is seen to here, tab by tab, or by
-    /// the caller once it has closed all it means to (`closePane`).
-    private func close(_ tab: SideTab, in target: Session?, handsBack: Bool) {
         let wasIn = storedRegion
         guard let owner = target ?? session,
               let region = change(owner, { $0.close(tab) }) else { return }
@@ -941,7 +935,6 @@ final class GitPanelModel {
         guard owner === session else { return }
         mirror(owner, animated: false)
         resolveCurrent()
-        guard handsBack else { return }
         // A pane that went with its last tab, while you were in it: the
         // place itself is gone, whatever the tab was, so the keyboard goes
         // to the main area (or to what is zoomed over it).
@@ -1217,10 +1210,21 @@ final class GitPanelModel {
     func split(_ region: TabRegion? = nil, on edge: SplitLayout.Edge, with tab: SideTab? = nil,
                recordsHabit: Bool = false) -> TabRegion? {
         guard let session else { return nil }
+        let target = region ?? currentLeaf
+        // Not where there's no room for two: a split that opens too small
+        // to use is worse than none. Asked of the window, which knows the
+        // sizes (and says no out loud).
+        guard allowsSplit?(target.isSplitLeaf ? target : .main, edge) != false else { return nil }
         let tab = tab ?? .terminal(UUID())
-        return split(region ?? currentLeaf, on: edge, placing: tab, in: session,
+        return split(target, on: edge, placing: tab, in: session,
                      recordsHabit: recordsHabit, reports: session.workspace.region(of: tab) == nil)
     }
+
+    /// Whether a part of the main area is big enough on screen to be split
+    /// in two on an edge: the window's answer (`MainAreaController.hasRoom`),
+    /// for a split somebody asks for by a key or a menu. A drag is told
+    /// where it can land before it lands, and never comes here.
+    @ObservationIgnored var allowsSplit: ((TabRegion, SplitLayout.Edge) -> Bool)?
 
     /// A tab let go on the edge of a part of the main area: a file dragged
     /// out of a list (`isNew`), or a tab dragged from a row. A pane there,
@@ -1274,36 +1278,6 @@ final class GitPanelModel {
         return pane
     }
 
-    /// Close a pane: every tab in it, which is what takes a pane away.
-    /// Terminals still running something are asked about once, all together,
-    /// and before anything closes: a pane half closed is not what either
-    /// answer meant.
-    func closePane(_ region: TabRegion) {
-        guard let session, case .pane = region else { return }
-        let all = session.workspace.tabs(in: region)
-        guard !all.isEmpty else { return }
-        let running = all.filter { tab in
-            tab.terminalID.flatMap { session.sideSurfaces[$0]?.needsConfirmClose } == true
-        }
-        let closeAll = { [weak self, weak session] in
-            guard let self, let session else { return }
-            let wasIn = self.session === session && self.lastRegion == region
-            // Only what is still there: the question may have been up a while.
-            for tab in all where session.workspace.region(of: tab) == region {
-                self.close(tab, in: session, handsBack: false)
-            }
-            // The keyboard once, not tab by tab: to the main area, or to
-            // whatever is zoomed over it, if the pane was where you were.
-            guard wasIn, self.session === session, !self.exists(region) else { return }
-            self.focus(self.zoomedRegion ?? .main)
-        }
-        if !running.isEmpty, let confirmCloseTerminal {
-            confirmCloseTerminal(running.count, closeAll)
-        } else {
-            closeAll()
-        }
-    }
-
     /// Show one part of the main area alone, or all of them again
     /// (`WorkspaceTabs.toggleZoom`). `region` nil is the part you're in.
     /// Nothing is saved: a zoom is about now.
@@ -1330,20 +1304,6 @@ final class GitPanelModel {
         change(session) { $0.equalize() }
         mirror(session, animated: false)
         onStateChanged?()
-    }
-
-    /// A divider between two parts of the main area, dragged: see
-    /// `SplitLayout.moveDivider`. Called for every step of the drag, so it
-    /// writes the layout and nothing else. Saving is `commitSplitLayout`'s,
-    /// once, when the drag ends.
-    func moveSplitDivider(at path: [Int], index: Int, to position: CGFloat, in bounds: CGRect,
-                          metrics: SplitLayout.Metrics) {
-        guard let session else { return }
-        var layout = session.splitLayout
-        guard layout.moveDivider(at: path, index: index, to: position, in: bounds, metrics: metrics)
-        else { return }
-        session.splitLayout = layout
-        if splitLayout != layout { splitLayout = layout }
     }
 
     /// The layout as a divider's drag left it, from the view that moved it

@@ -6,8 +6,8 @@ Paths are relative to `macos/`.
 **UI shell** (`Wortel/UI/`) — two AppKit split panes (`MainSplitViewController`)
 hosting SwiftUI content, in an AppKit window (`AppDelegate`): the sidebar, and
 everything beside it (`MainAreaController`, the tree of splits,
-`workspace-tabs.md`). There were three until 2026-11-26, on the branch
-`flexible-panes`: the side column was a pane of its own here and the strip a
+`workspace-tabs.md`). There were three until 2026-11-26 (and there still are in the
+released app): the side column was a pane of its own here and the strip a
 pane inside the middle one. Both are splits of the tree now, so what is left
 for AppKit's split view is the one thing that isn't a split. The content
 pane has the lower holding priority, so it takes a sidebar drag and every
@@ -66,7 +66,9 @@ the rows along the top with where each starts and ends, and
 `leadingClearance`, how far the leading controls reach into it, and a
 `trailingClearance`, how far the trailing ones do
 (`WindowControls.trailingWidth`: the buttons, the 8pt to the window's edge,
-and 4pt before the row's own "+"). Only the leftmost row gets any of the
+and 4pt before the row's own "+"; measured once and kept, since this runs at
+every step of a divider's drag and a `fittingSize` is a solve of its own, so
+measure it again if a button there ever comes or goes). Only the leftmost row gets any of the
 first and only the rightmost any of the second. Which rows those are changes
 with the splits: the main row and the split with Changes as a rule, the
 other way round when that one is on the left, one row for both when a split is

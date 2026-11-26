@@ -230,10 +230,11 @@ final class MainAreaController: NSViewController {
     private weak var sessionBefore: Session?
     private var zoomedBefore: TabRegion?
 
-    /// Whether this change slides: the side split or the strip opened or
-    /// emptied by hand (⌥⌘B, ⌘J, a tab opened there or its last one
-    /// closed), as they always have. Not a session switch, which is
-    /// instant, and not with a zoom in it.
+    /// Whether this change slides: the side split or the strip opened by
+    /// hand (⌥⌘B, ⌘J, a tab opened there), as they always have. Not when
+    /// one goes with its last tab, which cuts (a close is mirrored without
+    /// animation), not a session switch, which is instant, and not with a
+    /// zoom in it.
     private func slides(zoomed: TabRegion?) -> Bool {
         let hidden = git.hiddenLeaves
         let shown = Set(git.splitLayout.leaves.filter { ($0 == .side || $0 == .bottom) && !hidden.contains($0) })

@@ -27,8 +27,8 @@ Every other split is there only while it has tabs. You make one with ⌘D or
 ⇧⌘D, or by letting go of a tab on a split's edge. Wortel opens two for you,
 the side column and the bottom strip. In code a split you made is
 `TabRegion.pane(id)` and the tree is `SplitLayout`: that "pane" means a split,
-not the pane defined below. Splits are on the branch `flexible-panes` since
-2026-11-26 and not released.
+not the pane defined below. Splits date from 2026-11-26. They are on
+`main` and not in a release yet.
 
 **Start cover.** The empty page over a new session's terminal while the line
 it was made with is still starting. What is typed under it is held.

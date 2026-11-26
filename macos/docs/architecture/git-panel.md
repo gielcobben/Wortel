@@ -176,7 +176,8 @@ always does. So `GitPanelModel` holds no visibility state of its own. `isVisible
 mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`;
 `SessionStore` persists it.
 
-Since 2026-11-26 (branch `flexible-panes`) that flag says less than it did.
+Since 2026-11-26 (the splits: on `main`, not in a release yet) that flag
+says less than it did.
 The column is a split of the window's tree, and nothing is hidden with its
 tabs kept: the split is on screen while its row holds a tab
 (`WorkspaceTabs.place` sets the flag) and gone when it holds none
@@ -187,10 +188,13 @@ or Files open":
 - **⌥⌘B** (`toggle`, View ▸ Show Changes and Files / Hide Changes and Files
   by `toggleCloses`) opens Changes and Files in the column's row, the pane
   last used in front (Changes when that was History), and takes the keyboard
-  there. With any pane in that row it closes them (`putAway`) and the
-  keyboard goes back to the main row. A terminal, a file or a page in that
-  row stays, and the split with it. A pane open in another split is not
-  opened again.
+  there. With any pane in that row, and that split on screen, it closes
+  them (`putAway`), and the keyboard goes back to the split you were in
+  before it. Behind a zoom on another split it shows them instead, which
+  ends the zoom (`toggleCloses` asks `isShowing(.side)`): closing panes
+  nobody can see was a bug the review before main found. A terminal, a file
+  or a page in that row stays, and the split with it. A pane open in
+  another split is not opened again.
 - A session switch that changes what is on screen **snaps** rather than
   slides (`animatesVisibilityChange`, read by `MainAreaController.slides`):
   switching sessions is meant to be instant. ⌥⌘B opening the panes slides
@@ -233,7 +237,7 @@ a preference: `MainAreaController.rememberSizes` writes the width when a
 divider is let go and the column's width changed by it. A window resize is
 not one.
 
-Since 2026-11-26 (branch `flexible-panes`) that width is only where the
+Since 2026-11-26 (the splits) that width is only where the
 column starts. The column is a split of the window's tree, and once it is
 laid out its size is a share of the area, like every split's
 (`workspace-tabs.md`, `MainAreaController.sizeNewLeaves`). So a window resize

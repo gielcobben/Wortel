@@ -100,8 +100,8 @@ enforced.
   before the window is useful. Nothing is hidden with its tabs kept either:
   a split is on screen while it holds a tab, and to have the window for one
   of them you zoom it (⇧⌘↩). That reversed "No splits" and "three fixed
-  places" on the branch `flexible-panes` and is not released
-  (`decisions.md`, 2026-11-26). A split holds tabs, never another session. There are no
+  places". It is on `main` and not in a release yet (`decisions.md`,
+  2026-11-26). A split holds tabs, never another session. There are no
   named layouts to save and load. The terminal engine's own tab and split
   actions still return "unhandled": the splits are Wortel's.
 - **No user config, no themes, no plugins.** Settings (⌘,) has a handful of

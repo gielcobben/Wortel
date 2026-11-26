@@ -195,8 +195,8 @@ shown, the keyboard, saving). Change a rule there, not in the model.
 
 **One tree of splits** (`SplitLayout`, `WorkspaceTabs`, `TabRegion`,
 `Wortel/UI/MainArea.swift`, `SplitTreeView.swift`, `SplitLeaf.swift`,
-`SplitPane.swift`, `BottomStrip.swift`). On the branch `flexible-panes` since
-2026-11-26, not released. It reversed "No splits", and the same day the side
+`SplitPane.swift`, `BottomStrip.swift`). Since 2026-11-26, on `main`, not in a
+release yet. It reversed "No splits", and the same day the side
 column and the strip became splits too (`../../../docs/decisions.md`, the two
 entries of that date). A person reads "split". The code says "pane" for a
 split somebody made (`TabRegion.pane(id)`, `panes`, `PaneBar`,
@@ -244,11 +244,15 @@ with it the one state a leaf could be in that a made split could not.
 - **⌥⌘B** is `GitPanelModel.toggle`. With no pane in the column's row it
   opens Changes and Files there (not one that is already open in another
   split), brings the pane last used forward (Changes when that was History)
-  and focuses it. With any of Changes, History or Files in that row it
-  closes them (`putAway`), and the keyboard goes back to the split you were
-  in before (`regionBefore`), or stays in the split when something else is
-  left in it. `toggleCloses` is
-  what the menu item reads for its title.
+  and focuses it. With any of Changes, History or Files in that row, and
+  that split on screen, it closes them (`putAway`), and the keyboard goes
+  back to the split you were in before (`regionBefore`), or stays in the
+  split when something else is left in it. `toggleCloses` is that test, for
+  the key and for the menu item's title alike. Behind a zoom on another
+  split the column is not on screen, so ⌥⌘B takes the open path: the panes
+  come forward and the zoom ends, as ⇧⌘C does. It used to look only at
+  whether the row held a pane, and with the main row zoomed it closed
+  Changes and Files nobody could see.
 - **⇧⌘C, ⇧⌘H, ⇧⌘F, ⌃⇧G** (and ⌃⌘1, ⌃⌘2, ⌃⌘3, what the first three were until
   2026-11-26) are `activate`. One rule, wherever the pane is: not open, it opens in the
   column's row; open behind another tab or behind a zoom, it comes forward
@@ -261,12 +265,12 @@ with it the one state a leaf could be in that a made split could not.
   that covered it) and takes the keyboard; in it, the keyboard goes to the
   main row. Nothing closes.
 - **A file from a build that could hide them** is mended once, as a session
-  is read (`WorkspaceTabs.showHidden`, from `SessionManager.restore`, before
-  `normalized`): the panes of a hidden column or strip are detached, and
+  is read (`WorkspaceTabs.showHidden`, from `PersistedSession.restoredTabs`,
+  before `normalized`): the panes of a hidden column or strip are detached, and
   what is left (a terminal, a file, a page) is made visible, because a shell
   must not be out of reach. The flags are still written, for an older build.
-- **What is left in the model and unused.** `sideVisible`, `bottomVisible`,
-  `WorkspaceTabs.setVisible` and `hiddenLeaves`, and the `hidden` set that
+- **What is left in the model and unused.** `sideVisible`, `bottomVisible`
+  and `hiddenLeaves`, and the `hidden` set that
   `SplitLayout.frames`, `moveDivider`, `neighbour` and `resize` take. Nothing
   in the app makes a leaf hidden after `showHidden` has run, so the set is
   empty everywhere it is passed (`SplitTreeView.apply`, `terminalSize(of:)`,
@@ -305,10 +309,11 @@ Everything else about the two is what every leaf does. The command that
 moved the column to the other side (⇧⌥⌘B) and the drop that did the same
 (the session's own tab let go on the column) are gone: Changes is put on the
 left by dragging its tab there, which makes a split of its own.
-`WorkspaceTabs.setSideLeading` and `GitPanelModel.setColumnLeading` are
-still there, and `sideColumnLeading` still says which outer edge the column's
-leaf is made at. One thing calls them, the probe's `swap` step: no command or drag in
-the app changes the side any more.
+`sideColumnLeading` (`WorkspaceTabs.sideLeading`) still says which outer edge
+the column's leaf is made at, and a session saved with it on the left keeps
+it there. Nothing in the app changes it any more: the functions that did
+(`setSideLeading`, `setColumnLeading`) and the probe's `swap` step were
+removed before the merge to main.
 
 The model:
 
@@ -374,7 +379,7 @@ The model:
   beside the main row of any session of the window, on screen or not, that
   takes no keyboard and is no stop on Back's trail; `../cli.md`),
   `toggleZoom`, `equalizeSplits`, `resizeLeaf` and `markLeafSized`,
-  `setColumnLeading`, `roomToSplit` (the window's answer, asked before a split made
+  `roomToSplit` (the window's answer, asked before a split made
   by a key or a menu, to where its room comes from: the split itself when
   it is big enough to be two, the whole row or column it is in when it
   isn't but that is, `SplitLayout.insertSpreading`, or nowhere, which is the
@@ -393,6 +398,17 @@ The model:
   read leniently: a tree that can't be read is no split, and
   `WorkspaceTabs.normalized` puts the tabs of a split with no place in the
   tree into the main row, so a terminal's shell is never left without a tab.
+  `paneTabs` is decoded one split at a time (`LenientPaneTabs`), so one
+  value that cannot be read costs that split and not the others. A split
+  whose key is no id still has tabs, a terminal among them perhaps: it is
+  given a fresh id, which no leaf names, and so folds into the main row.
+  Restore is one pure function, `PersistedSession.restoredTabs(panelVisible:defaultPane:)`,
+  which `SessionManager` and the tests both call: a test of restore that
+  builds its own steps can assert a state restore never makes, and two did.
+  And a divider's drag never stores a weight of zero
+  (`SplitLayout.moveDivider`, `setWeights`): a part with no room at all is
+  not written, since a zero is what `tidied` reads as a damaged file and
+  turns into equal shares.
   A file with no tree, or a tree without the column's or the strip's leaf,
   gets each put where it opens, `unsized`, so it comes up at the session's
   saved width.
@@ -485,6 +501,21 @@ The views:
   and the probe's `trace-blank` and `trace-tab` sample it every 20 ms
   (`../debugging.md`): that is how it was found, and how to check a change
   to the row's motion.
+- **How far the row can scroll, and which edge fades, are asked of the
+  width the content is going to** (`settledContentWidth`), never of the
+  content view. After a close, `slideIntoPlace` leaves the view as wide as
+  it was until the tabs have arrived, because a row scrolled past its new
+  end would jump the moment the view narrowed. Two places measured against
+  that stale width. With room for every tab, closing the last one let the
+  row scroll 20pt to "reveal" the tab coming forward, faded both edges, and
+  snapped back about 180 ms later (the scroll position read 0, 10, 12, 17,
+  19, 20, then 0). A row scrolled to its end did the opposite: it barely
+  moved, then jumped 69pt. Adding a tab never showed it, since the content
+  grows at once. Three rules for the strip, then, and they are one rule:
+  the plan reads nothing it writes, a reveal measures against the visible
+  width the row is going to, and a scroll limit against the content width
+  it is going to. `trace-close` and `select:<n>` are the probe steps for
+  it.
 - **The empty tab** (`SideTab.blank(id)`, `Wortel/UI/NewTabPage.swift`,
   since 2026-11-26). A tab that is nothing yet, titled "New Tab". A row's
   "+" opens one at the end of its row, in front (`openBlank`), and a row
@@ -553,7 +584,28 @@ The views:
   id, kept for as long as any session has that split and hidden (never
   removed) while it isn't on screen. Each keeps its terminals in a
   `SideTerminalHostController`, and its page is `TabContent` in a hosting
-  view with `sizingOptions = []`.
+  view with `sizingOptions = []`. That goes for every page's host, the main
+  row's and the strip's too (`MainAreaController.paneHost`,
+  `BottomPaneController.paneHost`): a leaf's frame is set by hand, and by
+  default a hosting controller turns its page's minimum size into required
+  constraints. A page taller than its leaf (the empty tab's, in a strip at
+  its minimum or a main row squeezed by ⇧⌘D twice) broke one and drew past
+  the leaf. Those two hosts were the last without it.
+- **A split of a session that is not on screen costs nothing per change.**
+  Every split ever shown in the window has a `SplitPaneController`, and
+  each used to sync, and work its page out again, on every tab change of
+  the session on screen. Now one that is not in that session is hidden
+  once and then left alone (`parked`), and `SplitPanePage` draws nothing
+  for it. What it reads while parked is only whether its split is in the
+  session on screen, which is what brings it back.
+- **Dead splits are let go a turn later** (`letGoOfDeadPanes`), outside the
+  tracked read in `syncTree`. Asked inside it, every session's `paneTabs`
+  was read there, and any split change of any session in any window synced
+  this window again. The trade: a split closed in a session that is not on
+  screen in this window is let go at this window's next sync, not at once.
+- `setLeaves` asks for a layout only when the leaves' views changed. Every
+  sync hands them over, a divider's drag syncs at every step, and each laid
+  the whole tree out a second time.
 - **Who makes room for the window's controls.** `MainAreaController`
   lists the rows along the top with where each starts and ends
   (`titlebarRows`), and `MainSplitViewController.updateLeadingInsets` gives
@@ -570,7 +622,16 @@ The views:
 - **Dividers** are the 1pt gap in `Chrome.hairline`, taking presses 4pt
   either side. A drag moves the divider in the view's own copy of the layout
   (`SplitLayout.moveDivider`), so the split follows the pointer in the same
-  event. A double-click equalizes the whole tree, as ⌃⌘= does.
+  event. A double-click equalizes the whole tree, as ⌃⌘= does. The sizes a
+  drag may change are noted on the press (`onDividerPressed`), before
+  anything moves: noted at the first step they were already the sizes after
+  it, and a drag of one step was never remembered as the column's width or
+  the strip's height. To VoiceOver a divider is a splitter
+  (`SplitDividerView`: role, orientation, its position as the value), as
+  `NSSplitView`'s were while the column was its pane. Increment and
+  decrement move it 20pt through the drag's own path (press, drag,
+  release), so a move made that way is saved and remembered like any other
+  (`../accessibility.md`).
 - **One cut, except the side column and the strip opening.** A split
   somebody makes or closes, a zoom, a divider's double-click, a session
   switch, and the column or the strip going each land in one cut, so a
@@ -608,6 +669,11 @@ The views:
   - A slide is landed at once by another `apply` that changes something, by
     the tree's own size changing under it (`layout`), and by `placeNow` (a
     session switch). While one runs, `layout` leaves the frames alone.
+  - A slide ends itself when its tree goes. Leaving its window lands it
+    (`viewWillMove(toWindow:)`), and a timer whose tree is gone stops and
+    lets the resizes go. Before that, a window closed within a slide left a
+    timer waking the main thread 120 times a second until quit, and every
+    terminal's resize held until the watchdog's two seconds.
   `Motion.pane` is still the sidebar's alone: that one is AppKit's pane.
 
 Making one, and dropping on one:
@@ -619,10 +685,17 @@ Making one, and dropping on one:
   `newSplitDown`) make the same split with an empty tab in it, where the
   keys put a terminal: a key says what it wants, and a button is pressed by
   someone still deciding. Split Right and Split Down in a tab's own menu
-  move that tab into a split (`SideTabStrip.onSplit`). The session's "…"
+  move that tab into a split (`SideTabStrip.onSplit`), and are offered only
+  when the tab is not alone in its split, whichever split that is: a
+  split's only tab would be split from itself, and `WorkspaceTabs.split`
+  refuses it. The session's "…"
   and a row's "+" have no split items. All of them go through the same
   `GitPanelModel.split`, which asks the window
-  where the room comes from (`roomToSplit`, `MainAreaController.room`). A
+  where the room comes from (`roomToSplit`, `MainAreaController.room`). The
+  room is measured in the layout without its zoom, which is the one the
+  split is made in, since a split made by a key ends the zoom. Measured on
+  screen, a zoomed split was the whole area and always had room, and ⌘D in
+  a zoomed side split 300pt wide made two of about 145. A
   leaf that is two minimums and a gap wide (or high) is halved. One that is
   not takes the new split's room from the whole row or column it is in, an
   equal share from every part (`SplitLayout.insertSpreading`): ⌘D in a side
@@ -659,6 +732,21 @@ Making one, and dropping on one:
 - A file out of Changes or Files lands the same way,
   the first file making the split and the rest opening in it. Over a
   terminal the drop stays the terminal's, which types the path.
+- **A drag can outlive what it started in, and a drop is refused then.**
+  `SideTabView.mouseDown` tracks the drag in a loop of `nextEvent`, which
+  runs the main queue while it waits. So a row can go during a drag (a
+  split's only tab, its server exited), and so can the session, or the tab
+  itself. Three guards, from the review before main. The tab and its row
+  are kept alive until the mouse-up (`trackDrag` under
+  `withExtendedLifetime`, `SideTabView.strip`): with the row gone the
+  drag's end never reached the controller, and the ghost and the lit zone
+  stayed drawn over the window. A new drag ends any old one first
+  (`TabDragController.finish()` at `.began`, for a tab and for a file).
+  And at the mouse-up the drop is made only if the tab is still in a row
+  and the session on screen is the one the drag began in (`stillHeld`,
+  `sessionOnScreen`, `dragSession`): otherwise a drop on an edge made a
+  split in one session holding another session's tab. Not tried by hand:
+  each needs a pointer and a tab that goes mid-drag.
 
 The keyboard:
 
@@ -680,11 +768,18 @@ The keyboard:
   you were in before it (`GitPanelModel.regionBefore`): what is zoomed if
   something is, else the latest entry of `regionTrail` that still exists
   and is on screen, else the main row. `lastRegion`'s setter keeps the
-  trail, the last twelve splits you were in, each once. It covers a made
-  split closing with its last tab, the column going when Changes and Files
-  are put away or its last tab closes, and the strip's last tab closing.
-  Until 2026-11-26 all of those went to the main row, so ⌘D three times and
-  then ⌘W put you two splits away from where you had just been.
+  trail, the last twelve splits you were in, each once. It covers any split
+  that goes with its last tab while you are in it, whatever kind of tab
+  that was: a made split, the column when Changes and Files are put away or
+  its last tab closes, the strip. Until 2026-11-26 all of those went to the
+  main row, so ⌘D three times and then ⌘W put you two splits away from
+  where you had just been. Two rules keep it honest (`close`, `putAway`).
+  The keyboard moves on a close only when you were in the split the tab
+  closed in: a shell that exits in another split, or a × clicked there,
+  leaves it where it is. And there is one refocus per close, in `close`.
+  `putAway` refocuses only a split that is still there. When both did it,
+  the first rewrote the trail the second read, and Escape on an empty tab
+  put you two splits back.
 - Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the
   titlebar), the tree view gives one leaf the whole area and hides the rest.
   ⇧⌘↩ from the column or the strip zooms that one. The hidden rows answer
@@ -706,7 +801,7 @@ Known limits:
 - A side terminal is never hibernated: `HibernationPolicy` is only told
   about a session's own terminal.
 - A made split that emptied is hidden at once and leaves the window half a
-  second later (`MainAreaController.syncTree`): a terminal moved out of it
+  second later (`MainAreaController.letGoOfDeadPanes`): a terminal moved out of it
   as its last tab is in its old host until the row it went to has shown it.
 - A column or a strip that was opened in a session out of sight, and never
   shown before the app quit, was saved at its guessed share: `unsized` is
@@ -722,14 +817,17 @@ the change. So the app is asked instead (`SurfaceView.sizeWhenShown`, set in
 tree out in this window as it is now (with that session's hidden leaves,
 of which there are none since nothing is hidden), and
 answers with its main row's page (the leaf less its row, a titlebar row along
-the top and 36pt lower down). It answers nothing when the main row is behind
-a zoom on another split, or the terminal is in no window of ours. Then, and
-only then, the old sum is used. A new leaf kind, or a row of another height,
+the top and 36pt lower down). Behind a zoom on another split it answers with
+the size the main row has when the zoom ends, which is the next size it is
+shown at. (It answered nothing there at first, and the terminal was resized
+again when the zoom ended.) It answers nothing only when the terminal is in
+no window of ours. Then, and only then, the old sum is used. A new leaf kind, or a row of another height,
 has to be right in `terminalSize` too, or hidden sessions are told a size a
 few points off.
 
 `scripts/try-splits.sh` is the test. It runs a throwaway copy of a Debug
-build, and `SplitProbe` in it (there only with a data folder of its own)
+build, and `SplitProbe` in it (there only when the copy was started with
+`WORTEL_DATA_DIR`, `DataDirectory.wasGiven`)
 makes the splits by the actions the menu sends, lets go of a tab
 through the drag's own resolver (`drop:<n>.<where>`), and writes down each
 split's frame and tabs, each terminal's view against its split and against
@@ -740,7 +838,8 @@ the strip likewise (240pt), splits of the main row, of the strip and of the
 side column, a zoom, focus by direction across all of them, a divider drag,
 equalize, a window resize (`resize:<w>x<h>`), a session switch and back,
 drops on an edge and into the strip, the side column moved to the left with
-the sidebar collapsed (`swap`, `sidebar`), and a relaunch: 0 faults.
+the sidebar collapsed (`sidebar`, and a `swap` step that has since been
+removed), and a relaunch: 0 faults.
 `scripts/try-switch.sh --side --widths` the same day: 0 of 72 returns wrong.
 `SwitchProbe` reads the side column's leaf from `SplitTreeView` now and
 drags the divider beside it. All of that was before the slide, the exact

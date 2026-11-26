@@ -318,7 +318,7 @@ feature is held to.
   the window for one split, zoom it (`⇧⌘↩`). A split holds
   tabs, never another session: the sidebar of named sessions is where you
   switch work. The engine's own tab and split actions still return "unhandled".
-  Splits are on the branch `flexible-panes` and not in a release yet
+  Splits are on `main` and not in a release yet
   ([`docs/decisions.md`](docs/decisions.md), 2026-11-26).
 - **Almost nothing to configure, and no user config.** Settings (⌘,) holds
   the few switches that differ per person. Everything about the terminal

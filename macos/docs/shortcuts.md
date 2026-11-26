@@ -175,7 +175,8 @@ below when ⌘J makes it. Putting them away, a split you make or close, a zoom
 and ⌃⌘= land in one cut.
 
 ⌘] and ⌘[ walk every split on screen in reading order, left to right and top
-down. ⌃⌥⌘ and an arrow goes by direction instead (View ▸ Focus Area).
+down (View ▸ Focus Next Split, Focus Previous Split). ⌃⌥⌘ and an arrow goes
+by direction instead (View ▸ Focus Split).
 
 A zoomed split is shown alone and the others are kept. Any split can be
 zoomed. A double-click on the empty part of a split's row zooms it too,
@@ -204,7 +205,8 @@ terminal took all of the change.
 There is no menu command to move Changes to the other side any more (it was
 ⇧⌥⌘B). Drag its tab to the left edge of your terminal's split instead.
 
-Splits were added on 2026-11-26 and are not in a release yet.
+Splits were added on 2026-11-26. They are on `main` and not in a release
+yet.
 
 ## Panes
 
@@ -269,7 +271,8 @@ How to split:
 - The two split buttons at the right end of the titlebar: the same split,
   with an empty tab in it that asks what goes there.
 - A right-click on a tab, then Split Right or Split Down: that tab moves into
-  a new split.
+  a new split. The two items are there only when the tab is not the only one
+  in its split.
 - Let go of a tab, or a file out of Changes or Files, on the edge of a split.
 - `wortel split`, from a script or an agent.
 - Changes, History and Files make a split at the right edge when there is

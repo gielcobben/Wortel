@@ -119,8 +119,8 @@ libghostty's frame at every step 6.8, 6.9 and 7.3. `--panes`: a pane sliding
 open or shut has about one turn of the run loop over 8.3 ms, where it had
 10 to 15. A machine that is busy moves every figure: at a load of 20 they
 double. Those figures are from while the side column was a pane of the
-window's split view. On the branch `flexible-panes` it is a split of the
-window's tree since 2026-11-26. `ResizeBench` reads that tree now: the
+window's split view. Since the splits of 2026-11-26 (on `main`, not in a
+release yet) it is a split of the window's tree. `ResizeBench` reads that tree now: the
 divider round drags the divider on the side column's inner edge, and
 `--panes` times the tree's own slide for the column. One thing reads
 differently: sizes are shares, so the side column gives with the terminal at

@@ -14,7 +14,7 @@ adding one, each of these has to be answered:
 
 1. **Can the app know the answer?** Then it gets no switch.
 2. **Is it flipped while working?** Then it is a checkmark in the View menu
-   (Sort Unread First; and, until 2026-11-26 on the branch `flexible-panes`,
+   (Sort Unread First; and, until the splits of 2026-11-26,
    which side the column is on), as Finder keeps its
    sorting there.
 3. **Is it about how the terminal looks or types?** Then it is decided in

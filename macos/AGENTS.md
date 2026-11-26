@@ -141,8 +141,8 @@ Skills are in `../.agents/skills/` (Claude Code reads them through
   splits that hold them are all Wortel's (see **Tabs and the workspace**),
   not libghostty's. Everything beside the sidebar is one tree of splits, and
   the side column and the strip are two of them, the ones Wortel opens for
-  you: there is no separate pane for either. Splits are on the branch
-  `flexible-panes`, not released (`../docs/decisions.md`, 2026-11-26).
+  you: there is no separate pane for either. Splits are on `main` and
+  not in a release yet (`../docs/decisions.md`, 2026-11-26).
 - Resources are shipped as **folder references** (`Resources/terminfo`,
   `Resources/ghostty`) landing in `Contents/Resources/`; the Zig core locates
   them via the `terminfo/78/xterm-ghostty` sentinel. Don't restructure those

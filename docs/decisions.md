@@ -2035,3 +2035,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   ("Claude") with the branch underneath while it prepares, so the title
   replaces words and nothing moves. A plain shell keeps the branch as its
   name: nothing will title it, and "Terminal" over its branch would say less.
+- **2026-11-26. CI keeps no Zig cache.** `mlugg/setup-zig` saved its own
+  cache of about 400 MB after every macOS run, a new entry each time (four
+  on `main` in two days), and a repository keeps 10 GB of caches, dropping
+  the least recently used. That puts the 32 MB Ghostty build at risk, and
+  losing it costs the five-minute build. Zig is only needed when that build
+  misses, so `use-cache: false`. The Ghostty cache was checked first: it
+  restores in 4 s and the build step then takes 1 s, so CI does not rebuild
+  Ghostty per commit.

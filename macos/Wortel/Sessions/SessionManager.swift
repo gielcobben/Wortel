@@ -837,7 +837,8 @@ final class SessionManager {
     /// linked worktree is covered by its repository's folder too
     /// (`folder(forWorktreeAt:)`): one in ~/.wortel/worktrees/… sits under no
     /// folder's root, and `wortel new` run from inside it used to find none.
-    /// Never makes a folder.
+    /// Never makes a folder. Reads the disk (a `.git` up the path), so it is
+    /// for one request at a time, not for a loop or a render.
     func folder(covering path: String) -> String? {
         let path = FolderRoot.normalize(path) ?? path
         if let home = GitWorktree.linked(containing: path)?.repoHome.flatMap(FolderRoot.normalize) {
@@ -1871,17 +1872,20 @@ final class SessionManager {
     /// shipping a socket instead of per-agent integrations. It defaults to the
     /// menu because that is what an unannotated caller is.
     ///
-    /// `beside` stands in for the selection in 3 and 4, and for the folder:
-    /// the session a `wortel new` was run in. An agent starting a session
+    /// `beside` is the session a `wortel new` was run in, and stands in for
+    /// the selection everywhere: in 3 and 4, as the row the new one goes
+    /// after, and as where ⌘W goes back to. An agent starting a session
     /// meant one next to itself, not next to whatever row you had clicked
-    /// meanwhile, and a caller at the top level keeps its new session there.
+    /// meanwhile. With `beside`, `folder` is final and nil means the top
+    /// level: the caller has already decided whether the caller's folder is
+    /// the right one (`wortel new --cwd` into another project isn't).
     @discardableResult
     func newSession(cwd: String? = nil, inFolder folder: String? = nil, beside: Session? = nil,
                     via origin: SessionOrigin = .menu, starting start: SessionStart) -> Session {
         // New sessions land next to what you're looking at: the explicit folder
         // (header context menu) or the selected session's folder, else top level.
         let selected = beside ?? (placingWindow ?? activeWindow)?.selected
-        let dir = folder ?? selected?.folderPath
+        let dir = beside != nil ? folder : (folder ?? selected?.folderPath)
         // Each remembered answer is checked before it's used, so a project that
         // moved on disk falls through to the next one rather than starting a
         // shell in a directory that isn't there. An explicit `cwd` isn't: the
@@ -1894,7 +1898,8 @@ final class SessionManager {
         // An agent headed for the home folder, or for another agent's own
         // folder, gets one of its own. Not where the caller named the place.
         if cwd == nil, let own = agentFolder(for: directory, starting: start) {
-            return makeSession(cwd: own.path, inFolder: dir, via: origin, starting: start) { [weak self] session in
+            return makeSession(cwd: own.path, inFolder: dir, beside: beside, via: origin,
+                               starting: start) { [weak self] session in
                 guard let self else { return }
                 let leaf = self.uniqueLeaf(own.name, in: dir)
                 session.name = dir.map { "\($0)/\(leaf)" } ?? leaf
@@ -1902,7 +1907,20 @@ final class SessionManager {
         }
         // Through `prepare`, because selecting the row starts its shell, and
         // that is before this returns.
-        return makeSession(cwd: directory, inFolder: dir, via: origin, starting: start)
+        return makeSession(cwd: directory, inFolder: dir, beside: beside, via: origin, starting: start)
+    }
+
+    /// Whether a session started in `path` from `session` belongs beside it:
+    /// `path` is inside its folder's directory, its checkout, or where it
+    /// stands or was born. A `wortel new --cwd` into another project isn't,
+    /// and filing it in the caller's folder would put it under a root that
+    /// doesn't hold it. A folder that is still just a label has no directory
+    /// to say no, so only the session's own places count.
+    func belongs(_ path: String, beside session: Session) -> Bool {
+        let path = FolderRoot.normalize(path) ?? path
+        let places = [root(ofFolder: session.folderPath), session.linkedCheckout?.root,
+                      session.cwd, session.originCwd].compactMap { $0.flatMap(FolderRoot.normalize) }
+        return places.contains { FolderRoot.root($0, contains: path) }
     }
 
     /// The folder of its own an agent session starts in instead of the home
@@ -1946,7 +1964,7 @@ final class SessionManager {
     /// nowhere else, when the row is made, so a worktree session that is
     /// still being prepared keeps the answer it was made with.
     private func makeSession(
-        cwd directory: String?, inFolder dir: String?, via origin: SessionOrigin,
+        cwd directory: String?, inFolder dir: String?, beside: Session? = nil, via origin: SessionOrigin,
         starting start: SessionStart, reported: Bool = true, prepare: ((Session) -> Void)? = nil
     ) -> Session {
         let preferred = AppSettings.shared.newSessionCommand
@@ -1985,10 +2003,10 @@ final class SessionManager {
         // folder, so it is no anchor for one.
         let index = SidebarLayout.indexForNew(
             inFolder: dir, rows: sessions.map { SidebarLayout.Row(id: $0.id, folder: $0.folderPath) },
-            selected: (placingWindow ?? activeWindow)?.selectedID, pinned: pinnedIDs)
+            selected: beside?.id ?? (placingWindow ?? activeWindow)?.selectedID, pinned: pinnedIDs)
         sessions.insert(session, at: index)
         let madeIn = placingWindow ?? activeWindow
-        let madeFrom = madeIn?.selectedID
+        let madeFrom = beside?.id ?? madeIn?.selectedID
         normalizeOrder() // slot the new row into its folder's contiguous block
         // Never select into a hidden row.
         if let dir { collapsedFolders.remove(dir) } else { setLooseCollapsed(false) }

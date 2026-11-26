@@ -232,7 +232,7 @@ final class WortelCLIService {
                        typing: input, reply: reply)
 
         case .newWorktree(let cwd, let name):
-            guard let cwd = cwd ?? manager.placingSelected?.cwd else {
+            guard let cwd = cwd ?? beside?.cwd ?? manager.placingSelected?.cwd else {
                 return reply(.failure("No session to take a repository from."))
             }
             _ = manager.newWorktreeSession(
@@ -245,7 +245,7 @@ final class WortelCLIService {
             guard let pr = PullRequestRef.parse(text) else {
                 return reply(.failure("\u{201c}\(text)\u{201d} isn't a pull request: give its number or its URL."))
             }
-            guard let cwd = cwd ?? manager.placingSelected?.cwd else {
+            guard let cwd = cwd ?? beside?.cwd ?? manager.placingSelected?.cwd else {
                 return reply(.failure("No session to take a repository from."))
             }
             _ = manager.newSession(
@@ -277,12 +277,16 @@ final class WortelCLIService {
         guard let branch else {
             // Filed where ⌘O would file that directory, when a folder covers
             // it (a worktree's repository counts); otherwise next to the
-            // session the command was run in, top level included; only from
-            // outside Wortel next to the selection. A script or an agent in
+            // session the command was run in when the directory is that
+            // session's, else at the top level; only from outside Wortel
+            // next to the selection. A script or an agent in
             // one project must not land its session in whichever folder the
             // sidebar happens to be showing.
-            let session = manager.newSession(cwd: cwd, inFolder: cwd.flatMap(manager.folder(covering:)),
-                                             beside: beside,
+            var folder = cwd.flatMap(manager.folder(covering:))
+            if folder == nil, let beside, cwd.map({ manager.belongs($0, beside: beside) }) ?? true {
+                folder = beside.folderPath
+            }
+            let session = manager.newSession(cwd: cwd, inFolder: folder, beside: beside,
                                              via: .cli, starting: input.map(SessionStart.line) ?? .plain)
             if let name { manager.rename(session, to: name) }
             orderFront()
@@ -295,7 +299,7 @@ final class WortelCLIService {
         // a script in one repo must not open a worktree of whichever repo the
         // sidebar happens to be pointing at. The row is on screen meanwhile,
         // saying it's preparing, as it is for the sheet.
-        guard let cwd = cwd ?? manager.placingSelected?.cwd else {
+        guard let cwd = cwd ?? beside?.cwd ?? manager.placingSelected?.cwd else {
             return reply(.failure("No session to take a repository from."))
         }
         let created = manager.newSession(

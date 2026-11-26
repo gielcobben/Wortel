@@ -185,13 +185,18 @@ The model:
   right is three thirds. After a divider has been dragged, a new split halves
   only the one it came from (`SplitLayout.insert`).
 - One leaf can be zoomed (`zoomed`, not saved): shown alone, the others kept.
-  Bringing a tab forward in another leaf, or splitting, ends it.
+  Bringing a tab forward in another leaf, or splitting, ends it. Except a
+  split made by `wortel split` (`keepsZoom`): the zoom stays and the new
+  split is behind it.
 - The session's terminal never leaves the main row, and a split's only tab
   can't be split off its own split.
 - `Session` holds it as `paneTabs`, `splitLayout` and `zoomedRegion`, and
   `Session.allTabs` is every tab in every row: what closing a session, the
   process roots and the browser lookups go through.
 - `GitPanelModel` mirrors the three and adds `split`, `splitDropped`,
+  `splitFromCommand` (`wortel split`: a split beside the main row of any
+  session of the window, on screen or not, that takes no keyboard and is no
+  stop on Back's trail; `../cli.md`),
   `closePane`, `toggleZoom`, `equalizeSplits`, and for a divider's drag
   `setSplitLayout` (every step, writes the layout only) and
   `commitSplitLayout` (once, saves). `lastRegion` never answers with a split

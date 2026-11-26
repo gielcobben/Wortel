@@ -307,6 +307,77 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertThrowsError(try parse(["new", "--", "echo", fits + "x"]))
     }
 
+    // MARK: - split
+
+    /// A new terminal beside the caller's main one: to the right unless told
+    /// which side, and in the caller's session unless told which.
+    func testSplitDefaultsToTheRightOfTheCaller() throws {
+        XCTAssertEqual(try parse(["split"]), .split(session: session, edge: "right", argv: []))
+        for edge in ["right", "down", "left", "up"] {
+            XCTAssertEqual(try parse(["split", edge]), .split(session: session, edge: edge, argv: []))
+        }
+        // Outside Wortel there is no session, and the app says so.
+        XCTAssertEqual(try WortelCommandParser.parse(["split", "down"], environment: [:], currentDirectory: nil),
+                       .split(session: nil, edge: "down", argv: []))
+    }
+
+    /// The sides are the app's (`SplitLayout.Edge`); the CLI spells them
+    /// itself because it can't see that type.
+    func testSplitSidesAreTheLayouts() {
+        XCTAssertEqual(Set(WortelCommandParser.splitEdges), Set(SplitLayout.Edge.allCases.map(\.rawValue)))
+        XCTAssertEqual(WortelCommandParser.splitEdges.first, "right")
+    }
+
+    func testSplitInAnotherSession() throws {
+        XCTAssertEqual(try parse(["split", "--session", "Site build"]),
+                       .split(session: "Site build", edge: "right", argv: []))
+        XCTAssertEqual(try parse(["split", "down", "--session", "6c6f1b1e"]),
+                       .split(session: "6c6f1b1e", edge: "down", argv: []))
+        XCTAssertEqual(try parse(["split", "--session", "x", "up"]), .split(session: "x", edge: "up", argv: []))
+        // A session called "left" is a session, not a side.
+        XCTAssertEqual(try parse(["split", "--session", "left"]), .split(session: "left", edge: "right", argv: []))
+    }
+
+    /// Everything after `--` is the command, its own flags and anything in it
+    /// that looks like ours included.
+    func testSplitRunningACommand() throws {
+        XCTAssertEqual(try parse(["split", "--", "npm", "run", "dev"]),
+                       .split(session: session, edge: "right", argv: ["npm", "run", "dev"]))
+        XCTAssertEqual(try parse(["split", "down", "--", "htop"]),
+                       .split(session: session, edge: "down", argv: ["htop"]))
+        XCTAssertEqual(try parse(["split", "left", "--session", "x", "--", "sh", "-c", "make && make test"]),
+                       .split(session: "x", edge: "left", argv: ["sh", "-c", "make && make test"]))
+        XCTAssertEqual(try parse(["split", "--", "tmux", "--session", "y", "left", "--", "a"]),
+                       .split(session: session, edge: "right", argv: ["tmux", "--session", "y", "left", "--", "a"]))
+    }
+
+    func testSplitRefusesWhatItCantRead() {
+        XCTAssertThrowsError(try parse(["split", "sideways"])) { error in
+            XCTAssertEqual(error as? WortelCommandParser.ParseError,
+                           .invalid("the side", "\u{201c}sideways\u{201d}", "right, down, left or up"))
+            XCTAssertEqual("\(error)", "the side can't be \u{201c}sideways\u{201d}: it takes right, down, left or up")
+        }
+        // One side: a second word is a command that lost its `--`.
+        XCTAssertThrowsError(try parse(["split", "down", "htop"])) { error in
+            XCTAssertEqual(error as? WortelCommandParser.ParseError, .unexpected("htop", "split"))
+        }
+        XCTAssertThrowsError(try parse(["split", "--"])) { error in
+            XCTAssertEqual(error as? WortelCommandParser.ParseError, .missing("a command after --", "split"))
+        }
+        XCTAssertThrowsError(try parse(["split", "--session"])) { error in
+            XCTAssertEqual(error as? WortelCommandParser.ParseError, .missing("a value", "--session"))
+        }
+        XCTAssertThrowsError(try parse(["split", "--session", ""]))
+        XCTAssertThrowsError(try parse(["split", "--sesion", "x"])) { error in
+            XCTAssertEqual(error as? WortelCommandParser.ParseError, .unknown("--sesion"))
+        }
+        // What can't be typed into a shell, as for `new`.
+        XCTAssertThrowsError(try parse(["split", "--", "printf", "a\tb"])) { error in
+            guard case .unrunnable? = error as? WortelCommandParser.ParseError else { return XCTFail("\(error)") }
+            XCTAssertFalse("\(error)".hasPrefix("new "), "said by split too")
+        }
+    }
+
     /// What the app accepts, and the other spelling of grey with it.
     func testColourNames() {
         XCTAssertEqual(SessionColour.named("yellow"), .yellow)
@@ -386,6 +457,8 @@ final class WortelCommandTests: XCTestCase {
             .newWorktree(cwd: "/a", name: nil),
             .newFromPullRequest(cwd: "/a", name: nil, pr: "12"),
             .newRunning(.newWorktree(cwd: "/a", name: nil), argv: ["claude", "--resume", "x"]),
+            .split(session: session, edge: "down", argv: ["npm", "run", "dev"]),
+            .split(session: nil, edge: "right", argv: []),
             .version,
         ]
         for command in commands {
@@ -410,6 +483,7 @@ final class WortelCommandTests: XCTestCase {
         XCTAssertEqual(WortelCommand.notify(session: nil, title: "a", body: nil).verb, "notify")
         XCTAssertEqual(WortelCommand.mark(session: nil, colour: "red").verb, "mark")
         XCTAssertEqual(WortelCommand.remind(session: nil, at: nil).verb, "remind")
+        XCTAssertEqual(WortelCommand.split(session: nil, edge: "right", argv: []).verb, "split")
         XCTAssertEqual(WortelCommand.list(caller: nil).verb, "list")
         XCTAssertEqual(WortelCommand.read(session: "a", lines: nil).verb, "read")
         XCTAssertEqual(WortelCommand.send(session: "a", text: "", enter: true).verb, "send")
@@ -419,7 +493,8 @@ final class WortelCommandTests: XCTestCase {
     }
 
     func testUsageListsEveryCommand() {
-        for verb in ["open", "new", "rename", "notify", "mark", "remind", "list", "read <session>",
+        for verb in ["open", "new", "rename", "notify", "mark", "remind", "split [right|down|left|up]", "list",
+                     "read <session>",
                      "send <session>", "wait <session>", "--version"] {
             XCTAssertTrue(WortelCommandParser.usage.contains(verb), "usage omits \(verb)")
         }
@@ -442,6 +517,7 @@ final class WortelCommandTests: XCTestCase {
         let plain = WortelCommand.newSession(cwd: nil, name: nil, branch: nil, base: nil)
         let worktree = WortelCommand.newWorktree(cwd: nil, name: nil)
         XCTAssertEqual(WortelCLI.answerDeadline(for: .rename(session: nil, name: "x")), 10)
+        XCTAssertEqual(WortelCLI.answerDeadline(for: .split(session: nil, edge: "right", argv: ["make"])), 10)
         XCTAssertEqual(WortelCLI.answerDeadline(for: plain), 10)
         XCTAssertEqual(WortelCLI.answerDeadline(for: .newSession(cwd: nil, name: nil, branch: "x", base: nil)), 660)
         XCTAssertEqual(WortelCLI.answerDeadline(for: worktree), 660)

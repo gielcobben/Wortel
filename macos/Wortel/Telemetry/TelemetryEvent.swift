@@ -698,6 +698,7 @@ enum CommandVerb: String {
     case remind
     case cd
     case close
+    case split
     case list
     case read
     case send

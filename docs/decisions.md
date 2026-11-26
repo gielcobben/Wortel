@@ -1762,6 +1762,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   narrowed around `bind`; a chmod after it left a window, and a Unix socket
   can't be fchmod'ed first), and a connection whose peer is another user, or
   can't be named, is closed unread (`getpeereid`).
+- **2026-11-26. `wortel split` opens a split and takes nothing.** An agent
+  that wants its dev server where the person can see it had `wortel new`,
+  which is a row of its own away from the work. `wortel split`, with a side
+  (`right`, `down`, `left`, `up`) and a command after `--`, puts a terminal in
+  a split beside the session's main row, in its folder. Unlike ⌘D it leaves
+  the keyboard, the selection, the window order, a zoom and Back's trail
+  alone, because it runs while someone is typing to the agent. Its shell
+  starts at once even when the session is not on screen or the split is
+  behind a zoom: a side terminal is otherwise made when its tab is first
+  shown, and a command that runs "when you next look" is not what was asked
+  for. It prints nothing: the terminal's id would be taken by `read` and
+  `send` as its session, and answer with the wrong screen. No `--focus`, and
+  no verb to close or read a split yet (`macos/docs/cli.md`).
 
 ## Shell integration
 

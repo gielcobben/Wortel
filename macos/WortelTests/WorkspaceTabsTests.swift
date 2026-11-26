@@ -891,6 +891,33 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertNil(tabs.zoomed)
     }
 
+    /// Unless it is a pane you didn't make (`wortel split`): the zoom stays,
+    /// on a pane or on the main row, with the new pane behind it, in the
+    /// tree and out of sight until the zoom ends.
+    func testASplitFromACommandLeavesAZoom() {
+        var tabs = column()
+        let pane = splitOff(changes, from: &tabs)
+        tabs.toggleZoom(pane)
+        let shell = terminal()
+        guard let made = tabs.split(.main, on: .down, placing: shell, recordsHabit: false, keepsZoom: true) else {
+            return XCTFail("nothing was split")
+        }
+        XCTAssertEqual(tabs.zoomed, pane)
+        XCTAssertEqual(tabs.region(of: shell), made)
+        XCTAssertTrue(tabs.layout.contains(made.leaf!))
+        XCTAssertFalse(tabs.isShowing(made))
+        XCTAssertTrue(tabs.isShowing(pane))
+        XCTAssertEqual(tabs, tabs.normalized(), "a layout a restart would leave as it is")
+        tabs.toggleZoom(pane)
+        XCTAssertTrue(tabs.isShowing(made))
+
+        tabs.toggleZoom(.main)
+        let second = tabs.split(.main, on: .right, placing: terminal(), recordsHabit: false, keepsZoom: true)
+        XCTAssertNotNil(second)
+        XCTAssertEqual(tabs.zoomed, .main)
+        XCTAssertTrue(tabs.showsSessionTerminal)
+    }
+
     /// A file or a browser split off by a drag makes the pane where its kind
     /// opens; a command (`recordsHabit: false`) doesn't.
     func testSplittingByADragTeachesWhereItsKindGoes() {

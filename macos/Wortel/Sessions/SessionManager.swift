@@ -5267,6 +5267,23 @@ final class SessionManager {
         return view
     }
 
+    /// One of `session`'s side terminals started now, on screen or not, with
+    /// `input` as its shell's first line: `wortel split`.
+    ///
+    /// A side terminal's view, and with it its shell, is otherwise made the
+    /// first time its tab is shown. For a split made in a session that isn't
+    /// in front, or behind a zoom, that is whenever someone next looks: the
+    /// dev server an agent asked for there would not be running until then,
+    /// and its line would have nowhere to wait (the keeper types it as it
+    /// forks the shell). So the shell starts when it is asked for, and the
+    /// row that later shows the view finds it made. Until one does it is
+    /// told it can't be seen, as a terminal behind another tab is.
+    func startSideTerminal(_ id: UUID, of session: Session, typing input: String?) -> SurfaceView {
+        let view = session.ensureSideSurface(id, runtime: runtime, initialInput: input)
+        if view.superview == nil { view.occlusionDidChange(visible: false) }
+        return view
+    }
+
     /// Put `line` on a prompt for the person to run: there, unsent, as if they
     /// had typed it and not yet pressed Return. For a command that is theirs
     /// to read first (an agent's own installer, `AgentInstall`).

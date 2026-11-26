@@ -30,13 +30,28 @@ final class WortelCLIService {
     /// Brought forward for anything that opens a window. Not activated — see
     /// the type's note.
     private let orderFront: () -> Void
+    /// What came of asking a session's window for a split.
+    enum SplitOutcome {
+        case made
+        /// The session's main row is too small to halve, which is what ⌘D
+        /// beeps at.
+        case noRoom
+        case notMade
+    }
+    /// Split a session's main area on an edge of its main row, holding the
+    /// tab, in whichever window the session is in, with nothing brought
+    /// forward and the keyboard left where it is. The app layer's, because
+    /// the rows are a window's (`GitPanelModel.splitFromCommand`).
+    private let splitMainArea: (Session, SplitLayout.Edge, SideTab) -> SplitOutcome
     private var server: WortelCLIServer?
 
     init(manager: SessionManager, openPreview: @escaping (URL) -> Void,
-         orderFront: @escaping () -> Void) {
+         orderFront: @escaping () -> Void,
+         splitMainArea: @escaping (Session, SplitLayout.Edge, SideTab) -> SplitOutcome) {
         self.manager = manager
         self.openPreview = openPreview
         self.orderFront = orderFront
+        self.splitMainArea = splitMainArea
     }
 
     func start() {
@@ -145,6 +160,9 @@ final class WortelCLIService {
                 return .success()
             })
 
+        case .split(let session, let edge, let argv):
+            reply(split(session, on: edge, running: argv))
+
         case .list(let callerID):
             reply(list(caller: callerID))
 
@@ -247,8 +265,8 @@ final class WortelCLIService {
 
         // Listed rather than `default`, so a fourth kind of `new` is a
         // compile error here instead of this refusal.
-        case .open, .rename, .notify, .mark, .remind, .changeDirectory, .close, .version, .newRunning,
-             .list, .read, .send, .wait:
+        case .open, .rename, .notify, .mark, .remind, .changeDirectory, .close, .split, .version,
+             .newRunning, .list, .read, .send, .wait:
             reply(.failure("Only a new session can be given a command to run."))
         }
     }
@@ -321,6 +339,59 @@ final class WortelCLIService {
             + "Wortel's keeper, so the command was not run in it.")
     }
 
+    /// `wortel split`: a new terminal in a split on `edge` of the session's
+    /// main row, in the session's folder, with `argv` as its shell's first
+    /// line when there is one.
+    ///
+    /// Nothing is brought forward and nothing takes the keyboard: an agent
+    /// runs this while a person is typing to it. In a session that is on
+    /// screen the split appears beside what they are typing in; in one that
+    /// isn't, it is there when the session is next selected. Either way the
+    /// shell starts now (`SessionManager.startSideTerminal`), so the command
+    /// is running whether or not anyone is looking.
+    ///
+    /// A session whose agent is asleep takes one like any other: the new
+    /// terminal is a shell of its own, and nothing is typed at the agent, so
+    /// there is nothing to wake it for (as there is for `send`).
+    private func split(_ id: String?, on edgeName: String, running argv: [String]) -> WortelResponse {
+        // Both checked again here: the socket is also spoken to directly.
+        guard let edge = SplitLayout.Edge(rawValue: edgeName) else {
+            return .failure("There's no side \u{201c}\(edgeName)\u{201d} to split on. Use right, down, left or up.")
+        }
+        var line: String?
+        if !argv.isEmpty {
+            do { line = try WortelCommandParser.startupLine(argv) } catch { return .failure("\(error)") }
+        }
+        return withSession(id) { session in
+            let quoted = "\u{201c}\(session.name)\u{201d}"
+            // As `read` and `send` say it: there is no folder for a shell
+            // to start in yet.
+            guard session.preparation == nil else {
+                return .failure("\(quoted) has no terminal yet: its worktree is still being made.")
+            }
+            let terminal = UUID()
+            switch splitMainArea(session, edge, .terminal(terminal)) {
+            case .made:
+                break
+            case .noRoom:
+                return .failure("There's no room for another split in \(quoted): both halves would be too "
+                    + "small to use. Make the window bigger, or close a split.")
+            case .notMade:
+                return .failure("\(quoted) could not be split.")
+            }
+            // In the same turn as the split, before any row has had the
+            // chance to make this terminal's view without its line.
+            let view = manager.startSideTerminal(terminal, of: session, typing: line)
+            if line != nil, view.initialInputDropped {
+                // A failure, as for `new`: a script that asked for a command
+                // needs the exit status to say it didn't run.
+                return .failure("Split \(quoted), but the new shell came up without Wortel's keeper, "
+                    + "so the command was not run in it.")
+            }
+            return .success()
+        }
+    }
+
     /// Run `body` on the session a command is about: the one it was run in.
     ///
     /// Two failures, and they read differently on purpose. No id at all means
@@ -329,8 +400,8 @@ final class WortelCLIService {
     /// the session was closed while something in it was still running, which is
     /// the ordinary end of a background job whose shell outlived its row.
     ///
-    /// A name instead of an id is `--session` on `rename`, `notify`, `mark` or `remind`,
-    /// and is looked up the way `read` and `send` look one up.
+    /// A name instead of an id is `--session` on `rename`, `notify`, `mark`, `remind`
+    /// or `split`, and is looked up the way `read` and `send` look one up.
     private func withSession(
         _ id: String?, _ body: (Session) -> WortelResponse
     ) -> WortelResponse {

@@ -49,8 +49,9 @@ import Foundation
 ///   split off its own pane: that would be the same pane in the same place.
 /// - One leaf can be zoomed: shown alone in the main area, the others kept
 ///   as they are. Bringing a tab forward in another leaf, or splitting, ends
-///   it; the column and the strip are beside the main area and leave it
-///   alone. A zoom is about now, so it isn't saved.
+///   it (a split made by `wortel split` doesn't: it waits behind the zoom);
+///   the column and the strip are beside the main area and leave it alone.
+///   A zoom is about now, so it isn't saved.
 /// - A habit that points at a pane which has gone is no habit: the kind
 ///   opens where it starts. A tab closed in a pane that has gone reopens in
 ///   the row you're in, or in the main row.
@@ -361,9 +362,14 @@ struct WorkspaceTabs: Equatable, Sendable {
     /// that isn't there are not, so asked about one of those it is the main
     /// row that is split. `recordsHabit`, as for `move`: whether this is you
     /// saying where the tab's kind belongs (a drag) or not (a command).
+    ///
+    /// `keepsZoom` is for a pane you didn't make (`wortel split`): a zoom
+    /// stays as it is, and the pane is there behind it when the zoom ends.
+    /// What you were looking at alone is not taken from you by a script.
     @discardableResult
     mutating func split(_ region: TabRegion, on edge: SplitLayout.Edge, placing tab: SideTab,
-                        id: UUID = UUID(), recordsHabit: Bool = true) -> TabRegion? {
+                        id: UUID = UUID(), recordsHabit: Bool = true,
+                        keepsZoom: Bool = false) -> TabRegion? {
         guard tab != .session, panes[id] == nil, !layout.contains(.pane(id)) else { return nil }
         var target = SplitLayout.Leaf.main
         if let leaf = region.leaf, exists(region), layout.contains(leaf) { target = leaf }
@@ -380,7 +386,7 @@ struct WorkspaceTabs: Equatable, Sendable {
         }
         panes[id] = PaneTabs(tabs: [tab], active: tab)
         // A new pane is something to look at, and a zoom would hide it.
-        zoomed = nil
+        if !keepsZoom { zoomed = nil }
         if recordsHabit { learnHome(of: tab, in: .pane(id)) }
         return .pane(id)
     }

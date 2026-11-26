@@ -60,6 +60,13 @@ enum WortelCommand: Codable, Equatable {
     /// (`SessionManager.closeFromCommand`). No `--session`: ending another
     /// session's work is not something to do by name from a script.
     case close(session: String?)
+    /// A new terminal in a split of a session's main area, on `edge` of its
+    /// main row (`right`, `down`, `left` or `up`), with `argv` typed into its
+    /// shell as the first line when there is one. By default the caller's
+    /// session. The edge goes over as typed and is checked by the app, as a
+    /// colour is: the edges are the app's (`SplitLayout.Edge`). The keyboard
+    /// and the selection stay where they are: see `docs/cli.md`.
+    case split(session: String?, edge: String, argv: [String])
     /// Every open session, described (`WortelSessionInfo`, as JSON in the
     /// reply's `value`). `caller` is the asking shell's `$WORTEL_SESSION_ID`,
     /// so the list can say which row is "you".
@@ -98,6 +105,7 @@ enum WortelCommand: Codable, Equatable {
         case .remind: return "remind"
         case .changeDirectory: return "cd"
         case .close: return "close"
+        case .split: return "split"
         case .list: return "list"
         case .read: return "read"
         case .send: return "send"
@@ -316,6 +324,11 @@ enum WortelCommandParser {
           close                    close this session when its agent's turn ends;
                                    its worktree goes to the Trash, after asking
                                    you if it has uncommitted files
+          split [right|down|left|up] [--session <s>] [-- <command>]
+                                   a new terminal in a split beside this session's
+                                   main one (right unless given), in its folder;
+                                   a command after -- runs in it. The keyboard
+                                   stays where it is
 
           list [--json]            the open sessions: id, name, state, agent,
                                    branch and directory
@@ -560,10 +573,38 @@ enum WortelCommandParser {
             if let extra = rest.first { throw ParseError.unexpected(extra, verb) }
             return .close(session: session)
 
+        case "split":
+            // Ours are the words before `--`, as for `new`: the command's
+            // own `--session` or `left` is the command's.
+            let separator = rest.firstIndex(of: "--")
+            let words = try Words(Array(rest[..<(separator ?? rest.count)]), valued: ["--session"], switches: [])
+            if words.positionals.count > 1 { throw ParseError.unexpected(words.positionals[1], verb) }
+            let edge = words.positionals.first ?? splitEdges[0]
+            guard splitEdges.contains(edge) else {
+                throw ParseError.invalid("the side", "\u{201c}\(edge)\u{201d}", "right, down, left or up")
+            }
+            if let named = words["--session"], named.isEmpty {
+                throw ParseError.missing("a session (an id or a name; `wortel list` shows them)", "--session")
+            }
+            var argv: [String] = []
+            if let separator {
+                argv = Array(rest[(separator + 1)...])
+                guard !argv.isEmpty else { throw ParseError.missing("a command after --", verb) }
+                // Checked here too, as `new` does: a command that can't be
+                // typed is a usage error before anything is split.
+                _ = try startupLine(argv)
+            }
+            return .split(session: words["--session"] ?? session, edge: edge, argv: argv)
+
         default:
             throw ParseError.unknown(verb)
         }
     }
+
+    /// The sides `split` takes, the default first. Spelled here because this
+    /// file is also the CLI's, which doesn't know the app's `SplitLayout.Edge`;
+    /// a test holds the two together.
+    static let splitEdges = ["right", "down", "left", "up"]
 
     /// `new`'s flags: which of the three it is, and where.
     private static func parseNew(_ rest: [String], currentDirectory: String?) throws -> WortelCommand {
@@ -683,7 +724,7 @@ enum WortelCommandParser {
         case missing(String, String)
         /// Two options that can't be given together.
         case conflict(String, String)
-        /// A command `new` can't type into a shell, and why.
+        /// A command `new` or `split` can't type into a shell, and why.
         case unrunnable(String)
         /// A word after the ones a command takes.
         case unexpected(String, String)
@@ -707,7 +748,7 @@ enum WortelCommandParser {
             case .conflict(let option, let others):
                 return "\(option) can't be used with \(others)"
             case .unrunnable(let why):
-                return "new can't run that command: \(why). Put it in a script and run the script."
+                return "can't run that command: \(why). Put it in a script and run the script."
             case .unexpected(let token, let verb):
                 return "\(verb) doesn't take \"\(token)\" (quote text with spaces, or put it after --)"
             case .invalid(let option, let value, let wanted):

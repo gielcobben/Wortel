@@ -233,6 +233,22 @@ final class MainAreaController: NSViewController {
     /// sight (zoomed away), there is nothing to measure and it may.
     func hasRoom(toSplit region: TabRegion, on edge: SplitLayout.Edge) -> Bool {
         guard let leaf = region.leaf, let frame = tree.frame(of: leaf) else { return true }
+        return hasRoom(toSplit: frame, on: edge)
+    }
+
+    /// The same for a layout that is not the one laid out here: another
+    /// session of this window, or this one's with a zoom over it (`wortel
+    /// split`, which splits what nobody is looking at). Measured in the area
+    /// as it is now. That is near enough for a session whose column or strip
+    /// differs, and it is what keeps a script from halving a session out of
+    /// sight until nothing in it can be used.
+    func hasRoom(toSplit region: TabRegion, on edge: SplitLayout.Edge, in layout: SplitLayout) -> Bool {
+        guard let leaf = region.leaf,
+              let frame = layout.frames(in: tree.bounds, metrics: tree.metrics).leaves[leaf] else { return true }
+        return hasRoom(toSplit: frame, on: edge)
+    }
+
+    private func hasRoom(toSplit frame: NSRect, on edge: SplitLayout.Edge) -> Bool {
         let minimum = tree.metrics.minimum
         return edge.axis == .row ? frame.width >= minimum.width * 2 + tree.metrics.gap
                                  : frame.height >= minimum.height * 2 + tree.metrics.gap

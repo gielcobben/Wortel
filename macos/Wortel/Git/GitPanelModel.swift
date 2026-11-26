@@ -856,7 +856,13 @@ final class GitPanelModel {
     /// Every way a tab comes to the front ends here, and that is what makes
     /// it a stop on Back and Forward's trail (`onTabBroughtForward`). A new
     /// one has to as well, or Back will skip what it showed.
-    private func settle(_ tab: SideTab, in session: Session, isStop: Bool = true) {
+    ///
+    /// `takesKeyboard` is false for a tab that came forward without you
+    /// (`splitFromCommand`): the views and the file follow, and that is all.
+    /// The keyboard, the area you're in and Back's trail are about where you
+    /// are, and you haven't moved.
+    private func settle(_ tab: SideTab, in session: Session, isStop: Bool = true,
+                        takesKeyboard: Bool = true) {
         let region = session.workspace.region(of: tab)
         // `pane` is the column's; a pane picked in another row only counts
         // as the one you last chose.
@@ -864,6 +870,7 @@ final class GitPanelModel {
         mirror(session, animated: true, animatesClosing: false)
         onStateChanged?()
         resolveCurrent()
+        guard takesKeyboard else { return }
         if let region {
             lastRegion = region
             if tab == .session { onFocusMainTerminal?() }
@@ -1238,6 +1245,32 @@ final class GitPanelModel {
         // The tab may have left the column, as in `move`.
         if let pane = session.activeSideTab?.pane, session.inspectorPane != pane { session.inspectorPane = pane }
         settle(tab, in: session)
+        return pane
+    }
+
+    /// A split a command asked for (`wortel split`), not you: a new pane on
+    /// `edge` of `owner`'s main row, holding `tab`, and nothing else moves.
+    /// The keyboard stays where it is, the area you're in stays the one you're
+    /// in, it is no stop on Back's trail, and a zoom is left alone, with the
+    /// pane behind it. An agent runs this while someone is typing to it.
+    ///
+    /// `owner` need not be the session on screen: then its rows change and
+    /// are saved, as in `close(_:in:)`, and the pane is there when it is next
+    /// selected. The pane, or nil when nothing was split.
+    @discardableResult
+    func splitFromCommand(on edge: SplitLayout.Edge, placing tab: SideTab, in owner: Session) -> TabRegion? {
+        let isNew = owner.workspace.region(of: tab) == nil
+        guard let pane = change(owner, {
+            $0.split(.main, on: edge, placing: tab, recordsHabit: false, keepsZoom: true)
+        }) else { return nil }
+        if isNew { reportOpened(tab, in: pane) }
+        // The tab may have left the column, as in `move`.
+        if let pane = owner.activeSideTab?.pane, owner.inspectorPane != pane { owner.inspectorPane = pane }
+        guard owner === session else {
+            onStateChanged?()
+            return pane
+        }
+        settle(tab, in: owner, takesKeyboard: false)
         return pane
     }
 

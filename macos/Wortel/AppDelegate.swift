@@ -444,7 +444,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // tab. Every other file: its preview.
                 if BrowserAddress.isPage(url) { self?.openPage(url) } else { self?.openPreview(url) }
             },
-            orderFront: { [weak self] in self?.window?.makeKeyAndOrderFront(nil) })
+            orderFront: { [weak self] in self?.window?.makeKeyAndOrderFront(nil) },
+            splitMainArea: { [weak self] session, edge, tab in
+                self?.splitFromCommand(session, on: edge, placing: tab) ?? .notMade
+            })
         cli.start()
         self.cli = cli
 
@@ -2033,6 +2036,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         gitPanel.split(on: edge)
+    }
+
+    /// `wortel split`: a split on `edge` of `session`'s main row, holding
+    /// `tab`, through the panel of the window the session is in. No window
+    /// comes forward and the keyboard stays where it is
+    /// (`GitPanelModel.splitFromCommand`).
+    private func splitFromCommand(_ session: Session, on edge: SplitLayout.Edge,
+                                  placing tab: SideTab) -> WortelCLIService.SplitOutcome {
+        let controller = controller(for: manager.window(of: session))
+        let git = controller?.gitPanel ?? gitPanel
+        // Measured, as ⌘D measures it: a split too small to use is worse
+        // than none. In the session's own layout, laid out in its window's
+        // main area as that is now, because the session may not be the one
+        // on screen there, or may have a zoom over its main row.
+        if controller?.split.mainArea?.hasRoom(toSplit: .main, on: edge, in: session.splitLayout) == false {
+            return .noRoom
+        }
+        return git.splitFromCommand(on: edge, placing: tab, in: session) != nil ? .made : .notMade
     }
 
     @objc func zoomSplit(_ sender: Any?) { gitPanel.toggleZoom() }

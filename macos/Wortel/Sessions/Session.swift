@@ -337,8 +337,10 @@ final class Session: Identifiable {
     @ObservationIgnored var onSurfaceCreated: ((SurfaceView) -> Void)?
 
     /// The live views of this session's side terminals, by tab id. Created the
-    /// first time their tab is shown and kept, like `surfaceView`, until the tab
-    /// closes: switching tabs or sessions hides them, never rebuilds them.
+    /// first time their tab is shown (or at once, for one a command made:
+    /// `SessionManager.startSideTerminal`) and kept, like `surfaceView`, until
+    /// the tab closes: switching tabs or sessions hides them, never rebuilds
+    /// them.
     @ObservationIgnored private(set) var sideSurfaces: [UUID: SurfaceView] = [:]
     /// Called when a side terminal's view is created, so the manager can wire its
     /// callbacks. The id is the tab's.
@@ -516,13 +518,18 @@ final class Session: Identifiable {
     /// shell back after a relaunch. It starts where the session's shell is now
     /// rather than where it was born: a terminal opened beside an agent is for
     /// the thing the agent is working on.
+    ///
+    /// `initialInput` is a line for its shell to run first (`wortel split --
+    /// <command>`), typed as a session's `startupInput` is. Only for the
+    /// call that makes the view: a terminal that already has one is running
+    /// what it runs, and nothing is typed into it.
     @discardableResult
-    func ensureSideSurface(_ id: UUID, runtime: GhosttyRuntime) -> SurfaceView {
+    func ensureSideSurface(_ id: UUID, runtime: GhosttyRuntime, initialInput: String? = nil) -> SurfaceView {
         if let view = sideSurfaces[id] { return view }
         // The session's ports, not a block of its own: a terminal beside an
         // agent is for the thing the agent is working on.
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd ?? originCwd, sessionID: id,
-                               environment: shellEnvironment)
+                               initialInput: initialInput, environment: shellEnvironment)
         sideSurfaces[id] = view
         onSideSurfaceCreated?(id, view)
         return view

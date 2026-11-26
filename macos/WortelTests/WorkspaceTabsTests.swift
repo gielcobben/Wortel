@@ -1329,6 +1329,26 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertTrue(tabs.showsSessionTerminal)
     }
 
+    /// A split asked of a leaf too small to be two takes its room from the
+    /// whole row (`spreads`); where the leaf has no such row it is halved.
+    func testASplitThatSpreadsTakesFromTheRow() {
+        var tabs = WorkspaceTabs()
+        let first = tabs.split(.main, on: .right, placing: terminal())!
+        tabs.layout = SplitLayout(root: .split(.row, [
+            .init(node: .leaf(.main), weight: 0.8), .init(node: .leaf(first.leaf), weight: 0.2),
+        ]))
+        let second = tabs.split(first, on: .right, placing: terminal(), spreads: true)!
+        guard case .split(.row, let parts) = tabs.layout.root else { return XCTFail("not a row") }
+        XCTAssertEqual(parts.map(\.node), [.leaf(.main), .leaf(first.leaf), .leaf(second.leaf)])
+        XCTAssertEqual(parts[2].weight, 1.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(parts[1].weight, 0.2 * 2 / 3, accuracy: 1e-9)
+
+        // Down from a leaf of a row: no column to take from, so it is halved.
+        let third = tabs.split(second, on: .down, placing: terminal(), spreads: true)!
+        XCTAssertTrue(tabs.layout.contains(third.leaf))
+        XCTAssertEqual(tabs.layout.share(of: third.leaf, along: .column) ?? 0, 0.5, accuracy: 1e-9)
+    }
+
     func testEqualizeEvensTheLayout() {
         var tabs = WorkspaceTabs()
         let first = tabs.split(.main, on: .right, placing: terminal())!

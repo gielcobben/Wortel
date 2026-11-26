@@ -283,9 +283,11 @@ The model:
   beside the main row of any session of the window, on screen or not, that
   takes no keyboard and is no stop on Back's trail; `../cli.md`),
   `toggleZoom`, `equalizeSplits`, `resizeLeaf` and `markLeafSized`,
-  `setColumnLeading`, `allowsSplit` (the window's answer to "is there room
-  for two", asked before a split made by a key or a menu; a no is the
-  system's sound), and for a divider's drag `setSplitLayout` (every step,
+  `setColumnLeading`, `roomToSplit` (the window's answer, asked before a split made
+  by a key or a menu, to where its room comes from: the split itself when
+  it is big enough to be two, the whole row or column it is in when it
+  isn't but that is, `SplitLayout.insertSpreading`, or nowhere, which is the
+  system's sound; `MainAreaController.room`), and for a divider's drag `setSplitLayout` (every step,
   writes the layout only) and `commitSplitLayout` (once, saves).
   `currentLeaf` is the leaf a command without a target acts on: the one you
   last worked in while it is in the tree and on screen, else the main row.

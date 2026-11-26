@@ -187,6 +187,41 @@ struct SplitLayout: Equatable, Sendable {
         return true
     }
 
+    /// Put `new` beside `target` as one more part of the row or column
+    /// `target` is in, taking an equal share of all of it: every part there
+    /// gives a little, where `insert(_:beside:on:)` halves `target` and
+    /// leaves the rest alone. For a `target` too small to be two while the
+    /// row it is in has the room. False, and nothing changes, when `target`
+    /// is not a part of a split that runs along `edge` (there is no row to
+    /// take from), isn't in the tree, or `new` already is.
+    @discardableResult
+    mutating func insertSpreading(_ new: Leaf, beside target: Leaf, on edge: Edge) -> Bool {
+        guard contains(target), !contains(new) else { return false }
+        var done = false
+        let spread = Self.spreading(new, beside: target, on: edge, in: root, done: &done)
+        guard done else { return false }
+        root = Self.tidied(spread)
+        return true
+    }
+
+    private static func spreading(_ new: Leaf, beside target: Leaf, on edge: Edge, in node: Node,
+                                  done: inout Bool) -> Node {
+        guard case .split(let axis, var parts) = node else { return node }
+        if axis == edge.axis, let index = parts.firstIndex(where: { $0.node == .leaf(target) }) {
+            let total = parts.reduce(0) { $0 + $1.weight }
+            let share = total / Double(parts.count + 1)
+            let scale = (total - share) / total
+            for part in parts.indices { parts[part].weight *= scale }
+            parts.insert(Part(node: .leaf(new), weight: share), at: edge.isLeading ? index : index + 1)
+            done = true
+            return .split(axis, parts)
+        }
+        for index in parts.indices where !done {
+            parts[index].node = spreading(new, beside: target, on: edge, in: parts[index].node, done: &done)
+        }
+        return .split(axis, parts)
+    }
+
     /// Put `new` at the outer edge of the whole tree, taking `share` of the
     /// whole along that edge's axis (0…1, held to 0.05…0.95), everything
     /// else scaled to the rest. A root that already runs that way gets one

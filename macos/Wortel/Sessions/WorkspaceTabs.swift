@@ -467,7 +467,7 @@ struct WorkspaceTabs: Equatable, Sendable {
     @discardableResult
     mutating func split(_ region: TabRegion, on edge: SplitLayout.Edge, placing tab: SideTab,
                         id: UUID = UUID(), recordsHabit: Bool = true,
-                        keepsZoom: Bool = false) -> TabRegion? {
+                        keepsZoom: Bool = false, spreads: Bool = false) -> TabRegion? {
         guard tab != .session, panes[id] == nil, !layout.contains(.pane(id)) else { return nil }
         var target = SplitLayout.Leaf.main
         if exists(region), layout.contains(region.leaf), !hiddenLeaves.contains(region.leaf) {
@@ -478,7 +478,12 @@ struct WorkspaceTabs: Equatable, Sendable {
         // Taking the tab out can take a leaf with it, when it was that
         // leaf's last. Never the one being split: that case just returned.
         detach(tab)
-        if !layout.insert(.pane(id), beside: target, on: edge) {
+        // `spreads`: the leaf is too small to be two, and the row it is in
+        // makes the room between all of its parts. Where there is no such
+        // row it is halved after all.
+        if spreads, layout.insertSpreading(.pane(id), beside: target, on: edge) {
+            // Made.
+        } else if !layout.insert(.pane(id), beside: target, on: edge) {
             // Only a tree that had lost its leaf, which `normalized` mends:
             // beside the main row then, rather than a tab that is nowhere.
             layout = layout.normalized()

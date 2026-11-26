@@ -285,8 +285,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   It is there only while it has tabs: closing its last one takes it away
   and its siblings take the room. Sizes are shares, so a window resize
   keeps them, and no split is laid out under 160 by 100 points while there
-  is room. ⌘D and ⇧⌘D beep and do nothing where the area is too small to be
-  two. ⇧⌘↩ shows one split alone and then all of them again (not saved),
+  is room. ⌘D and ⇧⌘D beep and do nothing where there is no room: first
+  that meant "where the split you are in is too small to be two", and ⌘D in
+  a side column 280 points wide did nothing, which the owner hit the same
+  day. Now a split too small to be two takes the new one's room from the
+  whole row or column it is in, an equal share from all
+  (`SplitLayout.insertSpreading`), and the beep is for a row with no room
+  either. ⇧⌘↩ shows one split alone and then all of them again (not saved),
   ⌃⌘= makes them equal, ⌘] and ⌘[ walk them in reading order, and the
   session's own terminal never leaves the main row. Saved per session as
   `splitLayout`, whenever the tree is more than the main row, and

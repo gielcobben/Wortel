@@ -175,9 +175,11 @@ session, the same as closing a tab in any other terminal ends its shell.
 ⌘D and ⇧⌘D put the new terminal in a split of its own, beside or under the
 split you're in. From the side column that is a split beside the side column
 (⌘D with Changes in front gives you a terminal next to Changes), and from the
-strip one beside the strip. Where the split you're in is too small to be two
-they beep and do nothing: a split is never laid out under 160 by 100 points
-while there is room. A split is there only while it has tabs, so closing its
+strip one beside the strip. Where the split you're in is too small to be two,
+the new one takes its room from the whole row instead, a little from each
+(⌘D in a narrow side column still gives you a terminal next to it). Only
+when the row has no room either do they beep and do nothing: a split is
+never laid out under 160 by 100 points while there is room. A split is there only while it has tabs, so closing its
 last tab closes the split and its neighbours take the room.
 
 Split Right and Split Down are also in a tab's right-click menu, where they

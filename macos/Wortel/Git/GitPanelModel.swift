@@ -1236,20 +1236,32 @@ final class GitPanelModel {
                recordsHabit: Bool = false) -> TabRegion? {
         guard let session else { return nil }
         let target = region ?? currentLeaf
-        // Not where there's no room for two: a split that opens too small
-        // to use is worse than none. Asked of the window, which knows the
-        // sizes (and says no out loud).
-        guard allowsSplit?(splitTarget(target), edge) != false else { return nil }
+        // Asked of the window, which knows the sizes: halved when the split
+        // is big enough to be two, room made by the whole row when it isn't
+        // but the row is, and not at all (said out loud) when neither is. A
+        // split that opens too small to use is worse than none.
+        let room = roomToSplit?(splitTarget(target), edge) ?? .halves
+        guard room != .none else { return nil }
         let tab = tab ?? .terminal(UUID())
-        return split(target, on: edge, placing: tab, in: session,
-                     recordsHabit: recordsHabit, reports: session.workspace.region(of: tab) == nil)
+        return split(target, on: edge, placing: tab, in: session, recordsHabit: recordsHabit,
+                     reports: session.workspace.region(of: tab) == nil, spreads: room == .spreads)
     }
 
-    /// Whether a part of the main area is big enough on screen to be split
-    /// in two on an edge: the window's answer (`MainAreaController.hasRoom`),
-    /// for a split somebody asks for by a key or a menu. A drag is told
-    /// where it can land before it lands, and never comes here.
-    @ObservationIgnored var allowsSplit: ((TabRegion, SplitLayout.Edge) -> Bool)?
+    /// How a split asked for by a key or a menu finds its room.
+    enum SplitRoom {
+        /// The split it is asked of is big enough to be two.
+        case halves
+        /// It isn't, but the row or column it is in can give the new one an
+        /// equal share: ⌘D in a narrow side split.
+        case spreads
+        /// Neither: nothing is made.
+        case none
+    }
+
+    /// The window's answer to where a new split's room comes from
+    /// (`MainAreaController.room`). A drag is told where it can land before
+    /// it lands, and never comes here.
+    @ObservationIgnored var roomToSplit: ((TabRegion, SplitLayout.Edge) -> SplitRoom)?
 
     /// A tab let go on the edge of a part of the main area: a file dragged
     /// out of a list (`isNew`), or a tab dragged from a row. A pane there,
@@ -1261,14 +1273,14 @@ final class GitPanelModel {
     func splitDropped(_ tab: SideTab, beside region: TabRegion, on edge: SplitLayout.Edge, isNew: Bool) {
         guard let session else { return }
         split(region, on: edge, placing: tab, in: session, recordsHabit: true,
-              reports: isNew && session.workspace.region(of: tab) == nil)
+              reports: isNew && session.workspace.region(of: tab) == nil, spreads: false)
     }
 
     @discardableResult
     private func split(_ region: TabRegion, on edge: SplitLayout.Edge, placing tab: SideTab,
-                       in session: Session, recordsHabit: Bool, reports: Bool) -> TabRegion? {
+                       in session: Session, recordsHabit: Bool, reports: Bool, spreads: Bool) -> TabRegion? {
         guard let pane = change(session, {
-            $0.split(region, on: edge, placing: tab, recordsHabit: recordsHabit)
+            $0.split(region, on: edge, placing: tab, recordsHabit: recordsHabit, spreads: spreads)
         }) else { return nil }
         if reports { reportOpened(tab, in: pane) }
         // The tab may have left the column, as in `move`.

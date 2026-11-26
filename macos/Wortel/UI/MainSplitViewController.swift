@@ -160,12 +160,13 @@ final class MainSplitViewController: NSSplitViewController {
         drag.tabCount = { [weak self] region in self?.git.tabs(in: region).count ?? 0 }
         drag.columnLeading = { [weak self] in self?.git.columnLeading ?? false }
         drag.regionOf = { [weak self] tab in self?.git.session?.workspace.region(of: tab) }
-        // ⌘D, ⇧⌘D and Split Right / Split Down in any menu: refused, with
-        // the system's sound, where the split would be too small to use.
-        git.allowsSplit = { [weak mainArea] region, edge in
-            guard mainArea?.hasRoom(toSplit: region, on: edge) == false else { return true }
-            NSSound.beep()
-            return false
+        // ⌘D, ⇧⌘D and Split Right / Split Down in any menu: where the new
+        // split's room comes from, and the system's sound where there is
+        // none to be had.
+        git.roomToSplit = { [weak mainArea] region, edge in
+            let room = mainArea?.room(toSplit: region, on: edge) ?? .halves
+            if room == .none { NSSound.beep() }
+            return room
         }
         drag.onSwap = { [weak self] _, leading in self?.git.setColumnLeading(leading) }
         drag.onDrop = { [weak self] tab, region, index in

@@ -404,6 +404,30 @@ final class MainAreaController: NSViewController {
         return hasRoom(toSplit: frame, on: edge)
     }
 
+    /// Where a split asked of `region` on `edge` finds its room: in the
+    /// split itself when it is big enough to be two; in the row or column it
+    /// is a part of when that can give the new split an equal share with
+    /// nobody left under the least a split is laid out at (⌘D in a side
+    /// split 280 points wide used to do nothing but beep); and nowhere
+    /// otherwise.
+    func room(toSplit region: TabRegion, on edge: SplitLayout.Edge) -> GitPanelModel.SplitRoom {
+        if hasRoom(toSplit: region, on: edge) { return .halves }
+        var layout = git.splitLayout
+        let standIn = SplitLayout.Leaf.pane(UUID())
+        guard git.zoomedRegion == nil, layout.insertSpreading(standIn, beside: region.leaf, on: edge) else { return .none }
+        let before = git.splitLayout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves
+        let after = layout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves
+        let minimum = tree.metrics.minimum
+        // Everybody the new split took from, and the new split: none of
+        // them under the minimum along the way it was made.
+        for (leaf, frame) in after where before[leaf] != frame {
+            let extent = edge.axis == .row ? frame.width : frame.height
+            let least = edge.axis == .row ? minimum.width : minimum.height
+            if extent < least { return .none }
+        }
+        return .spreads
+    }
+
     /// The same for a layout that is not the one laid out here: another
     /// session of this window, or this one's with a zoom over it (`wortel
     /// split`, which splits what nobody is looking at). Measured in the area

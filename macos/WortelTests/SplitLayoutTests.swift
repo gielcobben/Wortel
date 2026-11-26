@@ -111,6 +111,41 @@ final class SplitLayoutTests: XCTestCase {
         assertWellFormed(layout)
     }
 
+    /// Spreading: the new leaf is one more part of the row its target is
+    /// in, with an equal share of all of it, and every other part gives in
+    /// proportion. For a target too small to be two.
+    func testSpreadingTakesAnEqualShareFromTheWholeRow() {
+        var layout = SplitLayout(root: .split(.row, [
+            .init(node: .leaf(.main), weight: 0.75), .init(node: .leaf(.side), weight: 0.25),
+        ]))
+        XCTAssertTrue(layout.insertSpreading(b, beside: .side, on: .right))
+        XCTAssertEqual(layout.leaves, [.main, .side, b])
+        let weights = parts(of: layout).map(\.weight)
+        XCTAssertEqual(weights[0], 0.5, accuracy: 1e-9)
+        XCTAssertEqual(weights[1], 1.0 / 6, accuracy: 1e-9)
+        XCTAssertEqual(weights[2], 1.0 / 3, accuracy: 1e-9)
+        assertWellFormed(layout)
+
+        XCTAssertTrue(layout.insertSpreading(c, beside: .side, on: .left))
+        XCTAssertEqual(layout.leaves, [.main, c, .side, b])
+        assertWellFormed(layout)
+    }
+
+    /// Only where there is a row to take from: a leaf whose split runs the
+    /// other way, or the only leaf, is not spread, and nothing changes.
+    func testSpreadingNeedsARowAlongTheEdge() {
+        var layout = SplitLayout()
+        XCTAssertFalse(layout.insertSpreading(a, beside: .main, on: .right))
+        XCTAssertEqual(layout, SplitLayout())
+
+        layout.insert(a, beside: .main, on: .right)
+        let before = layout
+        XCTAssertFalse(layout.insertSpreading(b, beside: a, on: .down), "a row has no column to take from")
+        XCTAssertFalse(layout.insertSpreading(a, beside: .main, on: .right), "already there")
+        XCTAssertFalse(layout.insertSpreading(b, beside: c, on: .right), "no such leaf")
+        XCTAssertEqual(layout, before)
+    }
+
     /// Once the sizes are somebody's choice (a divider was dragged), a new
     /// sibling only halves the pane it was split from.
     func testASiblingAmongUnequalPanesHalvesOnlyItsSource() {

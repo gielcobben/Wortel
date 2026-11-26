@@ -98,6 +98,7 @@ final class BlocksMarkupSurface: MarkupSurface {
         observe()
         find()
         moved?()
+        land()
     }
 
     private func find() {
@@ -163,13 +164,53 @@ final class BlocksMarkupSurface: MarkupSurface {
 
     func forget(_ number: Int) { ties[number] = nil }
 
-    /// The document scrolls its block to the middle. Asked of the view and
-    /// not done here: a block out of view has no frame to scroll to.
-    func reveal(_ number: Int) {
-        guard let tie = ties[number], !tie.lost else { return }
-        if let placement = placement(of: number),
-           placement.clip.contains(CGRect(origin: placement.origin, size: placement.size)) { return }
+    /// A mark whose block is built is moved into view here, by its own box.
+    /// One whose block is not has no frame to scroll to: the document's
+    /// reader takes the block near (`MarkupViews.revealBlock`), and the
+    /// mark is placed exactly when the block reports its frame
+    /// (`changed`). The block alone was not enough: centring a 1,262pt
+    /// code block left a mark near its foot 300pt below the view.
+    func reveal(_ mark: Mark, coveredBelow covered: CGFloat) {
+        guard let tie = ties[mark.number], !tie.lost else { return }
+        revealing = nil
+        if place(mark, coveredBelow: covered) { return }
+        revealing = Revealing(mark: mark, covered: covered, until: Date().addingTimeInterval(Self.landing))
         views.revealBlock(tie.block)
+    }
+
+    /// A mark on its way into view, waiting for its block to be built.
+    private struct Revealing {
+        let mark: Mark
+        let covered: CGFloat
+        let until: Date
+    }
+    private var revealing: Revealing?
+    /// How long a mark waits for its block. Past that, a frame reported is
+    /// the reader scrolling on, and is not to be pulled back.
+    private static let landing: TimeInterval = 1
+
+    /// Into the room the note bar leaves, when the mark has a place.
+    private func place(_ mark: Mark, coveredBelow covered: CGFloat, moving: Bool = false) -> Bool {
+        guard let layer, let scroll, let placement = placement(of: mark.number) else { return false }
+        let room = MarkReveal.room(layer.bounds.size, coveredBelow: covered).intersection(placement.clip)
+        scroll.slide(by: MarkReveal.shift(placement.box(of: mark.shape), into: room, moving: moving), measuredIn: layer)
+        return true
+    }
+
+    /// The block a revealed mark waits for may have been built.
+    private func land() {
+        guard let waiting = revealing else { return }
+        guard Date() < waiting.until else {
+            revealing = nil
+            return
+        }
+        guard placement(of: waiting.mark.number) != nil else { return }
+        revealing = nil
+        // Not inside SwiftUI's report of the frames: a scroll from there
+        // changes the stack while it is being laid out.
+        DispatchQueue.main.async { [weak self] in
+            _ = self?.place(waiting.mark, coveredBelow: waiting.covered, moving: true)
+        }
     }
 
     /// The column the document is read in: every block is as wide as the

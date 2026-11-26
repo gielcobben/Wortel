@@ -44,6 +44,68 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(placement.point(CGPoint(x: 12, y: 24)), CGPoint(x: 118, y: 236))
     }
 
+    // MARK: - Bringing a mark into view
+
+    /// A 700 by 500 view whose bottom 98 the note bar covers.
+    private let room = MarkReveal.room(CGSize(width: 700, height: 500), coveredBelow: 98)
+
+    func testTheRoomIsWhatTheNoteBarLeaves() {
+        XCTAssertEqual(room, CGRect(x: 0, y: 0, width: 700, height: 402))
+        XCTAssertEqual(MarkReveal.room(CGSize(width: 300, height: 80), coveredBelow: 120).height, 0)
+    }
+
+    func testAMarkWhollyInViewDoesNotMove() {
+        XCTAssertEqual(MarkReveal.shift(CGRect(x: 50, y: 150, width: 220, height: 36), into: room), .zero)
+        // At the edges of the room, as measured, still in it.
+        XCTAssertEqual(MarkReveal.shift(CGRect(x: 0, y: 0, width: 700, height: 402.4), into: room), .zero)
+    }
+
+    func testAMarkUnderTheNoteBarIsCentredInWhatItLeaves() {
+        // Wholly inside the view, but under the bar: it counted as shown.
+        let under = CGRect(x: 50, y: 422, width: 220, height: 36)
+        let shift = MarkReveal.shift(under, into: room)
+        XCTAssertEqual(shift.dx, 0)
+        XCTAssertEqual(under.offsetBy(dx: 0, dy: shift.dy).midY, room.midY)
+        // Half under it.
+        let half = CGRect(x: 50, y: 394, width: 220, height: 36)
+        XCTAssertEqual(half.offsetBy(dx: 0, dy: MarkReveal.shift(half, into: room).dy).midY, room.midY)
+    }
+
+    func testAMarkAboveOrBelowIsCentred() {
+        for y: CGFloat in [-2850, -18, 900] {
+            let box = CGRect(x: 290, y: y, width: 200, height: 160)
+            XCTAssertEqual(box.offsetBy(dx: 0, dy: MarkReveal.shift(box, into: room).dy).midY, room.midY, "from \(y)")
+        }
+    }
+
+    func testAMarkTallerThanTheRoomShowsItsTop() {
+        let tall = CGRect(x: 0, y: -1718, width: 660, height: 3512)
+        XCTAssertEqual(MarkReveal.shift(tall, into: room).dy, 1718)
+        // Its top already at the room's top: nothing to do.
+        XCTAssertEqual(MarkReveal.shift(CGRect(x: 0, y: 0, width: 660, height: 3512), into: room), .zero)
+    }
+
+    func testAMarkPastASideMovesOnlyThatWay() {
+        let wide = CGRect(x: 30, y: 100, width: 900, height: 36)
+        XCTAssertEqual(MarkReveal.shift(wide, into: room), CGVector(dx: -30, dy: 0))
+        let right = CGRect(x: 650, y: 100, width: 200, height: 36)
+        XCTAssertEqual(MarkReveal.shift(right, into: room), CGVector(dx: 350 - 750, dy: 0))
+    }
+
+    func testAMarkTheViewHasScrolledForIsCentredEvenWhereItLanded() {
+        // A block that was not built was scrolled to its middle, and the
+        // mark in it landed inside the room, off its middle.
+        let landed = CGRect(x: 50, y: 270, width: 220, height: 36)
+        XCTAssertEqual(MarkReveal.shift(landed, into: room), .zero)
+        let shift = MarkReveal.shift(landed, into: room, moving: true)
+        XCTAssertEqual(shift.dx, 0)
+        XCTAssertEqual(landed.offsetBy(dx: 0, dy: shift.dy).midY, room.midY)
+    }
+
+    func testAnEmptyRoomMovesNothing() {
+        XCTAssertEqual(MarkReveal.shift(CGRect(x: 0, y: 900, width: 10, height: 10), into: .zero), .zero)
+    }
+
     // MARK: - A stroke
 
     func testAPressThatBarelyMovesIsAClick() {

@@ -80,6 +80,24 @@ enum ViewPicture {
     }
 }
 
+extension NSScrollView {
+    /// Move what is scrolled by `shift`, measured in `view`'s points, as
+    /// far as the document lets it go. At once: the rows of a table and the
+    /// blocks of a document are the app's own and are drawn in this frame.
+    func slide(by shift: CGVector, measuredIn view: NSView) {
+        guard shift.dx != 0 || shift.dy != 0 else { return }
+        let clip = contentView
+        // Through two points, so a flipped view and one that is not agree.
+        let zero = clip.convert(NSPoint.zero, from: view)
+        let moved = clip.convert(NSPoint(x: shift.dx, y: shift.dy), from: view)
+        var bounds = clip.bounds
+        bounds.origin.x -= moved.x - zero.x
+        bounds.origin.y -= moved.y - zero.y
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        reflectScrolledClipView(clip)
+    }
+}
+
 /// Mark-up over a file's source or its diff: `DiffView`'s table.
 ///
 /// A mark is tied to a row. The table and its scroll view are the app's
@@ -212,17 +230,13 @@ final class LinesMarkupSurface: MarkupSurface {
 
     func forget(_ number: Int) { ties[number] = nil }
 
-    /// A third of the way down the view, where the eye lands, as a line
-    /// asked for by its number is shown. Not when it is already in view.
-    func reveal(_ number: Int) {
-        guard let tie = ties[number], !tie.lost, let table, let scroll, tie.row < table.numberOfRows else { return }
-        let row = table.rect(ofRow: tie.row), visible = scroll.documentVisibleRect
-        guard !visible.contains(row) else { return }
-        let clip = scroll.contentView
-        let top = max(row.minY - visible.height / 3, 0)
-        clip.scroll(to: clip.constrainBoundsRect(NSRect(x: visible.minX, y: top, width: visible.width,
-                                                        height: visible.height)).origin)
-        scroll.reflectScrolledClipView(clip)
+    /// The mark's box, not its first row: a box over eight lines whose
+    /// first was in view was left half under the note bar, which the row
+    /// alone could not tell.
+    func reveal(_ mark: Mark, coveredBelow covered: CGFloat) {
+        guard let layer, let scroll, let placement = placement(of: mark.number) else { return }
+        let room = MarkReveal.room(layer.bounds.size, coveredBelow: covered).intersection(placement.clip)
+        scroll.slide(by: MarkReveal.shift(placement.box(of: mark.shape), into: room), measuredIn: layer)
     }
 
     /// A table's marks move in the frame its rows do. Nothing is ever owed.

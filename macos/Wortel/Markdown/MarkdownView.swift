@@ -114,9 +114,11 @@ struct MarkdownView: View {
                 // clicked. Only this reader can scroll to a block that is
                 // not built yet.
                 .onChange(of: reportsFrames, initial: true) { _, _ in
-                    markup?.revealBlock = { id in
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
-                    }
+                    // At once, not eased: the mark is placed exactly when
+                    // its block is built, and an easing scroll went on past
+                    // that and left the mark 130pt lower, half under the
+                    // note bar (measured 2026-11-25).
+                    markup?.revealBlock = { id in proxy.scrollTo(id, anchor: .center) }
                 }
         }
     }

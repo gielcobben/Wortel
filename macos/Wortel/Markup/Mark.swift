@@ -173,6 +173,44 @@ struct MarkPlacement: Equatable {
     }
 }
 
+/// Where a mark has to go for its chip's click to show it.
+///
+/// What is brought into view is the mark's own box, never the thing it is
+/// tied to: a box drawn on a page is tied to the element around it, which
+/// can be the whole of a long article, and centring that put the box 350
+/// to 1,300pt off the screen (measured 2026-11-25). And "in view" is the
+/// room left uncovered: the note bar floats over the bottom of the preview,
+/// and a mark under it counted as shown.
+enum MarkReveal {
+    /// How far `box` has to move to be shown in `room`, both in one view's
+    /// points. Nothing when it is wholly there already: a mark in view
+    /// stays where the eye found it. Otherwise, on each side where it is
+    /// not inside, to the middle of the room, or where it is larger than
+    /// the room, its start to the room's start: a mark's top and left are
+    /// where it begins, and its middle could be anything. `moving` says
+    /// the view has scrolled up or down for it already (to a block that
+    /// was not built): it is placed as one that had to move, even where
+    /// that scroll happened to leave it inside.
+    static func shift(_ box: CGRect, into room: CGRect, moving: Bool = false) -> CGVector {
+        guard !box.isNull, !room.isNull, room.width > 0, room.height > 0 else { return .zero }
+        let slack: CGFloat = 0.5
+        func along(_ start: CGFloat, _ length: CGFloat, _ roomStart: CGFloat, _ roomLength: CGFloat,
+                   settled: Bool) -> CGFloat {
+            if settled, start >= roomStart - slack, start + length <= roomStart + roomLength + slack { return 0 }
+            if length <= roomLength { return (roomStart + roomLength / 2) - (start + length / 2) }
+            return roomStart - start
+        }
+        return CGVector(dx: along(box.minX, box.width, room.minX, room.width, settled: true),
+                        dy: along(box.minY, box.height, room.minY, room.height, settled: !moving))
+    }
+
+    /// The part of a view of `size` that the note bar does not cover, when
+    /// it covers `covered` points of its bottom.
+    static func room(_ size: CGSize, coveredBelow covered: CGFloat) -> CGRect {
+        CGRect(x: 0, y: 0, width: size.width, height: max(size.height - max(covered, 0), 0))
+    }
+}
+
 /// What the details file says about a mark. Everything optional is left out
 /// of the file when a kind of preview has nothing to say there.
 struct MarkDetails: Codable, Equatable {

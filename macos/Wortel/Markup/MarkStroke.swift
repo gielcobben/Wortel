@@ -2,8 +2,8 @@ import CoreGraphics
 import Foundation
 
 /// The geometry of a drawn mark: when a press is a click and when a stroke,
-/// which points of a stroke are kept, the area it stands for, and the line
-/// drawn through it.
+/// which points of a stroke are kept, the area it stands for, the line
+/// drawn through it, and a drawing's handles and what dragging one does.
 enum MarkStroke {
     /// A press that travels less than this is a click, not a drawing.
     static let clickTravel: CGFloat = 4
@@ -144,6 +144,167 @@ enum MarkStroke {
         if rect.maxY > bounds.maxY { rect.origin.y = max(bounds.minY, bounds.maxY - rect.height) }
         let cut = rect.intersection(bounds)
         return cut.isNull ? area : cut.integral.intersection(bounds)
+    }
+
+    // MARK: - Resizing a drawing
+
+    /// A handle of a selected drawing. In the layer's coordinates, which
+    /// count down from the top: a box, a pen's line and a highlighter have
+    /// one on each corner of their ink, an arrow one on each end.
+    enum Handle: Equatable, CaseIterable {
+        case topLeft, topRight, bottomRight, bottomLeft, tail, tip
+
+        var isCorner: Bool { self != .tail && self != .tip }
+    }
+
+    /// A handle as it is drawn: a circle this wide, white with an accent
+    /// edge, as macOS draws the handles of a selected shape.
+    static let handle: CGFloat = 9
+    /// The square around a handle that takes the press. Wider than the
+    /// handle: a 9pt dot is a hard thing to land on, and 20 is the least
+    /// the Human Interface Guidelines give a target on the Mac.
+    static let handleReach: CGFloat = 20
+    /// The least a drawing is resized to on its longer side.
+    static let smallest: CGFloat = 8
+    /// A selection narrower or shorter than this has one handle, on its
+    /// bottom-right corner: four on a small box cover it, and leave no
+    /// inside to take it by.
+    static let crowded: CGFloat = 16
+
+    /// The handles a drawing has where its points are.
+    static func handles(for pen: MarkPen, points: [CGPoint]) -> [Handle] {
+        if pen == .arrow { return [.tail, .tip] }
+        let rect = outline(of: points, pen: pen)
+        if rect.width < crowded || rect.height < crowded { return [.bottomRight] }
+        return [.topLeft, .topRight, .bottomRight, .bottomLeft]
+    }
+
+    /// The box around the ink as drawn: the box of its points and half the
+    /// line's width, so a highlighter's outline is around its stroke and
+    /// not through it.
+    static func outline(of points: [CGPoint], pen: MarkPen) -> CGRect {
+        box(of: points).insetBy(dx: -pen.width / 2, dy: -pen.width / 2)
+    }
+
+    /// Where a handle is drawn.
+    static func position(of handle: Handle, pen: MarkPen, points: [CGPoint]) -> CGPoint {
+        switch handle {
+        case .tail: return points.first ?? .zero
+        case .tip: return points.last ?? .zero
+        default:
+            let rect = outline(of: points, pen: pen), (right, down) = direction(of: handle)
+            return CGPoint(x: right > 0 ? rect.maxX : rect.minX, y: down > 0 ? rect.maxY : rect.minY)
+        }
+    }
+
+    /// The handle a press at `point` takes, the nearest where two reach it.
+    static func handle(at point: CGPoint, pen: MarkPen, points: [CGPoint]) -> Handle? {
+        guard !points.isEmpty else { return nil }
+        let reach = handleReach / 2
+        return handles(for: pen, points: points)
+            .map { ($0, position(of: $0, pen: pen, points: points)) }
+            .filter { abs($0.1.x - point.x) <= reach && abs($0.1.y - point.y) <= reach }
+            .min { hypot($0.1.x - point.x, $0.1.y - point.y) < hypot($1.1.x - point.x, $1.1.y - point.y) }?
+            .0
+    }
+
+    /// A drawing's points with `handle` taken to `target`, where the handle
+    /// is now to be drawn.
+    ///
+    /// A corner scales every point about the opposite corner, which stays
+    /// where it is, or with `fromCentre` (Option) about the middle; past
+    /// it, the drawing is mirrored. `proportional` is Shift: the drawing
+    /// keeps its proportions. An arrow's end moves alone, and Shift turns
+    /// it in steps of 45 degrees about the other end. A drawing is never
+    /// made smaller than `smallest` on its longer side (or than it was, if
+    /// it was smaller). The line's width is not scaled: it is the pen's.
+    static func resized(_ points: [CGPoint], pen: MarkPen, moving handle: Handle, to target: CGPoint,
+                        proportional: Bool, fromCentre: Bool = false) -> [CGPoint] {
+        guard let first = points.first, let last = points.last else { return points }
+        if !handle.isCorner {
+            let still = handle == .tip ? first : last
+            var end = proportional ? snapped(target, from: still) : target
+            let length = hypot(end.x - still.x, end.y - still.y)
+            let least = min(smallest, hypot(last.x - first.x, last.y - first.y))
+            if length < least {
+                // Too short: as long as it may be, the way it points, or
+                // the way it pointed when it points nowhere.
+                let was = handle == .tip ? last : first
+                let (dx, dy) = length > 0 ? (end.x - still.x, end.y - still.y) : (was.x - still.x, was.y - still.y)
+                let along = hypot(dx, dy)
+                if along > 0 { end = CGPoint(x: still.x + dx / along * least, y: still.y + dy / along * least) }
+            }
+            var moved = points
+            moved[handle == .tip ? moved.count - 1 : 0] = end
+            return moved
+        }
+
+        let box = box(of: points), (right, down) = direction(of: handle)
+        let anchor = fromCentre
+            ? CGPoint(x: box.midX, y: box.midY)
+            : CGPoint(x: right > 0 ? box.minX : box.maxX, y: down > 0 ? box.minY : box.maxY)
+        // How far the dragged corner was from the anchor, each way, and
+        // where it is to be: the handle is drawn half a line further out.
+        let half: CGFloat = fromCentre ? 0.5 : 1
+        let was = CGSize(width: right * box.width * half, height: down * box.height * half)
+        let pad = pen.width / 2
+        let to = CGPoint(x: target.x - right * pad, y: target.y - down * pad)
+        // A scale of nothing would flatten the drawing for good: one that
+        // is exactly zero, or not a number, leaves that side as it was.
+        func ratio(_ now: CGFloat, _ was: CGFloat) -> CGFloat {
+            let ratio = now / was
+            return ratio.isFinite && ratio != 0 ? ratio : 1
+        }
+        var scale = CGSize(width: ratio(to.x - anchor.x, was.width), height: ratio(to.y - anchor.y, was.height))
+        let both = was.width != 0 && was.height != 0
+        func sign(_ value: CGFloat) -> CGFloat { value < 0 ? -1 : 1 }
+        if proportional, both {
+            let most = max(abs(scale.width), abs(scale.height))
+            scale = CGSize(width: sign(scale.width) * most, height: sign(scale.height) * most)
+        }
+        // The floor, on the longer side; with Shift on both, so the
+        // proportions hold at the floor too.
+        let long = max(box.width, box.height)
+        if long > 0 {
+            let least = min(smallest, long) / long
+            let wide = box.width >= box.height
+            if wide || (proportional && both), abs(scale.width) < least { scale.width = sign(scale.width) * least }
+            if !wide || (proportional && both), abs(scale.height) < least { scale.height = sign(scale.height) * least }
+        }
+        var moved = points.map { point in
+            CGPoint(x: anchor.x + (point.x - anchor.x) * scale.width, y: anchor.y + (point.y - anchor.y) * scale.height)
+        }
+        // A box with no width or no height has nothing to scale that way:
+        // its corner goes where the handle is.
+        if pen == .box, moved.count == 2 {
+            if was.width == 0 {
+                moved[1].x = to.x
+                if fromCentre { moved[0].x = 2 * anchor.x - to.x }
+            }
+            if was.height == 0 {
+                moved[1].y = to.y
+                if fromCentre { moved[0].y = 2 * anchor.y - to.y }
+            }
+        }
+        return moved
+    }
+
+    /// Which way a corner is from the middle: right and down are +1.
+    private static func direction(of handle: Handle) -> (CGFloat, CGFloat) {
+        switch handle {
+        case .topLeft: return (-1, -1)
+        case .topRight: return (1, -1)
+        case .bottomRight: return (1, 1)
+        case .bottomLeft, .tail, .tip: return (-1, 1)
+        }
+    }
+
+    /// The box of some points, with no room.
+    private static func box(of points: [CGPoint]) -> CGRect {
+        guard let first = points.first else { return .null }
+        var box = CGRect(origin: first, size: .zero)
+        for point in points.dropFirst() { box = box.union(CGRect(origin: point, size: .zero)) }
+        return box
     }
 
     /// The line through a stroke's points: straight to the first midpoint,

@@ -187,6 +187,127 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(marker.at(x: 50, y: 30), white)
     }
 
+    // MARK: - Resizing a drawing
+
+    private func assertPoints(_ points: [CGPoint], _ expected: [CGPoint], file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(points.count, expected.count, file: file, line: line)
+        for (point, wanted) in zip(points, expected) {
+            XCTAssertEqual(point.x, wanted.x, accuracy: 0.001, "\(points)", file: file, line: line)
+            XCTAssertEqual(point.y, wanted.y, accuracy: 0.001, "\(points)", file: file, line: line)
+        }
+    }
+
+    func testAPensHandlesAreOnTheCornersOfItsInk() {
+        let line = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 40), CGPoint(x: 50, y: 30)]
+        XCTAssertEqual(MarkStroke.handles(for: .pen, points: line), [.topLeft, .topRight, .bottomRight, .bottomLeft])
+        // Half the line's width out from its points: around the ink as drawn.
+        XCTAssertEqual(MarkStroke.position(of: .topLeft, pen: .pen, points: line), CGPoint(x: 8.5, y: 8.5))
+        XCTAssertEqual(MarkStroke.position(of: .bottomRight, pen: .pen, points: line), CGPoint(x: 51.5, y: 41.5))
+        XCTAssertEqual(MarkStroke.position(of: .topRight, pen: .pen, points: line), CGPoint(x: 51.5, y: 8.5))
+        // A highlighter's are outside its wide stroke, not on it.
+        XCTAssertEqual(MarkStroke.position(of: .topLeft, pen: .highlighter, points: line), CGPoint(x: 3, y: 3))
+        XCTAssertEqual(MarkStroke.outline(of: line, pen: .pen), CGRect(x: 8.5, y: 8.5, width: 43, height: 33))
+        // A small one has one handle, so there is an inside left to take it by.
+        XCTAssertEqual(MarkStroke.handles(for: .pen, points: [CGPoint(x: 10, y: 10), CGPoint(x: 18, y: 14)]),
+                       [.bottomRight])
+    }
+
+    func testAnArrowsHandlesAreItsEnds() {
+        let arrow = [CGPoint(x: 20, y: 30), CGPoint(x: 120, y: 80)]
+        XCTAssertEqual(MarkStroke.handles(for: .arrow, points: arrow), [.tail, .tip])
+        XCTAssertEqual(MarkStroke.position(of: .tail, pen: .arrow, points: arrow), arrow[0])
+        XCTAssertEqual(MarkStroke.position(of: .tip, pen: .arrow, points: arrow), arrow[1])
+        // However short, it has both.
+        XCTAssertEqual(MarkStroke.handles(for: .arrow, points: [.zero, CGPoint(x: 8, y: 0)]), [.tail, .tip])
+    }
+
+    func testAPressTakesTheHandleItIsNearest() {
+        let line = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 40), CGPoint(x: 50, y: 30)]
+        XCTAssertEqual(MarkStroke.handle(at: CGPoint(x: 12, y: 12), pen: .pen, points: line), .topLeft)
+        // Wider than the 9pt dot: 10 points either way.
+        XCTAssertEqual(MarkStroke.handle(at: CGPoint(x: 58, y: 48), pen: .pen, points: line), .bottomRight)
+        XCTAssertNil(MarkStroke.handle(at: CGPoint(x: 62, y: 41.5), pen: .pen, points: line))
+        // The inside is for moving.
+        XCTAssertNil(MarkStroke.handle(at: CGPoint(x: 30, y: 25), pen: .pen, points: line))
+        // Where two reach, the nearer.
+        let short = [CGPoint.zero, CGPoint(x: 8, y: 0)]
+        XCTAssertEqual(MarkStroke.handle(at: CGPoint(x: 5, y: 0), pen: .arrow, points: short), .tip)
+        XCTAssertEqual(MarkStroke.handle(at: CGPoint(x: 3, y: 0), pen: .arrow, points: short), .tail)
+        XCTAssertNil(MarkStroke.handle(at: .zero, pen: .arrow, points: []))
+    }
+
+    func testACornerScalesTheDrawingAboutTheOppositeOne() {
+        // Ink from (10, 10) to (50, 30); its bottom-right handle is at
+        // (51.5, 31.5), half the 3pt line further out.
+        let line = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 20), CGPoint(x: 50, y: 30)]
+        let free = MarkStroke.resized(line, pen: .pen, moving: .bottomRight, to: CGPoint(x: 91.5, y: 61.5),
+                                      proportional: false)
+        // Twice as wide, two and a half times as tall; the top-left stays.
+        assertPoints(free, [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 35), CGPoint(x: 90, y: 60)])
+        // Shift: the proportions are kept, at the larger of the two.
+        let kept = MarkStroke.resized(line, pen: .pen, moving: .bottomRight, to: CGPoint(x: 91.5, y: 61.5),
+                                      proportional: true)
+        assertPoints(kept, [CGPoint(x: 10, y: 10), CGPoint(x: 60, y: 35), CGPoint(x: 110, y: 60)])
+        // Option: about the middle, which stays where it is.
+        let centred = MarkStroke.resized(line, pen: .pen, moving: .bottomRight, to: CGPoint(x: 71.5, y: 41.5),
+                                         proportional: false, fromCentre: true)
+        assertPoints(centred, [CGPoint(x: -10, y: 0), CGPoint(x: 30, y: 20), CGPoint(x: 70, y: 40)])
+    }
+
+    func testACornerDraggedPastTheOppositeOneMirrorsTheDrawing() {
+        let line = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 20), CGPoint(x: 50, y: 30)]
+        let flipped = MarkStroke.resized(line, pen: .pen, moving: .bottomRight, to: CGPoint(x: -28.5, y: 1.5),
+                                         proportional: false)
+        assertPoints(flipped, [CGPoint(x: 10, y: 10), CGPoint(x: -10, y: 5), CGPoint(x: -30, y: 0)])
+        // A scale of exactly nothing leaves that side as it was, so a
+        // drawing is never flattened for good.
+        let level = MarkStroke.resized(line, pen: .pen, moving: .bottomRight, to: CGPoint(x: 11.5, y: 61.5),
+                                       proportional: false)
+        assertPoints(level, [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 35), CGPoint(x: 50, y: 60)])
+    }
+
+    func testADrawingIsNeverSmallerThanEightPointsOnItsLongerSide() {
+        let line = [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 30)]
+        // Dragged to a point from the opposite corner: 8 wide, and its
+        // height free.
+        let small = MarkStroke.resized(line, pen: .pen, moving: .bottomRight, to: CGPoint(x: 12.5, y: 12.5),
+                                       proportional: false)
+        assertPoints(small, [CGPoint(x: 10, y: 10), CGPoint(x: 18, y: 11)])
+        // With Shift, the proportions hold at the floor too.
+        let kept = MarkStroke.resized(line, pen: .pen, moving: .bottomRight, to: CGPoint(x: 12.5, y: 12.5),
+                                      proportional: true)
+        assertPoints(kept, [CGPoint(x: 10, y: 10), CGPoint(x: 18, y: 14)])
+        // An arrow is never shorter than 8, and keeps the way it points.
+        let arrow = [CGPoint.zero, CGPoint(x: 100, y: 0)]
+        assertPoints(MarkStroke.resized(arrow, pen: .arrow, moving: .tip, to: CGPoint(x: 2, y: 0), proportional: false),
+                     [.zero, CGPoint(x: 8, y: 0)])
+        assertPoints(MarkStroke.resized(arrow, pen: .arrow, moving: .tip, to: .zero, proportional: false),
+                     [.zero, CGPoint(x: 8, y: 0)])
+    }
+
+    func testABoxsCornerMovesAndTheOtherStays() {
+        let box = [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 30)]
+        // The top-left handle, half a line out from (10, 10), taken to
+        // (-1.5, 3.5): that corner is at (0, 5), the other where it was.
+        assertPoints(MarkStroke.resized(box, pen: .box, moving: .topLeft, to: CGPoint(x: -1.5, y: 3.5), proportional: false),
+                     [CGPoint(x: 0, y: 5), CGPoint(x: 50, y: 30)])
+        // A box drawn with no height gets one.
+        assertPoints(MarkStroke.resized([CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 10)], pen: .box, moving: .bottomRight,
+                                        to: CGPoint(x: 51.5, y: 31.5), proportional: false),
+                     [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 30)])
+    }
+
+    func testAnArrowsEndMovesAloneAndShiftTurnsItInSteps() {
+        let arrow = [CGPoint.zero, CGPoint(x: 100, y: 0)]
+        assertPoints(MarkStroke.resized(arrow, pen: .arrow, moving: .tip, to: CGPoint(x: 100, y: 50), proportional: false),
+                     [.zero, CGPoint(x: 100, y: 50)])
+        assertPoints(MarkStroke.resized(arrow, pen: .arrow, moving: .tail, to: CGPoint(x: 20, y: 30), proportional: false),
+                     [CGPoint(x: 20, y: 30), CGPoint(x: 100, y: 0)])
+        // Nearly level with Shift: level, as far as the pointer is.
+        assertPoints(MarkStroke.resized(arrow, pen: .arrow, moving: .tip, to: CGPoint(x: 100, y: 10), proportional: true),
+                     [.zero, CGPoint(x: hypot(CGFloat(100), CGFloat(10)), y: 0)])
+    }
+
     // MARK: - What is copied
 
     private let references: [Int: MarkupNote.Reference] = [

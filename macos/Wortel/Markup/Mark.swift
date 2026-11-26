@@ -30,6 +30,64 @@ enum MarkColour: Int, CaseIterable {
     }
 }
 
+/// What an area is drawn with. The pen is a hand's own line; the others are
+/// for what a hand draws badly: a straight-sided box, an arrow from one
+/// thing to another, a wide see-through stroke over text.
+enum MarkPen: String, CaseIterable {
+    case pen, box, arrow, highlighter
+
+    /// What a mark drawn with it is called, before its number.
+    var word: String {
+        switch self {
+        case .pen: return "area"
+        case .box: return "box"
+        case .arrow: return "arrow"
+        case .highlighter: return "highlight"
+        }
+    }
+
+    /// How wide its line is, and how much of what is under it shows through.
+    var width: CGFloat { self == .highlighter ? 14 : MarkStroke.width }
+    var opacity: CGFloat { self == .highlighter ? 0.35 : 1 }
+}
+
+/// The tool in hand while marking up: one of the pens, or the one that
+/// moves a drawing already made.
+enum MarkupTool: Equatable, CaseIterable {
+    case pen, box, arrow, highlighter, move
+
+    /// What it draws with, or nil for the one that draws nothing.
+    var pen: MarkPen? {
+        switch self {
+        case .pen: return .pen
+        case .box: return .box
+        case .arrow: return .arrow
+        case .highlighter: return .highlighter
+        case .move: return nil
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .pen: return "Pen"
+        case .box: return "Box"
+        case .arrow: return "Arrow"
+        case .highlighter: return "Highlighter"
+        case .move: return "Move"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .pen: return "scribble"
+        case .box: return "rectangle"
+        case .arrow: return "arrow.up.right"
+        case .highlighter: return "highlighter"
+        case .move: return "arrow.up.and.down.and.arrow.left.and.right"
+        }
+    }
+}
+
 /// One thing pointed at: an element that was picked, or an area that was
 /// drawn around.
 struct Mark: Identifiable, Equatable {
@@ -55,11 +113,13 @@ struct Mark: Identifiable, Equatable {
     /// The picture's file name in the note's folder, once it is written.
     var picture: String?
     var details: MarkDetails
+    /// What a drawn area was drawn with. A picked element has no pen.
+    var pen = MarkPen.pen
 
     /// How a chip and the copied text refer to it. An element has a name of
-    /// its own; an area only has its number.
+    /// its own; a drawn mark only has what it is and its number.
     var reference: String {
-        if case .area = shape { return "area \(number)" }
+        if case .area = shape { return "\(pen.word) \(number)" }
         return name
     }
 }
@@ -107,6 +167,8 @@ struct MarkDetails: Codable, Equatable {
     var colour = ""
     /// "element" or "area".
     var kind = ""
+    /// What a drawn area was drawn with: "pen", "box", "arrow", "highlighter".
+    var shape: String?
     var name = ""
     var picture: String?
     /// Where it is in the page or file, in its own units: x, y, width, height.

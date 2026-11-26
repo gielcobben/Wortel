@@ -34,7 +34,7 @@ enum MarkChip {
     /// one wider than a narrow column's note would be cut off by its edge.
     static func title(of mark: Mark, fitting width: CGFloat = .greatestFiniteMagnitude) -> String {
         var name: String
-        if case .area = mark.shape { name = "area" } else { name = mark.name }
+        if case .area = mark.shape { name = mark.pen.word } else { name = mark.name }
         if name.count > longest { name = name.prefix(longest - 1) + "\u{2026}" }
         func measured(_ text: String) -> CGFloat {
             ceil((text as NSString).size(withAttributes: [.font: nameFont]).width)
@@ -249,6 +249,14 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     private let textLayout = NSLayoutManager()
     let textView: NoteTextView
     private let button = NSButton(title: "Copy", target: nil, action: nil)
+    /// The tools, in a row under the text with Copy at its other end, as a
+    /// chat composer has it: the words get the bar's whole width, which is
+    /// what a narrow column has least of. The chrome's own glyph buttons
+    /// (28pt, 8pt corners, a 14pt glyph), the one in hand lit.
+    private var tools: [(tool: MarkupTool, button: HoverFillButton)] = []
+    private let divider = ToolbarDivider()
+    private static let toolRow: CGFloat = Chrome.controlSize
+    private static let toolGap: CGFloat = 6
     private let spinner = NSProgressIndicator()
     /// The bar grew or shrank a line: whoever places it lays out again.
     var onHeightChange: () -> Void = {}
@@ -326,6 +334,18 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         button.setAccessibilityLabel("Copy")
         addSubview(button)
 
+        for tool in MarkupTool.allCases {
+            let button = HoverFillButton.glyph(tool.symbol, tool.name)
+            button.translatesAutoresizingMaskIntoConstraints = true
+            button.target = self
+            button.action = #selector(pickTool(_:))
+            button.tag = tools.count
+            addSubview(button)
+            tools.append((tool, button))
+        }
+        divider.translatesAutoresizingMaskIntoConstraints = true
+        addSubview(divider)
+
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
@@ -354,12 +374,21 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
 
     @objc private func copyNote() { session.copyNote() }
 
+    @objc private func pickTool(_ sender: NSButton) {
+        guard tools.indices.contains(sender.tag) else { return }
+        session.tool = tools[sender.tag].tool
+        update()
+        // The keyboard stays in the note: a tool is taken up mid-sentence.
+        focus()
+    }
+
     /// What the button says and whether it can be pressed.
     func update() {
         let copying = session.isCopying
         button.isEnabled = !session.marks.isEmpty && !copying
         button.title = copying ? "" : "Copy"
         if copying { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+        for (tool, button) in tools { button.isSelected = tool == session.tool }
         needsLayout = true
     }
 
@@ -384,15 +413,16 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
 
     private var buttonSize: NSSize {
         var size = button.intrinsicContentSize
-        // Wide enough that the spinner has room where the word was.
-        size.width = max(size.width, 64)
+        // Wide enough that the spinner has room where the word was, and no
+        // wider: in a 260pt column the five tools and Copy share 236pt.
+        size.width = max(size.width, 56)
         return size
     }
 
     /// How tall the bar is at a width: its lines, up to six, and never less
     /// than a control's row.
     func height(forWidth width: CGFloat) -> CGFloat {
-        let textWidth = max(width - Self.padding.width * 2 - buttonSize.width - 10, 40)
+        let textWidth = max(width - Self.padding.width * 2, 40)
         guard let container = textView.textContainer else { return 44 }
         container.size = NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude)
         textLayout.ensureLayout(for: container)
@@ -402,7 +432,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
             used = max(used, textLayout.extraLineFragmentRect.maxY)
         }
         let lines = max(1, min(Self.mostLines, (used / Self.lineHeight).rounded(.up)))
-        return lines * Self.lineHeight + Self.padding.height * 2
+        return lines * Self.lineHeight + Self.padding.height + Self.toolGap + Self.toolRow + 8
     }
 
     override func layout() {
@@ -413,16 +443,27 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         edge.frame = bounds
         edge.path = path
         layer?.shadowPath = path
+        // The row of tools along the bottom, Copy at its far end.
+        let row = NSRect(x: 0, y: bounds.height - 8 - Self.toolRow, width: bounds.width, height: Self.toolRow)
         let size = buttonSize
-        button.frame = NSRect(x: bounds.width - Self.padding.width + 4 - size.width,
-                              y: bounds.height - (44 - size.height) / 2 - size.height,
+        button.frame = NSRect(x: bounds.width - 10 - size.width, y: row.midY - size.height / 2,
                               width: size.width, height: size.height)
         spinner.sizeToFit()
         spinner.frame.origin = NSPoint(x: button.frame.midX - spinner.frame.width / 2,
                                        y: button.frame.midY - spinner.frame.height / 2)
+        var x: CGFloat = 8
+        for (tool, toolButton) in tools {
+            if tool == .move {
+                // Apart from the pens: it draws nothing.
+                divider.frame = NSRect(x: x + 4, y: row.midY - 8, width: 1, height: 16)
+                x += 9
+            }
+            toolButton.frame = NSRect(x: x, y: row.minY, width: Self.toolRow, height: Self.toolRow)
+            x += Self.toolRow + 2
+        }
         scroll.frame = NSRect(x: Self.padding.width, y: Self.padding.height,
-                              width: max(button.frame.minX - 10 - Self.padding.width, 40),
-                              height: bounds.height - Self.padding.height * 2)
+                              width: max(bounds.width - Self.padding.width * 2, 40),
+                              height: max(row.minY - Self.toolGap - Self.padding.height, Self.lineHeight))
         textView.frame.size.width = scroll.contentSize.width
         colour()
     }

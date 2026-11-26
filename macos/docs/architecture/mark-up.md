@@ -242,6 +242,39 @@ copies, ⇧Return and ⌥Return make a line, Esc drops a stroke in hand and
 otherwise leaves. Pasting is plain text only, and Writing Tools are off: both
 would put a chip in the text with no mark behind it, or take one out.
 
+## The tools
+
+Five, in a row along the bottom of the note bar with Copy at its other end
+(`MarkupTool`, `MarkupNoteBar`): the pen, a box, an arrow, a highlighter,
+and after a divider the one that moves a drawing. They are the chrome's own
+glyph buttons (`HoverFillButton`: 28pt, 8pt corners, a 14pt glyph), the one
+in hand lit. The tool is the session's, so it is still in hand when a tab
+comes back.
+
+- **A pen is how an area is drawn**, and the mark remembers which
+  (`Mark.pen`, `MarkPen`). The pen and the highlighter keep the hand's own
+  line, a box its two corners, an arrow its two ends
+  (`MarkStroke.points(for:drawn:straight:)`), and `MarkStroke.path(for:through:)`
+  makes the line of them, for the layer on screen and for every picture
+  alike. A highlighter is 14pt wide at 35%, its ends cut square.
+- **Shift straightens** whichever is in hand: a line in steps of 45 degrees
+  with the pen, the highlighter and the arrow, a square with the box.
+- **A mark is called by what it was drawn with**: "area 2", "box 3",
+  "arrow 4", "highlight 5", on its chip and in what is copied, and
+  `details.json` has it as `shape`.
+- **A click still picks an element** of a page with any pen in hand. Only a
+  drag draws.
+- **Move** takes a drawn mark by anywhere in its box and carries it. Let
+  go, it is tied again to what is under it there (the same call that tied
+  it first) and pictured again; it keeps its number and its chip. A picked
+  element is not moved: it is where its element is. With Move in hand the
+  pointer is the arrow, and a hand over a drawing.
+
+Checked 2026-11-25 with the layer mounted the way a file tab mounts it,
+events handed to it as the mouse would: a box, an arrow drawn level with
+Shift held, a highlighter stroke, the box moved 60 by 40 and pictured where
+it landed, and a drag with Move in hand on nothing drawing nothing.
+
 ## What is copied, and where it goes
 
 `MarkupNote.copied` makes the text:

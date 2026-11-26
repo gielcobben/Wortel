@@ -82,6 +82,111 @@ final class MarkupTests: XCTestCase {
         XCTAssertTrue(MarkStroke.path(through: []).isEmpty)
     }
 
+    // MARK: - The other pens
+
+    func testAMarkIsCalledByWhatItWasDrawnWith() {
+        var box = mark(3, area: true)
+        box.pen = .box
+        XCTAssertEqual(box.reference, "box 3")
+        var arrow = mark(4, area: true)
+        arrow.pen = .arrow
+        XCTAssertEqual(arrow.reference, "arrow 4")
+        var marker = mark(5, area: true)
+        marker.pen = .highlighter
+        XCTAssertEqual(marker.reference, "highlight 5")
+        // A picked element has its own name, whatever pen was in hand.
+        var picked = mark(1)
+        picked.pen = .box
+        XCTAssertEqual(picked.reference, "button \"Download\"")
+    }
+
+    func testEachPenKeepsWhatItNeedsOfADrag() {
+        let drag = [CGPoint(x: 10, y: 10), CGPoint(x: 30, y: 18), CGPoint(x: 60, y: 22), CGPoint(x: 90, y: 40)]
+        // The pen keeps the hand's line; a box its corners; an arrow its ends.
+        XCTAssertEqual(MarkStroke.points(for: .pen, drawn: drag, straight: false), drag)
+        XCTAssertEqual(MarkStroke.points(for: .highlighter, drawn: drag, straight: false), drag)
+        XCTAssertEqual(MarkStroke.points(for: .box, drawn: drag, straight: false), [drag[0], drag[3]])
+        XCTAssertEqual(MarkStroke.points(for: .arrow, drawn: drag, straight: false), [drag[0], drag[3]])
+        // A press that went nowhere is left as it is.
+        XCTAssertEqual(MarkStroke.points(for: .box, drawn: [drag[0]], straight: true), [drag[0]])
+    }
+
+    func testShiftStraightens() {
+        let start = CGPoint(x: 100, y: 100)
+        // Nearly level: level, and as long as it was drawn.
+        let level = MarkStroke.snapped(CGPoint(x: 200, y: 108), from: start)
+        XCTAssertEqual(level.y, 100, accuracy: 0.001)
+        XCTAssertEqual(level.x - 100, hypot(100, 8), accuracy: 0.001)
+        // Nearly straight down, and nearly on the diagonal.
+        XCTAssertEqual(MarkStroke.snapped(CGPoint(x: 96, y: 180), from: start).x, 100, accuracy: 0.001)
+        let diagonal = MarkStroke.snapped(CGPoint(x: 160, y: 150), from: start)
+        XCTAssertEqual(diagonal.x - 100, diagonal.y - 100, accuracy: 0.001)
+
+        let drag = [start, CGPoint(x: 140, y: 103), CGPoint(x: 200, y: 108)]
+        // The pen and the highlighter: one straight line.
+        XCTAssertEqual(MarkStroke.points(for: .highlighter, drawn: drag, straight: true).count, 2)
+        XCTAssertEqual(MarkStroke.points(for: .pen, drawn: drag, straight: true)[1].y, 100, accuracy: 0.001)
+        // The box: a square, towards where the drag went.
+        XCTAssertEqual(MarkStroke.points(for: .box, drawn: [start, CGPoint(x: 160, y: 130)], straight: true),
+                       [start, CGPoint(x: 160, y: 160)])
+        XCTAssertEqual(MarkStroke.points(for: .box, drawn: [start, CGPoint(x: 40, y: 130)], straight: true),
+                       [start, CGPoint(x: 40, y: 160)])
+    }
+
+    func testABoxIsItsCornersAndAnArrowHasAHead() {
+        let box = MarkStroke.path(for: .box, through: [CGPoint(x: 50, y: 40), CGPoint(x: 10, y: 10)])
+        XCTAssertEqual(box.boundingBoxOfPath, CGRect(x: 10, y: 10, width: 40, height: 30))
+        // An arrow to the right: its line, and a head that opens behind the tip.
+        let arrow = MarkStroke.path(for: .arrow, through: [CGPoint(x: 0, y: 50), CGPoint(x: 100, y: 50)])
+        let bounds = arrow.boundingBoxOfPath
+        XCTAssertEqual(bounds.maxX, 100, accuracy: 0.001)
+        XCTAssertEqual(bounds.minX, 0, accuracy: 0.001)
+        XCTAssertGreaterThan(bounds.height, 8)
+        XCTAssertLessThan(bounds.height, 14)
+        // A very short arrow's head is no longer than half of it.
+        let short = MarkStroke.path(for: .arrow, through: [CGPoint(x: 0, y: 0), CGPoint(x: 6, y: 0)])
+        XCTAssertLessThan(short.boundingBoxOfPath.height, 4)
+    }
+
+    func testAHighlightersAreaIsAsWideAsItsStroke() {
+        let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let line = [CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)]
+        let pen = MarkStroke.area(of: line, pen: .pen, within: bounds)
+        let marker = MarkStroke.area(of: line, pen: .highlighter, within: bounds)
+        XCTAssertEqual(pen, MarkStroke.area(of: line, within: bounds))
+        XCTAssertGreaterThan(try XCTUnwrap(marker).height, try XCTUnwrap(pen).height + 8)
+    }
+
+    func testEachPenIsDrawnOnAPicture() throws {
+        let placement = MarkPlacement(origin: .zero, size: .zero, scale: 1, clip: .infinite)
+        func drawn(_ pen: MarkPen, _ ink: [CGPoint]) throws -> Pixels {
+            let context = try XCTUnwrap(CGContext(data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+                                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+            var mark = Mark(number: 1, shape: .area(box: .zero, ink: ink), name: pen.word, picture: nil, details: MarkDetails())
+            mark.pen = pen
+            MarkDrawing.draw(mark, at: placement, colour: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1),
+                             in: context, height: 100, badge: false)
+            return try XCTUnwrap(Pixels(try XCTUnwrap(context.makeImage())))
+        }
+        let blue = Pixels.Colour(r: 0, g: 0, b: 255), white = Pixels.Colour(r: 255, g: 255, b: 255)
+        // A box: its edge is drawn, its middle is not.
+        let box = try drawn(.box, [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 60)])
+        XCTAssertEqual(box.at(x: 50, y: 20), blue)
+        XCTAssertEqual(box.at(x: 50, y: 40), white)
+        // An arrow: its line.
+        XCTAssertEqual(try drawn(.arrow, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)]).at(x: 40, y: 50), blue)
+        // A highlighter: wide, and what is under it shows through.
+        let marker = try drawn(.highlighter, [CGPoint(x: 10, y: 50), CGPoint(x: 90, y: 50)])
+        let through = marker.at(x: 50, y: 45)
+        XCTAssertEqual(through.b, 255)
+        XCTAssertGreaterThan(through.r, 120)
+        XCTAssertLessThan(through.r, 200)
+        XCTAssertEqual(marker.at(x: 50, y: 30), white)
+    }
+
     // MARK: - What is copied
 
     private let references: [Int: MarkupNote.Reference] = [

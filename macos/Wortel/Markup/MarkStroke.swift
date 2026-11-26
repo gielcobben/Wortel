@@ -46,6 +46,81 @@ enum MarkStroke {
         return roomy.isNull || roomy.width < 1 || roomy.height < 1 ? nil : roomy.integral
     }
 
+    // MARK: - The other pens
+
+    /// The points a mark is kept as, for the pen in hand. The pen and the
+    /// highlighter keep the hand's own line; a box keeps two corners and an
+    /// arrow its two ends.
+    ///
+    /// `straight` is Shift: a straight line in steps of 45 degrees with the
+    /// pen, the highlighter and the arrow, and a square with the box.
+    static func points(for pen: MarkPen, drawn: [CGPoint], straight: Bool) -> [CGPoint] {
+        guard let start = drawn.first, let end = drawn.last, drawn.count > 1 else { return drawn }
+        switch pen {
+        case .pen, .highlighter:
+            return straight ? [start, snapped(end, from: start)] : drawn
+        case .arrow:
+            return [start, straight ? snapped(end, from: start) : end]
+        case .box:
+            guard straight else { return [start, end] }
+            let side = max(abs(end.x - start.x), abs(end.y - start.y))
+            return [start, CGPoint(x: start.x + (end.x < start.x ? -side : side),
+                                   y: start.y + (end.y < start.y ? -side : side))]
+        }
+    }
+
+    /// `point` moved to the nearest of the eight directions from `start`,
+    /// as far from it as it was.
+    static func snapped(_ point: CGPoint, from start: CGPoint) -> CGPoint {
+        let dx = point.x - start.x, dy = point.y - start.y
+        let length = hypot(dx, dy)
+        guard length > 0 else { return point }
+        let step = CGFloat.pi / 4
+        let angle = (atan2(dy, dx) / step).rounded() * step
+        return CGPoint(x: start.x + cos(angle) * length, y: start.y + sin(angle) * length)
+    }
+
+    /// The line a pen makes of its points. `unit` is how large a point of
+    /// the arrow's head and the box's corners is drawn: 1 on screen, more
+    /// in a picture shrunk to fit.
+    static func path(for pen: MarkPen, through points: [CGPoint], unit: CGFloat = 1) -> CGPath {
+        switch pen {
+        case .pen, .highlighter:
+            return path(through: points)
+        case .box:
+            guard let first = points.first, let last = points.last else { return CGMutablePath() }
+            let rect = CGRect(x: min(first.x, last.x), y: min(first.y, last.y),
+                              width: abs(last.x - first.x), height: abs(last.y - first.y))
+            let radius = min(4 * unit, rect.width / 2, rect.height / 2)
+            return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        case .arrow:
+            let path = CGMutablePath()
+            guard let tail = points.first, let tip = points.last else { return path }
+            path.move(to: tail)
+            path.addLine(to: tip)
+            // The head: two short lines back from the tip, opened 28 degrees
+            // each side, and no longer than half the arrow.
+            let length = hypot(tip.x - tail.x, tip.y - tail.y)
+            guard length > 0 else { return path }
+            let head = min(12 * unit, length / 2)
+            let back = atan2(tail.y - tip.y, tail.x - tip.x)
+            for side in [-1.0, 1.0] {
+                let angle = back + side * 28 * .pi / 180
+                path.move(to: tip)
+                path.addLine(to: CGPoint(x: tip.x + cos(angle) * head, y: tip.y + sin(angle) * head))
+            }
+            return path
+        }
+    }
+
+    /// The area a mark drawn with a pen stands for: its line's box with
+    /// room, wide enough for a highlighter's own width.
+    static func area(of points: [CGPoint], pen: MarkPen, within bounds: CGRect) -> CGRect? {
+        guard let area = area(of: points, within: bounds) else { return nil }
+        let extra = (pen.width - width) / 2
+        return extra > 0 ? area.insetBy(dx: -extra, dy: -extra).intersection(bounds).integral : area
+    }
+
     /// What a drawn area's picture shows: the area and what is around it.
     ///
     /// The area alone is the ink's box, and a loop drawn at the edge of a

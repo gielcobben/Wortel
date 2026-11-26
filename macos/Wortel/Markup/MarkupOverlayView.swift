@@ -251,24 +251,45 @@ final class MarkupOverlayView: NSView {
         tracking = area
     }
 
+    /// The pointer over the preview: a crosshair with a pen in hand, since
+    /// the preview is then for pointing at. With the Move tool it is the
+    /// arrow, and a hand over a drawing that can be moved. The bar keeps
+    /// its own cursors.
+    private func cursor(at point: CGPoint) -> NSCursor {
+        guard session.tool == .move else { return .crosshair }
+        if moving != nil { return .closedHand }
+        return movable(at: point) == nil ? .arrow : .openHand
+    }
+
     override func resetCursorRects() {
-        // The preview is for pointing at; the bar keeps its own cursors.
+        guard session.tool != .move else { return }
         let above = NSRect(x: 0, y: 0, width: bounds.width, height: max(noteBar.frame.minY, 0))
         addCursorRect(above, cursor: .crosshair)
     }
 
     override func cursorUpdate(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if !noteBar.frame.contains(point) { NSCursor.crosshair.set() }
+        if !noteBar.frame.contains(point) { cursor(at: point).set() }
+    }
+
+    /// Another tool was taken up in the bar.
+    func toolChanged() {
+        showHover(nil)
+        window?.invalidateCursorRects(for: self)
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard press == nil, surface.picksThings else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point), !noteBar.frame.contains(point) else { return showHover(nil) }
+        if session.tool == .move {
+            cursor(at: point).set()
+            return showHover(nil)
+        }
+        guard press == nil, surface.picksThings else { return }
         surface.probe(at: point) { [weak self] rect in
-            // An answer to where the pointer was before a press began.
-            guard let self, self.press == nil else { return }
+            // An answer to where the pointer was before a press began, or
+            // before the tool changed.
+            guard let self, self.press == nil, self.session.tool != .move else { return }
             self.showHover(rect)
         }
     }
@@ -299,30 +320,66 @@ final class MarkupOverlayView: NSView {
         // The keyboard back to the note, if it wandered to the header.
         if window?.firstResponder !== noteBar.textView { noteBar.focus() }
         showHover(nil)
-        press = [convert(event.locationInWindow, from: nil)]
+        let point = convert(event.locationInWindow, from: nil)
+        if session.tool == .move {
+            if let mark = movable(at: point) {
+                moving = (mark, point, .zero)
+                NSCursor.closedHand.set()
+            }
+            return
+        }
+        press = [point]
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard press != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if let (mark, from, _) = moving {
+            // The drawing follows the pointer; it is tied again where it
+            // is let go.
+            let offset = CGSize(width: point.x - from.x, height: point.y - from.y)
+            moving = (mark, from, offset)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            markLayers[mark.number]?.setAffineTransform(CGAffineTransform(translationX: offset.width, y: offset.height))
+            CATransaction.commit()
+            return
+        }
+        guard press != nil, let pen = session.tool.pen else { return }
         press?.append(CGPoint(x: min(max(point.x, 0), bounds.width), y: min(max(point.y, 0), bounds.height)))
         guard let press, !MarkStroke.isClick(press) else { return }
-        showStroke(press, colour: .of(session.upcomingNumber))
+        showStroke(MarkStroke.points(for: pen, drawn: press, straight: event.modifierFlags.contains(.shift)),
+                   pen: pen, colour: .of(session.upcomingNumber))
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let (mark, _, offset) = moving {
+            moving = nil
+            cursor(at: convert(event.locationInWindow, from: nil)).set()
+            return move(mark, by: offset)
+        }
         guard let points = press else { return }
         press = nil
+        guard let pen = session.tool.pen else { return }
         if MarkStroke.isClick(points) {
             hideStroke()
             if surface.picksThings, let point = points.first { pick(at: point) }
         } else {
-            draw(MarkStroke.thinned(points))
+            let straight = event.modifierFlags.contains(.shift)
+            let kept = pen == .pen || pen == .highlighter ? MarkStroke.thinned(points) : points
+            draw(MarkStroke.points(for: pen, drawn: kept, straight: straight), pen: pen)
         }
     }
 
-    /// Esc with a stroke in hand: the stroke goes, mark-up stays.
+    /// Esc with a stroke or a drawing in hand: it is let go, mark-up stays.
     func cancelStroke() -> Bool {
+        if let (mark, _, _) = moving {
+            moving = nil
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            markLayers[mark.number]?.setAffineTransform(.identity)
+            CATransaction.commit()
+            return true
+        }
         guard press != nil else { return false }
         press = nil
         hideStroke()
@@ -335,11 +392,14 @@ final class MarkupOverlayView: NSView {
     override func otherMouseDown(with event: NSEvent) {}
     override func menu(for event: NSEvent) -> NSMenu? { nil }
 
-    private func showStroke(_ points: [CGPoint], colour: MarkColour) {
+    private func showStroke(_ points: [CGPoint], pen: MarkPen, colour: MarkColour) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         strokeLayer.strokeColor = MarkDrawing.resolved(colour, in: effectiveAppearance)
-        strokeLayer.path = MarkStroke.path(through: points)
+        strokeLayer.lineWidth = pen.width
+        strokeLayer.opacity = Float(pen.opacity)
+        strokeLayer.lineCap = pen == .highlighter ? .butt : .round
+        strokeLayer.path = MarkStroke.path(for: pen, through: points)
         strokeLayer.isHidden = false
         CATransaction.commit()
     }
@@ -375,21 +435,26 @@ final class MarkupOverlayView: NSView {
         }
     }
 
-    private func draw(_ points: [CGPoint]) {
-        guard let area = MarkStroke.area(of: points, within: bounds) else { return hideStroke() }
+    private func draw(_ points: [CGPoint], pen: MarkPen) {
+        guard let area = MarkStroke.area(of: points, pen: pen, within: bounds) else { return hideStroke() }
         let number = session.takeNumber()
-        showStroke(points, colour: .of(number))
+        showStroke(points, pen: pen, colour: .of(number))
         pending += 1
-        surface.tie(number, to: area) { [weak self] tie in
+        tie(number, pen: pen, points: points, area: area) { [weak self] mark in
             guard let self else { return }
             self.pending -= 1
-            defer { self.hideStroke() }
-            guard self.session.isOn, let tie, tie.placement.scale > 0 else {
-                self.session.giveBack(number)
-                return
-            }
-            // The area and its ink in the units of what they are tied to,
-            // from its origin: that is what lets them move and zoom with it.
+            self.hideStroke()
+            if let mark { self.session.add(mark) } else { self.session.giveBack(number) }
+        }
+    }
+
+    /// Tie a drawn mark to what is under it, and take its picture. Its
+    /// area and its points are kept in the units of what they are tied to,
+    /// from its origin: that is what lets them move and zoom with it.
+    private func tie(_ number: Int, pen: MarkPen, points: [CGPoint], area: CGRect,
+                     done: @escaping (Mark?) -> Void) {
+        surface.tie(number, to: area) { [weak self] tie in
+            guard let self, self.session.isOn, let tie, tie.placement.scale > 0 else { return done(nil) }
             let origin = tie.placement.origin, scale = tie.placement.scale
             func own(_ point: CGPoint) -> CGPoint {
                 CGPoint(x: (point.x - origin.x) / scale, y: (point.y - origin.y) / scale)
@@ -398,9 +463,11 @@ final class MarkupOverlayView: NSView {
                              size: CGSize(width: area.width / scale, height: area.height / scale))
             var details = tie.details
             details.kind = "area"
-            let mark = Mark(number: number, shape: .area(box: box, ink: points.map(own)), name: "area",
+            details.shape = pen.rawValue
+            var mark = Mark(number: number, shape: .area(box: box, ink: points.map(own)), name: pen.word,
                             picture: nil, details: details)
-            self.session.add(mark)
+            mark.pen = pen
+            done(mark)
             let colour = MarkDrawing.resolved(mark.colour, in: self.effectiveAppearance)
             // The area with its ink (a circle around a word and a line
             // through it are different things to say), and what is around
@@ -411,6 +478,45 @@ final class MarkupOverlayView: NSView {
                                                 mark: mark, at: tie.placement, colour: colour)
                 self?.session.keep(inked, for: number)
             }
+        }
+    }
+
+    // MARK: - Moving a drawing
+
+    /// The drawing in hand with the Move tool: which, where the press
+    /// began, and how far it has been carried.
+    private var moving: (mark: Mark, from: CGPoint, offset: CGSize)?
+
+    /// The drawn mark under a point, the newest first. A picked element
+    /// is not one: it is where its element is.
+    private func movable(at point: CGPoint) -> Mark? {
+        session.marks.reversed().first { mark in
+            guard case .area = mark.shape, let placement = surface.placement(of: mark.number) else { return false }
+            return placement.box(of: mark.shape).insetBy(dx: -4, dy: -4).contains(point)
+        }
+    }
+
+    /// Let go of a drawing somewhere else: it is tied to what is under it
+    /// there, and pictured again. Where it cannot be (off the edge of an
+    /// image), it goes back.
+    private func move(_ mark: Mark, by offset: CGSize) {
+        func settle() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            markLayers[mark.number]?.setAffineTransform(.identity)
+            CATransaction.commit()
+            place()
+        }
+        guard case .area(_, let ink) = mark.shape, abs(offset.width) + abs(offset.height) >= 1,
+              let placement = surface.placement(of: mark.number) else { return settle() }
+        let points = ink.map { point -> CGPoint in
+            let placed = placement.point(point)
+            return CGPoint(x: placed.x + offset.width, y: placed.y + offset.height)
+        }
+        guard let area = MarkStroke.area(of: points, pen: mark.pen, within: bounds) else { return settle() }
+        tie(mark.number, pen: mark.pen, points: points, area: area) { [weak self] moved in
+            if let moved { self?.session.replace(moved) }
+            settle()
         }
     }
 
@@ -460,7 +566,10 @@ private final class MarkLayer: CALayer {
         shape.lineCap = .round
         shape.lineJoin = .round
         if case .area = mark.shape {
-            shape.lineWidth = MarkStroke.width
+            shape.lineWidth = mark.pen.width
+            shape.opacity = Float(mark.pen.opacity)
+            // A marker's ends are cut square.
+            if mark.pen == .highlighter { shape.lineCap = .butt }
         } else {
             shape.lineWidth = MarkDrawing.outline
         }
@@ -492,7 +601,7 @@ private final class MarkLayer: CALayer {
                                 transform: &transform)
         case .area(_, let ink):
             var transform = offset
-            shape.path = MarkStroke.path(through: ink.map(placement.point)).copy(using: &transform)
+            shape.path = MarkStroke.path(for: mark.pen, through: ink.map(placement.point)).copy(using: &transform)
         }
         // On the corner, and never off the edge of what it may show in.
         let half = MarkDrawing.badge / 2, at = placement.badge(of: mark.shape)

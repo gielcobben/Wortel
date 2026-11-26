@@ -349,14 +349,14 @@ feature is held to.
 | `⌘B` | Show or hide the sidebar |
 | `⌥⌘B` | Open Changes and Files beside the terminal, or close them |
 | `⌘J` | Go to the terminal under the main one (making it if there is none), and back |
-| `⇧⌘E` / `⌃⇧G` | Files / source control |
+| `⇧⌘C` / `⇧⌘H` / `⇧⌘F` | Changes / History / Files (`⌃⇧G` is source control, on the one you used last) |
 | `⌘T` | New terminal tab in the area you are in |
 | `⌘D` / `⇧⌘D` | Split right / split down: a new terminal in a split beside or under the one you are in |
 | `⇧⌘↩` / `⌃⌘=` | Show one split alone, and all of them again / make the splits equal |
 | `⌃⌥⌘` and an arrow | Focus the split in that direction |
 | `⌃⌘` and an arrow | Move the tab in front to the split in that direction |
 | `` ⌃⇧` `` | New terminal below |
-| `⇧⌘L` | New browser tab |
+| `⇧⌘B` | New browser tab |
 | `⇧⌘T` | Reopen closed tab |
 | `⌃Tab` / `⌃⇧Tab` | Next / previous tab (also `⌥⌘→` / `⌥⌘←`) |
 | `⌘]` / `⌘[` | Focus the next / previous area |

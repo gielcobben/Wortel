@@ -119,6 +119,16 @@ enum SplitProbe {
                 entry["landed"] = landed
                 trail.append(entry)
                 continue
+            case let key where key.hasPrefix("key:"):
+                // A key as the terminal meets it: first what libghostty
+                // would do with it ahead of the menu, then the menu.
+                let landed = press(String(key.dropFirst("key:".count)), manager, controller)
+                await pause(1.2)
+                var entry = state(manager, controller)
+                entry["step"] = step
+                entry["landed"] = landed
+                trail.append(entry)
+                continue
             case let picture where picture.hasPrefix("picture:"):
                 await pause(0.4)
                 draw(controller.window, to: String(picture.dropFirst("picture:".count)))
@@ -163,6 +173,45 @@ enum SplitProbe {
         default: point = NSPoint(x: frame.midX, y: frame.midY)
         }
         return controller.split.probeDrop(tab, at: point)
+    }
+
+    /// Press `chord` (`shift+cmd+c`): a key-down made here, never sent
+    /// through the system, so it reaches no other app. Says who took it. A
+    /// key the session's terminal would take ahead of the menu is a fault:
+    /// the menu's command never runs and the letter is typed instead.
+    @MainActor
+    private static func press(_ chord: String, _ manager: SessionManager,
+                              _ controller: MainWindowController) -> String {
+        let codes: [String: UInt16] = ["a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "c": 8, "b": 11,
+                                       "e": 14, "t": 17, "1": 18, "2": 19, "3": 20, "l": 37, "j": 38]
+        var flags: NSEvent.ModifierFlags = []
+        var letter = ""
+        for part in chord.lowercased().split(separator: "+").map(String.init) {
+            switch part {
+            case "cmd": flags.insert(.command)
+            case "shift": flags.insert(.shift)
+            case "ctrl": flags.insert(.control)
+            case "alt": flags.insert(.option)
+            default: letter = part
+            }
+        }
+        guard let code = codes[letter] else { return "no such key" }
+        // Made the way the system makes one, so its characters are what a
+        // real key gives (with ⌘ held they are not what you would guess),
+        // and never posted: it exists only in this process.
+        var cgFlags: CGEventFlags = []
+        if flags.contains(.command) { cgFlags.insert(.maskCommand) }
+        if flags.contains(.shift) { cgFlags.insert(.maskShift) }
+        if flags.contains(.control) { cgFlags.insert(.maskControl) }
+        if flags.contains(.option) { cgFlags.insert(.maskAlternate) }
+        guard let cgEvent = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) else { return "no event" }
+        cgEvent.flags = cgFlags
+        guard let event = NSEvent(cgEvent: cgEvent) else { return "no event" }
+        if manager.selected?.surfaceView?.takesAheadOfMenu(event) == true {
+            return "FAULT the terminal takes it ahead of the menu"
+        }
+        guard let menu = NSApp.mainMenu else { return "no menu" }
+        return menu.performKeyEquivalent(with: event) ? "the menu" : "FAULT nothing takes it"
     }
 
     @MainActor

@@ -533,21 +533,30 @@ enum MainMenu {
         viewMenu.addItem(withTitle: "Sort Unread First", action: #selector(AppDelegate.toggleSortUnreadFirst(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
-        // The three panes by number, as git apps number theirs (GitHub Desktop,
-        // Tower and Fork: ⌘1 Changes, ⌘2 History), with ⌃ added because ⌘1…⌘9
-        // are the sessions here. Each opens its pane, brings it forward, or
-        // closes it when it's already in front. Titles flip Show/Hide in
-        // AppDelegate.validateMenuItem.
-        let changes = viewMenu.addItem(withTitle: "Show Changes", action: #selector(AppDelegate.showChanges(_:)), keyEquivalent: "1")
-        changes.keyEquivalentModifierMask = [.control, .command]
-        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "2")
-        history.keyEquivalentModifierMask = [.control, .command]
-        // ⌥⇧⌘G, what History had, keeps working.
+        // The three panes, each by ⇧⌘ and its first letter: C, H, F. One
+        // shape with the browser's ⇧⌘B (Tab menu), which is how VS Code, Zed
+        // and the Claude app name theirs (⇧⌘E Explorer, ⇧⌘F Search or Files,
+        // ⇧⌘D Changes, ⇧⌘B Browser), and what the empty tab's page lists. A
+        // terminal is ⌘T, the one that differs, as it does in each of those.
+        // Each opens its pane, brings it forward, or closes it when it is on
+        // screen. Titles flip Show/Hide in AppDelegate.validateMenuItem.
+        //
+        // ⇧⌘F is also a default of libghostty's (end_search, performable),
+        // which would take it ahead of this menu: unbound in wortel.conf.
+        let changes = viewMenu.addItem(withTitle: "Show Changes", action: #selector(AppDelegate.showChanges(_:)), keyEquivalent: "c")
+        changes.keyEquivalentModifierMask = [.command, .shift]
+        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "h")
+        history.keyEquivalentModifierMask = [.command, .shift]
+        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "f")
+        files.keyEquivalentModifierMask = [.command, .shift]
+        // What they were until 2026-11-26 keeps working: ⌃⌘1, ⌃⌘2 and ⌃⌘3
+        // (numbered as git apps number theirs, with ⌃ because ⌘1…⌘9 are the
+        // sessions here), ⌥⇧⌘G for History, and for Files ⇧⌘E, as VS Code,
+        // Cursor, Zed and Codex open their file tree, and ⌥⌘E.
+        addHidden(viewMenu, "Show Changes", #selector(AppDelegate.showChanges(_:)), "1", [.control, .command])
+        addHidden(viewMenu, "Show History", #selector(AppDelegate.showHistory(_:)), "2", [.control, .command])
         addHidden(viewMenu, "Show History", #selector(AppDelegate.showHistory(_:)), "g", [.command, .option, .shift])
-        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "3")
-        files.keyEquivalentModifierMask = [.control, .command]
-        // ⇧⌘E, as VS Code, Cursor, Zed and Codex open their file tree, and
-        // ⌥⌘E, what Wortel had, keep working.
+        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "3", [.control, .command])
         addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .shift])
         addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .option])
         // ⌃⇧G, as VS Code, Cursor, Zed and Codex open source control: the
@@ -638,9 +647,12 @@ enum MainMenu {
         // had tabs, ⌘T was an alias of ⌘N: a session was the only tab there was.)
         let newTerminal = tabMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newTerminalHere(_:)), keyEquivalent: "t")
         newTerminal.keyEquivalentModifierMask = [.command]
-        // ⇧⌘L: a browser in the row you're in, as cmux opens its browser.
-        let newBrowser = tabMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "l")
+        // ⇧⌘B: a browser in the row you're in, by its first letter like the
+        // panes (View menu) and as the Claude app opens its browser. ⇧⌘L,
+        // what it was (cmux's key for it), keeps working.
+        let newBrowser = tabMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "b")
         newBrowser.keyEquivalentModifierMask = [.command, .shift]
+        addHidden(tabMenu, "New Browser Tab", #selector(AppDelegate.newBrowserHere(_:)), "l", [.command, .shift])
         // ⌘D / ⇧⌘D: every terminal's split right and split down (iTerm,
         // Ghostty, Warp, cmux, Terminal), and since the main area can be
         // split, that is what they are: a new terminal in a split of its own,

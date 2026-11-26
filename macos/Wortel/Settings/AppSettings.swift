@@ -35,7 +35,7 @@ final class AppSettings {
     /// on this Mac in a terminal (`localhost:3000`), open in the Mac's default
     /// browser instead of a tab. The same choice as the checkmark on a
     /// server's right-click menu. App-wide, because which browser you test in
-    /// is a habit, not a property of a session. "+" and ⇧⌘L still make a tab;
+    /// is a habit, not a property of a session. "+" and ⇧⌘B still make a tab;
     /// asking for one is asking for one.
     var opensServersInDefaultBrowser: Bool {
         didSet { defaults.set(opensServersInDefaultBrowser, forKey: Self.serversKey) }

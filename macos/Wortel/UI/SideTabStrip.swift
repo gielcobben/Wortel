@@ -311,6 +311,19 @@ final class SideTabStrip: NSView {
             view.frame = frame
             view.alphaValue = 0
         }
+        // Which tabs give up their close button's room is settled before
+        // anything moves, and without moving: left to the layout pass after
+        // the slide, a tab slid to its narrower width still laid out for the
+        // room, its title cut short, and then jumped (a new tab in a row
+        // with no room to spare, which is what a "+" in a narrow split is).
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            for (view, hugs) in zip(tabViews, plan.hugging) where view.isHugging != hugs {
+                view.isHugging = hugs
+                view.layoutSubtreeIfNeeded()
+            }
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Motion.tabs
             context.timingFunction = Motion.curve
@@ -546,14 +559,25 @@ private final class SideTabView: NSControl, TabTitleProviding {
     /// for a button it will never show: the same inset after its title as
     /// before its glyph. With the room kept, it read as a tab with a hole at
     /// its end, once the session's terminal was always drawn as a tab.
+    ///
+    /// Never by `isHugging`: this is what the row plans from, and a width
+    /// that changed with the plan's own answer made the plan flip on every
+    /// layout pass (hugging, so already narrow, so not asked to hug, so wide
+    /// again), which showed as titles cut short after a tab was added and
+    /// put right by the next pass.
     var fittingWidth: CGFloat {
-        Self.inset + Self.glyph + Self.glyphGap + titleWidth + trailingRoom
+        Self.inset + Self.glyph + Self.glyphGap + titleWidth + naturalTrailingRoom
     }
 
-    /// What follows the title: the close button and its gaps, or the inset.
+    /// What follows the title with room to spare: the close button and its
+    /// gaps, or for a tab that has none, the inset.
+    private var naturalTrailingRoom: CGFloat {
+        pinned ? Self.inset : Self.closeGap + Self.closeSize + Self.endInset
+    }
+
+    /// What follows the title as the tab is laid out now.
     private var trailingRoom: CGFloat {
-        if isHugging { return Self.huggingInset }
-        return pinned ? Self.inset : Self.closeGap + Self.closeSize + Self.endInset
+        isHugging ? Self.huggingInset : naturalTrailingRoom
     }
 
     /// Only what changed: a row is updated whole whenever any tab in it

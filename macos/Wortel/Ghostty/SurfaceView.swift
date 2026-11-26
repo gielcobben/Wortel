@@ -2119,17 +2119,35 @@ final class SurfaceView: NSView {
         }
     }
 
+    /// What libghostty makes of a key: whether it is one of its bindings,
+    /// and whether it is a performable one, which goes to it ahead of the
+    /// menu. A key the menu owns must not be one of those (`wortel.conf`
+    /// unbinds each), or it is typed into the terminal instead.
+    private func binding(for event: NSEvent, on surface: ghostty_surface_t) -> (isBinding: Bool, aheadOfMenu: Bool) {
+        var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
+        var flags = ghostty_binding_flags_e(0)
+        let isBinding = (event.characters ?? "").withCString { ptr in
+            ghosttyEvent.text = ptr
+            return ghostty_surface_key_is_binding(surface, ghosttyEvent, &flags)
+        }
+        return (isBinding, isBinding && flags.rawValue & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue != 0)
+    }
+
+    #if DEBUG
+    /// For `SplitProbe`: whether this terminal would take `event` ahead of
+    /// the menu, by the test `performKeyEquivalent` makes.
+    func takesAheadOfMenu(_ event: NSEvent) -> Bool {
+        guard let surface else { return false }
+        return binding(for: event, on: surface).aheadOfMenu
+    }
+    #endif
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
         guard focused else { return false }
         guard let surface else { return false }
 
-        var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
-        var bindingFlags = ghostty_binding_flags_e(0)
-        let isBinding = (event.characters ?? "").withCString { ptr in
-            ghosttyEvent.text = ptr
-            return ghostty_surface_key_is_binding(surface, ghosttyEvent, &bindingFlags)
-        }
+        let (isBinding, aheadOfMenu) = binding(for: event, on: surface)
 
         // A performable binding is ghostty's, ahead of the menu: it acts only
         // when it can, and otherwise the key goes to the program, as in
@@ -2137,7 +2155,7 @@ final class SurfaceView: NSView {
         // Codex in fullscreen copies the selection it draws itself; the menu's
         // Copy swallowed it. In legacy key encoding a ⌘ key sends nothing, so
         // a shell sees no difference.
-        if isBinding, bindingFlags.rawValue & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue != 0 {
+        if aheadOfMenu {
             keyDown(with: event)
             return true
         }

@@ -290,7 +290,7 @@ opens and closes (`docs/decisions.md`).
 **A button asks, a key does not.** A split button makes a split beside or
 under the one you are in with an empty tab in it. The "+" does the same in
 the split it belongs to. The keys go straight there: ⌘D and ⇧⌘D put a
-terminal in the new split, ⌘T a terminal in this one, ⌃⌘1 opens Changes. A
+terminal in the new split, ⌘T a terminal in this one, ⇧⌘C opens Changes. A
 key says what it wants. A button is pressed by someone still deciding, so it
 gives the place first and then the choice, on a page that is already there.
 The "…" is the session itself: rename, pin, close, what its sidebar row's

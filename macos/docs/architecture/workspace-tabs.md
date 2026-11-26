@@ -32,7 +32,7 @@ below).
 
 Besides panes and terminals, a tab can be a previewed file (`SideTab.file`),
 a browser (`SideTab.browser(id)`, `Wortel/Browser/`), opened with no address
-from an empty tab's page or ⇧⌘L, or on a server from the running-jobs
+from an empty tab's page or ⇧⌘B, or on a server from the running-jobs
 popover, or an **empty tab** (`SideTab.blank(id)`, **The empty tab**, below),
 which is none of them yet. A browser's address lives on its
 session (`browserAddresses`, persisted) and its live web view in
@@ -229,7 +229,8 @@ with it the one state a leaf could be in that a made split could not.
   closes them (`putAway`), and the keyboard goes back to the main row, or
   stays in the split when something else is left in it. `toggleCloses` is
   what the menu item reads for its title.
-- **⌃⌘1, ⌃⌘2, ⌃⌘3, ⌃⇧G** are `activate`. One rule, wherever the pane is: not open, it opens in the
+- **⇧⌘C, ⇧⌘H, ⇧⌘F, ⌃⇧G** (and ⌃⌘1, ⌃⌘2, ⌃⌘3, what the first three were until
+  2026-11-26) are `activate`. One rule, wherever the pane is: not open, it opens in the
   column's row; open behind another tab or behind a zoom, it comes forward
   where it is; on screen, it is closed by `putAway`, where the whole column
   used to hide (`git-panel.md`). Until later on 2026-11-26 a pane in the
@@ -436,6 +437,20 @@ The views:
   from 2026-11-26: it is what lets Changes and Files both keep their names
   in a 440pt split under the window's buttons (there were six that day). The session's own tab
   never keeps that room at all, since it is never closed (`b7675b2`).
+  **The plan has to be a pure function of the row**: the tabs, their titles,
+  which is in front, and the width. It was not at first. A tab's
+  `fittingWidth`, which the plan starts from, read `isHugging`, which the
+  plan sets. So a tab that had been asked to give up its room reported
+  itself narrow, the next pass saw a row that fitted and did not ask, the
+  tab went wide again, and the pass after asked again. It showed as titles
+  cut short ("Ch…", "F") after a tab was added to a row with no room to
+  spare, put right by the next layout pass. `fittingWidth` is now the
+  natural width whatever the tab is laid out as (`naturalTrailingRoom`),
+  and only `trailingRoom`, used for laying the tab out, follows
+  `isHugging`. `slideIntoPlace` also sets which tabs give up their room
+  before the slide, without animating that, so a tab does not slide to its
+  narrow width still laid out for the wide one. Anything new the plan
+  reads off a tab view must not be something the plan writes.
 - **The empty tab** (`SideTab.blank(id)`, `Wortel/UI/NewTabPage.swift`,
   since 2026-11-26). A tab that is nothing yet, titled "New Tab". A row's
   "+" opens one at the end of its row, in front (`openBlank`), and a row
@@ -443,7 +458,9 @@ The views:
   titlebar's split buttons make a split around one. Its page is
   `NewTabPage`, drawn by `TabContent` like any page that is not a
   terminal: five rows, Terminal, Browser, Changes, History, Files, each
-  with the key that opens the same thing without asking, Changes with its
+  with the key that opens the same thing without asking (⌘T, ⇧⌘B, ⇧⌘C, ⇧⌘H,
+  ⇧⌘F: `rows` builds a pane's from the first letter of its title, as
+  `MainMenu` has them), Changes with its
   count. A click on a row, or the arrows and Return, calls
   `GitPanelModel.fill(_:with:)`: the split becomes the one you are in, the
   new tab is opened there in front (`NewTabChoice`; a pane that is open in
@@ -603,7 +620,7 @@ The keyboard:
   column opens on it goes to the column, and down to the strip, when that
   one has no tabs, which makes it. The session's own tab goes nowhere.
 - A click in a split makes it the area you're in
-  (`MainSplitViewController.region(at:)`), so ⌘T, ⌘W, ⇧⌘T and ⇧⌘L act there.
+  (`MainSplitViewController.region(at:)`), so ⌘T, ⌘W, ⇧⌘T and ⇧⌘B act there.
   Two places answer nil, so a press there leaves you where you were: a
   divider, and any of the window's controls (`WindowControls`), which lie
   over the end of whichever row is under them. Without the second, a press

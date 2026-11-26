@@ -112,7 +112,9 @@ def line(state):
     print("%-12s area=%-10s zoom=%-10s keyboard=%-10s %s" % (
         state.get("step", "end"), state.get("area", "")[:10], state.get("zoomed", "")[:10] or "-",
         str(state.get("keyboardIn", "-"))[:10], splits))
-    if "landed" in state: print("    landed:", state["landed"])
+    if "landed" in state:
+        print("    landed:", state["landed"])
+        if str(state["landed"]).startswith("FAULT"): faults += 1
     for t in state.get("terminals", []):
         if t["hidden"]:
             if t["keyboard"]:

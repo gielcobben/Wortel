@@ -1824,7 +1824,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         StoredFlag.changesDiff.value.toggle()
     }
 
-    /// ⇧⌘L: a new browser in the row you're in.
+    /// ⇧⌘B (and ⇧⌘L, what it was): a new browser in the row you're in.
     @objc func newBrowserHere(_ sender: Any?) {
         focusMainWindow()
         gitPanel.openBrowser(at: nil, in: focusedRegion())
@@ -1951,7 +1951,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         controller.show()
     }
 
-    /// ⌃⌘1 — open Changes, bring it forward, or close it, as ⌃⌘2 does History.
+    /// ⇧⌘C — open Changes, bring it forward, or close it, as ⇧⌘H does History.
     @objc func showChanges(_ sender: Any?) {
         focusMainWindow()
         gitPanel.activate(.changes, via: .shortcut)
@@ -2377,12 +2377,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// ⌘⌥E — the same rule for the Files pane.
     @objc func toggleFileTree(_ sender: Any?) {
-        // As ⌃⌘1 and ⌃⌘2: from a preview window, act on the window you'll see.
+        // As ⇧⌘C and ⇧⌘H: from a preview window, act on the window you'll see.
         focusMainWindow()
         gitPanel.activate(.files, via: .shortcut)
     }
 
-    /// The pane ⌃⌘1, ⌃⌘2 or ⌃⌘3 opens, for the menu titles.
+    /// The pane ⇧⌘C, ⇧⌘H or ⇧⌘F opens, for the menu titles.
     private static func pane(toggledBy action: Selector?) -> InspectorPane? {
         switch action {
         case #selector(showChanges(_:)): return .changes

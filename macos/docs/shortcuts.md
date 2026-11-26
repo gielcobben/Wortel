@@ -3,16 +3,20 @@
 Wortel's shortcuts follow the apps people already have in their fingers, so the
 layout works the way you'd guess from day one. Where apps disagree, the choice
 goes to what most of them share, and nearly every shortcut is Command-based.
-The few Control keys are the ones the editors all use (⌃Tab, ⌃`, ⌃⇧G), and
-⌃⌘ with a number for the panes, where ⌘ alone is taken by the sessions.
+The few Control keys are the ones the editors all use (⌃Tab, ⌃`, ⌃⇧G).
 Control and Option with a letter always stay with the shell.
 
 A few rules cover most of it:
 
 - **The layout is an editor's.** ⌘B is the sidebar, ⌥⌘B is Changes and Files
   beside the terminal, ⌘J is the terminal below: the three keys VS Code,
-  Cursor, Zed and Codex use for their three areas. The three panes are numbered as git
-  apps number theirs: ⌃⌘1 Changes, ⌃⌘2 History, ⌃⌘3 Files.
+  Cursor, Zed and Codex use for their three areas.
+- **What you open is ⇧⌘ and its first letter.** ⇧⌘C Changes, ⇧⌘H History,
+  ⇧⌘F Files, ⇧⌘B a browser. That is the shape VS Code, Zed and the Claude
+  app give theirs (⇧⌘E Explorer, ⇧⌘F Search or Files, ⇧⌘D Changes, ⇧⌘B
+  Browser). A terminal is ⌘T, the one that differs, as it does in each of
+  those. The keys these had until 2026-11-26 still work: ⌃⌘1, ⌃⌘2, ⌃⌘3 and
+  ⇧⌘L.
 - **Up and down for sessions, brackets for tabs.** ⌥⌘↑ / ⌥⌘↓ walk the sidebar,
   as Arc walks its; ⇧⌘[ / ⇧⌘] are previous and next tab, as in every Mac app.
 - **A terminal is a terminal.** ⌘T, ⌘W, ⌘D, ⇧⌘D, ⌘K and ⌘] mean what they mean
@@ -114,10 +118,10 @@ without asking:
 | On the page | Key that skips the page |
 |---|---|
 | Terminal | ⌘T |
-| Browser | ⇧⌘L |
-| Changes | ⌃⌘1 |
-| History | ⌃⌘2 |
-| Files | ⌃⌘3 |
+| Browser | ⇧⌘B |
+| Changes | ⇧⌘C |
+| History | ⇧⌘H |
+| Files | ⇧⌘F |
 
 Click a row, or use ↑ and ↓ and Return, and that takes the tab's place. Esc
 closes the empty tab. Changes, History or Files that are open in another
@@ -194,9 +198,9 @@ Splits were added on 2026-11-26 and are not in a release yet.
 
 | Action | Shortcut | Same as |
 |---|---|---|
-| Show Changes | ⌃⌘1 | GitHub Desktop, Tower, Fork (⌘1) |
-| Show History | ⌃⌘2 (also ⌥⇧⌘G) | GitHub Desktop, Tower (⌘2) |
-| Show Files | ⌃⌘3 (also ⇧⌘E, ⌥⌘E) | VS Code, Cursor, Zed, Codex (⇧⌘E) |
+| Show Changes | ⇧⌘C (also ⌃⌘1) | the Claude app (⇧⌘D); GitHub Desktop, Tower, Fork (⌘1) |
+| Show History | ⇧⌘H (also ⌃⌘2, ⌥⇧⌘G) | GitHub Desktop, Tower (⌘2) |
+| Show Files | ⇧⌘F (also ⌃⌘3, ⇧⌘E, ⌥⌘E) | the Claude app (⇧⌘F); VS Code, Cursor, Zed, Codex (⇧⌘E) |
 | Source control, on the pane you used last | ⌃⇧G (also ⌥⌘G) | VS Code, Cursor, Zed, Codex |
 | Focus the list | ⌥⌘L | |
 | The selected file in the preview tab, or close it (in Changes or Files) | Space | Finder (Quick Look) |
@@ -217,7 +221,7 @@ there too, and a double-click on the file it already shows keeps it as a tab.
 
 These act on the tab row you're in: the split you last clicked or typed in,
 picked a tab in, or moved to with ⌘] / ⌘[ or ⌃⌥⌘ and an arrow. ⌘T, ⌘W, ⇧⌘T
-and ⇧⌘L act in whichever split you're in.
+and ⇧⌘B act in whichever split you're in.
 
 | Action | Shortcut | Same as |
 |---|---|---|
@@ -225,7 +229,7 @@ and ⇧⌘L act in whichever split you're in.
 | Split right: a new terminal in a split beside the one you're in | ⌘D | iTerm, Ghostty, Warp, cmux |
 | Split down: the same, under it | ⇧⌘D | iTerm, Ghostty, Warp, cmux |
 | New terminal below: one more tab in the split under the main terminal | ⌃⇧` | VS Code, Zed (new terminal) |
-| New browser tab here | ⇧⌘L | cmux |
+| New browser tab here | ⇧⌘B (also ⇧⌘L) | the Claude app (⇧⌘B); cmux (⇧⌘L) |
 | Close tab | ⌘W | everyone |
 | Reopen closed tab | ⇧⌘T | Safari, Chrome, VS Code, Zed, iTerm, Ghostty, Warp, cmux |
 | Next / previous tab | ⇧⌘] / ⇧⌘[ (also ⌃Tab / ⌃⇧Tab, ⌥⌘→ / ⌥⌘←) | Safari, Chrome, Finder, Xcode, Terminal, iTerm, Ghostty; VS Code, Zed |
@@ -359,7 +363,11 @@ into the main area otherwise.
   preview, ⌘A is Select All as usual.
 - **⌘1 to ⌘9 are sessions, not tabs.** Sessions are what you switch between all
   day, which is also how Codex and cmux spend those keys. So the git apps' ⌘1
-  and ⌘2 for Changes and History are ⌃⌘1 and ⌃⌘2 here.
+  and ⌘2 for Changes and History are not used: those are ⇧⌘C and ⇧⌘H (and
+  still ⌃⌘1 and ⌃⌘2, what they were).
+- **⇧⌘F is Files, not find.** Where an editor searches the project on ⇧⌘F,
+  Wortel shows the file tree, by its first letter like the other things you
+  open. ⌘P finds a file by name.
 - **⌘, is Settings**, as in every Mac app: a short window of switches. Keys
   are not among them; `wortel.conf` decides those. ⌘P finds any session, file
   or command, ⇧⌘P commands only, and so does the Help menu's search field.

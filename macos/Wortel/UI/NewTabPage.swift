@@ -31,11 +31,12 @@ struct NewTabPage: View {
     private var rows: [Row] {
         var rows = [
             Row(id: 0, title: "Terminal", symbol: "apple.terminal", shortcut: "⌘T", choice: .terminal),
-            Row(id: 1, title: "Browser", symbol: "globe", shortcut: "⇧⌘L", choice: .browser),
+            Row(id: 1, title: "Browser", symbol: "globe", shortcut: "⇧⌘B", choice: .browser),
         ]
+        // ⇧⌘ and the first letter, as the menus have them (`MainMenu`).
         for (index, pane) in InspectorPane.allCases.enumerated() {
             rows.append(Row(id: 2 + index, title: pane.title, symbol: pane.symbol,
-                            shortcut: "⌃⌘\(index + 1)", choice: .pane(pane)))
+                            shortcut: "⇧⌘" + pane.title.prefix(1), choice: .pane(pane)))
         }
         return rows
     }

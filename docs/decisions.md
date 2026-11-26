@@ -481,7 +481,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   one in that split**, in every split. The first click gives you the
   place, and the tab's page asks what goes in it (`NewTabPage`): Terminal,
   Browser, Changes, History, Files, each with the key that opens the same
-  thing without asking (⌘T, ⇧⌘L, ⌃⌘1, ⌃⌘2, ⌃⌘3), Changes with its count. A
+  thing without asking (⌘T, ⇧⌘L, ⌃⌘1, ⌃⌘2, ⌃⌘3 as built; ⇧⌘ and a letter
+  since "One shape for the keys", below), Changes with its count. A
   click on a row, or the arrows and Return, puts that in the tab's place.
   Escape closes the empty tab. A pane that is open in another split is
   moved here. A row that already has an empty tab brings it forward, not a
@@ -555,7 +556,67 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   --relaunch`: 0 faults, and the render after the reset shows four
   terminals as tabs of the main row, the one that was zoomed in front, and
   Changes and Files in a 440pt split on the right. Not verified: choosing
-  the item from the real menu, and its dimming.
+  the item from the real menu, and its dimming. **One shape for the keys
+  of what you open: ⇧⌘ and the first letter.** The owner, of the empty
+  tab's page listing ⌘T, ⇧⌘L, ⌃⌘1, ⌃⌘2 and ⌃⌘3: "I do think the shortcuts
+  should be all more simular and easier to use to quickly open any of
+  these when you know the shortcuts". The page had put five keys of three
+  shapes in one column, which is where it showed. What other tools do,
+  read from their own docs that day: VS Code has ⇧⌘E Explorer, ⇧⌘F Search,
+  ⇧⌘D Run and ⇧⌘X Extensions, with Source Control (⌃⇧G) and the terminal
+  (⌃`) outside the pattern. Zed has ⇧⌘E project, ⇧⌘B outline, ⇧⌘D debug
+  and ⇧⌘C collab, with git (⌃⇧G) and the terminal (⌃`) outside it. The
+  Claude app has ⇧⌘D Changes, ⇧⌘B Browser and ⇧⌘F Files, with the terminal
+  on ⌘J. cmux and Warp have no family (⌘T, ⌘D, ⇧⌘D, and cmux's browser on
+  ⇧⌘L). JetBrains and Xcode number theirs (⌘1 Project, ⌘9 Git). So ⇧⌘ and
+  the first letter is the common shape, and the terminal is the exception
+  in every one of them. The choice: Changes ⇧⌘C, History ⇧⌘H, Files ⇧⌘F,
+  New Browser Tab ⇧⌘B. A terminal stays ⌘T, for the same reason it is the
+  exception everywhere: ⌘T is "new tab" in every app with tabs, and a
+  terminal is what a tab is here. The old keys keep working as hidden menu
+  items (⌃⌘1, ⌃⌘2, ⌃⌘3, ⇧⌘L, and the older ⌥⇧⌘G, ⇧⌘E and ⌥⌘E), so nothing
+  anyone has in their fingers stops. Numbering, as the git apps do and as
+  the panes were, was the other shape: it says nothing about which pane a
+  number is, and ⌘1 to ⌘9 are the sessions. **The ⇧⌘F trap.** ⇧⌘F is a
+  default of libghostty's (`end_search`, performable), and a performable
+  binding goes to libghostty ahead of the menu (the 2026-11-12 entry
+  below). With a terminal focused, Show Files would never have run and
+  the key would have gone on to the program. `wortel.conf` unbinds it,
+  the seventh such key. The other three letters are no default of
+  libghostty's, read in its `Config.zig` at the pinned commit. **A check
+  that presses the key.** The mistake cannot be seen in the menu, so the
+  probe got a step that can: `key:<chord>` (`key:shift+cmd+f`) makes a
+  key-down the way the system makes one (a CGEvent turned into an NSEvent
+  and never posted, so it reaches no other app), asks the session's
+  terminal whether it would take it ahead of the menu, by the same test
+  `performKeyEquivalent` makes, and otherwise hands it to the main menu.
+  A key the terminal takes first, or that nothing takes, is a fault. An
+  NSEvent built by hand did not match Shift chords at all (⇧⌘D, known to
+  work, found no item), which is why it is a CGEvent. Run it for every
+  new menu key. **A tab-row bug, fixed with it.** The owner: "when i click
+  the plus button the other tab is animating weirdly". A tab's natural
+  width read whether the row had already asked it to give up its close
+  button's room, so the row's plan depended on its own last answer and
+  flipped on every layout pass. After a tab was added to a row short of
+  room, titles were cut short ("Ch…", "F") until the next pass. It came in
+  with the rule itself (`b4b7710`). A tab's natural width no longer reads
+  it, and which tabs give up the room is settled before a slide starts.
+  **Left as it is:** the gap between the last tab and the "+", which is
+  the room every tab keeps for its close button. The owner: "if it is what
+  it is, all good." The other way is the close button over the glyph on
+  every tab, where a click meant to pick a tab closes it, and that is done
+  only when a row is short of room. **Owed at the release:** the site's
+  list of shortcuts (`web/`) still has the old keys, as it describes the
+  released app. Verified (2026-11-26, throwaway copies): WortelTests, 1938
+  tests, 0 failures, run before the two tab-row fixes, which are in a view
+  the tests do not build. With the unbind taken out, `key:shift+cmd+f`
+  reports the terminal taking it ahead of the menu; with it in, the menu
+  takes it and Files opens. `key:` for ⇧⌘C, ⇧⌘F, ⇧⌘H, ⇧⌘B and ⌘T, and for
+  ⌃⌘1, ⌃⌘2, ⌃⌘3, ⇧⌘L and ⇧⌘E: each goes to the menu and does its thing, 0
+  faults. Renders of a 440pt split's row after "+" with two tabs in it,
+  and after two relayouts: all three titles whole each time. Not verified:
+  the keys on the real keyboard in the real app, and with a browser page
+  or a text field holding the keyboard.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry
@@ -1178,7 +1239,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   nothing and goes on to the program, and ⌘J typed `j` into Claude instead of
   opening the strip. To list what is still performable, ask
   `ghostty_surface_key_is_binding` for its flags; `ghostty_config_trigger`
-  doesn't report performable bindings.
+  doesn't report performable bindings. **2026-11-26:** ⌘, and ⇧⌘F have
+  joined the list (⇧⌘F is libghostty's `end_search`, and became Show Files
+  on the branch `flexible-panes`), and there is a check now: the probe's
+  `key:` step presses a key and says whether the terminal would take it
+  ahead of the menu (`macos/docs/architecture/command-menus-hotkey.md`).
 - **2026-11-16. The main window is movable only while fn-⌃ is held, a menu
   is open or the pointer is outside it** (`WindowMovability`). Not any
   modifier: ⌃ and ⌘ are down half the time in a terminal. Replaces

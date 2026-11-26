@@ -641,6 +641,14 @@ enum MainMenu {
         main.addItem(tabItem)
         let tabMenu = NSMenu(title: "Tab")
         tabItem.submenu = tabMenu
+        // ⌥⌘T: the tab that asks, the "+" of the row you're in as a key. An
+        // empty tab whose page lists what it can become, and there a first
+        // letter picks. ⌥ is "the other one" of a key here (⌘N and ⌥⌘N).
+        // Not ⌘T: that is followed by typing, which on that page would pick
+        // rows by their letters. Not ⇧⌘T: Reopen Closed Tab, here and in
+        // every browser.
+        let newTab = tabMenu.addItem(withTitle: "New Tab", action: #selector(AppDelegate.newTabHere(_:)), keyEquivalent: "t")
+        newTab.keyEquivalentModifierMask = [.command, .option]
         // ⌘T: a new tab, as everywhere else; here a terminal in the row you're
         // in, which is also what a terminal user's ⌘T has always given them: a
         // new shell, right where they are. ⌘N is New Session. (Until the rows

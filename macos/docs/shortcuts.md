@@ -111,7 +111,8 @@ the right edge, ⌘J under the terminal.
 Every split's row is the same: its tabs, then "+". The session's own terminal
 is a tab too, named after the session, with no close button.
 
-**"+" in a row opens an empty tab in that split**, titled New Tab. Its page
+**"+" in a row opens an empty tab in that split**, titled New Tab. ⌥⌘T is the
+same thing as a key, in the split you're in (Tab ▸ New Tab). Its page
 lists what the tab can become, each with the key that opens the same thing
 without asking:
 
@@ -127,7 +128,13 @@ Click a row, or use ↑ and ↓ and Return, and that takes the tab's place. Esc
 closes the empty tab. On the page a row's first letter alone picks it too: T
 for Terminal, B for Browser, C for Changes, H for History, F for Files. They
 are the letters of the keys in the table, without ⇧⌘, and nothing can be
-typed on that page, so the letter is enough. Any other letter does nothing. Changes, History or Files that are open in another
+typed on that page, so the letter is enough. Any other letter does nothing. So ⌥⌘T then C opens Changes in the
+split you're in, and ⌥⌘T then B a browser. A closed empty tab is forgotten:
+⇧⌘T never brings one back.
+
+⌘T and ⌘D do not ask. They open a terminal at once, because what follows
+them is typing, and on a page where a letter picks a row that typing would
+pick rows. The "+", the split buttons and ⌥⌘T ask. Changes, History or Files that are open in another
 split move to this one. A row keeps one empty tab at most: "+" again brings
 it forward. It works the same in every split, since anything can be opened
 anywhere.
@@ -228,6 +235,7 @@ and ⇧⌘B act in whichever split you're in.
 
 | Action | Shortcut | Same as |
 |---|---|---|
+| New tab here: an empty tab that asks what it should be | ⌥⌘T | |
 | New terminal tab here | ⌘T | everyone (new tab); in a terminal, a new shell where you are |
 | Split right: a new terminal in a split beside the one you're in | ⌘D | iTerm, Ghostty, Warp, cmux |
 | Split down: the same, under it | ⇧⌘D | iTerm, Ghostty, Warp, cmux |

@@ -17,7 +17,7 @@ import SwiftUI
 @MainActor
 final class PaneBar: ChromeBarView, LeafBar {
     let strip = SideTabStrip()
-    let add = HoverFillButton.glyph("plus", "New Tab")
+    let add = HoverFillButton.glyph("plus", "New Tab (⌥⌘T)")
     let unzoom = ZoomedButton()
     private var stripLeading: NSLayoutConstraint!
     private var stripTrailing: NSLayoutConstraint!

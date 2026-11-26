@@ -743,6 +743,10 @@ struct WorkspaceTabs: Equatable, Sendable {
         if zoomed != zoom { zoomed = zoom }
         openers[tab] = nil
         openers = openers.filter { $0.value != tab }
+        // An empty tab is not remembered: it held nothing, and Reopen Closed
+        // Tab bringing back a page that asks what it should be is no reopen.
+        // (It is closed every time one is filled, too.)
+        guard !tab.isBlank else { return from.region }
         closed.append(ClosedTab(tab: tab, region: from.region, index: from.index))
         if closed.count > Self.closedLimit { closed.removeFirst(closed.count - Self.closedLimit) }
         return from.region

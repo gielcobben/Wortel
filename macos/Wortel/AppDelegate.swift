@@ -1801,6 +1801,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.focus(regions[(index + offset + regions.count) % regions.count])
     }
 
+    /// ⌥⌘T: an empty tab in the row you're in, which asks what it should be
+    /// (`NewTabPage`). The row's "+" as a key.
+    @objc func newTabHere(_ sender: Any?) {
+        focusMainWindow()
+        guard manager.selected != nil else { return }
+        gitPanel.openBlank(in: focusedRegion())
+    }
+
     @objc func newTerminalHere(_ sender: Any?) {
         focusMainWindow()
         switch focusedRegion() {

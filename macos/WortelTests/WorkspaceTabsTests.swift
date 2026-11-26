@@ -423,6 +423,18 @@ final class WorkspaceTabsTests: XCTestCase {
         XCTAssertEqual(reset.layout.leaves.first, .side)
     }
 
+    /// Reopen Closed Tab never brings back an empty tab.
+    func testAClosedEmptyTabIsNotRemembered() {
+        var tabs = WorkspaceTabs(main: [.session])
+        let file = SideTab.file("/tmp/a.md"), blank = SideTab.blank(UUID())
+        tabs.place(file, in: .main, at: .max)
+        tabs.place(blank, in: .main, at: .max)
+        _ = tabs.close(file)
+        _ = tabs.close(blank)
+        XCTAssertEqual(tabs.closed.map(\.tab), [file])
+        XCTAssertEqual(tabs.main, [.session])
+    }
+
     /// The last tab of a split made by hand is its empty one: choosing puts
     /// the new tab in before the empty one goes, so the split stays.
     func testAnEmptyTabHoldsItsSplitUntilItIsReplaced() {

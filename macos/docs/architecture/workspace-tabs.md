@@ -468,7 +468,15 @@ The views:
   closed, then the front tab is focused. In that order on purpose: closing
   first would take a split whose only tab was the empty one out of the
   tree before there was anything to put in it. Escape closes the empty tab
-  (`requestClose`). A row's first letter alone picks it too (T, B, C, H, F;
+  (`GitPanelModel.dismissBlank`, through `putAway`): the keyboard goes to
+  what is in front of that row now, or to the main row when the split went
+  with the tab. It was `requestClose` at first, which left the keyboard
+  with nothing. ⌥⌘T (Tab ▸ New Tab, `AppDelegate.newTabHere`) is the row's
+  "+" as a key: `openBlank` in the split you are in. ⌘T and ⌘D are not
+  that, on purpose: they are followed by typing, and here typing picks
+  rows. A closed empty tab is not put on the reopen stack
+  (`WorkspaceTabs.close`, the `isBlank` guard): every pick closes one, and
+  ⇧⌘T was bringing them back. A row's first letter alone picks it too (T, B, C, H, F;
   `Row.letter`, `onKeyPress(characters: .letters)`): not with ⌘, ⌃ or ⌥
   held, and any other letter is ignored. Those are the letters of the same
   things' shortcuts, and the page is the one place where a bare letter

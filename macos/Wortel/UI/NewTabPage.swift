@@ -73,7 +73,7 @@ struct NewTabPage: View {
             return .handled
         }
         .onKeyPress(.escape) {
-            git.requestClose(tab)
+            git.dismissBlank(tab)
             return .handled
         }
         // A row's first letter, alone: T, B, C, H, F. The page is a list of

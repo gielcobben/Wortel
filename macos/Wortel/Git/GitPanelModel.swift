@@ -1111,6 +1111,15 @@ final class GitPanelModel {
         focusFront(of: region)
     }
 
+    /// Escape on an empty tab's page: the tab goes, and the keyboard goes to
+    /// what is in front of its row now, or to the main row if the split
+    /// went with it. Without this it was left with nothing.
+    func dismissBlank(_ blank: SideTab) {
+        guard blank.isBlank, let region = session?.workspace.region(of: blank) else { return }
+        lastRegion = region
+        putAway([blank], from: region)
+    }
+
     /// A tab dragged in from outside the rows (a file out of a list) and dropped
     /// at `index` in `region`'s row: opened there, the way a dragged tab lands.
     /// One that's already open somewhere is moved there instead.

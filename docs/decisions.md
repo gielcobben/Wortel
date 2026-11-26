@@ -630,7 +630,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   whose front tab is an empty one (it is taken off the terminal first),
   and on a click in the page. **A terminal stays ⌘T and does not become
   ⇧⌘T.** The owner asked whether it should, to finish the pattern. The
-  reasoning, not yet confirmed by them: ⌘T is "new tab" in every app with
+  reasoning, which they took later that day ("let's try this for now then
+  and see how it feels", in "New Tab has a key", below): ⌘T is "new tab"
+  in every app with
   tabs, and ⇧⌘T is "reopen closed tab" in every one of them, Wortel
   included. Moving both would break two habits to tidy a table. And in
   each tool looked at, the terminal is the one key outside the pattern.
@@ -642,7 +644,38 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   browser, Escape closes the empty tab, and after going to another split
   and back h makes History. `type:c` with a terminal in front goes to the
   terminal's view. 0 faults in each. Not verified: the keys on the real
-  keyboard, and the click in the page.
+  keyboard, and the click in the page. **New Tab has a key, ⌥⌘T, and ⌘T
+  and ⌘D do not ask.** The owner asked whether it should be the other way
+  round: ⌘T the tab that asks and ⇧⌘T the terminal, and ⌘D likewise. "What
+  do you think is the nicest UX for everyone? Pro and Beginner?" The
+  answer they took, on trial ("let's try this for now then and see how it
+  feels"): ⌘T and ⌘D stay a terminal at once. In every terminal those two
+  keys are followed by typing, and on a page where a first letter picks a
+  row, that typing would pick rows. ⌘D then `htop` would open History. ⌘T
+  then `git status` would open a terminal at the `t` and run ` status` in
+  it. Beginners use the "+" and the split buttons, which ask, and whose
+  page teaches the keys. A key says what it wants. What was missing was a
+  key for the tab that asks, so the page can be reached without the
+  mouse. It is **Tab ▸ New Tab, ⌥⌘T**: an empty tab in the split you are
+  in, the row's "+" as a key (its tooltip now says so). ⌥ is "the other
+  one" of a key here, as ⌥⌘N is of ⌘N. ⌥⌘T then C puts Changes in the
+  split you are in, which no key did before. Not ⇧⌘T, which the owner
+  proposed first: that is Reopen Closed Tab, here and in every browser.
+  They settled on ⌥⌘T, and ⇧⌘T is one line away if they want it after
+  using this. There is no asking key for a split: ⌥⌘D is the system's (it
+  hides and shows the Dock) and ⌃⌘D is Look Up. The split buttons ask. Two
+  fixes to the empty tab came with it. A closed empty tab is not
+  remembered: every pick closes one, and Reopen Closed Tab was bringing
+  empty tabs back. And Escape on the page gives the keyboard to what is in
+  front of that row now, or to the main row if the split went with the
+  tab, where it had been left with nothing. Verified (2026-11-26,
+  throwaway copies): WortelTests, 1939 tests, 0 failures, one new. With
+  keys made as the system makes them: ⌥⌘T opens an empty tab and c makes
+  it Changes; ⌥⌘T then t makes a terminal; ⇧⌘T after that reopens nothing
+  (it reopened the empty tab before the fix); ⌥⌘T with an empty tab in the
+  row brings that one forward; Escape closes it and the keyboard is in the
+  main row's terminal, also when the split closes with it. Not verified:
+  the real keyboard.
 - **2026-11-26. "No splits" was reversed on the branch `flexible-panes`: the
   main area splits into columns and rows.** Not merged and not released.
   `main`, the released app and the site still have no splits, and this entry

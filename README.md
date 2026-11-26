@@ -351,6 +351,7 @@ feature is held to.
 | `⌘J` | Go to the terminal under the main one (making it if there is none), and back |
 | `⇧⌘C` / `⇧⌘H` / `⇧⌘F` | Changes / History / Files (`⌃⇧G` is source control, on the one you used last) |
 | `⌘T` | New terminal tab in the area you are in |
+| `⌥⌘T` | New tab that asks what it should be: a terminal, a browser, Changes, History or Files |
 | `⌘D` / `⇧⌘D` | Split right / split down: a new terminal in a split beside or under the one you are in |
 | `⇧⌘↩` / `⌃⌘=` | Show one split alone, and all of them again / make the splits equal |
 | `⌃⌥⌘` and an arrow | Focus the split in that direction |

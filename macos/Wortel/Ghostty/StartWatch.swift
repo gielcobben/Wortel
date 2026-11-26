@@ -14,7 +14,8 @@ final class StartWatch {
     static let log = Logger(subsystem: "com.gielcobben.Wortel", category: "session-start")
 
     private var cover: StartCover
-    private let began: TimeInterval
+    /// When the terminal was made, on `ProcessInfo.systemUptime`.
+    let began: TimeInterval
     private var timer: DispatchWorkItem?
     private var onEnd: ((StartCover.End) -> Void)?
     private let session: String

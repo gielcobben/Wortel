@@ -2733,6 +2733,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   owner's choice over dragging it by its number badge, which was the
   recommendation: a tool is what drawing apps have taught. Text on the
   preview was offered and not taken: the note holds the words.
+- **2026-11-25. The note bar is the system's glass, where there is glass.**
+  `docs/brand.md` says never glass for its own sake, and the rest of the
+  app's glass is the window's own material under the frame. The note bar
+  is the case Apple's guidance names: a control surface floating over
+  content, which on macOS 26 and later is what glass is for ("a distinct
+  functional layer for controls and navigation", and for larger pieces a
+  rounded rectangle, not a capsule). So the bar keeps its shape and takes
+  the system's material, its edge and its shadow, and adds none of its
+  own. What Messages' own compose field measures was looked for and is
+  published nowhere; nothing here is copied from it by number. Before
+  macOS 26 the bar is the popover material with an edge and a shadow.
 - **2026-11-25. In rendered Markdown the picture of the whole is what is in
   view.** A page and a file's source are pictured whole, as decided above:
   a page by its PDF, a table by scrolling it a screen at a time inside one

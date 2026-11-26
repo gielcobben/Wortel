@@ -233,6 +233,30 @@ layer comes and goes with the tab, the session stays.
 that brings both back (`textStorage(_:didProcessEditing:…)`), with nothing
 kept in step by hand. A number is never reused while a note lives.
 
+**What the bar is made of.** On macOS 26 and later, the system's glass
+(`NSGlassEffectView`, the regular style, 16pt corners), with everything in
+the bar inside its `contentView`: the header promises nothing about other
+subviews. Glass draws its own edge and its own shadow and deepens the
+shadow over text, so the bar adds neither. The tools on it are plain glyph
+buttons and not glass ones (Apple: "always avoid glass on glass"), and one
+thing is tinted, Copy, which is what Return does. Before macOS 26 it is the
+`.popover` material with a 1pt separator edge and a shadow of its own, set
+through the view's `shadow`: AppKit owns a view's layer and puts a shadow
+set on the layer back to none, which is why the first bar had no shadow at
+all. It floats 16pt from the preview's edges (12 in a column under 420pt),
+640pt wide at most.
+
+A trash button clears the whole note while there is one and the row has
+room for it; it is an edit of the text like any other, so ⌘Z brings it all
+back. A press on the bar beside the text puts the keyboard in the note.
+
+To look at the bar as it is really drawn, an off-screen `cacheDisplay`
+render is not enough: it shows no material and no shadow. A window kept
+off the edge of every screen, read back with `CGWindowListCreateImage` for
+that one window (through `dlsym`: the SDK marks the call unavailable, and
+for a window of one's own it needs no Screen Recording permission), shows
+both. That is how the missing shadow was found (2026-11-25).
+
 The bar is `MarkupNoteBar`: an `NSTextView` on an explicit TextKit 1 stack
 over the session's `NSTextStorage`, so undo, spelling, dictation and input
 methods are the system's. It has its own `UndoManager`, for the reason

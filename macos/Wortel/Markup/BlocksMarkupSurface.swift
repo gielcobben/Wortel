@@ -164,6 +164,23 @@ final class BlocksMarkupSurface: MarkupSurface {
     }
 
     func forget(_ number: Int) { ties[number] = nil }
+
+    /// The document scrolls its block to the middle. Asked of the view and
+    /// not done here: a block out of view has no frame to scroll to.
+    func reveal(_ number: Int) {
+        guard let tie = ties[number], !tie.lost else { return }
+        if let placement = placement(of: number),
+           placement.clip.contains(CGRect(origin: placement.origin, size: placement.size)) { return }
+        views.revealBlock(tie.block)
+    }
+
+    /// The column the document is read in: every block is as wide as the
+    /// measure, so any built block gives it.
+    var readingColumn: CGRect? {
+        guard let frame = views.blockFrames.values.min(by: { $0.width < $1.width }),
+              let origin = toLayer(frame.origin) else { return nil }
+        return CGRect(x: origin.x, y: 0, width: frame.width, height: 0)
+    }
     func expectsMove(deltaX: CGFloat, deltaY: CGFloat) -> Bool { false }
 
     // MARK: - Pictures

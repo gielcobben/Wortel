@@ -25,7 +25,10 @@ final class MarkChipAttachment: NSTextAttachment {
 enum MarkChip {
     static let height: CGFloat = 20
     private static let nameFont = NSFont.systemFont(ofSize: 12)
-    private static let numberFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    private static let numberFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
+    /// Clear room either side of the capsule, part of the chip itself: two
+    /// chips side by side, or a chip against a word, otherwise touch.
+    private static let gap: CGFloat = 3
     /// A chip names its mark, it does not quote it: the rest of a long
     /// name is in the copied text.
     private static let longest = 28
@@ -50,9 +53,9 @@ enum MarkChip {
     static func string(for mark: Mark, font: NSFont, fitting width: CGFloat = .greatestFiniteMagnitude) -> NSAttributedString {
         let number = String(mark.number)
         let numberWidth = ceil((number as NSString).size(withAttributes: [.font: numberFont]).width)
-        let title = title(of: mark, fitting: width - (7 + numberWidth + 5 + 8))
+        let title = title(of: mark, fitting: width - (7 + numberWidth + 5 + 8) - gap * 2)
         let titleWidth = ceil((title as NSString).size(withAttributes: [.font: nameFont]).width)
-        let size = NSSize(width: 7 + numberWidth + 5 + titleWidth + 8, height: height)
+        let size = NSSize(width: gap + 7 + numberWidth + 5 + titleWidth + 8 + gap, height: height)
         let colour = MarkDrawing.color(mark.colour)
 
         let attachment = MarkChipAttachment(number: mark.number)
@@ -60,14 +63,14 @@ enum MarkChip {
         // follow light and dark.
         attachment.image = NSImage(size: size, flipped: false) { rect in
             colour.withAlphaComponent(0.15).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: gap, dy: 0), xRadius: 6, yRadius: 6).fill()
             let numberHeight = numberFont.ascender - numberFont.descender
             (number as NSString).draw(
-                at: NSPoint(x: 7, y: (rect.height - numberHeight) / 2 - numberFont.descender - 3),
+                at: NSPoint(x: gap + 7, y: (rect.height - numberHeight) / 2 - numberFont.descender - 3),
                 withAttributes: [.font: numberFont, .foregroundColor: colour])
             let titleHeight = nameFont.ascender - nameFont.descender
             (title as NSString).draw(
-                at: NSPoint(x: 7 + numberWidth + 5, y: (rect.height - titleHeight) / 2 - nameFont.descender - 3),
+                at: NSPoint(x: gap + 7 + numberWidth + 5, y: (rect.height - titleHeight) / 2 - nameFont.descender - 3),
                 withAttributes: [.font: nameFont, .foregroundColor: NSColor.labelColor])
             return true
         }
@@ -150,7 +153,9 @@ final class NoteTextView: NSTextView {
     }
 
     /// The mark whose chip is under a point of the view, if one is.
-    private func chip(at point: NSPoint) -> Int? {
+    private func chip(at point: NSPoint) -> Int? { chipAndIndex(at: point)?.number }
+
+    private func chipAndIndex(at point: NSPoint) -> (number: Int, index: Int)? {
         guard let layoutManager, let textContainer, let textStorage, textStorage.length > 0 else { return nil }
         let inContainer = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
         let glyph = layoutManager.glyphIndex(for: inContainer, in: textContainer)
@@ -160,7 +165,9 @@ final class NoteTextView: NSTextView {
             .contains(inContainer) else { return nil }
         let index = layoutManager.characterIndexForGlyph(at: glyph)
         guard index < textStorage.length else { return nil }
-        return (textStorage.attribute(.attachment, at: index, effectiveRange: nil) as? MarkChipAttachment)?.number
+        guard let chip = textStorage.attribute(.attachment, at: index, effectiveRange: nil) as? MarkChipAttachment
+        else { return nil }
+        return (chip.number, index)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -180,6 +187,39 @@ final class NoteTextView: NSTextView {
             return true
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// A mark's chip was clicked: it is selected, and the layer brings its
+    /// mark into view.
+    var onPickMark: (Int) -> Void = { _ in }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let (number, index) = chipAndIndex(at: point) else { return super.mouseDown(with: event) }
+        window?.makeFirstResponder(self)
+        // Selected as one character is: ⌫ removes it, typing replaces it,
+        // and the selection's colour shows through the chip.
+        setSelectedRange(NSRange(location: index, length: 1))
+        onPickMark(number)
+    }
+
+    // The caret as tall as the text and not as the line. A text view draws
+    // its own this way when a subclass draws it, which this does only to
+    // say how tall.
+    private func caret(in rect: NSRect) -> NSRect {
+        let height = ceil(MarkupNoteBar.font.ascender - MarkupNoteBar.font.descender) + 2
+        guard rect.height > height else { return rect }
+        return NSRect(x: rect.minX, y: rect.midY - height / 2, width: rect.width, height: height)
+    }
+
+    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        super.drawInsertionPoint(in: caret(in: rect), color: color, turnedOn: flag)
+    }
+
+    override func setNeedsDisplay(_ rect: NSRect, avoidAdditionalLayout flag: Bool) {
+        // The whole of the line's rect is redrawn, so a caret drawn shorter
+        // is still wiped when it blinks off.
+        super.setNeedsDisplay(rect, avoidAdditionalLayout: flag)
     }
 
     override func doCommand(by selector: Selector) {
@@ -285,7 +325,13 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = lineHeight
         paragraph.maximumLineHeight = lineHeight
-        return [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph]
+        // A line is taller than its text, to hold a chip. Left alone the
+        // text sits at the bottom of the line and the caret, which is as
+        // tall as the line, stands well above it. Lifted to the middle,
+        // the caret is as far over the text as under it.
+        let natural = ceil(font.ascender - font.descender + font.leading)
+        return [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph,
+                .baselineOffset: ((lineHeight - natural) / 2).rounded(.down)]
     }
 
     private let session: MarkupSession
@@ -296,6 +342,13 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     /// Everything in the bar. Inside the glass's content view: only what is
     /// there is promised to sit in the glass (`NSGlassEffectView.h`).
     private let content = FlippedView()
+    /// What the words are read against: the page's raised colour, nearly
+    /// opaque. Glass alone lets a page's text through as a smear behind
+    /// the note's own (tried clear, and tinted toward this colour: both
+    /// unreadable over a paragraph). The glass keeps the edge and the
+    /// shadow; this keeps the sentence legible over anything.
+    private let ground = FilledView(color: Chrome.raised.withAlphaComponent(MarkupNoteBar.groundAlpha))
+    private static let groundAlpha: CGFloat = 0.86
     private let edge = CAShapeLayer()
     private let clear = HoverFillButton.glyph("trash", "Clear Note")
     private let scroll = NSScrollView()
@@ -315,6 +368,8 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     var onHeightChange: () -> Void = {}
     /// The pointer is on a mark's chip, or on none.
     var onHoverMark: (Int?) -> Void = { _ in }
+    /// A mark's chip was clicked.
+    var onPickMark: (Int) -> Void = { _ in }
 
     init(session: MarkupSession, placeholders: [String]) {
         self.session = session
@@ -343,6 +398,10 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
 
         wantsLayer = true
         addSubview(backdrop)
+        ground.layer?.cornerRadius = Self.corner
+        ground.layer?.cornerCurve = .continuous
+        ground.layer?.masksToBounds = true
+        content.addSubview(ground)
         if #available(macOS 26.0, *) {
             // Glass draws its own edge and its own shadow, and deepens the
             // shadow over text. A border and a shadow added on top fight it.
@@ -389,6 +448,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         textView.onEscape = { [weak session] in session?.escape() }
         textView.nameOfMark = { [weak session] in session?.mark($0)?.reference }
         textView.onHoverMark = { [weak self] in self?.onHoverMark($0) }
+        textView.onPickMark = { [weak self] in self?.onPickMark($0) }
         textView.setAccessibilityLabel("Note")
 
         scroll.documentView = textView
@@ -498,9 +558,13 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         textView.breakUndoCoalescing()
         // Before the bar has been laid out there is no width to fit to.
         let room = scroll.contentSize.width
+        // After what is selected, never in place of it. A drawing is not
+        // typing: with a chip selected (it was just clicked), a new mark
+        // put in its place would delete the mark that chip stood for.
+        let selection = textView.selectedRange()
         textView.insertText(MarkChip.string(for: mark, font: Self.font,
                                             fitting: room > 60 ? room : .greatestFiniteMagnitude),
-                            replacementRange: textView.selectedRange())
+                            replacementRange: NSRange(location: NSMaxRange(selection), length: 0))
         textView.breakUndoCoalescing()
         textView.typingAttributes = Self.attributes
         update()
@@ -539,6 +603,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         super.layout()
         backdrop.frame = bounds
         content.frame = bounds
+        ground.frame = bounds
         edge.frame = bounds
         edge.path = CGPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
                            cornerWidth: Self.corner, cornerHeight: Self.corner, transform: nil)

@@ -204,6 +204,10 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         latest.wouldScroll(deltaX: deltaX, deltaY: deltaY)
     }
 
+    func reveal(_ number: Int) {
+        call("if (window.__wortelMarkup) { window.__wortelMarkup.reveal(n) } return 1", arguments: ["n": number]) { _ in }
+    }
+
     func forget(_ number: Int) {
         latest.marks[number] = nil
         call("if (window.__wortelMarkup) { window.__wortelMarkup.forget(n) } return 1",

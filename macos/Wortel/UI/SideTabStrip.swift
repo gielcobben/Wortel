@@ -507,10 +507,18 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
     private var symbol: String?
 
-    /// What the tab would like to be: inset, glyph, title, close button.
+    /// What the tab would like to be: inset, glyph, title, close button. A
+    /// tab that is never closed (the session's own terminal) keeps no room
+    /// for a button it will never show: the same inset after its title as
+    /// before its glyph. With the room kept, it read as a tab with a hole at
+    /// its end, once the session's terminal was always drawn as a tab.
     var fittingWidth: CGFloat {
-        Self.inset + Self.glyph + Self.glyphGap + titleWidth
-            + Self.closeGap + Self.closeSize + Self.endInset
+        Self.inset + Self.glyph + Self.glyphGap + titleWidth + trailingRoom
+    }
+
+    /// What follows the title: the close button and its gaps, or the inset.
+    private var trailingRoom: CGFloat {
+        pinned ? Self.inset : Self.closeGap + Self.closeSize + Self.endInset
     }
 
     /// Only what changed: a row is updated whole whenever any tab in it
@@ -559,7 +567,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
         let labelX = Self.inset + Self.glyph + Self.glyphGap
         let labelHeight = ceil(label.intrinsicContentSize.height)
         label.frame = NSRect(x: labelX, y: ((h - labelHeight) / 2).rounded(),
-                             width: max(0, closeX - Self.closeGap - labelX), height: labelHeight)
+                             width: max(0, bounds.width - trailingRoom - labelX), height: labelHeight)
         divider.frame = NSRect(x: bounds.width + 1.5, y: (h - 14) / 2, width: 1, height: 14)
     }
 

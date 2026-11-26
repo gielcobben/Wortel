@@ -62,8 +62,12 @@ enum MarkDrawing {
                                    cornerHeight: min(outlineRadius * unit, rect.height / 2), transform: nil))
             context.strokePath()
         case .area(_, let ink):
-            context.setLineWidth(MarkStroke.width * unit)
-            context.addPath(MarkStroke.path(through: ink.map { turned(placement.point($0)) }))
+            context.setLineWidth(mark.pen.width * unit)
+            context.setAlpha(mark.pen.opacity)
+            // A marker's ends are cut square.
+            if mark.pen == .highlighter { context.setLineCap(.butt) }
+            context.addPath(MarkStroke.path(for: mark.pen, through: ink.map { turned(placement.point($0)) },
+                                            unit: unit))
             context.strokePath()
         }
         context.restoreGState()

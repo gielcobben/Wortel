@@ -239,6 +239,9 @@ enum WebMarkupScript {
       }
 
       function keep(number, el) {
+        // Tied again (a drawing that was moved): let go of what it was on.
+        var was = marks.get(number);
+        if (was && sizes && was.el.isConnected && was.el !== el) { sizes.unobserve(was.el); }
         var around = chainOf(el);
         var mark = {el: el, chain: around.chain, fixed: around.fixed,
                     selector: el.ownerDocument === document ? selectorOf(el) : null};

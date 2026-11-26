@@ -368,6 +368,7 @@ else, so the keyboard is never stuck in a page.
 | A new line in the note | ⇧Return, ⌥Return | every chat field |
 | Drop the stroke being drawn, or stop and keep the note | Esc | |
 | Take back the last mark | ⌘Z | |
+| A straight line, a level highlight, a square box | hold ⇧ while drawing | every drawing app |
 | Remove a mark | ⌫ on its chip | |
 
 ⇧⌘M reaches the page or file in front from anywhere, as ⌘F does: the area

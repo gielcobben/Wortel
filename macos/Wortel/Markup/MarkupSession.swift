@@ -46,6 +46,12 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     @ObservationIgnored var store = MarkupStore.shared
     @ObservationIgnored var pasteboard = NSPasteboard.general
 
+    /// The tool in hand. Kept with the note: what you were drawing with is
+    /// what you draw with when the tab comes back.
+    @ObservationIgnored var tool = MarkupTool.pen {
+        didSet { if tool != oldValue { overlay?.toolChanged() } }
+    }
+
     /// Every mark made for this note, those whose chip was deleted too: an
     /// undo brings a chip back, and its mark with it.
     @ObservationIgnored private var known: [Int: Mark] = [:]
@@ -105,6 +111,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         known = [:]
         nextNumber = 1
         copies = 0
+        tool = .pen
         if let folder { Self.open.remove(folder.path) }
         folder = nil
         undo.removeAllActions()
@@ -152,6 +159,17 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     }
 
     func mark(_ number: Int) -> Mark? { known[number] }
+
+    /// A drawing was moved: it is the same mark, with the same number and
+    /// chip, somewhere else. Its picture is taken again by whoever moved it.
+    func replace(_ mark: Mark) {
+        guard known[mark.number] != nil else { return }
+        var moved = mark
+        moved.picture = known[mark.number]?.picture
+        known[mark.number] = moved
+        if let index = marks.firstIndex(where: { $0.number == mark.number }) { marks[index] = moved }
+        overlay?.marksChanged()
+    }
 
     /// A mark's picture, taken when it is made and written at once: what
     /// a note holds while it waits is a path, not a bitmap.

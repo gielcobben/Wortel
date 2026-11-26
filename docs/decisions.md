@@ -2719,6 +2719,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   to an element's parent or child (the note has the keyboard, and the
   arrows move its caret; a container is picked by its padding or by a drag
   around it).
+- **2026-11-25. Mark-up has tools after all: a pen, a box, an arrow, a
+  highlighter and Move.** The plan said no tools: a click picks, a drag
+  draws, and nothing to switch between. That held for a day. Having used
+  it, the owner asked for more than a freehand line, and a hand draws a
+  box and an arrow badly. So the pen stays what a drag does by default and
+  a click still picks with any pen in hand; the tools add shapes, they do
+  not replace the gesture. They sit in a row inside the note bar, under
+  the text with Copy at the other end, the owner's choice over one row
+  beside the text (which squeezes the words in a narrow column) and over
+  the preview's header (full already, and far from the drawing). Shift
+  straightens whichever is in hand. Moving a drawing is a fifth tool, the
+  owner's choice over dragging it by its number badge, which was the
+  recommendation: a tool is what drawing apps have taught. Text on the
+  preview was offered and not taken: the note holds the words.
 - **2026-11-25. In rendered Markdown the picture of the whole is what is in
   view.** A page and a file's source are pictured whole, as decided above:
   a page by its PDF, a table by scrolling it a screen at a time inside one

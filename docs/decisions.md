@@ -2761,6 +2761,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   owner's choice over dragging it by its number badge, which was the
   recommendation: a tool is what drawing apps have taught. Text on the
   preview was offered and not taken: the note holds the words.
+- **2026-11-25. With Move in hand a drawing is selected and resized, the
+  way tldraw's select tool does it, less most of it.** Asked for by the
+  owner, who named tldraw as the thing to learn from. Taken from its
+  source: select at the press and change nothing until the press has
+  travelled 4pt; corner handles that scale about the opposite corner,
+  Shift for proportions, Option for the middle, mirroring past the
+  corner; an arrow has only its two ends and no box; one handle where
+  four would crowd; Esc mid-drag puts back exactly what was there, and
+  one Esc is one step. Left out: rotation, handles on the sides, nudging
+  with the arrow keys (the keyboard is in the note), dragging out a copy,
+  snapping guides, arrow bends, and returning to Move after each shape
+  (tldraw does for a box and an arrow; here the pen in hand stays in
+  hand, since a note usually has several marks of one kind). A handle is
+  taken from 20pt around, larger than tldraw's 12, because it is used
+  over a busy page and not a blank canvas.
 - **2026-11-25. The note bar is the system's glass, where there is glass.**
   `docs/brand.md` says never glass for its own sake, and the rest of the
   app's glass is the window's own material under the frame. The note bar

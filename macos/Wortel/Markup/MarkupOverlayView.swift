@@ -89,6 +89,7 @@ final class MarkupOverlayView: NSView {
         strokeLayer.lineCap = .round
         strokeLayer.lineJoin = .round
         noteBar.onHeightChange = { [weak self] in self?.needsLayout = true }
+        noteBar.onHoverMark = { [weak self] in self?.pointOut($0) }
         addSubview(noteBar)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -227,6 +228,9 @@ final class MarkupOverlayView: NSView {
             markLayers[mark.number] = layer
         }
         if let selected, !numbers.contains(selected) { self.selected = nil }
+        // The chip the pointer was on is gone with its mark: nothing is
+        // pointed out, or every other mark would stay faint.
+        if let pointedOut, !numbers.contains(pointedOut) { pointOut(nil) }
         place()
     }
 
@@ -256,6 +260,25 @@ final class MarkupOverlayView: NSView {
         behind = nil
         if marksLayer.opacity != 1 { setFaint(false) }
         place()
+    }
+
+    /// The mark whose chip the pointer is on, shown by the others standing
+    /// back. With eight marks on a page, "which one is 5" is otherwise a
+    /// search by colour and number; this answers it where the question is
+    /// asked, in the sentence.
+    private var pointedOut: Int?
+
+    private func pointOut(_ number: Int?) {
+        guard number != pointedOut else { return }
+        pointedOut = number
+        // Eased, both ways: it is the pointer passing over a word, and a
+        // cut would flicker along a row of chips.
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12)
+        for (mark, layer) in markLayers {
+            layer.opacity = number == nil || mark == number ? 1 : 0.25
+        }
+        CATransaction.commit()
     }
 
     private func setFaint(_ faint: Bool) {

@@ -118,6 +118,50 @@ final class NoteTextView: NSTextView {
     var placeholders: [String] = [] { didSet { needsDisplay = true } }
     /// What a chip is called when the note's own text is copied out of it.
     var nameOfMark: (Int) -> String? = { _ in nil }
+    /// The pointer came to rest on a mark's chip, or left it: the layer
+    /// shows which mark that is.
+    var onHoverMark: (Int?) -> Void = { _ in }
+    private var hovered: Int?
+    private var hoverArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow,
+                                                         .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        hover(chip(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hover(nil)
+    }
+
+    private func hover(_ number: Int?) {
+        guard number != hovered else { return }
+        hovered = number
+        onHoverMark(number)
+    }
+
+    /// The mark whose chip is under a point of the view, if one is.
+    private func chip(at point: NSPoint) -> Int? {
+        guard let layoutManager, let textContainer, let textStorage, textStorage.length > 0 else { return nil }
+        let inContainer = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyph = layoutManager.glyphIndex(for: inContainer, in: textContainer)
+        // The nearest glyph is not the one under the pointer when the
+        // pointer is past the end of a line.
+        guard layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+            .contains(inContainer) else { return nil }
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        guard index < textStorage.length else { return nil }
+        return (textStorage.attribute(.attachment, at: index, effectiveRange: nil) as? MarkChipAttachment)?.number
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
@@ -269,6 +313,8 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     private let spinner = NSProgressIndicator()
     /// The bar grew or shrank a line: whoever places it lays out again.
     var onHeightChange: () -> Void = {}
+    /// The pointer is on a mark's chip, or on none.
+    var onHoverMark: (Int?) -> Void = { _ in }
 
     init(session: MarkupSession, placeholders: [String]) {
         self.session = session
@@ -342,6 +388,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         textView.onReturn = { [weak session] in session?.copyNote() }
         textView.onEscape = { [weak session] in session?.escape() }
         textView.nameOfMark = { [weak session] in session?.mark($0)?.reference }
+        textView.onHoverMark = { [weak self] in self?.onHoverMark($0) }
         textView.setAccessibilityLabel("Note")
 
         scroll.documentView = textView

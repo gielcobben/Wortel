@@ -83,13 +83,15 @@ final class WortelCLIService {
             reply(open(path))
 
         case .newSession, .newWorktree, .newFromPullRequest:
-            manager.inWindow(callerWindow(caller)) { start(command, typing: nil, reply: reply) }
+            let beside = callerSession(caller)
+            manager.inWindow(window(of: beside)) { start(command, beside: beside, typing: nil, reply: reply) }
 
         case .newRunning(let new, let argv):
             // Checked again here: the socket is also spoken to directly.
             do {
                 let line = try WortelCommandParser.startupLine(argv)
-                manager.inWindow(callerWindow(caller)) { start(new, typing: line, reply: reply) }
+                let beside = callerSession(caller)
+                manager.inWindow(window(of: beside)) { start(new, beside: beside, typing: line, reply: reply) }
             } catch {
                 reply(.failure("\(error)"))
             }
@@ -200,26 +202,34 @@ final class WortelCLIService {
     /// it, not in whichever window was last in front. Found by the caller's
     /// ancestry, as its jobs are (`RunningJobs`); nil from outside Wortel,
     /// and then the session goes to the active window.
-    private func callerWindow(_ caller: WortelCLIServer.Caller) -> SessionWindow? {
-        guard manager.windows.count > 1, let pid = caller.pid else { return nil }
+    private func window(of session: Session?) -> SessionWindow? {
+        guard manager.windows.count > 1 else { return nil }
+        return session.map(manager.window(of:))
+    }
+
+    /// The session whose shell (or one of its terminals') the command came
+    /// from, by the caller's ancestry; nil from outside Wortel. Found by
+    /// process rather than `$WORTEL_SESSION_ID`, which `new` doesn't carry.
+    private func callerSession(_ caller: WortelCLIServer.Caller) -> Session? {
+        guard let pid = caller.pid else { return nil }
         let table = ProcessTable.snapshot()
         let parentOf = Dictionary(table.map { ($0.pid, $0.ppid) }, uniquingKeysWith: { first, _ in first })
-        let session = manager.sessions.first { session in
+        return manager.sessions.first { session in
             let shells = [session.shellPID].compactMap { $0 } + session.sideShells.map(\.pid)
             return shells.contains { pid == $0 || ProcessTable.isDescendant(pid, of: $0, parentOf: parentOf) }
         }
-        return session.map(manager.window(of:))
     }
 
     /// One of the `new`s, with `input` for its first shell to run. A worktree
     /// session is handed its line while it's still being made, before its
     /// row is selected: its shell starts once git is done, and the line is
     /// waiting for it.
-    private func start(_ command: WortelCommand, typing input: String?,
+    private func start(_ command: WortelCommand, beside: Session?, typing input: String?,
                        reply: @escaping @Sendable (WortelResponse) -> Void) {
         switch command {
         case .newSession(let cwd, let name, let branch, let base):
-            newSession(cwd: cwd, name: name, branch: branch, base: base, typing: input, reply: reply)
+            newSession(cwd: cwd, name: name, branch: branch, base: base, beside: beside,
+                       typing: input, reply: reply)
 
         case .newWorktree(let cwd, let name):
             guard let cwd = cwd ?? manager.placingSelected?.cwd else {
@@ -254,8 +264,8 @@ final class WortelCLIService {
     }
 
     private func newSession(
-        cwd: String?, name: String?, branch: String?, base: String?, typing input: String?,
-        reply: @escaping @Sendable (WortelResponse) -> Void
+        cwd: String?, name: String?, branch: String?, base: String?, beside: Session?,
+        typing input: String?, reply: @escaping @Sendable (WortelResponse) -> Void
     ) {
         if let cwd {
             var isDirectory: ObjCBool = false
@@ -266,10 +276,13 @@ final class WortelCLIService {
         }
         guard let branch else {
             // Filed where ⌘O would file that directory, when a folder covers
-            // it; only otherwise next to the selection. A script run in one
-            // project must not land its session in whichever folder the
+            // it (a worktree's repository counts); otherwise next to the
+            // session the command was run in, top level included; only from
+            // outside Wortel next to the selection. A script or an agent in
+            // one project must not land its session in whichever folder the
             // sidebar happens to be showing.
             let session = manager.newSession(cwd: cwd, inFolder: cwd.flatMap(manager.folder(covering:)),
+                                             beside: beside,
                                              via: .cli, starting: input.map(SessionStart.line) ?? .plain)
             if let name { manager.rename(session, to: name) }
             orderFront()

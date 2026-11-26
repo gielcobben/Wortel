@@ -833,9 +833,17 @@ final class SessionManager {
     }
 
     /// The folder whose directory covers `path`, deepest root winning: where
-    /// ⌘O files a directory, and where a session started in it belongs.
+    /// ⌘O files a directory, and where a session started in it belongs. A
+    /// linked worktree is covered by its repository's folder too
+    /// (`folder(forWorktreeAt:)`): one in ~/.wortel/worktrees/… sits under no
+    /// folder's root, and `wortel new` run from inside it used to find none.
+    /// Never makes a folder.
     func folder(covering path: String) -> String? {
-        FolderRoot.folder(containing: FolderRoot.normalize(path) ?? path, in: folderRoots)
+        let path = FolderRoot.normalize(path) ?? path
+        if let home = GitWorktree.linked(containing: path)?.repoHome.flatMap(FolderRoot.normalize) {
+            return folder(forWorktreeAt: path, repoHome: home)
+        }
+        return FolderRoot.folder(containing: path, in: folderRoots)
     }
 
     /// Point a folder at a directory, or clear it with nil. Normalized on the
@@ -1862,12 +1870,17 @@ final class SessionManager {
     /// the `wortel` command is used by anyone, which is the whole premise of
     /// shipping a socket instead of per-agent integrations. It defaults to the
     /// menu because that is what an unannotated caller is.
+    ///
+    /// `beside` stands in for the selection in 3 and 4, and for the folder:
+    /// the session a `wortel new` was run in. An agent starting a session
+    /// meant one next to itself, not next to whatever row you had clicked
+    /// meanwhile, and a caller at the top level keeps its new session there.
     @discardableResult
-    func newSession(cwd: String? = nil, inFolder folder: String? = nil,
+    func newSession(cwd: String? = nil, inFolder folder: String? = nil, beside: Session? = nil,
                     via origin: SessionOrigin = .menu, starting start: SessionStart) -> Session {
         // New sessions land next to what you're looking at: the explicit folder
         // (header context menu) or the selected session's folder, else top level.
-        let selected = (placingWindow ?? activeWindow)?.selected
+        let selected = beside ?? (placingWindow ?? activeWindow)?.selected
         let dir = folder ?? selected?.folderPath
         // Each remembered answer is checked before it's used, so a project that
         // moved on disk falls through to the next one rather than starting a

@@ -134,11 +134,15 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
     }
 
     /// A string the page gave, cut to a length and with nothing in it that
-    /// a terminal would act on (`MarkText`): the page's author chose it.
+    /// a terminal would act on or that does not show (`MarkText`): the
+    /// page's author chose it.
     private static func text(_ value: Any?, most: Int, lines: Bool = false) -> String? {
-        guard let text = value as? String else { return nil }
-        let clean = MarkText.clean(String(text.prefix(most)), lines: lines)
-        return clean.isEmpty ? nil : clean
+        MarkText.fromPage(value, most: most, lines: lines)
+    }
+
+    /// A selector the page gave: as it was, or none (`MarkText`).
+    private static func selector(_ value: Any?) -> String? {
+        MarkText.selectorFromPage(value)
     }
 
     // MARK: - Marks
@@ -202,20 +206,20 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
         details.tag = Self.text(raw["tag"], most: 40)
         details.role = Self.text(raw["role"], most: 40)
         details.text = Self.text(raw["text"], most: 220)
-        details.selector = Self.text(raw["selector"], most: 600)
-        details.frame = Self.text(raw["frame"], most: 600)
+        details.selector = Self.selector(raw["selector"])
+        details.frame = Self.selector(raw["frame"])
         details.html = Self.text(raw["html"], most: 2100, lines: true)
         if let styles = raw["styles"] as? [String: Any] {
             var kept: [String: String] = [:]
             for (key, value) in styles.prefix(20) {
-                if let value = Self.text(value, most: 200) { kept[String(key.prefix(40))] = value }
+                if let key = Self.text(key, most: 40), let value = Self.text(value, most: 200) { kept[key] = value }
             }
             details.styles = kept.isEmpty ? nil : kept
         }
         if let elements = raw["elements"] as? [[String: Any]], !elements.isEmpty {
             details.elements = elements.prefix(20).compactMap { element in
                 guard let name = Self.text(element["name"], most: 120) else { return nil }
-                return .init(name: name, selector: Self.text(element["selector"], most: 600),
+                return .init(name: name, selector: Self.selector(element["selector"]),
                              text: Self.text(element["text"], most: 100))
             }
         }

@@ -227,10 +227,20 @@ enum WebMarkupScript {
       }
 
       // What an element is called, for the note and the details file.
+      // Whatever the page wrote is cut to a length here, and again in the
+      // app, which also takes out what does not show (`MarkText`).
+
+      // `text` to `most` UTF-16 units at most, an ellipsis where it was
+      // cut, and never half of a character that takes two.
+      function cut(text, most) {
+        if (text.length <= most) { return text; }
+        var kept = text.slice(0, most - 1);
+        if (/[\uD800-\uDBFF]$/.test(kept)) { kept = kept.slice(0, -1); }
+        return kept + '…';
+      }
 
       function textOf(el, most) {
-        var text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-        return text.length > most ? text.slice(0, most - 1) + '…' : text;
+        return cut((el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(), most);
       }
 
       var words = {A: 'link', BUTTON: 'button', IMG: 'image', SVG: 'image', PICTURE: 'image',
@@ -245,50 +255,69 @@ enum WebMarkupScript {
         var word = role === 'button' || role === 'link' ? role : (words[tag] || el.tagName.toLowerCase());
         var says = el.getAttribute('aria-label') || el.getAttribute('alt') ||
                    el.getAttribute('placeholder') || textOf(el, 40) || el.getAttribute('title') || '';
-        says = says.replace(/\s+/g, ' ').trim();
-        if (says.length > 40) { says = says.slice(0, 39) + '…'; }
+        says = cut(says.replace(/\s+/g, ' ').trim(), 40);
         if (says) { return word + ' "' + says + '"'; }
-        if (el.id) { return word + ' #' + el.id; }
+        if (el.id) { return word + ' #' + cut(el.id, 40); }
         var first = (el.getAttribute('class') || '').trim().split(/\s+/)[0];
-        return first ? word + ' .' + first : word;
+        return first ? word + ' .' + cut(first, 40) : word;
+      }
+
+      // An id or a test id a selector can be made of: short, with nothing
+      // in it that does not show or that the app would take out. Any other
+      // is passed over for the way down to the element, since the app
+      // keeps a selector whole or not at all.
+      var unseen = /[\p{C}\p{Z}\p{M}\p{Default_Ignorable_Code_Point}]/u;
+      function plain(name) {
+        return !!name && name.length <= 80 && !unseen.test(name);
       }
 
       // A selector that finds this element and no other, as short as that
-      // allows: its id, a test id, or the way down to it from the nearest id.
+      // allows: its id, a test id, or the way down to it from the nearest
+      // id. None where none finds it alone.
       function selectorOf(el) {
-        var doc = el.ownerDocument;
+        var root = el.ownerDocument;
         function alone(selector) {
-          try { return doc.querySelectorAll(selector).length === 1; } catch (e) { return false; }
+          try { return root.querySelectorAll(selector).length === 1; } catch (e) { return false; }
         }
-        if (el.id) {
-          var byId = '#' + CSS.escape(el.id);
-          if (alone(byId)) { return byId; }
-        }
-        var test = el.getAttribute('data-testid');
-        if (test) {
-          var byTest = '[data-testid="' + test.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
-          if (alone(byTest)) { return byTest; }
-        }
-        var parts = [], node = el;
-        while (node && node.nodeType === 1 && parts.length < 10) {
-          var tag = node.tagName.toLowerCase();
-          if (node !== el && node.id) {
-            var anchor = '#' + CSS.escape(node.id);
-            if (alone(anchor)) { parts.unshift(anchor); break; }
+        function within() {
+          if (plain(el.id)) {
+            var byId = '#' + CSS.escape(el.id);
+            if (alone(byId)) { return byId; }
           }
-          if (tag === 'html' || tag === 'body') {
-            parts.unshift(tag);
-          } else {
-            var index = 1, sibling = node;
-            while ((sibling = sibling.previousElementSibling)) {
-              if (sibling.tagName === node.tagName) { index++; }
+          var test = el.getAttribute('data-testid');
+          if (plain(test)) {
+            var byTest = '[data-testid="' + test.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
+            if (alone(byTest)) { return byTest; }
+          }
+          var parts = [], node = el;
+          while (node && node.nodeType === 1 && parts.length < 10) {
+            var tag = node.tagName.toLowerCase();
+            if (node !== el && plain(node.id)) {
+              var anchor = '#' + CSS.escape(node.id);
+              if (alone(anchor)) {
+                parts.unshift(anchor);
+                return alone(parts.join(' > ')) ? parts.join(' > ') : null;
+              }
             }
-            parts.unshift(tag + ':nth-of-type(' + index + ')');
+            if (tag === 'html' || tag === 'body') {
+              parts.unshift(tag);
+            } else {
+              var index = 1, sibling = node;
+              while ((sibling = sibling.previousElementSibling)) {
+                if (sibling.tagName === node.tagName) { index++; }
+              }
+              parts.unshift(tag + ':nth-of-type(' + index + ')');
+            }
+            if (alone(parts.join(' > '))) { return parts.join(' > '); }
+            node = node.parentElement;
           }
-          if (alone(parts.join(' > '))) { break; }
-          node = node.parentElement;
+          return null;
         }
-        return parts.join(' > ');
+        // An escaped id can end in a space (`#\31 ` for `1`), which the
+        // app would take for one too many: one space between parts, none
+        // at the ends, finds the same element.
+        var found = within();
+        return found ? found.replace(/\s+/g, ' ').trim() : null;
       }
 
       // The styles someone asking for a change would name, and no others.
@@ -318,10 +347,9 @@ enum WebMarkupScript {
       }
 
       function detailsOf(el) {
-        var html = el.outerHTML || '';
         return {tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), name: nameOf(el),
                 text: textOf(el, 200), selector: selectorOf(el), frame: frameOf(el),
-                styles: stylesOf(el), html: html.length > 2000 ? html.slice(0, 2000) + '…' : html};
+                styles: stylesOf(el), html: cut(el.outerHTML || '', 2001)};
       }
 
       // The outermost elements that lie wholly inside a box.

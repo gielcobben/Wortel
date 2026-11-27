@@ -130,19 +130,35 @@ and moving one of them away stopped the other hearing it (2026-11-26).
 
 **What a page says about itself is not trusted.** An element's name, id,
 selector and text are whatever the page's author wrote, and what is copied
-is pasted into a terminal. Every string from the page is cut to a length
-and passed through `MarkText.clean` on its way in (`WebMarkupSurface.text`):
-control characters, line and paragraph separators and invisible formatting
-characters are removed, so a name cannot carry an escape sequence, end a
-bracketed paste or start a line of its own. The words themselves are the
-page's, quoted and short; an agent reading them reads a page.
+is pasted into a terminal, and from there into an agent's prompt. Every
+string from the page is cut to a length and passed through
+`MarkText.clean` on its way in (`MarkText.fromPage`): control characters,
+line and paragraph separators and invisible formatting characters are
+removed, so a name cannot carry an escape sequence, end a bracketed paste
+or start a line of its own. So is every character that draws as nothing
+(Unicode's default-ignorable ones: the variation selectors, the combining
+grapheme joiner, the Hangul fillers, the tag letters), but for a VS16 straight
+after an emoji and a joiner between two, and a letter keeps eight combining
+marks at most. The cut counts Unicode scalars, not characters: a letter and
+400,000 marks after it is one character. Before this, an id of `x` and
+400,000 variation selectors read `div #x` on the chip and reached the
+clipboard and `details.json` whole, and an instruction spelled in them one
+byte a selector came through byte for byte (found in review, 2026-11-27).
+The script cuts what it sends too (`cut`: a name's words, id and class to
+40 UTF-16 units). A selector is kept whole or not at all
+(`MarkText.selectorFromPage`): one cut short or with a character taken out
+finds something else. The script makes one only of ids and test ids that
+are short and have nothing in them that does not show (`plain`), and goes
+the way down to the element otherwise. The words themselves are the page's,
+quoted and short; an agent reading them reads a page.
 
 An element is followed by reference, so a fixed header's mark stays with
 the header, and a mark inside a scrolling panel moves with the panel and is
 cut off where the panel is (the report carries the clip). An element that
 left the page is looked for again by its selector, since a page that draws
 itself anew replaces its elements with like ones. One that is not found has
-no place: its mark is not drawn, and its chip and its picture stay.
+no place: its mark is not drawn, and its chip and its picture stay. A
+selector is one that finds the element alone, or there is none.
 
 **A drawn area follows the block under its middle**, not the element that
 holds all of it (`blockUnder`). The element that holds an area whole is

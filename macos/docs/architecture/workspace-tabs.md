@@ -161,10 +161,24 @@ second and a redraw of whichever button is on screen.
 Measured off screen 2026-11-25 (macOS 27.0): WebKit sets
 `com.apple.quarantine` on the saved file itself, and hands over a file name
 that is already one path component. A stopped download leaves its partial
-file, so `BrowserDownloads.stop` removes it. A Debug build saves to
-`WORTEL_DOWNLOADS_DIR` when that is set, for a test copy
-(`BrowserDownloadsFolder`, read in `main.swift` before the launch scrub
-removes every `WORTEL_` variable).
+file, so `BrowserDownloads.stop` removes it.
+
+A download is written as `report.zip.download` and renamed to `report.zip`
+in `downloadDidFinish`, so a quit, an update's restart or a crash leaves a
+file whose name says it is not whole; until 2026-11-27 it left a truncated
+`report.zip`. Measured off screen that day: the quarantine is on the file
+by `downloadDidFinish` and the rename keeps it. The rename is `renamex_np`
+with `RENAME_EXCL`, so it never replaces a file, and is numbered past a name
+taken meanwhile. A name counts as taken while a running download holds it,
+not only once it is on disk: WebKit makes the file a moment after it is
+given the name (not there 50 ms later) and fails when the destination
+exists, leaving that file alone. Two downloads of one name were both given
+it, the second failed, and its cleanup deleted the first's file. Only a
+`.download` is ever removed (`BrowserDownloadName.removePartial`).
+
+A Debug build saves to `WORTEL_DOWNLOADS_DIR` when that is set, for a test
+copy (`BrowserDownloadsFolder`, read in `main.swift` before the launch
+scrub removes every `WORTEL_` variable).
 
 **Where a thing opens when nothing says where** (`WorkspaceTabs.home(for:)`):
 a file in the main row, and everything else you look at beside your work in

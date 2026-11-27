@@ -240,6 +240,53 @@ enum BrowserDownloadName {
         return stem + suffix
     }
 
+    /// What a download is written as until it has finished, as Safari's
+    /// are: `report.zip.download`. A file under its real name is a whole one.
+    static func partial(_ name: String) -> String { name + ".download" }
+
+    static func isPartial(_ file: URL) -> Bool { file.pathExtension == "download" }
+
+    /// The name a new download gets in `folder`: `wanted`, numbered past any
+    /// name that is on disk, whose `.download` is on disk, or that a running
+    /// download holds (`held`). WebKit makes the file a moment after it is
+    /// given the name, so the disk alone says a name is free that isn't.
+    static func free(_ wanted: String, in folder: URL, held: Set<String>) -> String {
+        free(wanted) { name in
+            held.contains(name)
+                || FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path)
+                || FileManager.default.fileExists(atPath: folder.appendingPathComponent(partial(name)).path)
+        }
+    }
+
+    /// A finished download's `.download` renamed to `name`, or to the next
+    /// free number if something took that name meanwhile. Never over a file:
+    /// `RENAME_EXCL` makes the check and the rename one step. nil when it
+    /// couldn't be renamed; the file is then still where it was.
+    static func finish(_ partialFile: URL, as name: String, held: Set<String>) -> URL? {
+        let folder = partialFile.deletingLastPathComponent()
+        var taken = held
+        for _ in 0..<100 {
+            let candidate = free(name) {
+                taken.contains($0) || FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+            }
+            let file = folder.appendingPathComponent(candidate)
+            if renamex_np(partialFile.path, file.path, UInt32(RENAME_EXCL)) == 0 { return file }
+            guard errno == EEXIST else { return nil }
+            taken.insert(candidate)
+        }
+        return nil
+    }
+
+    /// What a download that didn't finish wrote. Removed rather than moved to
+    /// the Trash: it is a few seconds old, Wortel made it, and half a zip in
+    /// the Trash is nothing anyone would put back. Only ever a `.download`:
+    /// its name was free on disk and held by no other download when it was
+    /// given, so what is there is that download's.
+    static func removePartial(_ file: URL?) {
+        guard let file, isPartial(file) else { return }
+        try? FileManager.default.removeItem(at: file)
+    }
+
     /// `name`, or `name 2`, `name 3`… before its extension: the first that
     /// isn't taken, numbered as the Finder numbers a copy. A download never
     /// replaces a file.

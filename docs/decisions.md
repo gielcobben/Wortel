@@ -2632,6 +2632,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   shell: asking adds no safety when nothing is opened. A partial file from a
   stopped or failed download is removed, not moved to the Trash: Wortel made
   it seconds ago and it is half a file.
+  **2026-11-27:** that partial file is now `<name>.download` until the
+  download finishes, as Safari's is, and only a `.download` is ever removed.
+  A quit or a crash mid-download had left a truncated file under the real
+  name, and a failed download sharing a name with a running one deleted
+  the other's file. One left by a quit stays where it is, and its name says
+  what it is.
 - **2026-11-26. A `download` link in a frame from another site saves
   nothing.** A response from such a frame was already refused; a link with
   the `download` attribute was not, and a frame can click its own link from

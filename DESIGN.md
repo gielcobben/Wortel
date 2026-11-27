@@ -380,8 +380,12 @@ button: the same inset after its title as before its glyph.
 
 When a row is short of room, it gives way in this order. First the tabs
 behind the one in front give up the room each keeps for its close button:
-the tab ends 6pt after its title, and on hover the close button shows where
-the glyph is, as Safari's does. Then the titles shrink together, down to the
+the tab ends 6pt after its title and shows no close button at all, pointer
+over it or not. Its glyph is never hidden. A close button is at a tab's
+trailing end or nowhere: one place. (For a few hours on 2026-11-26 it showed
+over the glyph on hover, and a click meant to pick a tab closed it.) Such a
+tab is closed by bringing it forward first, by ⌘W, by a middle click, or
+from its right-click menu. Then the titles shrink together, down to the
 readable minimum. Only then does the row scroll, under 20pt faded edges, with
 "+" pinned after the last tab.
 

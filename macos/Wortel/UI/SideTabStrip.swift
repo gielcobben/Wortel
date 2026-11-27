@@ -39,6 +39,28 @@ final class SideTabStrip: NSView {
     var onClose: (SideTab) -> Void = { _ in }
     var onCloseOthers: (SideTab) -> Void = { _ in }
     var onMove: (SideTab, TabRegion) -> Void = { _, _ in }
+    /// Split Right or Split Down from a tab's menu: the tab into a pane of
+    /// its own, on that edge of the pane it is in.
+    var onSplit: (SideTab, SplitLayout.Edge) -> Void = { _, _ in }
+    /// Whether the row sits on a page (the strip's, a pane's) rather than in
+    /// the titlebar band: the tab in front is raised with the page's own
+    /// colour there.
+    var isOnPage = false {
+        didSet {
+            guard isOnPage != oldValue else { return }
+            tabViews.forEach { $0.refreshState() }
+        }
+    }
+    /// Whether this is the row of the area you're in. Only the rows of a
+    /// split main area are ever told otherwise: there, the tab in front of a
+    /// split you're not in is drawn with a quiet title, so the one you are
+    /// in can be told from its neighbours.
+    var isKeyRow = true {
+        didSet {
+            guard isKeyRow != oldValue else { return }
+            tabViews.forEach { $0.refreshState() }
+        }
+    }
     /// A tab double-clicked: the preview tab, kept.
     var onKeep: (SideTab) -> Void = { _ in }
     /// A tab is being dragged; `point` is in window coordinates. The drag is
@@ -149,7 +171,12 @@ final class SideTabStrip: NSView {
             needsLayout = true
             layoutSubtreeIfNeeded()
         }
-        if orderChanged || activeChanged { revealActive(animated: hadTabs) }
+        // Against the width the row is going to: while a tab slides in, the
+        // visible part is still as narrow as it was, the new tab in front
+        // looks out of view, and the row scrolled to it and back again as it
+        // widened. With room for every tab, the tab you had slid 58 points
+        // out and back each time one was added.
+        if orderChanged || activeChanged { revealActive(animated: hadTabs, width: plan().visibleWidth) }
     }
 
     /// A tab as it looks in front of a row on the band, for a drag that
@@ -177,11 +204,16 @@ final class SideTabStrip: NSView {
         view.onClose = { [weak self] in self?.onClose(item.tab) }
         view.onCloseOthers = { [weak self] in self?.onCloseOthers(item.tab) }
         view.onMove = { [weak self] region in self?.onMove(item.tab, region) }
+        view.onSplit = { [weak self] edge in self?.onSplit(item.tab, edge) }
+        view.isOnPage = { [weak self] in self?.isOnPage ?? false }
+        view.isKeyRow = { [weak self] in self?.isKeyRow ?? true }
+        view.tabCount = { [weak self] in self?.tabViews.count ?? 0 }
         view.onKeep = { [weak self] in self?.onKeep(item.tab) }
         view.onDrag = { [weak self, weak view] phase, point in
             guard let self, let view else { return }
             self.onDrag(phase, item.tab, view, point)
         }
+        view.strip = { [weak self] in self }
         view.stripRegion = { [weak self] in self?.region ?? .side }
         view.preview = { [weak self] in self?.preview(item.tab) }
         content.addSubview(view)
@@ -195,6 +227,8 @@ final class SideTabStrip: NSView {
     /// where the "+" goes.
     private struct Plan {
         var tabs: [NSRect]
+        /// Which tabs gave up the room kept for their close button.
+        var hugging: [Bool]
         var contentWidth: CGFloat
         var visibleWidth: CGFloat
         var accessory: NSRect?
@@ -207,13 +241,26 @@ final class SideTabStrip: NSView {
         let gaps = Self.gap * CGFloat(max(tabViews.count - 1, 0))
         // Each tab as wide as its title, up to the maximum, and never
         // narrower than that title or the readable minimum, whichever is less.
-        let natural = tabViews.map { min(ceil($0.fittingWidth), Self.maxTabWidth) }
+        var natural = tabViews.map { min(ceil($0.fittingWidth), Self.maxTabWidth) }
+        let available = max(0, room - gaps)
+        // Short of room, the tabs behind the one in front first give up the
+        // room each keeps for its close button (it shows in place of their
+        // glyph on hover instead, as Safari's does): two named tabs fit where
+        // one and a half did, before any title is cut or the row scrolls.
+        var hugging = tabViews.map { _ in false }
+        if natural.reduce(0, +) > available {
+            for (index, view) in tabViews.enumerated() where view.canHug {
+                let hugged = min(ceil(view.huggingWidth), Self.maxTabWidth)
+                guard hugged < natural[index] else { continue }
+                natural[index] = hugged
+                hugging[index] = true
+            }
+        }
         let floors = natural.map { min($0, Self.minTabWidth) }
         var widths = natural
         // Short of room, the tabs that can give way shrink together; one that
         // reaches its floor stays there and the rest take up the difference.
         // Once they're all at their floors, the row scrolls.
-        let available = max(0, room - gaps)
         for _ in widths.indices where widths.reduce(0, +) > available {
             let giving = widths.indices.filter { widths[$0] > floors[$0] }
             let fixed = widths.indices.filter { widths[$0] <= floors[$0] }.map { widths[$0] }.reduce(0, +)
@@ -235,12 +282,33 @@ final class SideTabStrip: NSView {
             accessory = NSRect(x: visibleWidth + Self.gap * 2, y: ((bounds.height - size.height) / 2).rounded(),
                                width: size.width, height: size.height)
         }
-        return Plan(tabs: frames, contentWidth: contentWidth, visibleWidth: visibleWidth, accessory: accessory)
+        return Plan(tabs: frames, hugging: hugging, contentWidth: contentWidth,
+                    visibleWidth: visibleWidth, accessory: accessory)
     }
 
     /// The width the row was last laid out at: narrowing it (a divider drag,
     /// a window resize) can put the tab in front out of view.
     private var laidOutWidth: CGFloat = 0
+
+    /// How wide the content is going to be: `content`'s own width, except
+    /// through a slide after a close, when the view is left as wide as it
+    /// was until the tabs have arrived (the clip view keeps its place
+    /// inside the document, so a row scrolled past the new end jumps the
+    /// moment the view narrows). How far the row can scroll and which edge
+    /// fades are asked of this, never of the view. Asked of the view,
+    /// closing a tab measured as:
+    ///
+    /// - with room for every tab, and the last one coming forward, the
+    ///   whole row scrolled 20 points to "reveal" it (the fade's room
+    ///   beside it, allowed because the content still looked 98 points
+    ///   wider than the row), both edges faded, and 180ms later it all
+    ///   jumped back as the content narrowed;
+    /// - in a row scrolled to its end, nothing scrolled while the tabs
+    ///   slid, and then the row jumped 69 points when the content narrowed
+    ///   under it;
+    /// - the trailing edge stayed faded over the last tab until the slide
+    ///   was over, in a row that had come to fit.
+    private var settledContentWidth: CGFloat = 0
 
     override func layout() {
         super.layout()
@@ -252,9 +320,10 @@ final class SideTabStrip: NSView {
             }
         }
         scroll.frame = NSRect(x: 0, y: 0, width: plan.visibleWidth, height: bounds.height)
-        content.frame = NSRect(x: 0, y: 0, width: max(plan.contentWidth, plan.visibleWidth),
-                               height: bounds.height)
+        settledContentWidth = max(plan.contentWidth, plan.visibleWidth)
+        content.frame = NSRect(x: 0, y: 0, width: settledContentWidth, height: bounds.height)
         for (view, frame) in zip(tabViews, plan.tabs) { view.frame = frame }
+        for (view, hugs) in zip(tabViews, plan.hugging) { view.isHugging = hugs }
         if let frame = plan.accessory { trailingAccessory?.frame = frame }
         updateFade()
     }
@@ -263,10 +332,24 @@ final class SideTabStrip: NSView {
     /// curve: ChatGPT's tabs do the same over 150 to 180ms.
     private func slideIntoPlace(fadingIn inserted: [SideTabView]) {
         let plan = plan()
-        content.frame.size.width = max(plan.contentWidth, plan.visibleWidth, content.frame.width)
+        settledContentWidth = max(plan.contentWidth, plan.visibleWidth)
+        content.frame.size.width = max(settledContentWidth, content.frame.width)
         for (view, frame) in zip(tabViews, plan.tabs) where inserted.contains(where: { $0 === view }) {
             view.frame = frame
             view.alphaValue = 0
+        }
+        // Which tabs give up their close button's room is settled before
+        // anything moves, and without moving: left to the layout pass after
+        // the slide, a tab slid to its narrower width still laid out for the
+        // room, its title cut short, and then jumped (a new tab in a row
+        // with no room to spare, which is what a "+" in a narrow split is).
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            for (view, hugs) in zip(tabViews, plan.hugging) where view.isHugging != hugs {
+                view.isHugging = hugs
+                view.layoutSubtreeIfNeeded()
+            }
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Motion.tabs
@@ -289,10 +372,39 @@ final class SideTabStrip: NSView {
     // MARK: Scrolling
 
     /// Scroll so the tab in front is in view, with a little room beside it.
-    private func revealActive(animated: Bool) {
+    #if DEBUG
+    /// For `SplitProbe`: where the row's parts are drawn right now, in the
+    /// middle of an animation included (the presentation layers).
+    var motionSample: String {
+        func shown(_ view: NSView) -> NSRect { view.layer?.presentation()?.frame ?? view.frame }
+        let clip = scroll.contentView
+        let clipX = clip.layer?.presentation()?.bounds.origin.x ?? clip.bounds.origin.x
+        let tabs = tabViews.map { view -> String in
+            let frame = shown(view)
+            return String(format: "%@%.0f+%.0f/%.1f%@ t%.0f", view.tab == active ? "*" : "",
+                          frame.minX, frame.width,
+                          view.layer?.presentation()?.opacity ?? Float(view.alphaValue),
+                          view.isHugging ? "h" : "", view.shownTitleWidth)
+        }
+        let plus = trailingAccessory.map { shown($0).minX } ?? -1
+        // Which edges are faded: the first and last stops of the mask.
+        var fade = "-"
+        if let colors = (scroll.layer?.mask as? CAGradientLayer)?.colors as? [CGColor], colors.count == 4 {
+            fade = (colors[0].alpha < 0.5 ? "L" : "") + (colors[3].alpha < 0.5 ? "T" : "")
+        }
+        return String(format: "clip %.0f scroll %.0f content %.0f plus %.0f fade %@ | ", clipX,
+                      shown(scroll).width, shown(content).width, plus, fade)
+            + tabs.joined(separator: "  ")
+    }
+    #endif
+
+    /// `width` is how wide the visible part is, when that is not what it is
+    /// right now: its width at the end of a slide in progress.
+    private func revealActive(animated: Bool, width: CGFloat? = nil) {
         guard let view = tabViews.first(where: { $0.tab == active }) else { return }
         let clip = scroll.contentView
-        let visible = clip.bounds
+        var visible = clip.bounds
+        if let width { visible.size.width = width }
         let wanted = view.frame.insetBy(dx: -Self.fade, dy: 0)
         var x = visible.origin.x
         if wanted.minX < visible.minX {
@@ -300,7 +412,7 @@ final class SideTabStrip: NSView {
         } else if wanted.maxX > visible.maxX {
             x = wanted.maxX - visible.width
         }
-        x = min(max(0, x), max(0, content.frame.width - visible.width))
+        x = min(max(0, x), max(0, settledContentWidth - visible.width))
         guard abs(x - visible.origin.x) > 0.5 else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { context in
@@ -321,7 +433,7 @@ final class SideTabStrip: NSView {
     private func updateFade() {
         let clip = scroll.contentView.bounds
         let hiddenLeading = clip.minX > 0.5
-        let hiddenTrailing = clip.maxX < content.frame.width - 0.5
+        let hiddenTrailing = clip.maxX < settledContentWidth - 0.5
         guard hiddenLeading || hiddenTrailing, scroll.bounds.width > Self.fade * 2 else {
             scroll.layer?.mask = nil
             return
@@ -407,8 +519,17 @@ private final class SideTabView: NSControl, TabTitleProviding {
     var onClose: () -> Void = {}
     var onCloseOthers: () -> Void = {}
     var onMove: (TabRegion) -> Void = { _ in }
+    var onSplit: (SplitLayout.Edge) -> Void = { _ in }
+    var isOnPage: () -> Bool = { false }
+    var isKeyRow: () -> Bool = { true }
+    var tabCount: () -> Int = { 0 }
+
+    func refreshState() { applyState() }
     var onKeep: () -> Void = {}
     var onDrag: (SideTabStrip.DragPhase, NSPoint) -> Void = { _, _ in }
+    /// The row the tab is in, kept by `mouseDown` for as long as it tracks a
+    /// drag. Asked, not held: the row holds its tabs.
+    var strip: () -> SideTabStrip? = { nil }
     var stripRegion: () -> TabRegion = { .side }
     var showsTrailingDivider = false {
         didSet { divider.isHidden = !showsTrailingDivider }
@@ -422,6 +543,23 @@ private final class SideTabView: NSControl, TabTitleProviding {
     private var hovering = false {
         didSet { if hovering != oldValue { applyState() } }
     }
+    /// Set by the row when it is short of room: no room is kept after the
+    /// title, and the close button shows where the glyph is while the
+    /// pointer is over the tab.
+    var isHugging = false {
+        didSet {
+            guard isHugging != oldValue else { return }
+            needsLayout = true
+            applyState()
+        }
+    }
+    /// A tab behind the one in front, that can be closed: the only kind that
+    /// keeps room for a button it isn't showing.
+    var canHug: Bool { !isActive && !pinned }
+    /// As wide as its title, and a little after it: less than the inset
+    /// before its glyph, since nothing is drawn at a quiet tab's end.
+    var huggingWidth: CGFloat { Self.inset + Self.glyph + Self.glyphGap + titleWidth + Self.huggingInset }
+    private static let huggingInset: CGFloat = 6
 
     init(tab: SideTab, pinned: Bool = false) {
         self.tab = tab
@@ -475,10 +613,30 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
     private var symbol: String?
 
-    /// What the tab would like to be: inset, glyph, title, close button.
+    /// What the tab would like to be: inset, glyph, title, close button. A
+    /// tab that is never closed (the session's own terminal) keeps no room
+    /// for a button it will never show: the same inset after its title as
+    /// before its glyph. With the room kept, it read as a tab with a hole at
+    /// its end, once the session's terminal was always drawn as a tab.
+    ///
+    /// Never by `isHugging`: this is what the row plans from, and a width
+    /// that changed with the plan's own answer made the plan flip on every
+    /// layout pass (hugging, so already narrow, so not asked to hug, so wide
+    /// again), which showed as titles cut short after a tab was added and
+    /// put right by the next pass.
     var fittingWidth: CGFloat {
-        Self.inset + Self.glyph + Self.glyphGap + titleWidth
-            + Self.closeGap + Self.closeSize + Self.endInset
+        Self.inset + Self.glyph + Self.glyphGap + titleWidth + naturalTrailingRoom
+    }
+
+    /// What follows the title with room to spare: the close button and its
+    /// gaps, or for a tab that has none, the inset.
+    private var naturalTrailingRoom: CGFloat {
+        pinned ? Self.inset : Self.closeGap + Self.closeSize + Self.endInset
+    }
+
+    /// What follows the title as the tab is laid out now.
+    private var trailingRoom: CGFloat {
+        isHugging ? Self.huggingInset : naturalTrailingRoom
     }
 
     /// Only what changed: a row is updated whole whenever any tab in it
@@ -521,20 +679,24 @@ private final class SideTabView: NSControl, TabTitleProviding {
         super.layout()
         let h = bounds.height
         icon.frame = NSRect(x: Self.inset, y: (h - 18) / 2, width: Self.glyph, height: 18)
-        let closeX = bounds.width - Self.endInset - Self.closeSize
+        // Over the glyph when the tab keeps no room for it at its end.
+        let closeX = isHugging ? Self.inset - (Self.closeSize - Self.glyph) / 2
+            : bounds.width - Self.endInset - Self.closeSize
         closeButton.frame = NSRect(x: closeX, y: (h - Self.closeSize) / 2,
                                    width: Self.closeSize, height: Self.closeSize)
         let labelX = Self.inset + Self.glyph + Self.glyphGap
         let labelHeight = ceil(label.intrinsicContentSize.height)
         label.frame = NSRect(x: labelX, y: ((h - labelHeight) / 2).rounded(),
-                             width: max(0, closeX - Self.closeGap - labelX), height: labelHeight)
+                             width: max(0, bounds.width - trailingRoom - labelX), height: labelHeight)
         divider.frame = NSRect(x: bounds.width + 1.5, y: (h - 14) / 2, width: 1, height: 14)
     }
 
     private func applyState() {
         closeButton.isHidden = pinned || !(isActive || hovering)
-        label.textColor = isActive ? .labelColor : .secondaryLabelColor
-        icon.contentTintColor = isActive ? .labelColor : .secondaryLabelColor
+        icon.isHidden = isHugging && !closeButton.isHidden
+        let strong = isActive && isKeyRow()
+        label.textColor = strong ? .labelColor : .secondaryLabelColor
+        icon.contentTintColor = strong ? .labelColor : .secondaryLabelColor
         needsDisplay = true
     }
 
@@ -547,7 +709,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
                 // The strip's row is on the page; the main area's and the
                 // column's are on the titlebar band, which is the window's
                 // vibrancy.
-                let fill = stripRegion() == .bottom ? Chrome.raised : Chrome.raisedOnBand
+                let fill = isOnPage() ? Chrome.raised : Chrome.raisedOnBand
                 layer.backgroundColor = fill.cgColor
                 layer.borderWidth = 0.5
                 layer.borderColor = Chrome.hairlineStrong.cgColor
@@ -571,6 +733,10 @@ private final class SideTabView: NSControl, TabTitleProviding {
     var preview: () -> TabPreview? = { nil }
 
     var title: String { label.stringValue }
+    #if DEBUG
+    /// For the row's `motionSample`: how wide the title is drawn right now.
+    var shownTitleWidth: CGFloat { (label.layer?.presentation()?.frame ?? label.frame).width }
+    #endif
     /// Whether the title is cut short where it is.
     var isTitleTruncated: Bool { titleWidth > label.frame.width + 0.5 }
 
@@ -610,7 +776,18 @@ private final class SideTabView: NSControl, TabTitleProviding {
         // A double-click keeps the preview tab, as in Xcode and VS Code.
         if event.clickCount == 2 { onKeep() }
         guard let window else { return }
-        let start = event.locationInWindow
+        // Kept, with this tab, until the mouse-up. `nextEvent` runs the main
+        // queue while it waits, so the row can go meanwhile (a pane's only
+        // tab, its server exited: the pane closes and its row is freed half
+        // a second later). The row is what hands the drag on, and gone, the
+        // drag's end never reached the controller, which left the ghost and
+        // the lit zone drawn over the window.
+        withExtendedLifetime((self, strip())) {
+            trackDrag(from: event.locationInWindow, in: window)
+        }
+    }
+
+    private func trackDrag(from start: NSPoint, in window: NSWindow) {
         var dragging = false
         // Escape abandons a drag; the rest of it, to the mouse-up, is ignored.
         var cancelled = false
@@ -645,14 +822,19 @@ private final class SideTabView: NSControl, TabTitleProviding {
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem(title: "Close Tab") { [weak self] in self?.onClose() })
         menu.addItem(ClosureMenuItem(title: "Close Other Tabs") { [weak self] in self?.onCloseOthers() })
-        // Every other area this tab may go to.
-        let destinations: [(TabRegion, String)] = [
-            (.main, "Move to Main Area"), (.side, "Move to Side Column"), (.bottom, "Move to Bottom Strip"),
-        ].filter { $0.0 != stripRegion() && tab.fits($0.0) }
-        if !destinations.isEmpty { menu.addItem(.separator()) }
-        for (region, title) in destinations {
-            menu.addItem(ClosureMenuItem(title: title) { [weak self] in self?.onMove(region) })
+        // Into a pane of its own, beside the one it is in. Other panes are
+        // reached by dragging: a menu would have to name them. Not for a
+        // split's only tab, which would be split from itself: the side
+        // split's and the strip's as much as a pane's (`WorkspaceTabs.split`
+        // refuses it). The main row always holds the session's own tab, so
+        // any other tab there is one of at least two.
+        if tabCount() > 1 {
+            menu.addItem(.separator())
+            menu.addItem(ClosureMenuItem(title: "Split Right") { [weak self] in self?.onSplit(.right) })
+            menu.addItem(ClosureMenuItem(title: "Split Down") { [weak self] in self?.onSplit(.down) })
         }
+        // No "Move to" a place by name: there are no named places, only
+        // splits, and a tab goes to another one by a drag or ⌃⌘ and an arrow.
         return menu
     }
 

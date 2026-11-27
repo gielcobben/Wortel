@@ -95,3 +95,19 @@ the AXUIElement calls Accessibility Inspector and Aiload make:
 Not tested in a running app: mouse reporting in a full-screen program. The
 mouse and key handlers only gained a call that schedules a later look at the
 selection, so what they send to libghostty is unchanged.
+
+## The dividers between splits
+
+Not the terminal, but it belongs to the same promise. Since the splits
+(2026-11-26) the lines between splits are Wortel's own views
+(`SplitDividerView` in `Wortel/UI/SplitTreeView.swift`), where the column's
+divider used to be `NSSplitView`'s, which VoiceOver knows. Each is an
+accessibility element with the splitter role, labelled "Divider", its
+orientation (a line between splits side by side stands upright) and its
+position along its axis as the value. Increment and decrement move it 20
+points, through the same three calls a pointer's drag makes (press, drag,
+release), so a move made with VoiceOver is saved and remembered like one made
+by hand. The sidebar's divider is still `NSSplitView`'s.
+
+Not tested with VoiceOver running (2026-11-26): it was written from the API
+and read in review.

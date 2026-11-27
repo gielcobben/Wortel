@@ -548,6 +548,11 @@ targets:
       # does drag in AppKit — only delegates to.
       - path: Wortel/Sessions/SessionName.swift
       - path: Wortel/Sessions/WorkspaceTabs.swift
+      # How the main area is split into panes: a pure tree (CoreGraphics and
+      # Foundation only) that `WorkspaceTabs`, `TabRegion` and the saved
+      # session all hold. A divider a point off or a pane folded into the
+      # wrong split draws fine and is wrong.
+      - path: Wortel/Sessions/SplitLayout.swift
       # And once more: a folder's *directory* is path-string handling with the
       # same silent failure mode as the name split above. A `hasPrefix` that
       # forgets the separator hands one project's directory to the sibling whose

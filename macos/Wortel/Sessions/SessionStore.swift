@@ -93,6 +93,23 @@ struct PersistedSession: Codable {
     /// `Session.tabHabits`, kind to region, raw values. nil in older files:
     /// everything opens in the column.
     let tabHabits: [String: String]?
+    /// How the session's area is divided (`Session.splitLayout`, the tree as
+    /// `SplitLayout` encodes it: the main row, the column, the strip and the
+    /// panes), and each pane's tabs by the pane id's string. The tree is nil
+    /// while the main row is all there is, and the panes while there are
+    /// none, so a session with neither a column, a strip nor a split saves
+    /// exactly what it saved before there was a tree.
+    ///
+    /// The column's and the strip's tabs are not in here: they are saved in
+    /// `sideTabs` and `bottomTabs` as they always were, with whether each is
+    /// up, so an older build shows them. A file from such a build has those
+    /// and no leaf for them, which `WorkspaceTabs.normalized` puts in.
+    ///
+    /// Read leniently (`try?`): a tree or a pane this build can't read is no
+    /// split, not a file that can't be opened. `SessionManager.restore` then
+    /// puts whatever tabs it did read where they can be reached.
+    let splitLayout: SplitLayout?
+    let paneTabs: [String: PersistedPaneTabs]?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -168,6 +185,7 @@ struct PersistedSession: Codable {
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
+        case splitLayout, paneTabs
         case runningAgent, runningModel, runningArgv, runningConversationID, runningStartedAt
         case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
         case createdAt, lastSentAt
@@ -191,6 +209,8 @@ struct PersistedSession: Codable {
          browserAddresses: [String: String]? = nil,
          gitCheckout: String? = nil,
          tabHabits: [String: String]? = nil,
+         splitLayout: SplitLayout? = nil,
+         paneTabs: [String: PersistedPaneTabs]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil, runningStartedAt: Date? = nil,
          lastConversationID: String? = nil,
@@ -218,6 +238,8 @@ struct PersistedSession: Codable {
         self.browserAddresses = browserAddresses
         self.gitCheckout = gitCheckout
         self.tabHabits = tabHabits
+        self.splitLayout = splitLayout
+        self.paneTabs = paneTabs
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -288,6 +310,13 @@ struct PersistedSession: Codable {
         browserAddresses = try c.decodeIfPresent([String: String].self, forKey: .browserAddresses)
         gitCheckout = try c.decodeIfPresent(String.self, forKey: .gitCheckout)
         tabHabits = try c.decodeIfPresent([String: String].self, forKey: .tabHabits)
+        // Not `try`: a damaged tree, or one from a build that splits in a
+        // way this one doesn't know, must not cost the whole session list.
+        splitLayout = try? c.decodeIfPresent(SplitLayout.self, forKey: .splitLayout)
+        // Pane by pane: one value that can't be read costs that pane, not
+        // the others, whose terminals would lose their row.
+        paneTabs = (try? c.decodeIfPresent([String: LenientPaneTabs].self, forKey: .paneTabs))
+            .map { $0.compactMapValues(\.value) }
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.
@@ -308,6 +337,105 @@ struct PersistedSession: Codable {
         remindAt = try c.decodeIfPresent(Date.self, forKey: .remindAt)
         reportedState = try c.decodeIfPresent(String.self, forKey: .reportedState)
         agentPaintedDark = try c.decodeIfPresent(Bool.self, forKey: .agentPaintedDark)
+    }
+}
+
+/// One pane's row as it's saved: its tabs as `SideTab` raw values, and the one
+/// in front. A plain reading of the file, like `PersistedSession`: which tabs
+/// are real and what is in front when the file doesn't say is `restore`'s.
+struct PersistedPaneTabs: Codable, Equatable {
+    let tabs: [String]
+    let active: String?
+
+    init(tabs: [String], active: String? = nil) {
+        self.tabs = tabs
+        self.active = active
+    }
+
+    private enum CodingKeys: String, CodingKey { case tabs, active }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tabs = (try? c.decodeIfPresent([String].self, forKey: .tabs)) ?? []
+        active = try? c.decodeIfPresent(String.self, forKey: .active)
+    }
+}
+
+/// A saved pane that may not be one: nil for a value that isn't an object
+/// at all, so `paneTabs` can be read entry by entry.
+private struct LenientPaneTabs: Decodable {
+    let value: PersistedPaneTabs?
+    init(from decoder: Decoder) throws { value = try? PersistedPaneTabs(from: decoder) }
+}
+
+extension PersistedSession {
+    /// The session's tabs as this entry has them, made consistent: what
+    /// `SessionManager.restoredSession` gives a session, in one pure function
+    /// so a test runs the same steps. `panelVisible` is whether the column
+    /// was up (the entry's own, or the old app-wide flag for a file from
+    /// before it was per session), and `defaultPane` the pane a file from
+    /// before the column had tabs opens its column on, when the entry names
+    /// none.
+    func restoredTabs(panelVisible: Bool, defaultPane: InspectorPane) -> WorkspaceTabs {
+        // The column's tabs. A file from before the column had them said only
+        // whether it was up and on which pane, and that becomes a strip of
+        // one: a session with Changes open opens on a Changes tab, and one
+        // that never had the column up starts with none, which is also what
+        // makes its first ⌘⌥G open the pane you'd expect.
+        var tabs = WorkspaceTabs(
+            main: (mainTabs ?? []).compactMap(SideTab.init(rawValue:)),
+            activeMain: activeMainTab.flatMap(SideTab.init(rawValue:)),
+            side: (sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
+            activeSide: activeSideTab.flatMap(SideTab.init(rawValue:)),
+            sideVisible: panelVisible,
+            bottom: (bottomTabs ?? []).compactMap(Self.stripTab),
+            activeBottom: activeBottomTab.flatMap(Self.stripTab),
+            bottomVisible: bottomVisible ?? false,
+            closed: (closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)),
+            habits: Dictionary(uniqueKeysWithValues: (tabHabits ?? [:]).compactMap { key, value in
+                TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
+            }),
+            // Before the tree is put right: it is the edge a column with no
+            // leaf of its own yet is given one at.
+            sideLeading: sideColumnLeading ?? false)
+        // The panes split off the main area. A pane whose key isn't an id
+        // still has tabs, a terminal among them perhaps: they go in a pane of
+        // their own under a new id, which no leaf of the tree names, so
+        // `normalized` folds it into the main row. That, a leaf with no pane
+        // and a tree that couldn't be read are `normalized`'s, which never
+        // leaves a tab (a terminal with a shell in the keeper) without a row.
+        for (key, pane) in paneTabs ?? [:] {
+            tabs.panes[UUID(uuidString: key) ?? UUID()] = WorkspaceTabs.PaneTabs(
+                tabs: pane.tabs.compactMap(SideTab.init(rawValue:)),
+                active: pane.active.flatMap(SideTab.init(rawValue:)))
+        }
+        // The tree as it was saved, or none. A file from before the column
+        // and the strip were leaves of it has their tabs and no place for
+        // them (no tree at all, or one of panes only): `normalized` puts
+        // each where it opens, to be sized by the window when it is shown.
+        tabs.layout = splitLayout ?? SplitLayout()
+        // A share that was saved is not a guess, whatever making `tabs`
+        // put in the tree it had before this one.
+        tabs.unsized = []
+        if sideTabs == nil, panelVisible {
+            let pane = inspectorPane.flatMap(InspectorPane.init(rawValue:)) ?? defaultPane
+            tabs.side = [.pane(pane)]
+            tabs.activeSide = .pane(pane)
+        }
+        // A column or a strip an older build had hidden with its tabs kept:
+        // its panes closed, anything else in it on screen. Nothing is hidden
+        // any more (`WorkspaceTabs.showHidden`).
+        tabs.showHidden()
+        // Whatever the file said, made consistent: the terminal in the main
+        // row exactly once, what's in front something the row has, an empty
+        // column or strip hidden. See `WorkspaceTabs.normalized`.
+        return tabs.normalized()
+    }
+
+    /// A strip tab as saved: a `SideTab` raw value, or, in files from when the
+    /// strip held terminals only, a bare UUID.
+    private static func stripTab(_ raw: String) -> SideTab? {
+        SideTab(rawValue: raw) ?? UUID(uuidString: raw).map { .terminal($0) }
     }
 }
 

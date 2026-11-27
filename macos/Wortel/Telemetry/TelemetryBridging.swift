@@ -56,7 +56,8 @@ extension TabOpenedKind {
         case .browser: self = .browser
         case .file: self = .file
         case .pane: self = .pane
-        case .session: return nil
+        // An empty tab is nothing opened yet; what it becomes is counted.
+        case .session, .blank: return nil
         }
     }
 }
@@ -67,6 +68,7 @@ extension TabArea {
         case .main: self = .main
         case .side: self = .side
         case .bottom: self = .bottom
+        case .pane: self = .split
         }
     }
 }
@@ -82,6 +84,7 @@ extension CommandVerb {
         case .remind: self = .remind
         case .changeDirectory: self = .cd
         case .close: self = .close
+        case .split: self = .split
         case .list: self = .list
         case .read: self = .read
         case .send: self = .send

@@ -1,6 +1,6 @@
 ---
 name: Wortel
-description: A native macOS terminal for working next to coding agents. A fixed frame per window, glass chrome, opaque pages, almost no colour.
+description: A native macOS terminal for working next to coding agents. One arrangement to start from in every window, glass chrome, opaque pages, almost no colour.
 sources:
   app: macos/Wortel/UI/Chrome.swift
   terminal: macos/Resources/wortel.conf
@@ -93,18 +93,28 @@ Nothing keeps the canvas current by itself: it is drawn by hand from the app.
 ## The idea
 
 Wortel has a handful of settings, and it is not a small app. It holds
-sessions, tabs in three places, a git client, a file tree, previews, a browser,
-a process list and a command line of its own. The design problem is fitting all
+sessions, tabs, the splits that hold them, a git client, a file
+tree, previews, a browser, a process list and a command line of its own. The design problem is fitting all
 of that into something that still reads as a terminal, with next to no
 preferences to lean on.
 These are the ideas that do it.
 
-**A fixed frame, in every window.** There are four places and only four:
-sessions on the left, the terminal in the middle, the repository beside it, a
-second shell underneath. Tabs live inside those places. There is no grid of
-splits to arrange, so there is no layout to configure and none to get wrong.
-A second window (⇧⌘N) is the same frame again, with a sidebar of its own
+**One arrangement to start from, in every window.** Sessions on the left, and
+beside them splits: parts with a row of tabs and a page under it. The window
+you get without doing anything is the one Wortel has always had: the terminal
+in the middle, the repository beside it, a second shell underneath. The side
+column and the strip are splits that Wortel opens for you, at the place and
+the size they always had. They are the default, not a different kind of thing.
+Any split can be split again, zoomed, resized by its divider and dropped on,
+and one is gone when its last tab closes. Nothing is hidden with its tabs
+kept: a split is on screen while it holds a tab, and the way to have the
+window for one of them is to zoom it. So there is still no layout to
+configure: nothing is named, saved or loaded, and a window nobody arranged
+is arranged exactly as it was before there were splits.
+A second window (⇧⌘N) is the same again, with a sidebar of its own
 sessions: windows are how work is set apart, never how a layout is built.
+Until 2026-11-26 this idea was "a fixed frame of four places", and the side
+column and the strip were places of their own (`docs/decisions.md`).
 
 **Glass for the frame, pages for the work.** The whole window sits on one
 behind-window material, so the desktop tints it. The titlebar band and the
@@ -167,7 +177,7 @@ Every colour is one of these. The left column is the name on the canvas and in
 | `sidebar-accent` | `Chrome.raisedOnBand`, `pillAlpha` | black 8% | white 8% | A selection on the glass: the session pill, the tab in front of a titlebar row |
 | `secondary` | `Chrome.selectedFill` | black 7% | white 11% | A selected row on a page, a glyph button that is on |
 | `accent` | `Chrome.hoverFill` | black 5% | white 7% | Hover on a control |
-| `muted` | `Chrome.stripBand` | black 3% | white 4% | The bottom strip's tab row. (The palette's footer is the label colour at 3%.) |
+| `muted` | `Chrome.stripBand` | black 3% | white 4% | The tab row of a split that is not along the top of the window: the bottom strip's, and any split under another. (The palette's footer is the label colour at 3%.) |
 | `border` | `Chrome.hairline` | black 7% | white 8% | Hairlines |
 | `input` | `Chrome.hairlineStrong` | black 10% | white 12% | Toolbar dividers, tab edges, field outlines |
 | `popover` | the `.popover` material | 226 at 90% | 37 at 80% | The command palette |
@@ -237,12 +247,111 @@ the app.
 | Any control in a row | 28 by 28pt, corners 8pt (`controlSize`, `controlRadius`) |
 | Any glyph in a row | 14pt regular; 13pt in menus |
 | Sidebar | 234pt on the canvas; drags between 180 and 400 |
-| Side column | 384pt on the canvas; at least 260, and it may grow until the terminal has 320 |
+| Side column | 384pt on the canvas. In the app it opens at the width last chosen (440pt before anyone has), at least 260 and at most half the area. After that it is a share of the area, like any split |
+| Bottom strip | Opens at the height last chosen (240pt before anyone has), at least 100 and at most six tenths of the area. After that a share |
+| A split's row, along the top of the window | The titlebar row: 40pt, see-through, a hairline under it |
+| A split's row, lower down | 36pt, on the strip's band (`SplitLeafView.rowHeight`), no hairline |
+| A split | Never laid out under 160 by 100pt while there is room |
+| Between two splits | A 1pt hairline (`Chrome.hairline`), with 4pt either side of it that take the press |
 | Window corners | 18pt |
 
-Each pane draws its own 40pt row of one flat band, with hairlines between
-panes. The titlebar is Wortel's own because macOS 26 and later put every
-toolbar item on a glass capsule, and there is no switch for that.
+The sidebar and every split along the top of the window draw their own 40pt
+row of one flat band, with hairlines between them. The titlebar is Wortel's
+own because macOS 26 and later put every toolbar item on a glass capsule, and
+there is no switch for that.
+
+**Every split's row is the same thing** (`PaneBar`): its tabs, a "+" right
+after the last one, and at the row's end Split Right and Split Down. The "+"
+opens an empty tab in that split, whose page asks what it should be (below).
+It has no menu. The two split buttons split that split, whichever one has
+the keyboard. A row with less than 240pt of its own shows neither, and the
+tabs have the row. A zoomed split has one more button after the pair, to
+show the others again. The main row is no different. The session's
+own terminal is a tab named after the session, pinned: it has no close
+button and no menu, and it cannot leave its row. A session with nothing but
+its terminal shows that one tab, never a bare title.
+
+**The titlebar has two ends, and they are the window's, not a row's**
+(`WindowControls`, one overlay over the whole titlebar). At the leading end,
+by the traffic lights: the sidebar's toggle, then Back and Forward, which
+ride the sidebar's edge. At the trailing end, two: what the session is
+running, and the session's "…" menu at the edge, where a "more" button
+usually is. Both are about the session. They stay in their corners whatever
+the splits do. The row under each end makes
+room for it: the leftmost titlebar row for the leading end, the rightmost
+for the trailing one. What the session is running and its "…" were on the
+main row until 2026-11-26, which put them in the middle of the window as
+soon as a split could sit to the right of it.
+
+**A control sits on the thing it acts on.** What is about the session or the
+window goes in a corner of the titlebar. What is about one split goes on
+that split's row: its tabs, its "+", its two split buttons. Nothing about
+the session goes back on a row, and nothing about one split goes in the
+corner. The split buttons were in the corner for most of 2026-11-26, where
+they split "the split you're in": to know what a click would do you had to
+know where the keyboard was. There is no button for the side column. One sat in the
+trailing corner for an hour and was taken out: with every split movable
+there is no side column to show or hide, only Changes and Files, which ⌥⌘B
+opens and closes (`docs/decisions.md`).
+
+**A button asks, a key does not.** A split button makes a split beside or
+under its own with an empty tab in it. The "+" puts an empty tab in the
+split it belongs to. The keys go straight there: ⌘D and ⇧⌘D put a
+terminal in the new split, ⌘T a terminal in this one, ⇧⌘C opens Changes. A
+key says what it wants. A button is pressed by someone still deciding, so it
+gives the place first and then the choice, on a page that is already there.
+The "…" is the session itself: rename, pin, close, what its sidebar row's
+menu has.
+
+**The empty tab's page** (`NewTabPage`). A column of five rows in the middle
+of the page: Terminal, Browser, Changes, History, Files.
+
+| | |
+| --- | --- |
+| The column | As wide as the split, at most 320pt, 12pt from each side |
+| A row | 34pt, 2pt apart, corners 8pt (`controlRadius`), 10pt inside each end |
+| Glyph | 14pt, in a 20pt slot, 10pt before the title |
+| Title | 14pt, the label colour |
+| Count (Changes only) | 12pt, tabular digits, secondary |
+| Shortcut | 12pt, tertiary, at the row's end. Dropped when the split is too narrow for title and shortcut |
+| Under the pointer, or reached by an arrow | `hoverFill` |
+
+No heading, no caption, no border. The tab is titled "New Tab". ↑ and ↓ move
+through the rows, Return picks, Escape closes the tab. A row's first letter
+alone picks it too (T, B, C, H, F), so a new row needs a first letter no
+other row has.
+
+What was tried and went, all on 2026-11-26. A "+" that opened a menu of
+everything a tab can be: two clicks, with nothing on screen in between. The
+"…" repeating what "+" opens. Changes, History, Files and a browser as
+buttons in this corner, lit while open, in place of the split buttons: one
+click, but they opened a thing in one place when anything can be anywhere,
+and six buttons left the row under them short (with the split buttons too
+it was eight, and two named tabs no longer fitted). And the split buttons
+themselves in this corner, acting on a split somewhere else.
+
+**The corner is paid for by the row under it**, so every point there counts.
+The row clears the buttons, the 8pt to the window's edge, and 4pt before its
+own "+". A row's zoom button takes no room while it is hidden. Before adding
+a button here, render Changes and Files in a split at the 440pt they open at
+and check both tabs still show their names.
+
+A split's row has one of two looks, by where it is (`SplitLeafView`):
+
+- **Along the top of the window, a titlebar row.** The titlebar's height,
+  see-through to the glass, a hairline where the page starts, the tab in
+  front raised off the band. Its empty part moves the window, and a
+  double-click there does what the Mac is set to do. The leftmost one makes
+  room for the controls at the leading end when the sidebar is collapsed,
+  and the rightmost for those at the trailing end. The terminal with Changes
+  beside it is two of these.
+- **Lower down, the strip's kind of row.** 36pt on a faint band over the
+  page, the tab in front raised in the page's own colour, the tabs, then
+  "+". A double-click on its empty part zooms the split. It does not move
+  the window.
+
+The same split changes look when it changes place: a strip that is zoomed is
+along the top, and has a titlebar row while it is.
 
 ### Sidebar
 
@@ -265,9 +374,16 @@ the row slides on hover, as the name does.
 ### Tabs
 
 One tab shape for every row: 10, a 16pt glyph, 8, the title, 4, a 20pt close
-button, 4. Sized to its title, between 130 and 240pt, 4pt apart. When a row
-overflows it scrolls under 20pt faded edges, with "+" pinned after the last
-tab.
+button, 4. Sized to its title, between 130 and 240pt, 4pt apart. The
+session's own tab is never closed, so it has no room kept for a close
+button: the same inset after its title as before its glyph.
+
+When a row is short of room, it gives way in this order. First the tabs
+behind the one in front give up the room each keeps for its close button:
+the tab ends 6pt after its title, and on hover the close button shows where
+the glyph is, as Safari's does. Then the titles shrink together, down to the
+readable minimum. Only then does the row scroll, under 20pt faded edges, with
+"+" pinned after the last tab.
 
 ### Side column
 
@@ -315,6 +431,12 @@ The list selection is the accent only while its list has the keyboard, and
 grey otherwise, as in Finder. Moving between areas with ⌘] blinks a short
 outline around the one that now has the keyboard.
 
+With more than two splits on screen, the tab in front of a split you are not
+in has a quiet title (the secondary label colour, glyph and all), the main
+row's like any other. The one you are in has the usual one. That is the whole difference: no border, no tint. With one or two on
+screen (the terminal, or the terminal and Changes beside it) nothing is
+dimmed, as it never was: the cursor says where you are.
+
 ## Motion
 
 | | |
@@ -328,6 +450,18 @@ outline around the one that now has the keyboard.
   showing snaps; it never animates.
 - A terminal does not resize during an animation. It resizes once, when the
   pane lands.
+- The side column and the strip slide open when you open one yourself
+  (⌥⌘B, ⌘J, a tab opened there), in the opening time above, as the sidebar
+  does. They are splits since 2026-11-26 and the tree of splits moves them
+  itself: the one coming in grows from nothing against the edge of the
+  neighbour that makes room. The lines between splits are not drawn while
+  it moves, and each row has the look of where it will end up from the
+  first frame.
+- Putting them away cuts. ⌥⌘B closes the tabs of Changes and Files, and a
+  split that has lost its last tab is gone at once: a slide would be of an
+  empty page.
+- A split you make or close appears and goes in one cut. So do a zoom and
+  making the splits equal.
 - A new session's terminal is under an empty page of its own colour until
   its program has drawn. A start still going after 0.75 s gets a small
   system spinner in the middle of the page. The page comes off in one cut,

@@ -2,32 +2,20 @@ import AppKit
 import Observation
 import SwiftUI
 
-// MARK: - The strip under the terminal
+// MARK: - The strip
 
-/// The terminal pane's content: the session's terminal on top and, when it's
-/// showing, a strip of tabs under it (most often a dev server's output under
-/// the agent that started it).
-///
-/// Under the session's terminal only, not under the side column as well, which
-/// is where the ChatGPT app puts its bottom pane. The column is where diffs and
-/// trees are read and they want its full height; a strip of logs belongs with
-/// the terminal it came from. It is also the cheaper arrangement to take back
-/// out if the strip doesn't earn its place: nothing outside this pane knows it
-/// exists.
+/// The strip: a host for its terminals that works exactly like the side
+/// split's, and in front of that the pane or file when one of those is the
+/// tab in front. Its row is `bar`; `leaf` is the two together, a split of
+/// the window's tree like any other. What is the strip's own is that ⌘J
+/// makes it under the main row, at the height below, or goes to it when it
+/// is already there; nothing hides it with its tabs kept.
 @MainActor
-final class TerminalWorkspaceController: NSSplitViewController {
-    private let top: NSViewController
-    private let bottom: BottomPaneController
-    private let git: GitPanelModel
-    private var bottomItem: NSSplitViewItem!
-    /// Held while we're the ones moving the divider, so it isn't saved as a drag.
-    private var suspendCapture = false
-    private var syncing = false
-    private var lastHeight: CGFloat = 0
-    private var captureWork: DispatchWorkItem?
-
-    /// The strip's height is app-wide, like the ChatGPT app's: a strip of logs
-    /// wants the same room whichever session it's in.
+final class BottomPaneController: NSViewController {
+    /// How tall the strip opens: the height it was last dragged to, in any
+    /// session, as a strip of logs wants the same room whichever session it
+    /// is in. Once it is there its size is a share of the area, like every
+    /// split's.
     enum Height {
         static let minimum: CGFloat = 100
         private static let fallback: CGFloat = 240
@@ -41,165 +29,8 @@ final class TerminalWorkspaceController: NSSplitViewController {
         }
     }
 
-    init(top: NSViewController, bottom: BottomPaneController, git: GitPanelModel) {
-        self.top = top
-        self.bottom = bottom
-        self.git = git
-        super.init(nibName: nil, bundle: nil)
-        let split = ChromeSplitView()
-        split.isVertical = false
-        split.dividerStyle = .thin
-        splitView = split
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        let topItem = NSSplitViewItem(viewController: top)
-        topItem.minimumThickness = 80
-        topItem.holdingPriority = NSLayoutConstraint.Priority(250)
-        addSplitViewItem(topItem)
-
-        let item = NSSplitViewItem(viewController: bottom)
-        item.minimumThickness = Height.minimum
-        item.canCollapse = true
-        item.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
-        item.holdingPriority = NSLayoutConstraint.Priority(260)
-        item.isCollapsed = !git.bottomVisible
-        addSplitViewItem(item)
-        bottomItem = item
-        observe()
-    }
-
-    private var didApplyInitialHeight = false
-
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        guard !didApplyInitialHeight, splitView.bounds.height > 0 else { return }
-        didApplyInitialHeight = true
-        lastHeight = splitView.bounds.height
-        DispatchQueue.main.async { [weak self] in self?.applyHeight() }
-    }
-
-    private func observe() {
-        withObservationTracking {
-            _ = git.bottomVisible
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.applyVisibility()
-                self.observe()
-            }
-        }
-    }
-
-    /// The strip as the selected session has it, applied now rather than a
-    /// turn later by the observer (see `MainSplitViewController.show`).
-    func applyNow() { applyVisibility() }
-
-    /// Open when the user opened it, animated; snap when a session switch did,
-    /// for the same reason the side column does.
-    private func applyVisibility() {
-        let show = git.bottomVisible
-        guard let bottomItem, bottomItem.isCollapsed == show else { return }
-        syncing = true
-        suspendCapture = true
-        if git.animatesBottomChange {
-            Motion.pane(opening: show) {
-                bottomItem.animator().isCollapsed = !show
-            } completion: { [weak self] in
-                self?.suspendCapture = false
-                if show { self?.applyHeight() }
-            }
-        } else {
-            bottomItem.isCollapsed = !show
-            suspendCapture = false
-            if show { applyHeight() }
-        }
-        syncing = false
-    }
-
-    private func applyHeight() {
-        guard let bottomItem, !bottomItem.isCollapsed else { return }
-        let total = splitView.bounds.height
-        guard total > 0 else { return }
-        let target = min(max(Height.chosen, Height.minimum), total * 0.6)
-        guard abs(target - bottomItem.viewController.view.frame.height) > 0.5 else { return }
-        suspendCapture = true
-        splitView.setPosition(total - target - splitView.dividerThickness, ofDividerAt: 0)
-        DispatchQueue.main.async { [weak self] in self?.suspendCapture = false }
-    }
-
-    override func splitViewDidResizeSubviews(_ notification: Notification) {
-        super.splitViewDidResizeSubviews(notification)
-        let total = splitView.bounds.height
-        let windowResized = total != lastHeight
-        lastHeight = total
-        guard let bottomItem else { return }
-        // Dragged shut: the strip hides, and the session remembers that.
-        if !syncing, bottomItem.isCollapsed, git.bottomVisible {
-            git.bottomCollapsedByDrag()
-            return
-        }
-        guard !windowResized, !suspendCapture, !bottomItem.isCollapsed else { return }
-        captureWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, let item = self.bottomItem, !item.isCollapsed else { return }
-            let height = item.viewController.view.frame.height
-            if height > 1 { Height.remember(height) }
-        }
-        captureWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
-    }
-
-    override func splitView(_ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect,
-                            forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
-        super.splitView(splitView, effectiveRect: proposedEffectiveRect,
-                        forDrawnRect: drawnRect, ofDividerAt: dividerIndex).insetBy(dx: 0, dy: -4)
-    }
-
-    /// The main area (above the strip), for the drag controller's zones.
-    var terminalView: NSView { top.view }
-}
-
-/// The strip's own row: its tabs with "+" right after the last one (the
-/// column's menu, NewTabMenu), and at the trailing end the button that tucks
-/// the strip away. On a faint band, so the tab in front can be raised off it
-/// the way the column's tabs are off the titlebar.
-@MainActor
-final class BottomBar: FilledView {
-    let strip = SideTabStrip()
-    let add = HoverFillButton.glyph("plus", "New Tab")
-    let hide = HoverFillButton.glyph("chevron.down", "Hide Bottom Strip")
-
-    init() {
-        super.init(color: Chrome.stripBand)
-        strip.region = .bottom
-        strip.translatesAutoresizingMaskIntoConstraints = false
-        strip.trailingAccessory = add
-        let trailing = NSStackView(views: [hide])
-        trailing.spacing = 4
-        trailing.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(strip)
-        addSubview(trailing)
-        NSLayoutConstraint.activate([
-            strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            strip.topAnchor.constraint(equalTo: topAnchor),
-            strip.bottomAnchor.constraint(equalTo: bottomAnchor),
-            strip.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -8),
-            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-}
-
-/// The strip: its row, a host for its terminals that works exactly like the
-/// side column's, and in front of that the pane or file when one of those is
-/// the tab in front.
-@MainActor
-final class BottomPaneController: NSViewController {
-    let bar = BottomBar()
+    let bar = PaneBar(region: .bottom)
+    private(set) lazy var leaf = SplitLeafView(bar: bar, body: view)
     private let host = SideTerminalHostController()
     private let paneHost: NSHostingController<BottomAreaPane>
     private let runtime: GhosttyRuntime
@@ -215,6 +46,11 @@ final class BottomPaneController: NSViewController {
         self.git = git
         paneHost = NSHostingController(rootView: BottomAreaPane(git: git, files: files,
                                                                 previewTabs: previewTabs))
+        // The leaf's frame is set by hand (`SplitTreeView`), and the default
+        // turns the page's minimum size into required constraints: a page
+        // taller than its leaf (an empty tab's in a strip at its minimum)
+        // broke one and drew past the leaf. As the other pages' hosts do.
+        paneHost.sizingOptions = []
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -223,44 +59,26 @@ final class BottomPaneController: NSViewController {
         let root = NSView()
         addChild(host)
         addChild(paneHost)
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(bar)
         for body in [host.view, paneHost.view] {
             body.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(body)
             NSLayoutConstraint.activate([
-                body.topAnchor.constraint(equalTo: bar.bottomAnchor),
+                body.topAnchor.constraint(equalTo: root.topAnchor),
                 body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
                 body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
                 body.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             ])
         }
-        NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: root.topAnchor),
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 36),
-        ])
         view = root
 
-        bar.add.target = self
-        bar.add.action = #selector(addTab(_:))
-        bar.hide.target = self
-        bar.hide.action = #selector(hideStrip)
-        let strip = bar.strip
-        strip.onSelect = { [weak self] tab in self?.git.selectBottom(tab) }
-        strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
-        strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
-        strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        strip.preview = { [weak self] tab in TitleBarController.preview(for: tab, in: self?.home.selected) }
+        bar.wire(to: git, home: home, region: .bottom)
         observe()
     }
 
-    @objc private func addTab(_ sender: NSView) {
-        NewTabMenu.popUp(from: sender, git: git, region: .bottom)
-    }
-    @objc private func hideStrip() { git.toggleBottom() }
+
+    /// The strip as the selected session has it, applied now rather than a
+    /// turn later by the observer (`MainSplitViewController.show`).
+    func applyNow() { sync() }
 
     private func observe() {
         withObservationTracking {
@@ -274,7 +92,7 @@ final class BottomPaneController: NSViewController {
         let session = home.selected
         bar.strip.update(items: git.bottomTabs.map { TitleBarController.stripItem(for: $0, in: session) },
                          active: git.activeBottomTab)
-        let active = git.bottomVisible ? git.activeBottomTab : nil
+        let active = git.isShowing(.bottom) ? git.activeBottomTab : nil
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
         let surface = git.session === session
             ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
@@ -290,7 +108,7 @@ struct BottomAreaPane: View {
     let previewTabs: PreviewTabs
 
     var body: some View {
-        TabContent(tab: git.bottomVisible ? git.activeBottomTab : nil, region: .bottom,
+        TabContent(tab: git.isShowing(.bottom) ? git.activeBottomTab : nil, region: .bottom,
                    git: git, files: files, previewTabs: previewTabs)
     }
 }
@@ -298,11 +116,11 @@ struct BottomAreaPane: View {
 // MARK: - Dragging tabs
 
 /// Resolves a tab drag against every place it could land: the tab rows (to
-/// reorder, or to move between the column and the strip at an exact spot) and
-/// two drop zones for when the destination has no row on screen, the lower
-/// quarter of the terminal (the strip) and the column. A tab only lights up the
-/// places it's allowed to go (`SideTab.fits`), so a pane dragged over the
-/// terminal's lower edge shows nothing.
+/// reorder, or to move to another split's row at an exact spot) and the
+/// splits themselves, an edge to make a new split there and the middle to
+/// move into the one that is there. The side split and the strip are splits
+/// like the rest. A tab only lights up the places it's allowed to go
+/// (`SideTab.fits`): the session's own tab none but its own row.
 ///
 /// While it runs, a ghost of the tab follows the pointer and the landing spot
 /// is drawn: a marker between tabs, or an overlay the size of the pane the
@@ -331,8 +149,9 @@ final class TabDragController {
     private enum Target: Equatable {
         case strip(TabRegion, index: Int, marker: NSRect)
         case zone(TabRegion, area: NSRect)
-        /// The terminal's edge away from the column: the column moves there.
-        case swap(leading: Bool, area: NSRect)
+        /// An edge of a pane of the main area: a new pane there, holding the
+        /// tab. `area` is the half the new pane would take.
+        case split(TabRegion, SplitLayout.Edge, area: NSRect)
         /// Outside the window: a window of its own.
         case tearOff
         /// A row in another main window: it moves to that window's session
@@ -353,21 +172,29 @@ final class TabDragController {
     }
 
     var strips: [StripTarget] = []
-    /// The session terminal's area, in window coordinates.
-    var terminalArea: () -> NSRect? = { nil }
-    /// The bottom strip, bar and all, while it's showing, in window coordinates.
-    var bottomArea: () -> NSRect? = { nil }
-    /// The side column's content area when it's showing, in window coordinates.
-    var columnArea: () -> NSRect? = { nil }
+    /// The rows of the main area's panes, asked at each step: they come and
+    /// go with the panes, and with the session on screen.
+    var paneStrips: () -> [StripTarget] = { [] }
+    /// The pane of the main area under a point in window coordinates, and
+    /// what a drop there asks for (`MainAreaController.paneDrop`).
+    var paneDrop: (NSPoint, SideTab?) -> (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?)? = { _, _ in nil }
+    /// Whether a pane has the room on screen to be split in two on an edge
+    /// (`MainAreaController.hasRoom`).
+    var hasRoom: (TabRegion, SplitLayout.Edge) -> Bool = { _, _ in true }
+    /// How many tabs a row holds: a pane can't be split from its only tab.
+    var tabCount: (TabRegion) -> Int = { _ in 0 }
+    var onSplit: (SideTab, TabRegion, SplitLayout.Edge) -> Void = { _, _, _ in }
+    var onFileSplit: ([URL], TabRegion, SplitLayout.Edge) -> Void = { _, _, _ in }
     var onDrop: (SideTab, TabRegion, Int) -> Void = { _, _, _ in }
     /// Files dragged out of a list and dropped on a row or an area: open them
     /// there, from `index` in that row's order.
     var onFileDrop: ([URL], TabRegion, Int) -> Void = { _, _, _ in }
-    /// Which side the column is on now.
-    var columnLeading: () -> Bool = { false }
-    var onSwap: (SideTab, Bool) -> Void = { _, _ in }
     /// Which row a tab is in now: dropped back on its own area, it stays put.
     var regionOf: (SideTab) -> TabRegion? = { _ in nil }
+    /// The session whose rows are on screen, compared by identity: a drag
+    /// that began in one session and is let go in another lands nowhere
+    /// (see `stillHeld`). nil by default, which compares equal to itself.
+    var sessionOnScreen: () -> AnyObject? = { nil }
     /// A file tab let go outside the window: open it in a window whose
     /// top-left is at this point, in screen coordinates.
     var onTearOff: (SideTab, NSPoint) -> Void = { _, _ in }
@@ -394,10 +221,17 @@ final class TabDragController {
     private var draggedTab: SideTab?
     /// Another window was asked about this drag, so it is told when it ends.
     private var askedElsewhere = false
+    /// The session on screen when the drag began (`sessionOnScreen`).
+    private weak var dragSession: AnyObject?
 
     func handle(_ phase: SideTabStrip.DragPhase, tab: SideTab, view: NSView, point: NSPoint) {
         switch phase {
         case .began:
+            // A drag whose end never came here would leave its overlay drawn
+            // over the window under this one's: it is finished first. (Its
+            // row going away under it lost the end, until the tab kept its
+            // row for the drag.)
+            finish()
             guard let window = view.window, let content = window.contentView else { return }
             let overlay = TabDragOverlay(frame: content.bounds)
             overlay.autoresizingMask = [.width, .height]
@@ -411,13 +245,19 @@ final class TabDragController {
             dragWindow = window
             canTearOff = { if case .file = tab { return true } else { return false } }()
             draggedTab = tab
+            dragSession = sessionOnScreen()
             source = view
             view.alphaValue = 0.35
             update(tab: tab, point: point)
         case .moved:
             update(tab: tab, point: point)
         case .ended:
-            let landing = target
+            // Main-queue work runs during a drag: the tab can have closed,
+            // or another session come in front, while it was held. Its drop
+            // would then be made in the session on screen, with a tab that
+            // isn't that session's. Another window that was showing where it
+            // would land is told the drag was cancelled, by `finish`.
+            let landing = stillHeld(tab) ? target : nil
             let screen = view.window?.convertPoint(toScreen: point)
             let topLeft = screen.flatMap { tearOff?.windowTopLeft(for: $0) }
             if case .otherWindow? = landing, let screen {
@@ -429,13 +269,19 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onDrop(tab, region, index)
             case .zone(let region, _): onDrop(tab, region, .max)
-            case .swap(let leading, _): onSwap(tab, leading)
+            case .split(let region, let edge, _): onSplit(tab, region, edge)
             case .tearOff: if let topLeft { onTearOff(tab, topLeft) }
             case .otherWindow, nil: break
             }
         case .cancelled:
             finish()
         }
+    }
+
+    /// Whether the tab let go is still in a row of the session it was
+    /// picked up in, and that session is still the one on screen.
+    private func stillHeld(_ tab: SideTab) -> Bool {
+        sessionOnScreen() === dragSession && regionOf(tab) != nil
     }
 
     /// Whether the tab being dragged is the session's own, which reads the
@@ -462,6 +308,8 @@ final class TabDragController {
         let tab = SideTab.file(first.resolvingSymlinksInPath().standardizedFileURL.path)
         switch phase {
         case .began:
+            // As for a tab: nothing of an earlier drag left drawn.
+            finish()
             guard let content = window.contentView else { return }
             let overlay = TabDragOverlay(frame: content.bounds)
             overlay.autoresizingMask = [.width, .height]
@@ -481,7 +329,8 @@ final class TabDragController {
             switch landing {
             case .strip(let region, let index, _): onFileDrop(files, region, index)
             case .zone(let region, _): onFileDrop(files, region, .max)
-            case .swap, .tearOff, .otherWindow, nil: break
+            case .split(let region, let edge, _): onFileSplit(files, region, edge)
+            case .tearOff, .otherWindow, nil: break
             }
         }
     }
@@ -573,10 +422,10 @@ final class TabDragController {
         target = away == .window ? nil : resolve(tab: tab, point: point)
         updateTearOff(point: point, covered: away == .window)
         if draggingFile {
-            // Never "move the column" for a file, and nothing over a terminal:
-            // that drop is the terminal's (it types the path).
-            if case .swap? = target { target = nil }
+            // Nothing over a terminal: that drop is the terminal's (it types
+            // the path).
             if case .zone? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
+            if case .split? = target, Self.isOverTerminal(point, in: fileDragWindow) { target = nil }
         }
         if case .tearOff? = target {
             overlay?.marker = nil
@@ -590,30 +439,23 @@ final class TabDragController {
         case .strip(_, _, let marker):
             overlay.marker = overlay.convert(marker, from: nil)
             overlay.zone = nil
-        case .zone(let region, let area):
+        case .zone(_, let area):
+            // No words on any of these: where it lights up is where the tab
+            // goes, and "Move Here" or "Split Right" over it only said so
+            // twice.
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
-            switch region {
-            case .bottom:
-                overlay.zoneLabel = draggingFile ? "Open in Bottom Strip" : "Move to Bottom"
-                overlay.zoneEdge = .maxY
-            case .side:
-                overlay.zoneLabel = draggingFile ? "Open in Side Column" : "Move to Side Column"
-                overlay.zoneEdge = columnLeading() ? .maxX : .minX
-            case .main:
-                overlay.zoneLabel = draggingFile ? "Open Here" : "Move Here"
-                overlay.zoneEdge = .minY
-            }
-        case .swap(let leading, let area):
+            overlay.zoneEdge = nil
+        case .split(_, let edge, let area):
             overlay.marker = nil
             overlay.zone = overlay.convert(area, from: nil)
-            if draggingSession {
-                // The session's terminal trades places with the column.
-                overlay.zoneLabel = leading ? "Move Terminal to the Right" : "Move Terminal to the Left"
-                overlay.zoneEdge = leading ? .minX : .maxX
-            } else {
-                overlay.zoneLabel = leading ? "Move Column to the Left" : "Move Column to the Right"
-                overlay.zoneEdge = leading ? .maxX : .minX
+            // The line is on the side of the new pane that meets the old one.
+            // The overlay's coordinates are AppKit's: up is a larger y.
+            switch edge {
+            case .right: overlay.zoneEdge = .minX
+            case .left: overlay.zoneEdge = .maxX
+            case .down: overlay.zoneEdge = .maxY
+            case .up: overlay.zoneEdge = .minY
             }
         case .tearOff, .otherWindow, nil:
             overlay.marker = nil
@@ -638,7 +480,7 @@ final class TabDragController {
 
     /// The place in a tab row a drop at `point` would take, if it's over one.
     private func stripLanding(tab: SideTab, point: NSPoint) -> Target? {
-        for entry in strips {
+        for entry in strips + paneStrips() {
             guard let strip = entry.strip, strip.window != nil, tab.fits(entry.region) else { continue }
             if strip.isHiddenOrHasHiddenAncestor {
                 guard let slot = entry.whenHidden(),
@@ -658,59 +500,60 @@ final class TabDragController {
     }
 
     private func zoneLanding(tab: SideTab, point: NSPoint) -> Target? {
-        // The session's own tab never goes *into* the column's row: it is the
-        // main area's anchor, as the chat is in the ChatGPT app. Dropped on the
-        // column (its row or its page), it trades places with it instead: the
-        // terminal goes where the column was, the column to the other side.
-        if tab == .session {
-            guard let column = columnArea() else { return nil }
-            let row = strips.first { $0.region == .side }?.strip
-            let rowRect = row.flatMap { $0.window == nil ? nil : $0.convert($0.bounds, to: nil) }
-            guard column.contains(point) || rowRect?.insetBy(dx: -16, dy: -8).contains(point) == true
-            else { return nil }
-            return .swap(leading: !columnLeading(), area: column)
-        }
-        if tab.fits(.bottom), let bottom = bottomArea(), bottom.contains(point) {
-            return .zone(.bottom, area: bottom)
-        }
-        if tab.fits(.bottom), bottomArea() == nil, let area = terminalArea() {
-            let zone = NSRect(x: area.minX, y: area.minY, width: area.width, height: area.height / 4)
-            if zone.contains(point) {
-                let height = min(TerminalWorkspaceController.Height.chosen, area.height * 0.6)
-                return .zone(.bottom, area: NSRect(x: area.minX, y: area.minY,
-                                                   width: area.width, height: height))
-            }
-        }
-        guard tab.fits(.side) else { return nil }
-        let column = columnArea()
-        if let column, column.contains(point) {
-            return .zone(.side, area: column)
-        }
-        guard let area = terminalArea() else { return nil }
-        // The main area's two edges, a quarter of it each: the one on the
-        // column's side opens the column (when it's hidden), the far one moves
-        // the column over to it. What's left in the middle is the main area
-        // itself, and the overlay covers only it.
-        let leading = columnLeading()
-        let edge = area.width / 4
-        let width = min(MainSplitViewController.ColumnWidth.lastChosen, area.width / 2)
-        let leftEdge = NSRect(x: area.minX, y: area.minY, width: edge, height: area.height)
-        let rightEdge = NSRect(x: area.maxX - edge, y: area.minY, width: edge, height: area.height)
-        let leftPane = NSRect(x: area.minX, y: area.minY, width: width, height: area.height)
-        let rightPane = NSRect(x: area.maxX - width, y: area.minY, width: width, height: area.height)
-        if leftEdge.contains(point) {
-            return leading ? (column == nil ? .zone(.side, area: leftPane) : nil)
-                           : .swap(leading: true, area: leftPane)
-        }
-        if rightEdge.contains(point) {
-            return leading ? .swap(leading: false, area: rightPane)
-                           : (column == nil ? .zone(.side, area: rightPane) : nil)
-        }
-        if area.contains(point), tab.fits(.main) {
-            return .zone(.main, area: area)
-        }
-        return nil
+        guard let hit = paneDrop(point, tab) else { return nil }
+        // The session's own tab never goes into another split's row and is
+        // never split off: it is its row's anchor, as the chat is in the
+        // ChatGPT app. (Until 2026-11-26 it traded sides with the side column
+        // when dropped on it. There is no side column to trade with now: to
+        // put Changes on the left, drag Changes there.)
+        if tab == .session { return nil }
+        return paneLanding(hit, tab: tab)
     }
+
+    /// A drop on a pane of the main area: on an edge, a new pane there; in
+    /// the middle, into the pane.
+    private func paneLanding(_ hit: (region: TabRegion, frame: NSRect, edge: SplitLayout.Edge?, half: NSRect?),
+                             tab: SideTab) -> Target? {
+        guard tab.fits(hit.region) || (hit.edge != nil && tab != .session) else { return nil }
+        // A pane too small to be two has no edges to split on: all of it is
+        // its middle.
+        // An edge where a split would leave everything where it is has
+        // nothing to offer (`MainAreaController.paneDrop`), its middle neither.
+        if hit.edge != nil, hit.half == nil { return nil }
+        if let edge = hit.edge, let half = hit.half, hasRoom(hit.region, edge) {
+            // A pane split from its own only tab would be the same pane.
+            if regionOf(tab) == hit.region, tabCount(hit.region) <= 1 { return nil }
+            // Nor upward from its own row: that band starts right under the
+            // row the tab was picked up from, and letting go there is how a
+            // drag is abandoned.
+            if regionOf(tab) == hit.region, edge == .up { return nil }
+            return .split(hit.region, edge, area: half)
+        }
+        guard tab.fits(hit.region) else { return nil }
+        return .zone(hit.region, area: hit.frame)
+    }
+
+    #if DEBUG
+    /// For `SplitProbe`: where `tab`, let go at `point` in the window, would
+    /// land, in words, and the drop made as the end of a drag makes it.
+    func probeDrop(_ tab: SideTab, at point: NSPoint) -> String {
+        draggingSession = tab == .session
+        defer { draggingSession = false }
+        switch resolve(tab: tab, point: point) {
+        case .strip(let region, let index, _)?:
+            onDrop(tab, region, index)
+            return "row \(region.rawValue.prefix(10)) at \(index == .max ? "end" : String(index))"
+        case .zone(let region, _)?:
+            onDrop(tab, region, .max)
+            return "into \(region.rawValue.prefix(10))"
+        case .split(let region, let edge, let area)?:
+            onSplit(tab, region, edge)
+            return "split \(edge.rawValue) of \(region.rawValue.prefix(10)), preview \(Int(area.minX)),\(Int(area.minY)) \(Int(area.width))x\(Int(area.height))"
+        case .tearOff?, .otherWindow?: return "out of the window"
+        case nil: return "nowhere"
+        }
+    }
+    #endif
 
     /// Outside the window, a file tab becomes a window of its own: the
     /// ghost in the overlay gives way to one that can leave the window.
@@ -750,6 +593,7 @@ final class TabDragController {
         }
         askedElsewhere = false
         draggedTab = nil
+        dragSession = nil
         docking = false
         tearOff?.hide()
         tearOff = nil
@@ -774,8 +618,7 @@ private final class TabDragOverlay: NSView {
     var pointer = NSPoint.zero
     var marker: NSRect?
     var zone: NSRect?
-    var zoneLabel = ""
-    var zoneEdge: NSRectEdge = .maxY
+    var zoneEdge: NSRectEdge? = .maxY
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -815,16 +658,9 @@ private final class TabDragOverlay: NSView {
             case .maxY: NSRect(x: zone.minX, y: zone.maxY - 1, width: zone.width, height: 1).fill()
             case .maxX: NSRect(x: zone.maxX - 1, y: zone.minY, width: 1, height: zone.height).fill()
             case .minX: NSRect(x: zone.minX, y: zone.minY, width: 1, height: zone.height).fill()
+            case .minY: NSRect(x: zone.minX, y: zone.minY, width: zone.width, height: 1).fill()
             default: break
             }
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-            let text = zoneLabel as NSString
-            let size = text.size(withAttributes: attributes)
-            text.draw(at: NSPoint(x: zone.midX - size.width / 2, y: zone.midY - size.height / 2),
-                      withAttributes: attributes)
         }
         if let marker {
             accent.setFill()

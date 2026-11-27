@@ -91,8 +91,19 @@ the list so nobody builds them a third time.
 These are not gaps. Returning "unhandled" for them is how the design is
 enforced.
 
-- **No splits.** A session has tabs in three fixed places (the main area, a
-  side column, a strip under the terminal). Never a free grid of panes.
+- **No layout to build.** A window is a sidebar and, beside it, splits:
+  parts with a row of tabs each. It starts as it always has. The session's
+  terminal is there, Changes and Files open beside it (⌥⌘B) and a second
+  terminal under it (⌘J), each where and as big as it always was. Those are
+  splits that Wortel opens for you, and any split can be split again (⌘D,
+  ⇧⌘D) and is gone when its last tab closes. So nothing has to be arranged
+  before the window is useful. Nothing is hidden with its tabs kept either:
+  a split is on screen while it holds a tab, and to have the window for one
+  of them you zoom it (⇧⌘↩). That reversed "No splits" and "three fixed
+  places". It is on `main` and not in a release yet (`decisions.md`,
+  2026-11-26). A split holds tabs, never another session. There are no
+  named layouts to save and load. The terminal engine's own tab and split
+  actions still return "unhandled": the splits are Wortel's.
 - **No user config, no themes, no plugins.** Settings (⌘,) has a handful of
   switches and none of them is about how the terminal looks. The terminal's
   whole configuration is the read-only `macos/Resources/wortel.conf` inside

@@ -4,7 +4,7 @@ import SwiftUI
 import WebKit
 
 /// Browsers in tabs: the dev server beside the agent editing it, docs beside
-/// the terminal. A browser is a tab like any other: "+" or ⇧⌘L opens one, it
+/// the terminal. A browser is a tab like any other: "+" or ⇧⌘B opens one, it
 /// moves between rows, and a session can have several. There's no window of
 /// its own: the way out is your browser, which is better at being one.
 ///

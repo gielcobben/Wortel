@@ -35,7 +35,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   opens, automatic updates, anonymous usage data. Their checkmarks left the
   menus (the usage-data switch is still in the sidebar's ⓘ too). What is
   flipped while working stays a checkmark in the View menu (Sort Unread
-  First, which side the column is on). What the app can know for itself gets
+  First, which side the column is on; that second one went with the splits
+  on 2026-11-26, when the side column stopped being a place). What
+  the app can know for itself gets
   no switch. Fonts, colours, keys and scrollback are still decided once, and
   font size is still ⌘+ and ⌘−. Why now: people who never file their sessions
   needed to say what a new session starts, and the answer that needed no
@@ -74,7 +76,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-09-29. "Wortel has no tabs" was reversed.** Tabs in three fixed places:
   the main area, a side column, a bottom strip. Still no splits and no free
   grid. The terminal engine's own tab and split actions still return
-  "unhandled" (`9c864df`, `50ec9ca`).
+  "unhandled" (`9c864df`, `50ec9ca`). "No splits" held until 2026-11-26,
+  when it was reversed (the first two entries of "Window, terminal and
+  keys"; on `main`, not in a release yet). "Three fixed places" held until
+  the same day: the side column and the strip are splits of one tree now,
+  which open where they always did. The engine's "unhandled" stands.
 - **2026-08-08. "Deliberately no CLI" was reversed.** The `wortel` command
   exists so that Wortel never needs a per-agent integration (`76ea9f8`).
 - **2026-08-04. No invented benchmark numbers**, on the site or anywhere
@@ -112,6 +118,874 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 
 ## Window, terminal and keys
 
+- **2026-11-26. The side column and the strip are splits: one tree for
+  everything beside the sidebar.** Built on the branch `flexible-panes` in
+  one day, like the entry below, which it follows by a few hours. On `main`
+  since it was read and merged ("Read before main", at the end of this
+  entry), and not in a release yet: the released app and the website still
+  have no splits.
+  The first version of splits divided the main area and left the side column
+  and the strip as panes of their own beside it. The owner tried it and
+  asked, the same day, for no difference between a split and the side
+  column: it should all be splits, with a default arrangement, and Wortel
+  should keep looking as it always has. The first version had made two kinds
+  of thing out of one: a column that could not be split or dropped on,
+  beside splits that could (`535ec74` the model, `02e39b6` the views,
+  `599ef1f` the probe). **Three choices, made by the owner when asked.** A
+  split along the top of the window has its tab row in the titlebar, as the
+  side column always did, and only a split lower down has a row of its own.
+  The strip becomes a split too. ⌥⌘B and ⌘J still hide and show theirs with
+  the tabs kept. (The owner took that third pick back the same afternoon:
+  "Nothing is hidden", at the end of this entry. Where this entry says
+  hidden, read it as how the tree was built that morning.) **One tree.** The leaves of `SplitLayout` are the main row
+  (the one with the session's terminal), the side column (`.side`), the
+  strip (`.bottom`) and the splits somebody made (`.pane(id)`). The side
+  column is a leaf exactly while it has tabs, and so is the strip. The
+  window's own split view holds two panes now: the sidebar, and everything
+  else (`MainAreaController`, one `SplitTreeView`).
+  `TerminalWorkspaceController` is gone, and so is the column's pane with
+  its width capture, its collapsing and its resize priority. **One kind of
+  leaf on screen** (`SplitLeafView`): a row over a page. Along the top of
+  the window the row is a titlebar row: the titlebar's height, see-through
+  to the window, a hairline under it, its empty part moves the window, and
+  the leftmost one makes room for the sidebar's controls. Lower down it is
+  the strip's kind of row: 36pt on a faint band over the page, and a
+  double-click on its empty part zooms the split. So the terminal with
+  Changes beside it is laid out exactly as it was, with both rows in the
+  titlebar. (It looked exactly as it did, too, until the rows were made
+  identical later the same day: see "Every row is the same" further on.)
+  This replaces "a row per
+  split, not more rows in the titlebar" in the entry below, where the
+  titlebar showed the session's name while split and every split had a 36pt
+  row under it. The reason given there, that a titlebar row lies over the
+  whole main area, went with the panes that made it true. **What is still
+  the side column's and the strip's, and why.** Three things that morning,
+  two since the afternoon. *Hidden with the tabs kept: until the afternoon
+  only.* ⌥⌘B and ⌘J put theirs away and brought it back as it was. That
+  was what those keys had always done, and a split made with ⌘D has no need
+  of it: it goes when its last tab closes. A hidden leaf stayed in the tree
+  with its weight, took no room and had no divider, and everything that
+  measures (frames, dividers, neighbours) is handed the set of hidden
+  leaves. The set is still in the model and nothing in the app fills it
+  ("Nothing is hidden", below). *A place and a size to open at.* They are where things open
+  without anyone saying where (Changes, a browser, ⌘J's terminal). The side
+  column takes the outer edge of the whole area, the left one when the
+  session has it there (`sideColumnLeading`), and the strip goes directly
+  under the main row. They open at the size they always did: the session's
+  own column width or the last one chosen anywhere (440pt to start with),
+  at most half the area, and the strip's height (240pt to start with), at
+  most six tenths. The model knows shares, not points, so it puts the leaf
+  in at a guessed share marked `unsized`, and the window gives it the real
+  size the first time it lays it out (`MainAreaController.sizeNewLeaves`).
+  A divider's drag that changes either one is remembered for the next
+  session that opens one. *Their share when the others are made equal.*
+  ⌃⌘=, one more split among equals and a split closing all leave the two
+  what they had. Otherwise ⌃⌘= with one split beside Changes would hand
+  Changes a third of the window, and a second ⌘D would make a quarter where
+  it makes a third without the column. That morning ⇧⌥⌘B still moved the
+  side column to the other side, and the session's own tab dropped on it
+  still traded sides with it. Both went in the afternoon (below).
+  **Everything else is one rule for all.** Any split, those two included,
+  can be split (⌘D from Changes makes a split beside Changes), zoomed,
+  dropped on, reached by ⌃⌥⌘ with an arrow and by ⌘] and ⌘[ in reading
+  order, and resized by its divider. A tab let go on a split's edge makes a
+  split there, and on its middle moves in. The area's own edges no longer
+  stand for "open the column" and "open the strip": those drop zones and
+  their labels are gone. What lights up says nothing: a middle said "Move
+  Here" and an edge "Split Right" until the owner tried it and found the
+  tint and the line enough, the same day. An edge lights up half of the
+  split under the pointer, and a drop that would move nothing lights up
+  nothing. ⌃⌘ with an arrow takes the tab in front to the neighbouring
+  split. With none there, toward the side column's edge or down still opens
+  the side column or the strip when it is not there. **Sizes are shares
+  everywhere.** On a window resize Changes grows and shrinks with the
+  window, where it kept its width and the terminal took all of the change.
+  That gives up two rules that were never entries here and stood in
+  `macos/docs/architecture/git-panel.md` until today: "a window resize goes
+  to the main area", and its exception, that a browser in front of the
+  column took the resize instead. The cost: a diff that kept the width it
+  was given is now wider on a wide window and narrower on a small one, and
+  the terminal beside it gains fewer columns from a wider window. A divider stops at a
+  split's minimum (160 by 100 points), so dragging one to the edge no
+  longer closes the column or the strip. **Dimming
+  goes by how many.** With more than two splits on screen the tab in front
+  of one you are not in has a quiet title, the main row's like any other.
+  With one or two, as always, nothing is dimmed: the cursor says where you
+  are. **⌥⌘B and ⌘J still slide.** The first build of the tree cut where
+  they used to slide, because the tree set every frame in one pass. The
+  slide came back the same day. `SplitTreeView.apply` takes `slides`, and
+  then steps every leaf's real frame from where it is to where it goes, the
+  way AppKit's own split view steps a pane open: a timer at 120 a second,
+  0.26 s to open and 0.18 s to close, on the app's curve (`Motion`). Every
+  terminal's resize is held until it lands, so the terminal beside it still
+  gets one new size and not one a frame. The dividers are hidden for its
+  length, the rows take the look of their final place before anything
+  moves, and the leaf that comes or goes is squeezed to nothing against the
+  edge it shares with the neighbour that makes room. It is asked for only
+  when the side column or the strip is opened or put away by hand
+  (`MainAreaController.slides`: ⌥⌘B, ⌘J, a tab opened there), never on a
+  session switch and never with a zoom in the change. One that goes because
+  its last tab closed cuts, as it did before. Since the afternoon that is
+  the only way either goes, so they slide open and are put away in one cut
+  (below). A split somebody makes or
+  closes, a zoom and equalize still land in one cut. A change during a
+  slide, a window resize under it and a session switch land it first.
+  **Saved.**
+  `splitLayout` is written whenever the tree is more than the main row, so
+  a session with a column or a strip writes it now. `sideTabs`,
+  `bottomTabs`, `gitPanelVisible`, `bottomVisible`, `sideColumnLeading` and
+  `sideColumnWidth` are still written, so an older build shows the column
+  and the strip. The first version's build (`de5808e`) cannot read a tree
+  with a `side` or a `bottom` leaf and reads it as no split. The split
+  view's autosave name went from `main-split` to `window-split` (two panes
+  instead of three), and the sidebar's width is carried over once.
+  `macos/docs/architecture/workspace-tabs.md` has the rest. **Verified
+  (2026-11-26, macOS 27.0, throwaway copies), before the five fixes
+  below:** WortelTests, 1928 tests, 0 failures. `macos/scripts/try-splits.sh`: the side column alone (its
+  picture is the window as it has always looked), hidden and shown (back at 440pt), the strip
+  likewise (240pt), splits of the main row, of the strip and of the side
+  column, a zoom, the keyboard by direction across all of them, a divider
+  drag, equalize, a window resize, a session switch and back, drops on an
+  edge and into the strip, the side column moved to the left with the
+  sidebar collapsed, and a relaunch: 0 faults.
+  `macos/scripts/try-switch.sh --side --widths`: 0 of 72 returns wrong. Its
+  probe reads the side column's leaf from the tree now. Before that it
+  looked for a pane that no longer exists and would have called every
+  return right. **Not checked:** `macos/scripts/check-terminals.sh` on this
+  build, a drag with a real pointer, several windows, and the look by eye
+  beyond the probe's pictures. **Five things found while this was
+  written down, fixed the same day.** The slide, above. A session's
+  terminal out of sight followed a window resize by the whole change
+  (`SurfaceView.followWindow`, the 2026-11-20 entry below), which was right
+  while the panes beside it kept their width and wrong once sizes were
+  shares: beside a side column it was told a width it would never be shown
+  at. Now the app is asked (`SurfaceView.sizeWhenShown`,
+  `MainAreaController.terminalSize(of:)`): the session's own tree is laid
+  out in the window as it is, and the terminal is told the size of its main
+  row's page. The old way is kept only for when nobody can say (for one,
+  the main row behind a zoom on another split). `ResizeBench` looked for the
+  column's divider in the window's split view, found none and skipped its
+  divider round in silence. It reads the tree now, and counts the side
+  column changing width at every step of a window round, since it gives
+  with the terminal. Dimming had two owners (`SplitPaneController.sync`
+  wrote `isKeyRow` without the count) and has one, `dressRows`. And
+  `wortel split`'s room check now leaves out a column or a strip that is
+  hidden in that session. **Verified after those (2026-11-26, a throwaway
+  copy):** `try-splits.sh --relaunch column column column strip strip strip
+  right down zoom zoom column column resize:900x560 next next next strip
+  strip`: 0 faults, and the five splits back after the relaunch. **Not run
+  again after them:** the two session-switch runs, which passed before
+  them (`try-switch.sh --side --widths`, 0 of 72), and the rest of
+  `check-terminals.sh`. **Every row is the same, and the session's
+  controls are the window's.** The owner, trying the build with one tree:
+  the side column's toggle looked odd in the middle of the window, and the
+  main row having no tab was inconsistent. Everything should be the same.
+  Both came from the rows still being three kinds. The main row showed the
+  session's name as a plain title until a second tab joined it, and carried
+  the session's "…", what it is running and the column's toggle while the
+  column was hidden. The side column's row carried the toggle. The strip's
+  row had a chevron to hide it. That was right while those rows were the
+  window's fixed places. Once any split can sit to the right of either,
+  the same buttons land in the middle of the window. Now every split's row is one thing (`PaneBar`): its tabs, a
+  "+" after the last, and nothing else, but for the button that says a
+  split is zoomed. `MainBar`, `SideColumnBar` and `BottomBar` are gone.
+  What belonged to the session or the window is at the trailing end of the
+  titlebar, in the one overlay that already held the sidebar's toggle and
+  Back and Forward at the leading end (`WindowControls`, which was
+  `SidebarControls`): what the session is running, its "…", and the side
+  column's toggle, plain like the sidebar's toggle that it mirrors (the
+  toggle lasted an hour, see below). They
+  stay there whatever the splits do, and the rightmost titlebar row makes
+  room for them as the leftmost does for the others
+  (`LeafBar.trailingClearance`). The strip's chevron has no successor:
+  ⌘J. Two picks the owner made when asked. A
+  lone terminal shows a tab too, always a tab and never a bare title: the
+  session's own terminal is a tab named after the session, pinned, so no
+  close button and no menu, and it cannot leave its row. And a new session
+  still starts with just the terminal, the side column opening with ⌥⌘B as
+  before. The cost: a session with nothing but its terminal now has a tab
+  in its titlebar where it had a title, so the window nobody arranged no
+  longer looks exactly as it did before splits. It is arranged the same.
+  Verified so far (2026-11-26, throwaway copies): the app builds, and
+  `try-splits.sh --picture column` and a mixed layout were looked at in
+  light and in dark: the rows identical, the controls in the corner, the
+  rightmost row clear of them. Not claimed here: the unit tests and the
+  tour on this change. **Nothing is hidden: ⌥⌘B and ⌘J after the side
+  column stopped being a place.** An hour after the buttons moved to the
+  corner, the owner, about the "Show Side Column" button there: "I still
+  don't get this button then, since everything is movable". Asked what to
+  do with it, they picked removing the whole idea: no button and no hidden
+  state, for the strip as well. That reverses the third of their own picks
+  from that morning, to keep ⌥⌘B and ⌘J as hide and show with the tabs
+  kept. The reason is the one behind the whole entry, followed to its end.
+  A split that can be anywhere is not a place, so there is no side column
+  to show or hide, only Changes and Files, which are tabs. And a second
+  kind of "gone" for two splits out of many, there but out of sight with a
+  shell still running in it, was the last thing that made those two
+  different. What the keys do now. **⌥⌘B** (View ▸ Show Changes and Files,
+  Hide Changes and Files) opens Changes and Files in the split they open in
+  (the outer edge, the right unless the session has it on the left), the
+  pane last used in front, and takes the keyboard there. Pressed with any
+  of Changes, History or Files open in that split, it closes them and the
+  keyboard goes back to the main row. Closing is what "put away" is now: a
+  pane holds nothing a close loses. Anything else in that split (a
+  terminal, a file, a page) stays, and the split with it. A pane already
+  open in another split is not opened a second time. ⌃⌘1, ⌃⌘2, ⌃⌘3 and
+  ⌃⇧G are the same toggle for one pane: in front already, in that split or
+  in the strip, its tab is closed, where it used to hide the whole column.
+  (In every split since later that day: "One click", at the end.)
+  **⌘J** (View ▸ Terminal Below, also ⌃`) makes a strip under the main row
+  with a terminal in it when there is none. With one, it takes the keyboard
+  to it, and from it back to the main row. It never hides anything. To
+  have the whole window for one split for a moment, zoom it (⇧⌘↩): that
+  is what hide and show was for. Gone with the idea: the corner's toggle
+  (the session's "…" and what it is running stay there); View ▸ Move Side
+  Column to the Left (⇧⌥⌘B) and the session tab's drop that traded sides
+  (to have Changes on the left, drag it there); Tab ▸ New Terminal in Side
+  Column (⌘D does it); and a tab's right-click Move to Main Area, Side
+  Column or Bottom Strip (a tab goes to another split by a drag or by ⌃⌘
+  with an arrow, and Split Right and Split Down are still in that menu).
+  The strip's item in the session's "…" became Terminal Below, and left
+  the "…" with the rest of it later that day (below). No menu and no
+  tooltip says "side column" or "bottom strip" any more. In these docs the
+  two words now mean only where Changes and Files, and ⌘J's terminal, open
+  by default (`docs/glossary.md`). A session saved by a build that could
+  hide them is mended once, when it is read (`WorkspaceTabs.showHidden`):
+  the panes of a hidden column or strip are closed, and anything else in
+  it comes on screen, because a shell must not be out of reach. Opening
+  still slides, and putting away cuts: the tabs are closed first, so a
+  slide would be of an empty page. The cost: a strip with a dev
+  server in it, or a terminal beside Changes, can no longer be put out of
+  sight and kept running there. It stays on screen, and the way to get the
+  room is to zoom the split you want. And the two keys know only the
+  default places: Changes dragged into another split is brought forward by
+  ⌥⌘B, not closed by it, and the split that comes back is at the width
+  last dragged to and at the outer edge. What was not taken out, read from
+  the code: the model's two flags and `SplitLayout`'s hidden set are still
+  there with nothing setting them. (⌃⌘ with an arrow, with the session's own
+  terminal in front, still flipped the side the column opens on for an
+  hour, the swap by another door; it does nothing now.) Verified (2026-11-26, a throwaway copy, `try-splits.sh
+  --relaunch column column column tab column column strip strip strip zoom
+  zoom`): ⌥⌘B opens Changes and Files at 440pt, closes them (the split
+  gone, the keyboard in the main row) and opens them again; with a
+  terminal tab added to that split it closes the two panes and leaves the
+  terminal and the split, and opens them again; ⌘J makes the strip, goes
+  back to the main row, goes to the strip; a zoom and back; 0 faults, and
+  the three splits back after a relaunch. WortelTests pass, three
+  expectations changed to "on screen from the moment it holds a tab" and
+  one test new for `showHidden`. Not looked at by eye. **Three controls,
+  three meanings, and nothing said twice.** (This arrangement lasted a few
+  hours. The split buttons went and the "+" changed in "One click", the
+  next part, and came back in "An empty tab", the part after it, which is
+  the rule now. Kept as what was tried.) The owner,
+  right after: "New
+  Terminal, or Terminal below are just splits right? So maybe we should
+  show split icons in the toolbar and not in the ellipses menu". They then
+  saw that New Terminal, New Browser, Changes, History and Files were in
+  every row's "+" already. The "…" had grown a second job: beside the
+  session's own actions it repeated what "+" opens and offered the two
+  splits, and every "+" offered the two splits again. Now each control
+  means one thing. **A row's "+"** adds a tab to that split and only that:
+  New Terminal, New Browser, Changes, History, Files. **Two buttons at the
+  trailing end of the titlebar**, before what the session is running and
+  the "…" at the edge (the owner's order: the layout's two, then the
+  session's two), make a split: Split Right (⌘D) and Split Down (⇧⌘D). They send
+  the menu's own actions, so the button and the key are one thing: the
+  split you are in, the same room check, the same sound when there is no
+  room. **The "…"** is the session itself and nothing else, the menu its
+  sidebar row has (rename, pin, close and the rest), there for when the
+  sidebar is hidden. New Terminal, New Browser, Split Right, Split Down and
+  Terminal Below left it. A tab's right-click keeps Split Right and Split
+  Down, which mean something else there: that tab into a split of its own.
+  One rule had to follow. A click anywhere in a split makes it the split
+  you are in, and the window's controls lie over the end of whichever row
+  is under them, so a press on Split Right would first have moved you to
+  the corner's split and then split that one. A press on any of the
+  window's controls no longer counts as going anywhere
+  (`MainSplitViewController.region(at:)`). The trailing end now holds four
+  controls where the session's row once held three, which is the cost: the
+  rightmost titlebar row gives up that much more of its width. Verified
+  (2026-11-26, a throwaway copy): the app builds, and `try-splits.sh
+  --picture column focus-left right down` ran with 0 faults, the picture
+  showing the four controls in the corner. The unit tests were not run
+  again for this: it changes no rule. **One click for what you open.** (This
+  one lasted a few hours too. The four buttons it added are gone and the
+  "+" is no longer a terminal: "An empty tab", next. What stands of it is
+  the one rule for a pane's command, and how a short row makes room.) The
+  owner, after living with it: "I really don't like i have to click twice
+  for changes, files, browser, or history. Can we make that one simple
+  click?" A row's "+" had become one list of everything a tab can be, so
+  each of them was a click to open the list and a click to pick. Before
+  the splits, Changes and Files were one button away: "a downgrade that
+  opening files or changes or whatever now takes 2 events". So the things
+  a session opens beside its terminal got buttons, at the trailing end of
+  the titlebar: Changes, History, Files and a new browser, then, after a
+  wider gap, what the session is running and the "…" at the edge. That
+  made eight with the two split buttons, and eight did not fit. Measured
+  in a render: with Changes and Files in a split at the 440pt they open
+  at, the row under the buttons cut "Changes" short and scrolled Files out
+  of sight. The owner, on that choice: "maybe we don't need the split
+  button, but then how do you split?" The split buttons went, a few hours
+  after they came. **How you split now:** ⌘D and ⇧⌘D, a tab let go on an
+  edge, a right-click on a tab, a right-click on a "+", the Tab menu,
+  `wortel split`. And each pane button makes a split when there is none.
+  **A pane's button** sends the menu's own command (⌃⌘1, ⌃⌘2, ⌃⌘3), is lit
+  while that pane is a tab anywhere in the session, and its tooltip says
+  Show or Close. **One rule for a pane's command, wherever the pane is**
+  (`GitPanelModel.activate`): not open, it opens in the split Changes and
+  Files open in; open behind another tab or behind a zoom, it comes
+  forward; on screen, it closes. Before, a pane in the main row was
+  swapped for the terminal with its tab kept, and one in a split made by
+  hand only ever came forward. A lit button that did nothing, or two kinds
+  of off, would not have been a button. `activateHides` is the same rule
+  for the menu's Show and Hide. **The globe** opens a browser where a
+  browser opens by itself (beside the terminal, until one has been moved
+  elsewhere), not over the tab you are in: a button is pressed to see a
+  page next to the work. ⇧⌘L still opens one in the split you are in. **A
+  row's "+" is one click too: a new terminal in that split.** A
+  right-click on it lists the rest of what a tab can be there (New
+  Terminal, New Browser, Changes, History, Files), and Split Right and
+  Split Down for a terminal in a split beside or under that one. So "+"
+  no longer means "a tab, pick which", and the "three meanings" above are
+  now: "+" is a terminal here, the corner is what you open and the
+  session, and a split is a key, a drag or a right-click. What it gives
+  up: the split buttons were the only way to split that was on screen in
+  the window itself, and by the mouse a pane or a browser into one particular split
+  is two steps again (the right-click on its "+"). **Why six fit.** The
+  buttons are 2pt apart. A row's zoom button takes no room while it is
+  hidden, where it kept 36pt at every row's end for a button only a zoomed
+  split shows. And a row short of room first has the tabs behind the front
+  one give up the room each keeps for its close button, which shows in
+  place of the tab's glyph on hover instead, as Safari's does, before any
+  title is cut or the row scrolls (`SideTabStrip.plan`). The row clears
+  the buttons, 8pt to the window's edge and 4pt before its own "+"
+  (`WindowControls.trailingWidth`). A press on the window's controls still
+  counts as going nowhere. Verified (2026-11-26, throwaway copies): the
+  app builds. `try-splits.sh` renders of the plain window, of Changes and
+  Files in a 440pt split (both tabs named, six buttons, Changes and Files
+  lit) and of a zoomed split were looked at. `try-splits.sh column right
+  down focus-left zoom zoom tab close strip equalize resize:900x560 wide
+  column`: 0 faults. `try-switch.sh --side --widths`: 0 of 72 wrong. Not
+  verified, since each needs a pointer: a click on any of the buttons or
+  on a "+", the right-click menu, and the close button on hover over a
+  tab that gave up its room. **An empty tab asks what it should be.** The
+  owner, on the six buttons: "no no no, i dont like it." Then, with a
+  picture of the Claude app's side panel, which opens empty and lists on
+  its page what it can show, each with its key: "it's still two clicks but
+  since the panel already shows on one click the one other click feels
+  simpler? Maybe we could try something like that? ... And it should be on
+  every window right? Because you can potentially open everything
+  everywhere?" That last sentence is what the six buttons got wrong. A
+  button in the corner opened Changes in one place, the default one, in a
+  window where anything can be anywhere, and six of them crowded the row
+  under them. And it says what was wrong with the menu before them: two
+  clicks with nothing on screen in between. So there is a new kind of tab,
+  the empty tab (`SideTab.blank`, titled "New Tab"). **A row's "+" opens
+  one in that split**, in every split. The first click gives you the
+  place, and the tab's page asks what goes in it (`NewTabPage`): Terminal,
+  Browser, Changes, History, Files, each with the key that opens the same
+  thing without asking (⌘T, ⇧⌘L, ⌃⌘1, ⌃⌘2, ⌃⌘3 as built; ⇧⌘ and a letter
+  since "One shape for the keys", below), Changes with its count. A
+  click on a row, or the arrows and Return, puts that in the tab's place.
+  Escape closes the empty tab. A pane that is open in another split is
+  moved here. A row that already has an empty tab brings it forward, not a
+  second one. The "+" has no menu and no right-click menu any more
+  (`NewTabMenu` is deleted). **The corner is four buttons again**, in the
+  owner's order from earlier: Split Right, Split Down, what the session is
+  running, "…". (Until that evening: the two split buttons are on every
+  split's own row now, "A split's buttons are on its own row", at the end.)
+  A split button makes the split with an empty tab in it.
+  **The keys do not ask.** ⌘D and ⇧⌘D still put a terminal in the new
+  split, ⌘T a terminal in this one, ⌃⌘1 opens Changes. A key says what it
+  wants, and a button is pressed by someone still deciding. That is why
+  the page prints the keys: it is also where they are learned. Changes,
+  History, Files and the globe are no longer buttons. What stays from "One
+  click": one rule for a pane's command wherever the pane is, a row's zoom
+  button taking no room while hidden, and tabs behind the front one giving
+  up their close button's room when the row is short. Small rules that
+  came with it. The new tab is opened before the empty one is closed, so a
+  split whose only tab was the empty one is still there to be filled. The
+  empty tab takes the keyboard from a terminal it covers. It is saved
+  (`"new:<id>"`), so it is back after a relaunch, and a build from before
+  it reads it as no tab and drops it, which loses nothing. An empty tab is
+  not counted as a tab opened: what it becomes is. The cost: opening
+  Changes by the mouse is two clicks, where it was one button away before
+  the splits and the six buttons had it at one. The owner chose that,
+  for the second click being on a page that is already there. Verified
+  (2026-11-26, throwaway copies): the app builds. WortelTests, 1934 tests,
+  0 failures, two of them new (the empty tab's saved form, and that it
+  holds its split until it is replaced). Renders were looked at of the
+  page in a split made by a split button, in a split under the main row,
+  and of the rows after picking Changes and Terminal. `try-splits.sh blank
+  close blank-right zoom zoom close column blank pick-terminal blank-down
+  pick-changes equalize next next --relaunch`: 0 faults, and after the
+  relaunch too. Not verified, since each takes a pointer or a real key: a
+  click on a row of the page, on a "+" or on a split button; the arrows,
+  Return and Escape on the page; and where the keyboard is after a pick.
+  **Reset Layout: the way back, and the first preset.** The owner: "Can we
+  also make some kind of window reset button in the menubar? So if you're
+  lost you can always go back to the default preset? Maybe in the future
+  we can have some more presets. So reset is basically a preset default."
+  With every split movable a session can end up in an arrangement nobody
+  meant, and until now the only way out was to undo it tab by tab. View ▸
+  Reset Layout puts the session's tabs back in the arrangement a session
+  starts in (`WorkspaceTabs.Preset.standard`, `arranged(as:keeping:)`).
+  "Default" was taken to mean the window Wortel has always had. The main
+  row holds the session's terminal and every other terminal and file, as
+  tabs. Changes, History, Files and browsers are in the one split beside
+  it, at the outer edge and at the size it opens at, and that split is
+  there only if any of them is open. No strip, no split made by hand, no
+  zoom. **Nothing is closed.** A terminal moved into the main row keeps
+  running as a tab there. Default could also have meant "a new session's
+  window", the terminal alone, and that would have ended every shell in a
+  split: a way back that ends your dev server is not a way back. Empty
+  tabs do go, since they hold nothing. The tab you were looking at stays
+  in front where it lands, and the keyboard goes with it. Sizes and the
+  zoom go back too: they are the layout. (So did the habits, where a kind
+  of tab opened, until they went altogether later that day.) Which edge
+  Changes and Files take stays: that was a choice, not a mess. The item
+  was dimmed at first when there was nothing to put back. It is never
+  dimmed while there is a session now, and with nothing to put back it
+  does nothing ("Five things from the owner's list", at the end). **No key.** It is for when you are
+  lost, not for every day, and it takes away an arrangement somebody made.
+  **An enum of one.** `Preset` has the one case, so that a second preset
+  is a case and a branch and not a second mechanism. The menu has one item
+  until there is a second. Nothing is
+  named, saved or loaded by the user, so "no layout to build" in
+  `docs/product.md` stands. **The cost: it cannot be undone.** One click
+  in a menu and the arrangement is gone, with the tabs all still there.
+  That is why it has no key.
+  Verified (2026-11-26, throwaway copies): the app builds. WortelTests,
+  1938 tests, 0 failures, four of them new. `try-splits.sh column
+  focus-left right down strip blank-right zoom reset reset next next
+  --relaunch`: 0 faults, and the render after the reset shows four
+  terminals as tabs of the main row, the one that was zoomed in front, and
+  Changes and Files in a 440pt split on the right. Not verified: choosing
+  the item from the real menu, and its dimming. **One shape for the keys
+  of what you open: ⇧⌘ and the first letter.** The owner, of the empty
+  tab's page listing ⌘T, ⇧⌘L, ⌃⌘1, ⌃⌘2 and ⌃⌘3: "I do think the shortcuts
+  should be all more simular and easier to use to quickly open any of
+  these when you know the shortcuts". The page had put five keys of three
+  shapes in one column, which is where it showed. What other tools do,
+  read from their own docs that day: VS Code has ⇧⌘E Explorer, ⇧⌘F Search,
+  ⇧⌘D Run and ⇧⌘X Extensions, with Source Control (⌃⇧G) and the terminal
+  (⌃`) outside the pattern. Zed has ⇧⌘E project, ⇧⌘B outline, ⇧⌘D debug
+  and ⇧⌘C collab, with git (⌃⇧G) and the terminal (⌃`) outside it. The
+  Claude app has ⇧⌘D Changes, ⇧⌘B Browser and ⇧⌘F Files, with the terminal
+  on ⌘J. cmux and Warp have no family (⌘T, ⌘D, ⇧⌘D, and cmux's browser on
+  ⇧⌘L). JetBrains and Xcode number theirs (⌘1 Project, ⌘9 Git). So ⇧⌘ and
+  the first letter is the common shape, and the terminal is the exception
+  in every one of them. The choice: Changes ⇧⌘C, History ⇧⌘H, Files ⇧⌘F,
+  New Browser Tab ⇧⌘B. A terminal stays ⌘T, for the same reason it is the
+  exception everywhere: ⌘T is "new tab" in every app with tabs, and a
+  terminal is what a tab is here. The old keys keep working as hidden menu
+  items (⌃⌘1, ⌃⌘2, ⌃⌘3, ⇧⌘L, and the older ⌥⇧⌘G, ⇧⌘E and ⌥⌘E), so nothing
+  anyone has in their fingers stops. Numbering, as the git apps do and as
+  the panes were, was the other shape: it says nothing about which pane a
+  number is, and ⌘1 to ⌘9 are the sessions. **The ⇧⌘F trap.** ⇧⌘F is a
+  default of libghostty's (`end_search`, performable), and a performable
+  binding goes to libghostty ahead of the menu (the 2026-11-12 entry
+  below). With a terminal focused, Show Files would never have run and
+  the key would have gone on to the program. `wortel.conf` unbinds it,
+  the seventh such key. The other three letters are no default of
+  libghostty's, read in its `Config.zig` at the pinned commit. **A check
+  that presses the key.** The mistake cannot be seen in the menu, so the
+  probe got a step that can: `key:<chord>` (`key:shift+cmd+f`) makes a
+  key-down the way the system makes one (a CGEvent turned into an NSEvent
+  and never posted, so it reaches no other app), asks the session's
+  terminal whether it would take it ahead of the menu, by the same test
+  `performKeyEquivalent` makes, and otherwise hands it to the main menu.
+  A key the terminal takes first, or that nothing takes, is a fault. An
+  NSEvent built by hand did not match Shift chords at all (⇧⌘D, known to
+  work, found no item), which is why it is a CGEvent. Run it for every
+  new menu key. **A tab-row bug, fixed with it.** The owner: "when i click
+  the plus button the other tab is animating weirdly". A tab's natural
+  width read whether the row had already asked it to give up its close
+  button's room, so the row's plan depended on its own last answer and
+  flipped on every layout pass. After a tab was added to a row short of
+  room, titles were cut short ("Ch…", "F") until the next pass. It came in
+  with the rule itself (`b4b7710`). A tab's natural width no longer reads
+  it, and which tabs give up the room is settled before a slide starts.
+  **Left as it is:** the gap between the last tab and the "+", which is
+  the room every tab keeps for its close button. The owner: "if it is what
+  it is, all good." The other way is the close button over the glyph on
+  every tab, where a click meant to pick a tab closes it, and that is done
+  only when a row is short of room. **Owed at the release:** the site's
+  list of shortcuts (`web/`) still has the old keys, as it describes the
+  released app. Verified (2026-11-26, throwaway copies): WortelTests, 1938
+  tests, 0 failures, run before the two tab-row fixes, which are in a view
+  the tests do not build. With the unbind taken out, `key:shift+cmd+f`
+  reports the terminal taking it ahead of the menu; with it in, the menu
+  takes it and Files opens. `key:` for ⇧⌘C, ⇧⌘F, ⇧⌘H, ⇧⌘B and ⌘T, and for
+  ⌃⌘1, ⌃⌘2, ⌃⌘3, ⇧⌘L and ⇧⌘E: each goes to the menu and does its thing, 0
+  faults. Renders of a 440pt split's row after "+" with two tabs in it,
+  and after two relayouts: all three titles whole each time. Not verified:
+  the keys on the real keyboard in the real app, and with a browser page
+  or a text field holding the keyboard. **On the empty tab's page the
+  letter alone picks.** The owner: "can we also add that when you are on
+  the selection window on a new tab that you can press the first letter to
+  open that pane there?" T, B, C, H or F on the page picks Terminal,
+  Browser, Changes, History or Files, in that tab's place. It is safe
+  there and nowhere else: nothing can be typed on that page, the five
+  first letters all differ, and they are the letters these things already
+  have in their shortcuts. With ⌘, ⌃ or ⌥ held the key is not the page's,
+  and any other letter does nothing. For the letter to arrive, the page
+  has to have the keyboard, so it takes it in three cases now: when it
+  appears in the split you are in, when the keyboard is sent to a split
+  whose front tab is an empty one (it is taken off the terminal first),
+  and on a click in the page. **A terminal stays ⌘T and does not become
+  ⇧⌘T.** The owner asked whether it should, to finish the pattern. The
+  reasoning, which they took later that day ("let's try this for now then
+  and see how it feels", in "New Tab has a key", below): ⌘T is "new tab"
+  in every app with
+  tabs, and ⇧⌘T is "reopen closed tab" in every one of them, Wortel
+  included. Moving both would break two habits to tidy a table. And in
+  each tool looked at, the terminal is the one key outside the pattern.
+  Verified (2026-11-26, throwaway copies): WortelTests, 1938 tests, 0
+  failures. `try-splits.sh blank-right type:x type:c blank type:t`: x does
+  nothing, c turns the empty tab into Changes, t into a terminal.
+  `blank-right type:down type:down type:return blank type:escape blank
+  focus-left focus-right type:h blank`: Return on the second row makes a
+  browser, Escape closes the empty tab, and after going to another split
+  and back h makes History. `type:c` with a terminal in front goes to the
+  terminal's view. 0 faults in each. Not verified: the keys on the real
+  keyboard, and the click in the page. **New Tab has a key, ⌥⌘T, and ⌘T
+  and ⌘D do not ask.** The owner asked whether it should be the other way
+  round: ⌘T the tab that asks and ⇧⌘T the terminal, and ⌘D likewise. "What
+  do you think is the nicest UX for everyone? Pro and Beginner?" The
+  answer they took, on trial ("let's try this for now then and see how it
+  feels"): ⌘T and ⌘D stay a terminal at once. In every terminal those two
+  keys are followed by typing, and on a page where a first letter picks a
+  row, that typing would pick rows. ⌘D then `htop` would open History. ⌘T
+  then `git status` would open a terminal at the `t` and run ` status` in
+  it. Beginners use the "+" and the split buttons, which ask, and whose
+  page teaches the keys. A key says what it wants. What was missing was a
+  key for the tab that asks, so the page can be reached without the
+  mouse. It is **Tab ▸ New Tab, ⌥⌘T**: an empty tab in the split you are
+  in, the row's "+" as a key (its tooltip now says so). ⌥ is "the other
+  one" of a key here, as ⌥⌘N is of ⌘N. ⌥⌘T then C puts Changes in the
+  split you are in, which no key did before. Not ⇧⌘T, which the owner
+  proposed first: that is Reopen Closed Tab, here and in every browser.
+  They settled on ⌥⌘T, and ⇧⌘T is one line away if they want it after
+  using this. There is no asking key for a split: ⌥⌘D is the system's (it
+  hides and shows the Dock) and ⌃⌘D is Look Up. The split buttons ask. Two
+  fixes to the empty tab came with it. A closed empty tab is not
+  remembered: every pick closes one, and Reopen Closed Tab was bringing
+  empty tabs back. And Escape on the page gives the keyboard to what is in
+  front of that row now, or to the main row if the split went with the
+  tab, where it had been left with nothing. Verified (2026-11-26,
+  throwaway copies): WortelTests, 1939 tests, 0 failures, one new. With
+  keys made as the system makes them: ⌥⌘T opens an empty tab and c makes
+  it Changes; ⌥⌘T then t makes a terminal; ⇧⌘T after that reopens nothing
+  (it reopened the empty tab before the fix); ⌥⌘T with an empty tab in the
+  row brings that one forward; Escape closes it and the keyboard is in the
+  main row's terminal, also when the split closes with it. Not verified:
+  the real keyboard. **Five things from the owner's list, the same day.**
+  *Close goes back to where you were.* The owner: "if i do cmd+d cmd+d
+  cmd+d then cmd+w the focus is on the main window instead of the previous
+  split." When the split you are in closed, the keyboard always went to
+  the main row. It goes to the split you were in before it now, the latest
+  of the last twelve that is still on screen (`GitPanelModel.regionTrail`,
+  `regionBefore`). The same when Changes and Files are put away from under
+  you, and when the strip's last tab closes. What is zoomed still wins.
+  *A tab added to a row made the row scroll and come back.* The owner:
+  "when opening a new tab the other excisting tab animates weirdly even if
+  there is plety of space." A second cause, beside the one fixed under
+  "One shape for the keys". The row checks that the tab in front is in
+  view, and measured it against the visible width as it was while the
+  slide was still widening it. The new tab looked out of view, the row
+  scrolled to it, and scrolled back as it widened. Measured with a new
+  probe step that samples the row's drawn position every 20 ms: with room
+  for every tab, the tab you had went 58 points out and back (0, 58, 26,
+  13, 4, 2, 0). It measures against the width the row is going to now, and
+  the same sample reads 0 throughout. *One rule for where a thing opens,
+  and no memory.* The owner: "i feel like the browser pane has some other
+  rules than other panes, we should remove all rules and make sure
+  everything is the same and consistent now. The user is in control." Two
+  rules went. A file or a browser opened where you had last moved one of
+  its kind, per session (2026-11-17, under "Files, previews, browser"), so
+  where the next one opened depended on something you did a while ago,
+  and a browser followed a rule no pane had. And ⇧⌘B opened its browser
+  over the tab you were in, the one of the four keys that did. Now, when
+  nothing says where: a file opens in the main row, and a browser in the
+  split beside your work, where Changes, History and Files open. ⇧⌘B opens
+  it there too, as ⇧⌘C, ⇧⌘H, ⇧⌘F and a ⌘-clicked address do. To have any
+  of them in a split of your choosing, say so: that split's "+", a split
+  button, ⌥⌘T and the letter, or move it. This takes out a behaviour that
+  is in the released app, on the owner's instruction: there a file or a
+  browser opens where you last moved one. The cost is the person who
+  moved a browser under the terminal once and has every next one open
+  there: they now move each one, or open it there. What is kept: ⌥-click
+  still means the other place, once. And a file looked at from Changes or
+  Files still shows in the preview tab wherever that tab is, which is the
+  tab's place and not a memory. The field that held the memory stays in
+  the saved session, unread, so an older file still decodes. *Reset Layout
+  could not be found.* The owner: "where was the reset windows or default
+  preset? I can't find that anywhere." It is in View, after Equalize
+  Splits, and it was dimmed whenever there was nothing to put back, which
+  also kept it out of the command palette (⇧⌘P lists only what is
+  enabled). It is never dimmed while there is a session now, it has an
+  icon in the palette, and with nothing to put back it does nothing.
+  *Should the family be ⌥⌘ and a letter?* The owner: "should all be
+  cmd+option+T,B,H,C ?" Answered, not built: ⌥⌘H is Hide Others across
+  macOS, and ⌥⌘D shows and hides the Dock, so ⌥⌘ cannot be the family.
+  The one-modifier answer would be New Tab on ⇧⌘T with Reopen Closed Tab
+  moved to ⌥⌘T. That was offered to the owner and is not decided.
+  Verified (2026-11-26, throwaway copies): WortelTests, 1939 tests, 0
+  failures after the eight that described the memory were rewritten, run
+  before the change to Reset Layout's dimming and the palette icons.
+  `right right right close close close`: the keyboard goes back through
+  the splits in order. `trace-blank` with room: the row's scroll position
+  is 0 at every sample; in a row short of room it scrolls one way only,
+  62 to 163. `key:shift+cmd+b` from the main row twice: two browsers in
+  the split beside, none over the terminal. `right down blank close strip
+  key:shift+cmd+c close close reset next next --relaunch`: 0 faults. Not
+  verified: any of it by hand in the real app. **Closing a tab scrolled
+  the row and snapped it back** (`55a9148`). The owner: "when i open a
+  bunch of tabs cmd+t it is peaceful but when i close them cmd+w it does
+  weird animations on the whole tab row". After a close the row's content
+  is left at its old, wider width until the tabs have slid into place, and
+  two things measured against that stale width: how far the row may
+  scroll, and which edge fades. With room for every tab, closing the last
+  one scrolled the row 20 points and back (0, 10, 12, 17, 19, 20, then 0
+  at 200 ms). A row scrolled to its end barely moved and then jumped 69
+  points. Both read the width the content is going to now
+  (`settledContentWidth`), and the same samples read 0 throughout, or move
+  one way only. It is the third fault of this kind in the tab row in a
+  day, and the rule from all three is in
+  `macos/docs/architecture/workspace-tabs.md`: during a slide, measure
+  against where things are going. **Read before main.** The owner: "Let's
+  fix this small issue then code review and make it ready for main!" The
+  branch was read by four reviewers, one each for the model and saved
+  sessions, the panel model and commands, the split views, and tabs, drags
+  and the probes, and audited against the repository's rules. No finding
+  was severe. Fixed (`63f4282`), by group. *Keyboard and commands.* Escape
+  on an empty split, or a pane closed from under you, sent the keyboard two
+  splits back, because two places each refocused: one does now. A shell
+  that exited in another split moved the keyboard: it moves on a close
+  only when you were in the split the tab closed in. ⌥⌘B behind a zoom
+  closed Changes and Files unseen: it shows them. *Views.* The main row's
+  and the strip's pages still took their minimum size from SwiftUI as
+  required constraints, against frames now set by hand, so a page taller
+  than its split drew past it. A slide in progress when its window closed
+  left a 120 Hz timer running and every terminal's resize held: a slide
+  ends itself. ⌘D in a zoomed split measured the zoomed size and could
+  leave two splits under the minimum: room is measured without the zoom,
+  and so is the size a hidden session's terminal is told. A divider's size
+  before a drag was read after the first step, so a one-step drag was not
+  remembered: it is read on the press. A divider's drag laid the tree out
+  twice a step, a split of a session not on screen re-did its page on
+  every tab change, and every window listened to every session's splits:
+  each stopped. And the dividers, which are Wortel's own views now, were
+  not there for VoiceOver at all: they are splitters, with increment and
+  decrement. *Tabs and drags.* A tab drag could outlive its row (the ghost
+  stayed on screen) or its session (a drop on an edge made a split holding
+  another session's tab): the row lives as long as the drag, a new drag
+  ends an old one, and a drop is refused when the tab is gone or the
+  session changed. Split Right and Split Down are not offered on a split's
+  only tab. *Model and saved sessions.* One unreadable split in
+  `sessions.json` cost every split, and a split whose key was no id lost
+  its tabs: they are read one by one, and a stray split's tabs fold into
+  the main row. A divider with no room for two parts could save a weight
+  of zero. Restore is one pure function that the app and the tests both
+  call, after two tests were found asserting states restore never made.
+  *Probes, scripts, menus.* The Debug probes were in every Debug build
+  with a folder of its own, which is every contributor's everyday build:
+  they are installed only when `WORTEL_DATA_DIR` was given. The two test
+  scripts clean up on an interrupt. View says Focus Split, Focus Next
+  Split and Focus Previous Split, where it said Area. Dead code from the
+  day's designs went (`setVisible`, `setSideLeading`, `setColumnLeading`,
+  the probe step `swap`), and comments that told an earlier design as the
+  current one were corrected, the shipped `wortel.conf`'s among them.
+  **Found and left**, so nobody finds them again. `habits`,
+  `Session.tabHabits`, `TabKind` and the `recordsHabit` parameters are
+  inert and still in the code: taking them out changes signatures and a
+  saved field. `sideVisible`, `bottomVisible` and `hiddenLeaves` are
+  vestigial. `GitPanelModel.fillEmptyColumn` is private and never called.
+  A new terminal tab opens wide and narrows about 180 ms later, when its
+  title arrives. A closed tab's view goes at once, with no fade. In a row
+  short of room a tab behind the front one shows its close button over
+  its glyph on hover, which the owner found confusing ("the user should
+  have one place where the close lives") and has not yet decided to
+  change. And the website is owed at the release: its shortcut list and
+  its "no splits" copy (`web/src/app/gen/Browser.astro`, `Code.astro`,
+  `FileMain.astro`, `Terminal.astro`, `web/src/components/home/Panes.astro`,
+  `web/src/data/site.ts`, `web/src/scripts/panes.ts`). Verified
+  (2026-11-26, throwaway copies), after `63f4282`: the app builds.
+  WortelTests, 1940 tests, 0 failures, run before the views batch, which
+  the tests do not compile. A tour of splits, zooms, a strip, three
+  session switches and a relaunch: 0 faults. `right blank-right
+  type:escape` ends in the first split made, not the main row. `column
+  focus-left zoom column` ends with Changes and Files showing and no zoom.
+  `resize:900x600 column tab zoom right` gives the main row 337, the side
+  split 170 and the new split 170. `try-switch.sh --side --widths`: 0 of
+  72 wrong. After `main` was merged into the branch (`011bd59`): the app
+  builds. Not verified: the drag fixes, VoiceOver on a divider, the slide
+  timer on a closing window, and the page sizing in a strip at its
+  minimum. Each takes a pointer, VoiceOver or a second window. **A split's
+  buttons are on its own row.** The owner, that evening: "my biggest open
+  question is still if we should use these split icons on every pane
+  header. ... it's weird that they are all the way to the right, even
+  though if you have focus on a left pane and click the split it splits on
+  there." The pair had been put in the window's corner that morning as the
+  menu's own actions, "the split you're in". That is the indirection the
+  owner named: to know what a click would do, you had to know where the
+  keyboard was. Now every split's row ends with its own Split Right and
+  Split Down, and a click splits that split, whichever one has the
+  keyboard. The rule is that a control sits on the thing it acts on. As
+  before, the split it makes holds an empty tab that asks what goes there,
+  and with no room for two nothing is made and the sound says so. ⌘D and
+  ⇧⌘D are unchanged: the split you are in, a terminal, no asking. A row
+  with less than 240pt of its own, after what it gives up to the window's
+  controls, shows no split buttons, so that a narrow split's row belongs to
+  its tabs. ⌘D, a tab's right-click and a drag to an edge still split it.
+  The window's trailing end keeps two buttons, what the session is running
+  and "…". Both are about the session, which is why they are the window's
+  and not a row's. With one split the window looks as it did, because that
+  split's end is the corner. This takes back a sentence written that
+  morning, "no row has a button of its own": the rows had lost the
+  session's buttons, which was right, and with them the idea that a row
+  could carry anything. A row carries what is about its split. The cost:
+  two more buttons in every row wide enough, where the corner had one pair
+  for the whole window. Verified (2026-11-26, throwaway copies): the app
+  builds. A render with a main row, three 160pt splits under it and
+  Changes and Files beside: the main row and the side split each show
+  their pair at their own end, the three narrow ones show a tab and a "+"
+  only, and the corner has the running button and "…". `blank-right type:t
+  blank-down type:escape right down zoom zoom strip resize:900x560
+  key:shift+cmd+c close close reset next next --relaunch`: 0 faults. The
+  unit tests were not run again: the change is in views only. Not
+  verified: a click on a row's split button.
+- **2026-11-26. "No splits" was reversed: the main area splits into columns
+  and rows.** Built on the branch `flexible-panes` and on `main` since it
+  was merged. Not in a release yet: the released app and the site still have
+  no splits. This entry records the first version. The
+  same day the side column and the strip became splits too (the entry
+  above), and where the two differ that one is the rule: the places are
+  marked here. The owner asked for a window layout
+  that is more flexible, "more like cmux: multiple columns and rows next to
+  each other", in the app's own look. And ⌘D and ⇧⌘D were already standing
+  in for every terminal's split right and split down, as a terminal in the
+  side column and one in the strip. They are the real thing now: a new
+  terminal in a split of its own, beside or under the area you are in
+  (`007dae4` the model, `00d9106` the views and the commands, `843cdd8`).
+  It reverses "Still no splits and no free grid" in the 2026-09-29 entry of
+  "The product". **The rules.** A split is a part of the window beside the
+  sidebar with a tab row of its own (in this first version: a part of the
+  main area that was split off). It is made by ⌘D or ⇧⌘D, by Split
+  Right or Split Down in a tab's menu (that tab moves into it), by the two
+  split buttons at the end of a split's own row (which make it with an
+  empty tab in it; in this first version the two were items in a row's "+"
+  and in the session's "…": the entry above, at its end), or by letting go
+  of a tab or a file on an edge.
+  It is there only while it has tabs: closing its last one takes it away
+  and its siblings take the room. Sizes are shares, so a window resize
+  keeps them, and no split is laid out under 160 by 100 points while there
+  is room. ⌘D and ⇧⌘D beep and do nothing where there is no room: first
+  that meant "where the split you are in is too small to be two", and ⌘D in
+  a side column 280 points wide did nothing, which the owner hit the same
+  day. Now a split too small to be two takes the new one's room from the
+  whole row or column it is in, an equal share from all
+  (`SplitLayout.insertSpreading`), and the beep is for a row with no room
+  either. ⇧⌘↩ shows one split alone and then all of them again (not saved),
+  ⌃⌘= makes them equal, ⌘] and ⌘[ walk them in reading order, and the
+  session's own terminal never leaves the main row. Saved per session as
+  `splitLayout`, whenever the tree is more than the main row, and
+  `paneTabs`, while there are splits somebody made.
+  `macos/docs/architecture/workspace-tabs.md` has the rest. **The frame
+  stayed, and only the main area split: the first version only.** There
+  the side column and the strip were panes of their own beside the tree,
+  not in it, and "every window is the same fixed frame of four places"
+  (2026-11-19, below) held as written. They are leaves of the tree since
+  the entry above. What stands: a session with nothing split is arranged
+  as it was before splits (its row shows a tab where it had a title, the
+  entry above). It no longer saves exactly as before, since a session
+  with a column or a strip writes `splitLayout` too. **The word is "split",
+  not "pane".** A pane is already
+  Changes, History or Files (`docs/glossary.md`). The code says
+  `TabRegion.pane` and `SplitLayout` for the same thing. **A row per split,
+  not more rows in the titlebar: replaced the same day.** In the first
+  version, while the main area was split, every split had its own 36pt row
+  on the strip's band, the main row's included, and the titlebar showed the
+  session's name. The reason was that a titlebar row lay over the whole
+  main area, not over one split, and a split under another had no titlebar
+  over it at all. Now a split along the top of the window has its row in
+  the titlebar and only one lower down has the strip's kind of row (the
+  entry above). What stands: a row lower down is the strip's because it is
+  the same thing in another place, a row of tabs that is not in the
+  titlebar. And the tab in front of a split you are not in has a quiet
+  title, so the row ⌘T, ⌘W and ⌘D act in can be told from its neighbours,
+  since the entry above only with more than two splits on screen. **Equal
+  siblings stay equal.** A second
+  Split Right gives three thirds, not a half and two quarters, which is
+  what every split halving its source comes to. Once a divider has been
+  dragged the sizes are somebody's choice, and a new split halves only the
+  one it came from. The side column and the strip keep their share through
+  all of it (the entry above). **No animation.** A split appears and goes
+  in one cut, so each terminal beside it gets one new size. **⌃⌥⌘ with an
+  arrow moves the keyboard by direction**, across every split on screen,
+  the side column and the strip among them. iTerm and Ghostty use ⌥⌘ with
+  an arrow for this. Those are sessions and tabs here, and ⌃⌘ with an arrow
+  moves a tab, so ⌃⌥⌘ was what was free. ⌃⌘ with an arrow now takes the tab
+  in front to the neighbouring split. With none that way, toward the side
+  column's edge or down still opens the side column or the strip when it is
+  not there, as it always did. **One flat view, not split views inside split views**
+  (`SplitTreeView`). Every split is a direct subview whose frame comes from
+  `SplitLayout.frames`, so a split that comes, goes or changes edge never
+  takes another one out of the window on its way. A terminal that left the
+  window would have to be shown again, which is what every terminal host in
+  the app avoids. Nesting `NSSplitView`s because AppKit has them is the
+  trap. **A fix that came with it:** the session's terminal took the
+  keyboard whenever its area reappeared
+  (`TerminalHostViewController.viewDidAppear`), so showing all splits again
+  after a zoom put you in the main terminal, and with a file in front of the
+  split you were in ⌘W then closed the session. It takes it the first time
+  only, which is a window starting, and whoever ends a zoom says where the
+  keyboard goes (`GitPanelModel.toggleZoom`, `onFocusMainTerminal`). **A
+  review of the branch found that and nine smaller things**, all fixed in
+  `04ef2e5`: a file dropped on an edge lost its diff, a press on a divider
+  moved the area you're in, a tab let go under its own row split upward
+  where it used to be a drag abandoned. **Limits.** A terminal in any split
+  but the main row is a side terminal: agent tracking, naming and resume
+  follow the session's own terminal only, and it is never hibernated, so a
+  session with four splits keeps four surfaces while it is out of sight. A
+  split holds tabs, never another session. ⌃⌥⌘ with an arrow is taken from
+  the program in the terminal even when there is nowhere to go, as every
+  disabled menu key here is. **Verified, the first version (2026-11-26, macOS
+  27.0):** WortelTests, 1873 tests, 0 failures. In a throwaway copy, with
+  `macos/scripts/try-splits.sh` and the Debug-only `SplitProbe`: three
+  splits, a zoom and back, a divider drag, equalize, the keyboard by
+  direction, a session switch away and back (also with terminals dropped
+  after 0.3 s, `HIBERNATE_AFTER=0.3`), a new tab, drops on edges and
+  middles through the drag's own resolver, every split closed, and a quit
+  and relaunch with four splits. At every step each terminal on screen had
+  been told the size of its view and sat inside its split, and the keyboard
+  was where it was expected: 0 faults. The window's picture (`--picture`)
+  was looked at in dark and in light. After the review's fixes: the tour
+  again, a zoom ended by closing the zoomed split's last tab (keyboard and
+  area in the main terminal), a split's only terminal moved into the main
+  row, a drop on its own row's top edge (nowhere), 0 faults; and the window
+  resized in steps with four splits (`resize:`), smaller, larger and with
+  the session out of sight: shares kept, every terminal told its view's
+  size. `scripts/check-terminals.sh` on the last build: seven of nine ok
+  (switching, sleeping terminals, pages, a crash and a quit, light and
+  dark, panes sliding). **Not checked:** its two window-resize tests, which
+  did not run (they drive the window through System Events, and `osascript`
+  had no Accessibility access in the session that ran them), so "a session
+  out of sight follows a window resize, once" is not re-proved on this
+  branch; a drag with a real pointer, light mode on a screen, several
+  windows with splits, the un-zoom with a file in front and the dropped
+  file's diff by hand. All of that was run on the first version (up to
+  `de5808e`). The build with one tree was checked again and has its own
+  lists in the entry above. `check-terminals.sh` has not been run on it at
+  all, so the seven of nine say nothing about that build. **The
+  site changes with the release, not
+  before:** it describes the released app. The places are in
+  `web/src/data/site.ts`: the "One window, four places" feature, and the
+  answers about Ghostty ("tabs, splits and a large configuration file"),
+  about iTerm2 and the others ("no splits"), and "Does Wortel have tabs or
+  split panes?". `web/src/pages/llms.txt.ts` has two lines of its own
+  ("replaces tabs and splits", "no split panes").
 - **2026-11-19. Several windows, each with its own sessions.** "One window"
   had been a principle of design, never something tried and taken out. A
   window owns its sessions (`Session.windowID`), its sidebar lists only
@@ -122,6 +996,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   model; it was not chosen, because an NSView has one parent and dragging
   between windows would have meant nothing. Every window is the same fixed
   frame of four places. See `macos/docs/architecture/window-and-sidebar.md`.
+  **Until 2026-11-26.** Since the splits (on `main`, not in a release yet)
+  every window is a sidebar and one tree of splits, which starts out as the
+  same four places (the first entry of this section).
 - **2026-11-19. Drags between windows: spring-loading, and tabs that move.**
   A drag held over a window behind brings it forward, as in the Finder, on
   the Mac's own spring-loading setting and delay rather than one of ours.
@@ -150,6 +1027,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-07-14. The shell is AppKit split panes hosting SwiftUI.** It went
   AppKit, then SwiftUI `NavigationSplitView`, then back. A SwiftUI inspector is
   a fixed thickness and resizes the window instead of its siblings (`2cc5b81`).
+  **Until 2026-11-26** there were three such panes. Since the splits (on
+  `main`, not in a release yet) the split view holds two, the sidebar and
+  everything else,
+  and what is beside the sidebar is one flat view of splits (the first
+  entry of this section). Still AppKit, still hosting SwiftUI.
 - **2026-07-08. ⌘A clears the input line; Select All is ⇧⌘A.** It flips to ⌘A
   only while a text field or web view has the keyboard (`338b28c`, `abc2146`).
 - **2026-07-10. `mouse-hide-while-typing = false`.** It hid the pointer across
@@ -196,7 +1078,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
 - **2026-09-29. A terminal resizes once per pane animation and never while
   hidden.** Every resize re-wraps the screen and sends SIGWINCH to the agent
   (`2dfae43`, `c20f403`). **Since 2026-11-20 a hidden one follows a window
-  resize, once:** see "A terminal out of sight follows its window".
+  resize, once:** see "A terminal out of sight follows its window". **Until
+  2026-11-26** the side column and the strip were panes that AppKit
+  animated. Since the splits (on `main`, not in a release yet) they are
+  splits of one tree, and
+  the tree slides them itself when ⌥⌘B or ⌘J opens one, with resizes held
+  until it lands (the first entry of this section; putting one away is
+  closing its tabs since that afternoon, and cuts). The rule
+  is the same: one resize, when it lands.
 - **2026-11-18. A session switch lays out the column and strip before it shows
   the terminal.** SwiftUI showed the terminal first, in the previous session's
   layout, and the column followed 10 to 85 ms later: the terminal was drawn
@@ -206,6 +1095,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the same clicks: unchanged when the column stays put; when it opens or
   closes, the first frame comes with the column (60 to 110 ms) instead of a
   wrong frame first. Opening or closing the column itself is that cost.
+  **Since 2026-11-26** (the splits, on `main`, not in a release yet) the
+  column and the strip are leaves of one tree, and what the switch lays out first is that
+  tree's frames (`MainAreaController.applyNow`). The rule is the same. The
+  timings above are from before and were not taken again.
 - **2026-11-18. A terminal checks its size against its view whenever things
   settle.** Seen three times in a day: the terminal drawn at an old size and
   pinned top left, so either cut off by the side column (too wide) or sitting
@@ -500,7 +1393,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   same as the shown one. Its view keeps that size, so a change of display
   or scale passes on the followed size, not the old one. **Not covered:** a terminal made at launch and not
   shown since is not in the window and does not follow; it is told its own
-  last size when it is made.
+  last size when it is made. **Until 2026-11-26:** "the panes beside it
+  keep their width" is no longer so since the splits (on `main`, not in a
+  release yet), where sizes are shares (the first entry of this section). Adding the window's
+  whole change told a terminal beside a side column a width it would not be
+  shown at, so the follow now asks for the size the session's main row has
+  in its own splits, in the window as it is (`SurfaceView.sizeWhenShown`),
+  and adds the window's change only when nobody can say. Still once a
+  window resize. `try-hidden-resize.sh` was not run again.
 - **2026-11-19. An agent at work keeps its terminal.** A hibernated terminal
   **Replaced 2026-11-20:** nothing is lost by dropping a terminal now, so one
   whose agent is at work goes like any other.
@@ -565,6 +1465,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the column's content (23 ms), but the frame no longer matched the split
   view's own layout: the main pane was seen running under the column until
   the window was resized. Done properly it has to go through the split view.
+  **Until 2026-11-26:** since the splits (on `main`, not in a release yet)
+  the column is no pane of that split view. It is a leaf of the tree and gets its width
+  there, the first time it is laid out (`MainAreaController.sizeNewLeaves`).
 - **2026-10-07. ⇧⌘[ and ⇧⌘] are tabs**, the system's convention. Sessions are
   ⌥⌘↑ and ⌥⌘↓ (`c87fd17`).
 - **2026-10-20. A reload of the config is applied synchronously on the main
@@ -577,7 +1480,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   nothing and goes on to the program, and ⌘J typed `j` into Claude instead of
   opening the strip. To list what is still performable, ask
   `ghostty_surface_key_is_binding` for its flags; `ghostty_config_trigger`
-  doesn't report performable bindings.
+  doesn't report performable bindings. **2026-11-26:** ⌘, and ⇧⌘F have
+  joined the list (⇧⌘F is libghostty's `end_search`, and became Show Files
+  with the splits), and there is a check now: the probe's
+  `key:` step presses a key and says whether the terminal would take it
+  ahead of the menu (`macos/docs/architecture/command-menus-hotkey.md`).
 - **2026-11-16. The main window is movable only while fn-⌃ is held, a menu
   is open or the pointer is outside it** (`WindowMovability`). Not any
   modifier: ⌃ and ⌘ are down half the time in a terminal. Replaces
@@ -798,6 +1705,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the end. Now `SidebarControls` sits over the titlebar, the toggle never
   moves, the arrows ride the sidebar's edge and stop beside the toggle, and
   the rows to the right are pushed along by the same number every frame.
+  **Since 2026-11-26** (the splits, on `main`, not in a release yet) the
+  same overlay is `WindowControls` and has a trailing end as well: what
+  the session is running, and its "…" (the first entry of "Window,
+  terminal and keys").
 - **2026-11-18. A new session at the top level goes on top.** It went after
   the selected row, so in a list nobody arranges a new row turned up in the
   middle. Now that list reads newest first, as a list of chats does. In a
@@ -1549,6 +2460,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   window docking) teaches where files go, and ⌥ means "the other place"
   rather than "the main area". The habit stays per session.
   Browsers still start in the column, beside what they show.
+  **Until 2026-11-26.** Since the splits (on `main`, not in a release yet)
+  nothing teaches where files or browsers go any more. A file opens beside the
+  terminal's tab and a browser in the split beside, every time (the first
+  entry of "Window, terminal and keys", at its end). ⌥ still means the
+  other place.
 - **2026-11-16. A preview window has the main window's chrome**: its own 40pt
   row on the glass, the file tab's header in it, and a file button of its own
   in place of the system's proxy icon. No system window tabs for previews.
@@ -1691,6 +2607,19 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   narrowed around `bind`; a chmod after it left a window, and a Unix socket
   can't be fchmod'ed first), and a connection whose peer is another user, or
   can't be named, is closed unread (`getpeereid`).
+- **2026-11-26. `wortel split` opens a split and takes nothing.** An agent
+  that wants its dev server where the person can see it had `wortel new`,
+  which is a row of its own away from the work. `wortel split`, with a side
+  (`right`, `down`, `left`, `up`) and a command after `--`, puts a terminal in
+  a split beside the session's main row, in its folder. Unlike ⌘D it leaves
+  the keyboard, the selection, the window order, a zoom and Back's trail
+  alone, because it runs while someone is typing to the agent. Its shell
+  starts at once even when the session is not on screen or the split is
+  behind a zoom: a side terminal is otherwise made when its tab is first
+  shown, and a command that runs "when you next look" is not what was asked
+  for. It prints nothing: the terminal's id would be taken by `read` and
+  `send` as its session, and answer with the wrong screen. No `--focus`, and
+  no verb to close or read a split yet (`macos/docs/cli.md`).
 
 ## Shell integration
 

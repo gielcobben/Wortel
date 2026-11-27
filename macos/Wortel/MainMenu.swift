@@ -464,12 +464,13 @@ enum MainMenu {
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
 
-        // The workspace: the three areas, their tabs, and moving between them.
-        // Aligned with what people already know (see docs/shortcuts.md): ⌘B /
-        // ⌥⌘B / ⌘J for the sidebar, the column and the strip as in VS Code, Zed
-        // and ChatGPT; ⇧⌘[ / ⇧⌘] for tabs as in every Mac app (⌃Tab and
-        // ⌥⌘←/→ too); ⌘[ / ⌘] between areas as in iTerm and Ghostty; ⌃⌘1-3
-        // for the panes, numbered as git apps number theirs; ⌃⌘arrows to move a
+        // The workspace: the splits, their tabs, and moving between them.
+        // Aligned with what people already know (see docs/shortcuts.md): ⌘B
+        // hides the sidebar, ⌥⌘B opens and closes Changes and Files and ⌘J is
+        // the terminal below, as in VS Code, Zed and ChatGPT; ⇧⌘[ / ⇧⌘] for
+        // tabs as in every Mac app (⌃Tab and ⌥⌘←/→ too); ⌘[ / ⌘] between
+        // splits as in iTerm and Ghostty; ⇧⌘C, ⇧⌘H and ⇧⌘F for the panes
+        // (⌃⌘1-3 were theirs, and stay as hidden items); ⌃⌘arrows to move a
         // tab as VS Code moves an editor. Everything is ⌘-based but the Control
         // keys those apps use, which the terminal gives up nothing for:
         // Control+letter and Option+letter stay the shell's.
@@ -480,21 +481,50 @@ enum MainMenu {
         let toggleSidebar = viewMenu.addItem(withTitle: "Hide Sidebar", action: #selector(AppDelegate.toggleSessionSidebar(_:)), keyEquivalent: "b")
         toggleSidebar.keyEquivalentModifierMask = [.command]
         addHidden(viewMenu, "Hide Sidebar", #selector(AppDelegate.toggleSessionSidebar(_:)), "s", [.command, .option])
-        let sideColumn = viewMenu.addItem(withTitle: "Show Side Column", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
+        // ⌥⌘B and ⌘J were Show Side Column and Show Bottom Strip, hiding and
+        // showing the window's two fixed places. Those are splits like any
+        // other now and nothing is hidden: ⌥⌘B opens Changes and Files on
+        // the right and closes them again, ⌘J takes you to the terminal
+        // under the main row (making one if there is none) and back.
+        let sideColumn = viewMenu.addItem(withTitle: "Show Changes and Files", action: #selector(AppDelegate.toggleSideColumn(_:)), keyEquivalent: "b")
         sideColumn.keyEquivalentModifierMask = [.command, .option]
-        let bottomStrip = viewMenu.addItem(withTitle: "Show Bottom Strip", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
+        let bottomStrip = viewMenu.addItem(withTitle: "Terminal Below", action: #selector(AppDelegate.toggleBottomStrip(_:)), keyEquivalent: "j")
         bottomStrip.keyEquivalentModifierMask = [.command]
-        // ⌃` too, as VS Code, Zed and ChatGPT toggle their terminal panel.
-        addHidden(viewMenu, "Show Bottom Strip", #selector(AppDelegate.toggleBottomStrip(_:)), "`", [.control])
-        let swapSides = viewMenu.addItem(withTitle: "Move Side Column to the Left", action: #selector(AppDelegate.toggleColumnSide(_:)), keyEquivalent: "b")
-        swapSides.keyEquivalentModifierMask = [.command, .option, .shift]
+        // ⌃` too, as VS Code, Zed and ChatGPT go to their terminal panel.
+        addHidden(viewMenu, "Terminal Below", #selector(AppDelegate.toggleBottomStrip(_:)), "`", [.control])
         // With the keyboard in a browser's page these are Forward and Back
         // while the page has somewhere to go, as in Safari and Chrome (and as
         // cmux splits the same two keys); see AppDelegate.focusNextArea.
-        let focusNext = viewMenu.addItem(withTitle: "Focus Next Area", action: #selector(AppDelegate.focusNextArea(_:)), keyEquivalent: "]")
+        let focusNext = viewMenu.addItem(withTitle: "Focus Next Split", action: #selector(AppDelegate.focusNextArea(_:)), keyEquivalent: "]")
         focusNext.keyEquivalentModifierMask = [.command]
-        let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Area", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
+        let focusPrevious = viewMenu.addItem(withTitle: "Focus Previous Split", action: #selector(AppDelegate.focusPreviousArea(_:)), keyEquivalent: "[")
         focusPrevious.keyEquivalentModifierMask = [.command]
+        // By direction, across the splits of the main area and on into the
+        // column and the strip. ⌥⌘ with an arrow, every other terminal's keys
+        // for this, are the sessions and the tabs here, and ⌃⌘ moves a tab;
+        // ⌃⌥⌘ is what was free.
+        let focusSplit = NSMenuItem(title: "Focus Split", action: nil, keyEquivalent: "")
+        let focusSplitMenu = NSMenu(title: "Focus Split")
+        for (title, action, key) in [
+            ("Left", #selector(AppDelegate.focusSplitLeft(_:)), NSLeftArrowFunctionKey),
+            ("Right", #selector(AppDelegate.focusSplitRight(_:)), NSRightArrowFunctionKey),
+            ("Above", #selector(AppDelegate.focusSplitUp(_:)), NSUpArrowFunctionKey),
+            ("Below", #selector(AppDelegate.focusSplitDown(_:)), NSDownArrowFunctionKey),
+        ] {
+            let item = focusSplitMenu.addItem(withTitle: title, action: action, keyEquivalent: arrow(key))
+            item.keyEquivalentModifierMask = [.command, .option, .control]
+        }
+        focusSplit.submenu = focusSplitMenu
+        viewMenu.addItem(focusSplit)
+        // ⇧⌘↩ and ⌃⌘=: Ghostty's keys for the same two things.
+        let zoomSplit = viewMenu.addItem(withTitle: "Zoom Split", action: #selector(AppDelegate.zoomSplit(_:)), keyEquivalent: "\r")
+        zoomSplit.keyEquivalentModifierMask = [.command, .shift]
+        let equalize = viewMenu.addItem(withTitle: "Equalize Splits", action: #selector(AppDelegate.equalizeSplits(_:)), keyEquivalent: "=")
+        equalize.keyEquivalentModifierMask = [.command, .control]
+        // No key: it is for when you are lost, not for every day, and it
+        // undoes an arrangement somebody made. The first of what may become
+        // a list of presets.
+        viewMenu.addItem(withTitle: "Reset Layout", action: #selector(AppDelegate.resetLayout(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
         // A checkmark here, not a row in Settings, because it is flipped
@@ -504,21 +534,30 @@ enum MainMenu {
         viewMenu.addItem(withTitle: "Sort Unread First", action: #selector(AppDelegate.toggleSortUnreadFirst(_:)), keyEquivalent: "")
 
         viewMenu.addItem(.separator())
-        // The three panes by number, as git apps number theirs (GitHub Desktop,
-        // Tower and Fork: ⌘1 Changes, ⌘2 History), with ⌃ added because ⌘1…⌘9
-        // are the sessions here. Each opens its pane, brings it forward, or
-        // closes it when it's already in front. Titles flip Show/Hide in
-        // AppDelegate.validateMenuItem.
-        let changes = viewMenu.addItem(withTitle: "Show Changes", action: #selector(AppDelegate.showChanges(_:)), keyEquivalent: "1")
-        changes.keyEquivalentModifierMask = [.control, .command]
-        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "2")
-        history.keyEquivalentModifierMask = [.control, .command]
-        // ⌥⇧⌘G, what History had, keeps working.
+        // The three panes, each by ⇧⌘ and its first letter: C, H, F. One
+        // shape with the browser's ⇧⌘B (Tab menu), which is how VS Code, Zed
+        // and the Claude app name theirs (⇧⌘E Explorer, ⇧⌘F Search or Files,
+        // ⇧⌘D Changes, ⇧⌘B Browser), and what the empty tab's page lists. A
+        // terminal is ⌘T, the one that differs, as it does in each of those.
+        // Each opens its pane, brings it forward, or closes it when it is on
+        // screen. Titles flip Show/Hide in AppDelegate.validateMenuItem.
+        //
+        // ⇧⌘F is also a default of libghostty's (end_search, performable),
+        // which would take it ahead of this menu: unbound in wortel.conf.
+        let changes = viewMenu.addItem(withTitle: "Show Changes", action: #selector(AppDelegate.showChanges(_:)), keyEquivalent: "c")
+        changes.keyEquivalentModifierMask = [.command, .shift]
+        let history = viewMenu.addItem(withTitle: "Show History", action: #selector(AppDelegate.showHistory(_:)), keyEquivalent: "h")
+        history.keyEquivalentModifierMask = [.command, .shift]
+        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "f")
+        files.keyEquivalentModifierMask = [.command, .shift]
+        // What they were until 2026-11-26 keeps working: ⌃⌘1, ⌃⌘2 and ⌃⌘3
+        // (numbered as git apps number theirs, with ⌃ because ⌘1…⌘9 are the
+        // sessions here), ⌥⇧⌘G for History, and for Files ⇧⌘E, as VS Code,
+        // Cursor, Zed and Codex open their file tree, and ⌥⌘E.
+        addHidden(viewMenu, "Show Changes", #selector(AppDelegate.showChanges(_:)), "1", [.control, .command])
+        addHidden(viewMenu, "Show History", #selector(AppDelegate.showHistory(_:)), "2", [.control, .command])
         addHidden(viewMenu, "Show History", #selector(AppDelegate.showHistory(_:)), "g", [.command, .option, .shift])
-        let files = viewMenu.addItem(withTitle: "Show Files", action: #selector(AppDelegate.toggleFileTree(_:)), keyEquivalent: "3")
-        files.keyEquivalentModifierMask = [.control, .command]
-        // ⇧⌘E, as VS Code, Cursor, Zed and Codex open their file tree, and
-        // ⌥⌘E, what Wortel had, keep working.
+        addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "3", [.control, .command])
         addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .shift])
         addHidden(viewMenu, "Show Files", #selector(AppDelegate.toggleFileTree(_:)), "e", [.command, .option])
         // ⌃⇧G, as VS Code, Cursor, Zed and Codex open source control: the
@@ -603,27 +642,41 @@ enum MainMenu {
         main.addItem(tabItem)
         let tabMenu = NSMenu(title: "Tab")
         tabItem.submenu = tabMenu
+        // ⌥⌘T: the tab that asks, the "+" of the row you're in as a key. An
+        // empty tab whose page lists what it can become, and there a first
+        // letter picks. ⌥ is "the other one" of a key here (⌘N and ⌥⌘N).
+        // Not ⌘T: that is followed by typing, which on that page would pick
+        // rows by their letters. Not ⇧⌘T: Reopen Closed Tab, here and in
+        // every browser.
+        let newTab = tabMenu.addItem(withTitle: "New Tab", action: #selector(AppDelegate.newTabHere(_:)), keyEquivalent: "t")
+        newTab.keyEquivalentModifierMask = [.command, .option]
         // ⌘T: a new tab, as everywhere else; here a terminal in the row you're
         // in, which is also what a terminal user's ⌘T has always given them: a
         // new shell, right where they are. ⌘N is New Session. (Until the rows
         // had tabs, ⌘T was an alias of ⌘N: a session was the only tab there was.)
         let newTerminal = tabMenu.addItem(withTitle: "New Terminal Tab", action: #selector(AppDelegate.newTerminalHere(_:)), keyEquivalent: "t")
         newTerminal.keyEquivalentModifierMask = [.command]
-        // ⇧⌘L: a browser in the row you're in, as cmux opens its browser.
-        let newBrowser = tabMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "l")
+        // ⇧⌘B: a browser in the row you're in, by its first letter like the
+        // panes (View menu) and as the Claude app opens its browser. ⇧⌘L,
+        // what it was (cmux's key for it), keeps working.
+        let newBrowser = tabMenu.addItem(withTitle: "New Browser Tab", action: #selector(AppDelegate.newBrowserHere(_:)), keyEquivalent: "b")
         newBrowser.keyEquivalentModifierMask = [.command, .shift]
+        addHidden(tabMenu, "New Browser Tab", #selector(AppDelegate.newBrowserHere(_:)), "l", [.command, .shift])
         // ⌘D / ⇧⌘D: every terminal's split right and split down (iTerm,
-        // Ghostty, Warp, cmux, Terminal). Wortel's layout is fixed, so they
-        // are a terminal beside the one you're in and one under it.
-        let newSide = tabMenu.addItem(withTitle: "New Terminal in Side Column", action: #selector(AppDelegate.newSideTerminal(_:)), keyEquivalent: "d")
-        newSide.keyEquivalentModifierMask = [.command]
-        let newBottom = tabMenu.addItem(withTitle: "New Terminal in Bottom Strip", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "d")
-        newBottom.keyEquivalentModifierMask = [.command, .shift]
-        // ⌃⇧` too, as VS Code and Zed open a new terminal. The shifted twin,
-        // as ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
-        addHidden(tabMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
-                  "`", [.control, .shift])
-        addHidden(tabMenu, "New Terminal in Bottom Strip", #selector(AppDelegate.newBottomTerminal(_:)),
+        // Ghostty, Warp, cmux, Terminal), and since the main area can be
+        // split, that is what they are: a new terminal in a split of its own,
+        // beside the one you're in or under it. (Until then they were a
+        // terminal in the side column and one in the bottom strip, which
+        // keep their items below.)
+        let splitRight = tabMenu.addItem(withTitle: "Split Right", action: #selector(AppDelegate.splitRight(_:)), keyEquivalent: "d")
+        splitRight.keyEquivalentModifierMask = [.command]
+        let splitDown = tabMenu.addItem(withTitle: "Split Down", action: #selector(AppDelegate.splitDown(_:)), keyEquivalent: "d")
+        splitDown.keyEquivalentModifierMask = [.command, .shift]
+        // ⌃⇧`, as VS Code and Zed open a new terminal. The shifted twin, as
+        // ⌘⇧] carries: with Shift kept, ⌃⇧` can arrive as ~.
+        let newBottom = tabMenu.addItem(withTitle: "New Terminal Below", action: #selector(AppDelegate.newBottomTerminal(_:)), keyEquivalent: "`")
+        newBottom.keyEquivalentModifierMask = [.control, .shift]
+        addHidden(tabMenu, "New Terminal Below", #selector(AppDelegate.newBottomTerminal(_:)),
                   "~", [.control, .shift])
 
         tabMenu.addItem(.separator())
@@ -661,8 +714,8 @@ enum MainMenu {
         for (title, action, key) in [
             ("Left", #selector(AppDelegate.moveTabLeft(_:)), NSLeftArrowFunctionKey),
             ("Right", #selector(AppDelegate.moveTabRight(_:)), NSRightArrowFunctionKey),
-            ("Down to Bottom Strip", #selector(AppDelegate.moveTabDown(_:)), NSDownArrowFunctionKey),
-            ("Up to Main Area", #selector(AppDelegate.moveTabUp(_:)), NSUpArrowFunctionKey),
+            ("Down", #selector(AppDelegate.moveTabDown(_:)), NSDownArrowFunctionKey),
+            ("Up", #selector(AppDelegate.moveTabUp(_:)), NSUpArrowFunctionKey),
         ] {
             let item = moveMenu.addItem(withTitle: title, action: action, keyEquivalent: arrow(key))
             item.keyEquivalentModifierMask = [.control, .command]

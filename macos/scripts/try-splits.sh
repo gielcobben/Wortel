@@ -1,0 +1,192 @@
+#!/bin/zsh
+# Split the main area in a copy of the app, step by step, and say what came
+# of it: where each split is, where each terminal's view is against its
+# split, what the terminal was told, and who has the keyboard.
+#
+#   scripts/try-splits.sh [path/to/Wortel.app] [--keep] [--picture] [--relaunch] [steps...]
+#
+# Runs a copy beside yours, never your Wortel. A Debug build does the
+# splitting itself when asked by a notification addressed to its pid
+# (`SplitProbe`, which lists the steps). With no steps it runs a tour: two
+# splits right, one down, a zoom and back, a drag, an equalize, the keyboard
+# around the splits, a session switch away and back, and every split closed.
+#
+# --relaunch quits the copy after the steps the way a person quits, starts
+# it again, and checks that the same splits are back with the same tabs, and
+# every terminal on screen at the size of its view.
+#
+# HIBERNATE_AFTER=0.3 in the environment gives the copy a hibernation clock
+# that short, so a session switched away from (`next`) has usually been
+# hibernated by the time the steps come back to it, splits and all.
+#
+# --picture leaves the window as its views draw it after the steps in
+# $TMPDIR/wortel-splits.png (terminals are the GPU's and come out as their
+# page colour; the rows, the tabs and the dividers are what it is for).
+# Needs the display awake.
+set -u
+
+app="" keep=0 picture=0 relaunch=0 steps=()
+while (( $# )); do
+  case $1 in
+    --keep) keep=1 ;;
+    --picture) picture=1 ;;
+    --relaunch) relaunch=1 ;;
+    *.app|*/Wortel.app) app=$1 ;;
+    *) steps+=($1) ;;
+  esac
+  shift
+done
+here=${0:A:h}/..
+if [[ -z $app ]]; then
+  app="$(xcodebuild -project "$here/Wortel.xcodeproj" -scheme Wortel -configuration Debug \
+    -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{print $2; exit}')/Wortel.app"
+fi
+[[ -d $app ]] || { print -u2 "no app at $app"; exit 2; }
+(( ${#steps} )) || steps=(right right down zoom zoom wide equalize focus-left focus-left focus-right \
+                          focus-down next next next tab move-left close close close close)
+
+displays=$(swift -e 'import CoreGraphics; var n: UInt32 = 0; CGGetActiveDisplayList(0, nil, &n); print(n)' 2>/dev/null)
+[[ $displays == 0 ]] && { print -u2 "the display is asleep; wake it and run again"; exit 2; }
+
+work=$(mktemp -d /tmp/wortel-sp.XXXXXX)
+data=$HOME/.wsp-$$                       # short: the sockets live here
+copy=$work/WortelSP.app
+wortel=$copy/Contents/Resources/bin/wortel
+apppid=""
+
+# Every pid under $1, and $1.
+tree() {
+  ps -axo pid=,ppid= | awk -v root=$1 '{p[$1]=$2} END {s[root]=1
+    for (n = 0; n < 8; n++) for (x in p) if (p[x] in s) s[x]=1
+    for (x in s) printf "%s ", x}'
+}
+cleaned=0
+cleanup() {
+  (( cleaned )) && return
+  cleaned=1
+  # Only this copy: its pid is the one its own data folder holds, its keeper
+  # is found by the copy's path, and with no copy path there is nothing of
+  # it to look for (an empty one would match any Wortel's keeper).
+  [[ -n $work ]] || return
+  [[ -n $apppid ]] && kill $apppid 2>/dev/null
+  sleep 1
+  for k in $(pgrep -f "$copy/Contents/Resources/bin/wortel-keeper"); do kill -9 $(tree $k) 2>/dev/null; done
+  rm -rf "$work" "$data"
+}
+# Ctrl-C, a kill or a closed terminal cleans up as a failed step does; any
+# other way out too, unless --keep asked for the copy to stay. A second
+# cleanup (the interrupt's, then the exit's) does nothing.
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
+trap '(( keep )) || cleanup' EXIT
+w() { env -u WORTEL_SESSION_ID WORTEL_DATA_DIR=$data "$wortel" "$@"; }
+pause() { perl -e "select(undef,undef,undef,$1)"; }
+wait_for() { # seconds, then a command that succeeds when ready
+  local s=$1; shift
+  for _ in $(seq 1 $((s * 4))); do "$@" >/dev/null 2>&1 && return 0; pause 0.25; done
+  return 1
+}
+
+mkdir -p "$data" "$work/repo"
+# The copy's defaults outlive it (they go by bundle id): a sidebar an earlier
+# run hid would start this one hidden.
+defaults delete com.gielcobben.Wortel.splitprobe >/dev/null 2>&1
+cp -Rc "$app" "$copy"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.gielcobben.Wortel.splitprobe" "$copy/Contents/Info.plist"
+codesign --force --deep --sign - "$copy" 2>/dev/null
+( cd "$work/repo" && git init -q && seq 1 40 > f1.txt && git add -A . \
+  && git -c user.name=probe -c user.email=probe@example.com commit -qm init && print changed >> f1.txt )
+
+open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 ${HIBERNATE_AFTER:+--env} ${HIBERNATE_AFTER:+WORTEL_HIBERNATE_AFTER=$HIBERNATE_AFTER} "$copy"
+wait_for 20 test -s "$data/instance.lock" || { print -u2 "the copy did not start"; cleanup; exit 2; }
+apppid=$(cat "$data/instance.lock")
+wait_for 20 w list || { print -u2 "the copy does not answer"; cleanup; exit 2; }
+
+w new --cwd "$work" --name other >/dev/null; pause 0.7
+# Made last, so it is the one in front, and the one split.
+w new --cwd "$work/repo" --name home >/dev/null
+pause 2
+
+request="$data/result.json|${(j:|:)steps}"
+(( picture )) && request="$request|picture:${TMPDIR:-/tmp}/wortel-splits.png"
+print "app: $app"
+osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.split.$apppid', '$request', \$(), true)" >/dev/null
+wait_for $(( ${#steps} * 2 + 30 )) test -s "$data/result.json" || { print -u2 "no result: is this a Debug build?"; cleanup; exit 2; }
+kill -0 $apppid 2>/dev/null || { print -u2 "the copy quit during the steps"; cleanup; exit 1; }
+
+/usr/bin/python3 - "$data/result.json" <<'PY'
+import json, sys
+result = json.load(open(sys.argv[1]))
+faults = 0
+def line(state):
+    global faults
+    splits = "  ".join("%s[%s]%s" % (s["region"][:10], s["frame"], "" if len(s["tabs"]) == 1 else " x%d" % len(s["tabs"]))
+                       for s in state.get("splits", []))
+    print("%-12s area=%-10s zoom=%-10s keyboard=%-10s %s" % (
+        state.get("step", "end"), state.get("area", "")[:10], state.get("zoomed", "")[:10] or "-",
+        str(state.get("keyboardIn", "-"))[:10], splits))
+    if "landed" in state:
+        print("    landed:", state["landed"])
+        if str(state["landed"]).startswith("FAULT"): faults += 1
+    for t in state.get("terminals", []):
+        if t["hidden"]:
+            if t["keyboard"]:
+                faults += 1
+                print("    FAULT %s has the keyboard and is out of sight" % t["tab"][:18])
+            continue
+        wrong = []
+        if t.get("inside") is False: wrong.append("runs outside its split")
+        if t["told"] != t["view"]: wrong.append("told %s, view %s" % (t["told"], t["view"]))
+        if not t["gridFits"]: wrong.append("grid %s wider than its view" % t["grid"])
+        if t["holds"]: wrong.append("%d resize holds left" % t["holds"])
+        if wrong:
+            faults += 1
+            print("    FAULT %s at %s: %s" % (t["tab"][:18], t["frame"], "; ".join(wrong)))
+for state in result.get("trail", []):
+    if state.get("unknown"):
+        print("%-12s unknown step" % state["step"])
+        continue
+    line(state)
+line(result)
+print("faults:", faults)
+sys.exit(1 if faults else 0)
+PY
+code=$?
+if (( relaunch )); then
+  cp "$data/result.json" "$data/before.json"
+  rm -f "$data/result.json"
+  osascript -e "tell application \"$copy\" to quit" >/dev/null 2>&1
+  for _ in $(seq 1 50); do kill -0 $apppid 2>/dev/null || break; sleep 0.2; done
+  kill -0 $apppid 2>/dev/null && { print -u2 "the copy did not quit"; cleanup; exit 2; }
+  open -g -n --env WORTEL_DATA_DIR="$data" --env DO_NOT_TRACK=1 "$copy"
+  wait_for 20 w list || { print -u2 "the copy did not come back"; cleanup; exit 2; }
+  apppid=$(cat "$data/instance.lock")
+  pause 3
+  osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('sh.wortel.test.split.$apppid', '$data/result.json', \$(), true)" >/dev/null
+  wait_for 30 test -s "$data/result.json" || { print -u2 "no result after the relaunch"; cleanup; exit 2; }
+  /usr/bin/python3 - "$data/before.json" "$data/result.json" <<'PY'
+import json, sys
+before, after = (json.load(open(p)) for p in sys.argv[1:3])
+def shape(state): return [(s["region"], s["frame"], s["tabs"], s["front"]) for s in state.get("splits", [])]
+faults = 0
+if shape(before) != shape(after):
+    faults += 1
+    print("FAULT the splits changed over a relaunch")
+    print("  before:", shape(before))
+    print("  after: ", shape(after))
+for t in after.get("terminals", []):
+    if t["hidden"]: continue
+    if t["told"] != t["view"] or t.get("inside") is False or not t["gridFits"]:
+        faults += 1
+        print("FAULT after the relaunch %s at %s: told %s, view %s, inside %s" % (
+            t["tab"][:18], t["frame"], t["told"], t["view"], t.get("inside")))
+shown = [t for t in after.get("terminals", []) if not t["hidden"]]
+print("relaunch: %d splits back, %d terminals on screen, faults: %d" % (len(after.get("splits", [])), len(shown), faults))
+sys.exit(1 if faults else 0)
+PY
+  (( $? )) && code=1
+fi
+(( picture )) && [[ -s ${TMPDIR:-/tmp}/wortel-splits.png ]] && print "picture: ${TMPDIR:-/tmp}/wortel-splits.png"
+(( keep )) && print "left open: pid $apppid, data $data, copy $copy" || cleanup
+exit $code

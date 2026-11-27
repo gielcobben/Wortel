@@ -78,6 +78,20 @@ class ChromeBarView: FilledView {
         }
     }
 
+    /// Whether the row is in the titlebar, which is what a `ChromeBarView`
+    /// is unless told otherwise. A split's row is one only while its split is
+    /// along the top of the window (`SplitLeafView`); lower down it is a row
+    /// on a page, with no line under it, that doesn't move the window.
+    var isTitlebar = true {
+        didSet {
+            guard isTitlebar != oldValue else { return }
+            bottomLine.isHidden = !isTitlebar
+        }
+    }
+
+    /// A double-click on the empty part of a row that isn't in the titlebar.
+    var onRowDoubleClick: () -> Void = {}
+
     override var mouseDownCanMoveWindow: Bool { false }
 
     // MARK: Moving the window
@@ -89,6 +103,10 @@ class ChromeBarView: FilledView {
     /// window-server drag never delivers the second click of a double-click.
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
+        guard isTitlebar else {
+            if event.clickCount == 2 { onRowDoubleClick() }
+            return
+        }
         if event.clickCount == 2 {
             switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
             case "Minimize": window.performMiniaturize(nil)
@@ -214,7 +232,7 @@ final class ChromeSplitView: NSSplitView {
 // MARK: - The three rows
 
 /// Over the sidebar: the traffic lights, and under the sidebar toggle and
-/// Back and Forward, which are not this row's but `SidebarControls`', laid
+/// Back and Forward, which are not this row's but `WindowControls`', laid
 /// over every row. A new session is ⌘N or the sidebar's own "+".
 @MainActor
 final class SidebarBar: ChromeBarView {
@@ -259,10 +277,54 @@ final class SidebarBar: ChromeBarView {
 /// the split, which a collapse animation makes every frame, so it moves in
 /// step with the sidebar.
 @MainActor
-final class SidebarControls: NSView {
+final class WindowControls: NSView {
     let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
     let history = HistoryButtons()
     private var historyLeading: NSLayoutConstraint!
+
+    // The trailing end: what the session is running, and the session's "…"
+    // at the edge, where a "more" button usually is. "…" is the session
+    // itself (rename, pin, close). Both are about the session, which is why
+    // they are the window's and not a row's.
+    //
+    // For a few hours on 2026-11-26 Changes, History, Files and a browser
+    // were buttons here, lit while open. The
+    // owner: "no no no, i dont like it". They opened a thing in one place
+    // only, when anything can be anywhere, and six buttons crowded the row
+    // under them.
+    //
+    // They were on the main row, which was right while that row was the
+    // window's fixed middle and put them in the middle of the window once
+    // any split could sit beside any other. (A toggle for the side column
+    // sat here for an hour: with every split movable there is no side
+    // column to toggle.)
+    //
+    // The two split buttons sat here too until the evening of 2026-11-26.
+    // They split "the split you're in", from the far corner; each row has
+    // its own pair now, at its own end (`PaneBar`). What is left here is
+    // about the session, not about a split.
+    let running = RunningButton()
+    let more = HoverFillButton.glyph("ellipsis", "Session")
+    private let trailing = NSStackView()
+
+    /// How much of the titlebar's trailing end the session's controls take,
+    /// for the row under them to clear (`LeafBar.trailingClearance`).
+    ///
+    /// Their width, the 8 points to the window's edge, and 4 more between
+    /// them and the row's own "+" (or its zoom button, which is lit and
+    /// would otherwise touch the first of them).
+    ///
+    /// Measured once: the two buttons have fixed sizes and are never
+    /// hidden, and this is asked after every layout of the tree, every step
+    /// of a divider's drag among them, where a `fittingSize` is a solve of
+    /// its own. Measure again if a button comes or goes.
+    var trailingWidth: CGFloat {
+        if let measuredTrailingWidth { return measuredTrailingWidth }
+        let width = trailing.fittingSize.width + 12
+        measuredTrailingWidth = width
+        return width
+    }
+    private var measuredTrailingWidth: CGFloat?
 
     /// Where the arrows start when the sidebar is shut: past the toggle.
     private static let restingX = Chrome.trafficLightInset + Chrome.controlSize + 8
@@ -273,12 +335,18 @@ final class SidebarControls: NSView {
         history.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toggle)
         addSubview(history)
+        for button in [running, more] { trailing.addArrangedSubview(button) }
+        trailing.spacing = 4
+        trailing.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(trailing)
         historyLeading = history.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.restingX)
         NSLayoutConstraint.activate([
             toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Chrome.trafficLightInset),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
             historyLeading,
             history.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -310,143 +378,10 @@ final class SidebarControls: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
-/// Over the main area, laid out like the ChatGPT app's conversation header: the
-/// session's name as a plain title, and at the trailing end its "…" menu and
-/// what it's running. Only once something else has been put in the main area's
-/// row does the title become that row's tabs. The column's toggle sits at the
-/// far end while the column is hidden, as ChatGPT's pane toggle does; with the
-/// sidebar collapsed the row also makes room for the traffic lights and the
-/// sidebar's controls (`leadingClearance`).
-///
-/// Everything else (a new terminal here, the bottom strip) is in the "…" menu
-/// and on the keyboard, not on the row: a titlebar full of glyphs is a titlebar
-/// nobody can read.
-@MainActor
-final class MainBar: ChromeBarView {
-    let title = PassthroughLabel(labelWithString: "")
-    let strip = SideTabStrip()
-    let more = HoverFillButton.glyph("ellipsis", "Session")
-    let running = RunningButton()
-    let sideToggle = HoverFillButton.glyph("sidebar.right", "Show Side Column (⌥⌘B)")
-    private let sideDivider = ToolbarDivider()
-    private var leading: NSLayoutConstraint!
-    /// How far from the row's leading edge its content has to start to clear
-    /// the sidebar's controls laid over it: 0 while they're over the sidebar.
-    var leadingClearance: CGFloat = 0 {
-        didSet { if leadingClearance != oldValue { updateLeading() } }
-    }
-
-    /// While the row shows the title rather than tabs: the row, as a place to
-    /// drop a tab, and where the marker goes, just after the title's text (the
-    /// session's tab it will sit beside), in window coordinates.
-    func dropSlot() -> (area: NSRect, markerX: CGFloat)? {
-        guard window != nil, strip.isHidden, !isHiddenOrHasHiddenAncestor else { return nil }
-        let textWidth = min(title.intrinsicContentSize.width, title.bounds.width)
-        let end = title.convert(NSPoint(x: textWidth + 6, y: 0), to: nil).x
-        return (convert(bounds, to: nil), end)
-    }
-
-    override init() {
-        super.init()
-
-        title.font = .systemFont(ofSize: 13, weight: .medium)
-        title.textColor = .labelColor
-        title.lineBreakMode = .byTruncatingTail
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        title.setContentHuggingPriority(.init(1), for: .horizontal)
-
-        strip.region = .main
-        strip.isHidden = true
-        strip.setContentHuggingPriority(.init(1), for: .horizontal)
-        strip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
-
-        let trailing = NSStackView(views: [more, running, sideDivider, sideToggle])
-        trailing.spacing = 4
-        let row = NSStackView(views: [title, strip, trailing])
-        row.spacing = 8
-        row.alignment = .centerY
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        leading = row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16)
-        NSLayoutConstraint.activate([
-            // The full row, as the other two rows' strips: a strip of a fixed
-            // height centred in a row whose height is measured at launch sat
-            // half a point off whenever the two differed by an odd amount.
-            // Here, not where the strip is set up: a constraint between views
-            // that don't share a superview yet throws, and at launch that
-            // left the app with no window.
-            strip.heightAnchor.constraint(equalTo: heightAnchor),
-            leading,
-            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            row.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
-    private func updateLeading() {
-        let own: CGFloat = strip.isHidden ? 16 : 8
-        let constant = max(own, leadingClearance)
-        if abs(leading.constant - constant) > 0.01 { leading.constant = constant }
-    }
-
-    /// The title, or the row's tabs once there's more than the terminal in it.
-    func setShowsTabs(_ shows: Bool) {
-        guard strip.isHidden == shows else { return }
-        strip.isHidden = !shows
-        title.isHidden = shows
-        updateLeading()
-    }
-
-    /// The column's toggle, here only while the column is hidden.
-    func setShowsSideToggle(_ shows: Bool) {
-        sideToggle.isHidden = !shows
-        sideDivider.isHidden = !shows
-    }
-}
-
-/// Over the side column: its tabs with "+" right after the last one, as in
-/// ChatGPT's right pane, and the column's toggle at the far end.
-@MainActor
-final class SideColumnBar: ChromeBarView {
-    let strip = SideTabStrip()
-    let add = HoverFillButton.glyph("plus", "New Tab")
-    let toggle = HoverFillButton.glyph("sidebar.right", "Hide Side Column (⌥⌘B)")
-    private var stripLeading: NSLayoutConstraint!
-    /// As the main area's row: room for the sidebar's controls when this row
-    /// is the leftmost with the sidebar collapsed.
-    var leadingClearance: CGFloat = 0 {
-        didSet {
-            let constant = max(8, leadingClearance)
-            if abs(stripLeading.constant - constant) > 0.01 { stripLeading.constant = constant }
-        }
-    }
-
-    override init() {
-        super.init()
-        toggle.isSelected = true
-        strip.translatesAutoresizingMaskIntoConstraints = false
-        strip.trailingAccessory = add
-        addSubview(strip)
-        addSubview(toggle)
-        stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
-        NSLayoutConstraint.activate([
-            stripLeading,
-            // The full row, like the buttons' centre: a tab centred on a strip
-            // that stopped short of the hairline sat half a point low.
-            strip.topAnchor.constraint(equalTo: topAnchor),
-            strip.bottomAnchor.constraint(equalTo: bottomAnchor),
-            strip.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -8),
-            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-}
-
 // MARK: - Back and Forward
 
 /// The two arrows that step through the places you've been: a session and
-/// the tab you had in front in it. Part of `SidebarControls`.
+/// the tab you had in front in it. Part of `WindowControls`.
 @MainActor
 final class HistoryButtons: NSStackView {
     let back = HoverFillButton.glyph("chevron.left", "Back (⌃⌘[)")
@@ -632,10 +567,13 @@ final class RunningButton: BadgedGlyphButton {
 @MainActor
 final class TitleBarController: NSObject, NSPopoverDelegate {
     let sidebarBar = SidebarBar()
-    let mainBar = MainBar()
-    let sideBar = SideColumnBar()
-    /// The sidebar toggle and the arrows, over all three rows.
-    let sidebarControls = SidebarControls()
+    /// The main row's and the side column's rows: a split's row like any
+    /// other (`PaneBar`), wired where the tree is built (`MainAreaController`).
+    let mainBar = PaneBar(region: .main)
+    let sideBar = PaneBar(region: .side)
+    /// The sidebar toggle and the arrows at one end of the titlebar, the
+    /// session's controls at the other, over every row.
+    let windowControls = WindowControls()
 
     private let manager: SessionManager
     /// The window these rows are in: its session's name, tabs and jobs.
@@ -651,31 +589,10 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         self.processes = processes
         super.init()
 
-        mainBar.sideToggle.target = self
-        mainBar.sideToggle.action = #selector(toggleSideColumn)
-        sideBar.toggle.target = self
-        sideBar.toggle.action = #selector(toggleSideColumn)
-        sideBar.add.target = self
-        sideBar.add.action = #selector(presentNewTabMenu(_:))
-        mainBar.running.target = self
-        mainBar.running.action = #selector(openRunningJobs(_:))
-        mainBar.more.target = self
-        mainBar.more.action = #selector(presentSessionMenu(_:))
-
-        // The column's tab row.
-        sideBar.strip.onSelect = { [weak self] tab in self?.git.select(tab) }
-        sideBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        sideBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
-        sideBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        sideBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
-        sideBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
-        // The main area's row.
-        mainBar.strip.onSelect = { [weak self] tab in self?.git.selectMain(tab) }
-        mainBar.strip.onClose = { [weak self] tab in self?.git.requestClose(tab) }
-        mainBar.strip.onCloseOthers = { [weak self] keep in self?.git.closeOthers(keeping: keep) }
-        mainBar.strip.onMove = { [weak self] tab, region in self?.git.move(tab, to: region, at: .max) }
-        mainBar.strip.onKeep = { [weak self] tab in self?.git.keep(tab) }
-        mainBar.strip.preview = { [weak self] tab in Self.preview(for: tab, in: self?.home.selected) }
+        windowControls.running.target = self
+        windowControls.running.action = #selector(openRunningJobs(_:))
+        windowControls.more.target = self
+        windowControls.more.action = #selector(presentSessionMenu(_:))
     }
 
     func start() {
@@ -689,7 +606,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     private func observeHistory() {
         withObservationTracking {
             let back = manager.canGoBack, forward = manager.canGoForward
-            sidebarControls.history.update(canGoBack: back, canGoForward: forward)
+            windowControls.history.update(canGoBack: back, canGoForward: forward)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeHistory() }
         }
@@ -706,10 +623,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     }
 
     private func syncColumn() {
-        mainBar.setShowsSideToggle(!git.isVisible)
-        mainBar.title.stringValue = home.selected?.name ?? "Wortel"
-        // A plain title until the row holds more than the session's terminal.
-        mainBar.setShowsTabs(git.mainTabs.count > 1)
         let session = home.selected
         func item(_ tab: SideTab) -> SideTabStrip.Item { Self.stripItem(for: tab, in: session) }
         sideBar.strip.update(items: git.tabs.map(item), active: git.activeTab)
@@ -743,6 +656,8 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
                 ?? "New Tab"
             return .init(tab: tab, title: title, symbol: "globe",
                          detail: address?.absoluteString)
+        case .blank:
+            return .init(tab: tab, title: "New Tab", symbol: "plus.square.dashed")
         case .session:
             // The session's own terminal, by the session's name.
             let name = session.map { SessionName.leaf(of: $0.name) } ?? "Terminal"
@@ -763,7 +678,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
             return .file(at: path)
         case .browser(let id):
             return BrowserTabs.shared.existingPage(for: id)?.previewSnapshot().map(TabPreview.image)
-        case .pane:
+        case .pane, .blank:
             return nil
         }
     }
@@ -793,53 +708,17 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         return raw
     }
 
-    @objc private func toggleSideColumn() {
-        git.toggle()
-    }
-
-    /// The column's "+": NewTabMenu, opening into the column.
-    @objc private func presentNewTabMenu(_ sender: NSView) {
-        // "+" is the column's; the main area's tabs come from the "…" menu.
-        NewTabMenu.popUp(from: sender, git: git, region: .side)
-    }
-
     /// The session's "…": its own actions, as ChatGPT's menu is the
-    /// conversation's. Native, small, glyphs that show, shortcuts on the right.
-    /// The titles are short on purpose: the longest title decides the menu's
-    /// width, and inside a session's own menu "Hide Strip" needs no more words to say
-    /// it's about this session. Below its own three items it
-    /// is the sidebar row's menu (SessionActions), so the two always agree.
+    /// conversation's. It is the sidebar row's menu (SessionActions), so the
+    /// two always agree, and it is here for when the sidebar is hidden.
     @objc private func presentSessionMenu(_ sender: NSView) {
         guard let session = home.selected else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        // What used to be glyphs on the row: a terminal in the main area, and
-        // the strip under it.
-        let terminal = ClosureMenuItem(title: "New Terminal") { [weak self] in
-            self?.git.openMainTerminal()
-        }
-        Self.setGlyph("apple.terminal", on: terminal)
-        terminal.keyEquivalent = "t"
-        terminal.keyEquivalentModifierMask = [.command]
-        menu.addItem(terminal)
-        let browser = ClosureMenuItem(title: "New Browser") { [weak self] in
-            self?.git.openBrowser(at: nil, in: .main)
-        }
-        Self.setGlyph("globe", on: browser)
-        browser.keyEquivalent = "l"
-        browser.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(browser)
-        let strip = ClosureMenuItem(title: git.bottomVisible ? "Hide Strip" : "Show Strip") { [weak self] in
-            self?.git.toggleBottom()
-        }
-        Self.setGlyph("rectangle.bottomthird.inset.filled", on: strip)
-        strip.keyEquivalent = "j"
-        strip.keyEquivalentModifierMask = [.command]
-        menu.addItem(strip)
-        menu.addItem(.separator())
-
-        // The rest is the session's own menu, the one its sidebar row has.
+        // The session's own menu, the one its sidebar row has, and nothing
+        // else: what opens in a split is in that split's "+", and a new
+        // split is the two buttons beside this one.
         let actions = SessionActions.menu(for: session, manager: manager)
         for item in actions.items {
             actions.removeItem(item)
@@ -866,7 +745,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
 
     private func observeProcesses() {
         withObservationTracking {
-            mainBar.running.show(runningSnapshot)
+            windowControls.running.show(runningSnapshot)
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -903,68 +782,7 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
     nonisolated func popoverDidClose(_ notification: Notification) {
         Task { @MainActor in
             self.runningPopover = nil
-            self.mainBar.running.show(self.runningSnapshot)
+            self.windowControls.running.show(self.runningSnapshot)
         }
-    }
-}
-
-/// What "+" offers in a tab row. The column's and the bottom strip's are the
-/// same menu, built here once so the two can't drift apart again (the strip's
-/// used to open a terminal straight away), and what it opens goes into the row
-/// whose "+" was clicked.
-///
-/// Native and small, like the ChatGPT app's own menus: a terminal first,
-/// because a new one is what "+" usually means, a browser, then the panes, the
-/// groups set apart by separators rather than labels. What's serving is offered
-/// by a new browser's address field instead. No checkmarks on the panes that
-/// are already open, since choosing one does the useful thing either way: it
-/// brings that tab to the front.
-@MainActor
-enum NewTabMenu {
-    static func popUp(from sender: NSView, git: GitPanelModel, region: TabRegion) {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-
-        // The shortcut that opens a terminal *there*: ⌘T opens one in the area
-        // you're in, which from the column's menu is the column; the strip's
-        // own is ⇧⌘D.
-        let terminal = ClosureMenuItem(title: "New Terminal") {
-            git.open(.terminal(UUID()), in: region)
-        }
-        terminal.setGlyph("apple.terminal")
-        if region == .bottom {
-            terminal.keyEquivalent = "d"
-            terminal.keyEquivalentModifierMask = [.command, .shift]
-        } else {
-            terminal.keyEquivalent = "t"
-            terminal.keyEquivalentModifierMask = [.command]
-        }
-        menu.addItem(terminal)
-
-        let browser = ClosureMenuItem(title: "New Browser") {
-            git.openBrowser(at: nil, in: region)
-        }
-        browser.setGlyph("globe")
-        browser.keyEquivalent = "l"
-        browser.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(browser)
-
-        menu.addItem(.separator())
-        for pane in InspectorPane.allCases {
-            let item = ClosureMenuItem(title: pane.title) {
-                git.open(.pane(pane), in: region)
-            }
-            item.setGlyph(pane.symbol)
-            // How much is waiting in Changes, as a native count badge.
-            if pane == .changes, let count = git.repo?.status.changes.count, count > 0 {
-                item.badge = NSMenuItemBadge(count: count)
-            }
-            menu.addItem(item)
-        }
-
-        // Hung from the button the native way, its leading edge under the
-        // button's, as a toolbar's pull-down opens. (It used to open leftward,
-        // its trailing edge on the "+", back over the tabs.)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 }

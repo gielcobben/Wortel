@@ -88,8 +88,9 @@ final class Session: Identifiable {
     /// written by GitPanelModel.
     var inspectorPane: InspectorPane?
     /// The side column's tabs, in strip order, and the one in front. Persisted.
-    /// `gitPanelVisible` still says whether the column is up: hiding it keeps the
-    /// tabs, and closing the last tab is what hides it. Read and written by
+    /// `gitPanelVisible` still says whether the column is up, which it is
+    /// exactly while it has tabs: nothing hides it with its tabs kept since
+    /// 2026-11-26 (`WorkspaceTabs.showHidden`). Read and written by
     /// GitPanelModel, which mirrors the focused session's onto the column.
     var sideTabs: [SideTab] = []
     var activeSideTab: SideTab?
@@ -114,19 +115,22 @@ final class Session: Identifiable {
     var mainTabs: [SideTab] = [.session]
     var activeMainTab: SideTab?
     /// The side column on the terminal's leading side rather than its trailing
-    /// one. Persisted.
+    /// one: which outer edge its leaf is made at (`WorkspaceTabs.sideLeading`).
+    /// Persisted.
     var sideColumnLeading = false
     /// The strip under the session's terminal: its tabs in order, the one in
-    /// front, and whether it's showing. Hiding keeps them, closing the last
-    /// one hides it. Persisted.
+    /// front, and whether it's showing, which it is exactly while it has
+    /// tabs: closing the last one takes it away. Persisted.
     var bottomTabs: [SideTab] = []
     var activeBottomTab: SideTab?
     var bottomVisible = false
     /// Tabs closed in this session, newest last, for ⌘⇧T. Persisted, so a
     /// relaunch (an update, a crash) doesn't quietly empty it.
     @ObservationIgnored var closedTabs: [ClosedTab] = []
-    /// Where files and browsers open in this session: where you last moved
-    /// one. See `WorkspaceTabs.home(for:)`. Persisted.
+    /// Where you last moved a file and a browser in this session. No longer
+    /// read: since 2026-11-26 a file opens in the main row and a browser
+    /// beside your work, every time (`WorkspaceTabs.home(for:)`). Kept so a
+    /// saved value still round-trips. Persisted.
     @ObservationIgnored var tabHabits: [TabKind: TabRegion] = [:]
     /// Where each recently opened tab came from: `WorkspaceTabs.openers`. Not
     /// persisted.
@@ -134,9 +138,29 @@ final class Session: Identifiable {
     /// The preview tab, whose title is italic: `WorkspaceTabs.peek`. Observed
     /// for that title; not persisted.
     var peekTab: SideTab?
+    /// The panes split off the main area, each with its row of tabs and the
+    /// one in front, and how the session's area is divided among them, the
+    /// main row, the column and the strip (`WorkspaceTabs.panes`,
+    /// `SplitLayout`). Persisted, and left out of the file while the main
+    /// row is all there is.
+    var paneTabs: [UUID: WorkspaceTabs.PaneTabs] = [:]
+    var splitLayout = SplitLayout()
+    /// The leaf shown alone: `WorkspaceTabs.zoomed`. Observed for the views
+    /// that hide the others; not persisted.
+    var zoomedRegion: TabRegion?
+    /// Leaves put in the tree at a guessed share, which the window gives
+    /// their real size the first time it lays them out
+    /// (`WorkspaceTabs.unsized`). Observed for that; not persisted.
+    var unsizedLeaves: Set<SplitLayout.Leaf> = []
 
     /// Every terminal tab id the session holds, wherever it sits.
-    var terminalTabIDs: [UUID] { workspace.terminalIDs }
+    var terminalTabIDs: [UUID] { allTabs.compactMap(\.terminalID) }
+
+    /// Every tab the session has, in every row: the main area's, the
+    /// column's, the strip's and each pane's. What anything that has to
+    /// reach all of a session's tabs (its terminals, its browsers, its
+    /// files) goes through, so a new place for tabs is added once.
+    var allTabs: [SideTab] { workspace.allTabs }
 
     /// The tab layout above as one value, for the rules in `WorkspaceTabs`.
     /// Written back field by field and only where something changed: each of
@@ -147,7 +171,9 @@ final class Session: Identifiable {
                           side: sideTabs, activeSide: activeSideTab, sideVisible: gitPanelVisible,
                           bottom: bottomTabs, activeBottom: activeBottomTab,
                           bottomVisible: bottomVisible, closed: closedTabs, habits: tabHabits,
-                          openers: tabOpeners, peek: peekTab)
+                          openers: tabOpeners, peek: peekTab,
+                          panes: paneTabs, layout: splitLayout, zoomed: zoomedRegion,
+                          sideLeading: sideColumnLeading, unsized: unsizedLeaves)
         }
         set {
             if mainTabs != newValue.main { mainTabs = newValue.main }
@@ -162,6 +188,11 @@ final class Session: Identifiable {
             tabHabits = newValue.habits
             tabOpeners = newValue.openers
             if peekTab != newValue.peek { peekTab = newValue.peek }
+            if paneTabs != newValue.panes { paneTabs = newValue.panes }
+            if splitLayout != newValue.layout { splitLayout = newValue.layout }
+            if zoomedRegion != newValue.zoomed { zoomedRegion = newValue.zoomed }
+            if sideColumnLeading != newValue.sideLeading { sideColumnLeading = newValue.sideLeading }
+            if unsizedLeaves != newValue.unsized { unsizedLeaves = newValue.unsized }
         }
     }
     /// Full title reported by the shell (user@host:cwd, or the running
@@ -318,8 +349,10 @@ final class Session: Identifiable {
     @ObservationIgnored var onSurfaceCreated: ((SurfaceView) -> Void)?
 
     /// The live views of this session's side terminals, by tab id. Created the
-    /// first time their tab is shown and kept, like `surfaceView`, until the tab
-    /// closes: switching tabs or sessions hides them, never rebuilds them.
+    /// first time their tab is shown (or at once, for one a command made:
+    /// `SessionManager.startSideTerminal`) and kept, like `surfaceView`, until
+    /// the tab closes: switching tabs or sessions hides them, never rebuilds
+    /// them.
     @ObservationIgnored private(set) var sideSurfaces: [UUID: SurfaceView] = [:]
     /// Called when a side terminal's view is created, so the manager can wire its
     /// callbacks. The id is the tab's.
@@ -497,13 +530,18 @@ final class Session: Identifiable {
     /// shell back after a relaunch. It starts where the session's shell is now
     /// rather than where it was born: a terminal opened beside an agent is for
     /// the thing the agent is working on.
+    ///
+    /// `initialInput` is a line for its shell to run first (`wortel split --
+    /// <command>`), typed as a session's `startupInput` is. Only for the
+    /// call that makes the view: a terminal that already has one is running
+    /// what it runs, and nothing is typed into it.
     @discardableResult
-    func ensureSideSurface(_ id: UUID, runtime: GhosttyRuntime) -> SurfaceView {
+    func ensureSideSurface(_ id: UUID, runtime: GhosttyRuntime, initialInput: String? = nil) -> SurfaceView {
         if let view = sideSurfaces[id] { return view }
         // The session's ports, not a block of its own: a terminal beside an
         // agent is for the thing the agent is working on.
         let view = SurfaceView(runtime: runtime, workingDirectory: cwd ?? originCwd, sessionID: id,
-                               environment: shellEnvironment)
+                               initialInput: initialInput, environment: shellEnvironment)
         sideSurfaces[id] = view
         onSideSurfaceCreated?(id, view)
         return view

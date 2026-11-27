@@ -110,7 +110,14 @@ scripts/check-terminals.sh         # about 8 minutes
 scripts/try-appearance.sh          # light and dark
 scripts/try-app-crash.sh           # the snapshot restore, which patch 0100 carries
 python3 scripts/verify-agent-status.py
+# the menu's keys: none taken by a new default of libghostty's ahead of the menu
+scripts/try-splits.sh key:shift+cmd+c key:shift+cmd+h key:shift+cmd+f key:shift+cmd+b key:cmd+t key:cmd+j
 ```
+
+A `FAULT the terminal takes it ahead of the menu` on that last line means the
+update added a performable default on a key the menu owns: unbind it in
+`Resources/wortel.conf`, as the others are
+(`docs/architecture/command-menus-hotkey.md`).
 
 Then build the app (the `run-build` skill) and give the person a hand-check
 list. Don't drive the app yourself. Always on the list:

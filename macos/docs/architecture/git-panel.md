@@ -3,7 +3,8 @@
 Part of the app's architecture record; the index is in `macos/AGENTS.md`.
 Paths are relative to `macos/`.
 
-**Git panel** (`Wortel/Git/`) — the trailing inspector: a Changes pane (status,
+**Git panel** (`Wortel/Git/`) — the trailing inspector (the side column, which
+since 2026-11-26 is a split of the window's tree, `workspace-tabs.md`): a Changes pane (status,
 diff, commit box) and a read-only History pane (commit list, graph gutter,
 diff), both driven by `GitRepoModel` off the `git` CLI (`GitService`). The
 commit box can be turned off in Settings (`AppSettings.showsCommitBox`); the
@@ -172,12 +173,37 @@ holds `objects/` — one fetch would scan the work tree of every open session.
 Whether the panel is up is **per session**, not app-wide: it's a property of what
 the session is for — a manager sitting in `~` never wants it, the one in a repo
 always does. So `GitPanelModel` holds no visibility state of its own. `isVisible`
-mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`
-and written back through `setVisible` (the one funnel, so a divider-drag
-dismissal is recorded like a ⌘⌥G); `SessionStore` persists it. A session switch
-that changes visibility **snaps** the inspector rather than animating it
-(`animatesVisibilityChange`) — animating would reflow the terminal on every frame
-of a switch that's meant to be instant.
+mirrors the focused `Session.gitPanelVisible`, re-read on every `focus(session:)`;
+`SessionStore` persists it.
+
+Since 2026-11-26 (the splits: on `main`, not in a release yet) that flag
+says less than it did.
+The column is a split of the window's tree, and nothing is hidden with its
+tabs kept: the split is on screen while its row holds a tab
+(`WorkspaceTabs.place` sets the flag) and gone when it holds none
+(`workspace-tabs.md`, "Nothing is hidden"). `setVisible` and `isPresented`
+are gone from this model. So "is the panel up" is now "are Changes, History
+or Files open":
+
+- **⌥⌘B** (`toggle`, View ▸ Show Changes and Files / Hide Changes and Files
+  by `toggleCloses`) opens Changes and Files in the column's row, the pane
+  last used in front (Changes when that was History), and takes the keyboard
+  there. With any pane in that row, and that split on screen, it closes
+  them (`putAway`), and the keyboard goes back to the split you were in
+  before it. Behind a zoom on another split it shows them instead, which
+  ends the zoom (`toggleCloses` asks `isShowing(.side)`): closing panes
+  nobody can see was a bug the review before main found. A terminal, a file
+  or a page in that row stays, and the split with it. A pane open in
+  another split is not opened again.
+- A session switch that changes what is on screen **snaps** rather than
+  slides (`animatesVisibilityChange`, read by `MainAreaController.slides`):
+  switching sessions is meant to be instant. ⌥⌘B opening the panes slides
+  them in, and the tree does the sliding (`SplitTreeView`). Putting them
+  away cuts: their tabs are closed first.
+- A divider can no longer be dragged shut, so there is no divider-drag
+  dismissal to record.
+- A session saved with a hidden column comes back with its panes closed and
+  anything else in it on screen (`WorkspaceTabs.showHidden`).
 
 **Which pane** the column shows (`InspectorPane`: Changes / History / Files) is
 per session for the same reason and by the same mechanism — `pane` mirrors
@@ -188,19 +214,38 @@ chosen anywhere, so a new session inherits your habit instead of snapping to
 Changes. `lastSourceControlPane` is tracked separately so ⌘⌥G coming back from
 Files lands on History if that's where you were. One rule drives all three
 openers — the View menu, ⌘⌥G and ⌘⌥E — via `GitPanelModel.activate(_:)`:
-hidden → open on that pane, showing another → swap, showing that one → close. A
-pane in the main row or the strip toggles there instead.
+not open → open it, in the column's row; open behind another tab, or behind a
+zoom on another split → bring it forward where it is; on screen → close its
+tab (`putAway`; until 2026-11-26 that hid the whole column). It is the same
+rule wherever the pane is, since later that day: before, a pane in the main
+row was swapped for the session's terminal with its tab kept, and one in a
+made split only ever came forward. `activateHides` is the rule read without
+acting, for the menu's Show or Hide. The rule was made one when the panes
+had buttons at the trailing end of the titlebar, for a few hours that day
+(`b4b7710`): three answers to one key, by where the pane happened to be,
+could not be a button. The buttons went and the rule stayed. A pane is also
+opened from an empty tab's page (`GitPanelModel.fill`,
+`workspace-tabs.md`), which puts it in that tab's split and moves it there
+when it is open somewhere else.
 
-**How wide** the column is, is per *session* and the same for every tab in it
-(`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width
+**How wide** the column opens is per *session* and the same for every tab in
+it (`MainSplitViewController.ColumnWidth`, `Session.sideColumnWidth`): a width
 that changed with the tab in front made every tab switch a relayout of the
 terminal beside it. A session that has never had its divider dragged uses the
-last width chosen anywhere. Two rules keep that honest:
-only a *divider* drag is a preference (a window resize squeezing the terminal to
-its floor is not), and the width is committed once the drag settles, because
-dragging to the edge is how you close the panel and the last width before it goes
-is the minimum. A window resize goes to the main area, except while a browser is
-in front of the column: then the column takes all of it (its holding priority
-drops below the main area's) and the terminal holds still, and the width it
-leaves is kept like a drag's. The split view's `autosaveName` still carries the sidebar; the
-inspector's width it saves but does not get to decide (see `viewDidLayout`).
+last width chosen anywhere, 440pt before anyone has. Only a *divider* drag is
+a preference: `MainAreaController.rememberSizes` writes the width when a
+divider is let go and the column's width changed by it. A window resize is
+not one.
+
+Since 2026-11-26 (the splits) that width is only where the
+column starts. The column is a split of the window's tree, and once it is
+laid out its size is a share of the area, like every split's
+(`workspace-tabs.md`, `MainAreaController.sizeNewLeaves`). So a window resize
+no longer "goes to the main area": the column grows and shrinks with the
+window. The exception that went with the old rule is gone too (a browser in
+front of the column took the whole resize, by a holding priority dropped
+below the main area's). So are the column's own pane in the window's split
+view, the width that pane saved, and closing the panel by dragging its
+divider to the edge: a divider stops at a split's minimum, and ⌥⌘B closes.
+The split view's `autosaveName` (`window-split`) carries the sidebar's width
+and nothing else.

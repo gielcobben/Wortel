@@ -104,22 +104,16 @@ enum SwitchProbe {
         if parts.contains("widths") {
             // A width of its own for this one first, or it takes the last
             // width any session was dragged to and the two end up the same.
-            if let terminal = home.surfaceView, let split = columnDivider(beside: terminal) {
-                let edge = split.view.arrangedSubviews[split.divider].frame.maxX
-                split.view.setPosition(edge + 40 * split.towardsTerminal, ofDividerAt: split.divider)
-                await pause(0.8)
-            }
+            if let terminal = home.surfaceView { dragSide(beside: terminal, wider: -40) }
+            await pause(0.8)
             manager.select(id: others[0].id)
             await pause(0.6)
             if state(of: others[0]).columnShut {
                 NSApp.sendAction(#selector(AppDelegate.toggleSideColumn(_:)), to: nil, from: nil)
                 await pause(1)
             }
-            if let terminal = others[0].surfaceView, let split = columnDivider(beside: terminal) {
-                let edge = split.view.arrangedSubviews[split.divider].frame.maxX
-                split.view.setPosition(edge - 120 * split.towardsTerminal, ofDividerAt: split.divider)
-                await pause(0.8)
-            }
+            if let terminal = others[0].surfaceView { dragSide(beside: terminal, wider: 120) }
+            await pause(0.8)
             manager.select(id: home.id)
             await pause(0.8)
         }
@@ -209,32 +203,16 @@ enum SwitchProbe {
             ? "this terminal" : window.firstResponder.map { String(describing: type(of: $0)) } ?? "nothing"
         state.keyWindow = window.isKeyWindow
         state.hit = hit(at: NSPoint(x: frame.midX, y: frame.midY), in: window, terminal: terminal)
-        // The pane after the terminal's in the main split view.
-        var view: NSView? = terminal
-        while let current = view {
-            if let split = current.superview as? NSSplitView, split.isVertical,
-               split.delegate is MainSplitViewController,
-               let index = split.arrangedSubviews.firstIndex(of: current) {
-                let panes = split.arrangedSubviews
-                for beside in [index + 1, index - 1] where panes.indices.contains(beside) && beside != 0 {
-                    let pane = panes[beside]
-                    guard !split.isSubviewCollapsed(pane), pane.frame.width > 1 else { continue }
-                    state.columnShut = false
-                    let paneFrame = pane.convert(pane.bounds, to: nil)
-                    state.under = beside > index ? frame.maxX - paneFrame.minX : paneFrame.maxX - frame.minX
-                    // Which view is the wide one: every ancestor up to the pane.
-                    var chain: [String] = []
-                    var up: NSView? = terminal
-                    while let v = up, v !== split {
-                        chain.append("\(String(describing: type(of: v)).prefix(28)) \(Int(v.frame.minX)),\(Int(v.frame.width))")
-                        up = v.superview
-                    }
-                    chain.append("panes " + panes.map { "\(Int($0.frame.minX)),\(Int($0.frame.width))" }.joined(separator: " | "))
-                    state.chain = chain
-                }
-                break
+        // The side split, from the window's tree of splits: how far the
+        // terminal's view runs under it.
+        if let tree = tree(above: terminal), let leaf = tree.frame(of: .side) {
+            let sideFrame = tree.convert(leaf, to: nil)
+            state.columnShut = false
+            state.under = sideFrame.midX > frame.midX ? frame.maxX - sideFrame.minX : sideFrame.maxX - frame.minX
+            state.chain = tree.visibleLeaves.map { entry in
+                let rect = tree.convert(entry.frame, to: nil)
+                return "\(entry.leaf.rawValue.prefix(8)) \(Int(rect.minX)),\(Int(rect.width))"
             }
-            view = current.superview
         }
         if let side = session.sideSurfaces.values.first(where: { !$0.isHidden && $0.window != nil }) {
             let sideFrame = side.convert(side.bounds, to: nil)
@@ -248,18 +226,12 @@ enum SwitchProbe {
                 "shown": debug.shown.map { "\($0.0)x\($0.1)" } ?? "nothing",
                 "layer": "\(debug.layerPx.0)x\(debug.layerPx.1)",
             ]
-            // The pane it is in: the main split view's, found from the terminal up.
-            var up: NSView? = side
-            while let current = up {
-                if let split = current.superview as? NSSplitView, split.isVertical,
-                   split.delegate is MainSplitViewController {
-                    let pane = current.convert(current.bounds, to: nil)
-                    out["pane"] = "\(Int(pane.minX)),\(Int(pane.width))"
-                    out["inPane"] = sideFrame.minX >= pane.minX - 0.5 && sideFrame.maxX <= pane.maxX + 0.5
-                        && abs(sideFrame.width - pane.width) < 1.5
-                    break
-                }
-                up = current.superview
+            // The split it is in: the side split's leaf of the window's tree.
+            if let tree = tree(above: side), let leaf = tree.frame(of: .side) {
+                let pane = tree.convert(leaf, to: nil)
+                out["pane"] = "\(Int(pane.minX)),\(Int(pane.width))"
+                out["inPane"] = sideFrame.minX >= pane.minX - 0.5 && sideFrame.maxX <= pane.maxX + 0.5
+                    && abs(sideFrame.width - pane.width) < 1.5
             }
             state.side = out
         }
@@ -296,28 +268,29 @@ enum SwitchProbe {
         }
     }
 
-    /// The main split view and the divider between the terminal's pane and
-    /// an open pane beside it that is not the sidebar.
+    /// The window's tree of splits, found from a terminal in it.
     @MainActor
-    private static func columnDivider(
-        beside terminal: SurfaceView
-    ) -> (view: NSSplitView, divider: Int, towardsTerminal: CGFloat)? {
-        var view: NSView? = terminal
-        while let current = view {
-            if let split = current.superview as? NSSplitView, split.isVertical,
-               split.delegate is MainSplitViewController,
-               let index = split.arrangedSubviews.firstIndex(of: current) {
-                let panes = split.arrangedSubviews
-                func open(_ i: Int) -> Bool {
-                    panes.indices.contains(i) && !split.isSubviewCollapsed(panes[i]) && panes[i].frame.width > 1
-                }
-                if open(index + 1) { return (split, index, 1) }
-                if index - 1 > 0, open(index - 1) { return (split, index - 1, -1) }
-                return nil
-            }
-            view = current.superview
+    private static func tree(above view: NSView) -> SplitTreeView? {
+        var up: NSView? = view
+        while let current = up {
+            if let tree = current as? SplitTreeView { return tree }
+            up = current.superview
         }
         return nil
+    }
+
+    /// Drag the divider beside the side split so the split is `wider` points
+    /// wider (narrower when negative), as a hand on it would.
+    @MainActor
+    private static func dragSide(beside terminal: SurfaceView, wider: CGFloat) {
+        guard let tree = tree(above: terminal), let side = tree.frame(of: .side) else { return }
+        // The divider on the side split's inner edge, whichever side it is on.
+        let dividers = tree.dividerRects
+        guard let index = dividers.firstIndex(where: {
+            abs($0.maxX - side.minX) < 1.5 || abs($0.minX - side.maxX) < 1.5
+        }) else { return }
+        let onRight = abs(dividers[index].maxX - side.minX) < 1.5
+        tree.dragDivider(index, by: onRight ? -wider : wider)
     }
 }
 #endif

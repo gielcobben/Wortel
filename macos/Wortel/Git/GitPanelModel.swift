@@ -1,35 +1,33 @@
 import Foundation
 import Observation
 
-/// Drives the trailing inspector column: whether it's shown, which of its three
-/// panes it shows, and which repo it's pointed at (derived from the selected
-/// session's cwd). Resolving a cwd to a work-tree root is async, so the panel
-/// briefly shows nothing until it lands. Repo models are cached by root, so
-/// switching between sessions in the same repo — or hiding and reshowing —
-/// reuses state instead of rebuilding it.
+/// The focused session's tabs and splits, as the views and the keyboard see
+/// them, and the repo its Changes, History and Files are pointed at (derived
+/// from the session's cwd). Resolving a cwd to a work-tree root is async, so a
+/// pane briefly shows nothing until it lands. Repo models are cached by root,
+/// so switching between sessions in the same repo reuses state instead of
+/// rebuilding it.
 ///
-/// Both **visibility and pane are per session**, not app-wide: whether the
-/// column earns its width, and what it should show while it has it, are
-/// properties of what the session is for — a manager sitting in your home
-/// directory never wants it, the repo session wants Changes, the one you're
-/// exploring wants Files. So this holds no such state of its own: `isVisible`
-/// and `pane` are mirrors of the focused session's `gitPanelVisible` and
-/// `inspectorPane`, re-read on every `focus` and written back through
-/// `setVisible` / `setPane`. `SessionStore` persists both.
+/// Everything beside the sidebar is one tree of splits (`WorkspaceTabs`), and
+/// all of it is **per session**. This holds none of it as its own: `tabs`,
+/// `mainTabs`, `bottomTabs`, `paneTabs`, the layout and the zoom mirror the
+/// focused session's, re-read on every `focus` and after every change made
+/// through `open` / `select` / `close` / `move` / `split`. `SessionStore`
+/// persists them.
 ///
-/// The column is a strip of **tabs** (`SideTab`): the three panes, and terminals
-/// of the session's own. `tabs` and `activeTab` mirror the focused session's
-/// the same way, through `open` / `select` / `close`. Opening a tab opens the
-/// column, closing the last one closes it, and hiding it keeps them.
+/// Changes, History and Files are tabs (`SideTab.pane`) like any other. They
+/// open in the split beside your work (the side column's leaf), and are
+/// closed, not hidden: a pane holds nothing a close loses. A split is on
+/// screen while it holds a tab and leaves the tree with its last.
 ///
-/// (The name is historical — this predates the Files pane and the tabs.
-/// Renaming it to `SideColumnModel` would churn every call site for no
-/// behavioural gain.)
+/// (The name is historical: this predates the Files pane, the tabs and the
+/// splits. Renaming it would churn every call site for no behavioural gain.)
 @Observable
 @MainActor
 final class GitPanelModel {
-    /// Mirrors the focused session's `gitPanelVisible`. Observable so the
-    /// inspector item and the menu item's Show/Hide title track it.
+    /// Mirrors the focused session's `gitPanelVisible`, which now only says
+    /// whether the side column's split has tabs (nothing hides it).
+    /// Observable, so a view that reads it follows it.
     private(set) var isVisible = false
     private(set) var repo: GitRepoModel?
 
@@ -56,7 +54,56 @@ final class GitPanelModel {
     /// in. It's what "the row you're in" means to the keyboard commands when
     /// the keyboard itself isn't in a row: a file tab never takes it, and
     /// picking one in the column still means you're in the column.
-    @ObservationIgnored var lastRegion: TabRegion = .main
+    ///
+    /// Never a pane that has gone (closed, or another session's): then it is
+    /// the main area. And never a leaf that a zoom is hiding, the column
+    /// and the strip among them: then it is the leaf that is zoomed.
+    var lastRegion: TabRegion {
+        get {
+            let region = storedRegion
+            if case .pane(let id) = region, session?.paneTabs[id] == nil {
+                return session?.zoomedRegion ?? .main
+            }
+            if let zoomed = session?.zoomedRegion, zoomed != region { return zoomed }
+            return region
+        }
+        set {
+            if storedRegion != newValue {
+                // Where you were, for when the split you are going to closes.
+                regionTrail.removeAll { $0 == storedRegion || $0 == newValue }
+                regionTrail.append(storedRegion)
+                if regionTrail.count > 12 { regionTrail.removeFirst() }
+            }
+            storedRegion = newValue
+            // Only when it moves: this is written on every key typed.
+            if areaInFocus != newValue { areaInFocus = newValue }
+        }
+    }
+    @ObservationIgnored private var storedRegion: TabRegion = .main
+    /// The splits you were in before this one, the latest last.
+    @ObservationIgnored private var regionTrail: [TabRegion] = []
+
+    /// Where the keyboard goes when `gone` closes under you: what is zoomed,
+    /// else the split you were in before it that is still on screen, else
+    /// the main row. It always went to the main row: ⌘D three times and ⌘W
+    /// put you two splits away from where you had just been.
+    private func regionBefore(_ gone: TabRegion) -> TabRegion {
+        if let zoomedRegion, zoomedRegion != gone { return zoomedRegion }
+        return regionTrail.last { $0 != gone && exists($0) && isShowing($0) } ?? .main
+    }
+    /// `storedRegion` again, as something a view can follow.
+    private var areaInFocus: TabRegion = .main
+
+    /// `lastRegion`, for a row to draw whether it is the one you're in: the
+    /// same answer, read in a way that tells the row when it changes. The
+    /// rows of a split main area draw the tab in front a little quieter
+    /// while you're somewhere else, so it shows where ⌘T, ⌘W and ⌘D will act.
+    var keyRegion: TabRegion {
+        _ = areaInFocus
+        _ = zoomedRegion
+        _ = paneTabs
+        return lastRegion
+    }
     private(set) var bottomVisible = false
     /// Bumped when the strip's terminal should take the keyboard.
     private(set) var bottomFocusRequest = 0
@@ -71,18 +118,86 @@ final class GitPanelModel {
     private(set) var mainFocusRequest = 0
     /// Which side the column is on.
     private(set) var columnLeading = false
+    /// Mirrors how the focused session's area is divided: the tree, each
+    /// pane's row and the one in front of it, and the leaf shown alone.
+    private(set) var splitLayout = SplitLayout()
+    private(set) var paneTabs: [UUID: WorkspaceTabs.PaneTabs] = [:]
+    private(set) var zoomedRegion: TabRegion?
+    /// The leaves of the tree that take no room (`WorkspaceTabs.hiddenLeaves`).
+    /// What a view hands to `SplitLayout.frames` with the tree. Always empty
+    /// now: until 2026-11-26 the column or the strip could be hidden with its
+    /// tabs kept, and nothing makes a leaf hidden any more
+    /// (`workspace-tabs.md`, "Nothing is hidden").
+    private(set) var hiddenLeaves: Set<SplitLayout.Leaf> = []
+    /// The leaves still at the share they were guessed at
+    /// (`WorkspaceTabs.unsized`): each is to be given its size by the
+    /// window the first time it is laid out (`resizeLeaf`).
+    private(set) var unsizedLeaves: Set<SplitLayout.Leaf> = []
+    /// Bumped, per pane, when a terminal in that pane's row should take the
+    /// keyboard. Kept for panes that have gone and for other sessions': a
+    /// count that started again from nothing would read as a request to
+    /// whoever was still watching it.
+    private(set) var paneFocusRequests: [UUID: Int] = [:]
 
-    /// Whether the Files pane is on screen, in either row: the one thing the
+    /// The request a terminal in front of `region` should answer: a number
+    /// that goes up each time one there is to take the keyboard.
+    func focusRequest(in region: TabRegion) -> Int {
+        switch region {
+        case .main: return mainFocusRequest
+        case .side: return terminalFocusRequest
+        case .bottom: return bottomFocusRequest
+        case .pane(let id): return paneFocusRequests[id] ?? 0
+        }
+    }
+
+    private func requestTerminalFocus(in region: TabRegion) {
+        switch region {
+        case .main: mainFocusRequest += 1
+        case .side: terminalFocusRequest += 1
+        case .bottom: bottomFocusRequest += 1
+        case .pane(let id): paneFocusRequests[id, default: 0] += 1
+        }
+    }
+
+    /// Whether `region`'s row is on screen: a leaf that is there, not
+    /// hidden, and not behind a zoom on another one. The column and the
+    /// strip are behind a zoom like any other leaf
+    /// (`WorkspaceTabs.isShowing`, on the mirrored state).
+    func isShowing(_ region: TabRegion) -> Bool {
+        guard zoomedRegion == nil || zoomedRegion == region else { return false }
+        switch region {
+        case .main: return true
+        case .side: return isVisible
+        case .bottom: return bottomVisible
+        case .pane(let id): return paneTabs[id] != nil
+        }
+    }
+
+    /// Whether `region` is there at all: always, except for a pane that has
+    /// been closed.
+    private func exists(_ region: TabRegion) -> Bool {
+        region.paneID.map { paneTabs[$0] != nil } ?? true
+    }
+
+    /// The tab in front of each pane that is on screen.
+    private var shownPaneFronts: [SideTab] {
+        paneTabs.compactMap { id, pane in isShowing(.pane(id)) ? pane.active ?? pane.tabs.first : nil }
+    }
+
+    /// Whether the Files pane is on screen, in any row: the one thing the
     /// file tree's upkeep is for.
     var showsFiles: Bool {
-        (isVisible && activeTab == .pane(.files)) || activeMainTab == .pane(.files)
-            || (bottomVisible && activeBottomTab == .pane(.files))
+        (isShowing(.side) && activeTab == .pane(.files)) || (isShowing(.main) && activeMainTab == .pane(.files))
+            || (isShowing(.bottom) && activeBottomTab == .pane(.files))
+            || shownPaneFronts.contains(.pane(.files))
     }
 
     /// Whether a repo view could be on screen anywhere, which is when resolving
     /// and refreshing the repo is worth doing.
     private var needsRepo: Bool {
-        isVisible || activeMainTab?.pane != nil || (bottomVisible && activeBottomTab?.pane != nil)
+        isShowing(.side) || (isShowing(.main) && activeMainTab?.pane != nil)
+            || (isShowing(.bottom) && activeBottomTab?.pane != nil)
+            || shownPaneFronts.contains { $0.pane != nil }
     }
 
     /// Tabs closed in this session and not reopened yet, for the menu item.
@@ -542,12 +657,12 @@ final class GitPanelModel {
     /// the panel can show "not a git repository" rather than a blank flash.
     private(set) var resolvedNonRepo = false
 
-    /// Whether the pending `isVisible` change should animate the divider across.
-    /// False when it's the *session* that changed rather than the user toggling:
-    /// switching sessions is meant to be instant, and animating the collapse
-    /// would reflow the terminal every frame for the length of it. Read by
-    /// MainSplitViewController when it applies the change — imperatively, off the
-    /// back of `isVisible`'s own mutation, so it stays out of observation.
+    /// Whether the pending `isVisible` change should slide the side split in
+    /// or out. False when it's the *session* that changed rather than the user
+    /// toggling: switching sessions is meant to be instant. Read by
+    /// `MainAreaController.slides` when it applies the change, imperatively,
+    /// off the back of `isVisible`'s own mutation, so it stays out of
+    /// observation.
     @ObservationIgnored private(set) var animatesVisibilityChange = false
 
     /// The session the panel is pointed at. Weak — the manager owns sessions, and
@@ -585,10 +700,10 @@ final class GitPanelModel {
     @ObservationIgnored private var refreshWorkItem: DispatchWorkItem?
     private static let refreshDebounce: TimeInterval = 0.15
 
-    /// Point the panel at the selected session: its `gitPanelVisible` decides
-    /// whether the panel is up, its `inspectorPane` what it shows, its cwd which
-    /// repo. Called on selection changes and whenever the selected session's cwd
-    /// moves. No git work runs while hidden; showing re-focuses.
+    /// Point the model at the selected session: its tabs and splits are
+    /// mirrored (`mirror`), its cwd decides which repo. Called on selection
+    /// changes and whenever the selected session's cwd moves. No git work runs
+    /// while no repo view is on screen (`needsRepo`).
     func focus(session: Session?) {
         self.session = session
         // Pinned to a worktree that has since gone (removed while you were in
@@ -639,50 +754,68 @@ final class GitPanelModel {
             animatesBottomChange = animated && (showsBottom || animatesClosing)
             bottomVisible = showsBottom
         }
+        let layout = session?.splitLayout ?? SplitLayout()
+        if layout != splitLayout { splitLayout = layout }
+        let panes = session?.paneTabs ?? [:]
+        if panes != paneTabs { paneTabs = panes }
+        let zoomed = session?.zoomedRegion
+        if zoomed != zoomedRegion { zoomedRegion = zoomed }
+        let hidden = session?.workspace.hiddenLeaves ?? []
+        if hidden != hiddenLeaves { hiddenLeaves = hidden }
+        let unsized = session?.unsizedLeaves ?? []
+        if unsized != unsizedLeaves { unsizedLeaves = unsized }
     }
 
-    /// One pane command: ⌘⌥G, ⌘⌥E, or their View-menu items.
-    /// Each means both "show me this pane" and "toggle, if it's already what's
-    /// on screen":
-    ///
-    /// - hidden → open on that pane
-    /// - showing a *different* pane → swap in place, don't close
-    /// - showing that pane → close
-    ///
-    /// A pane in the main row or the strip toggles there, against the terminal
-    /// or the strip being up.
-    /// Whether `activate(_:)` would put the pane away rather than bring it up,
-    /// by the same rules in the same order: what the menu calls it, Show or
-    /// Hide, has to be what the key then does.
+    /// Whether `activate(_:)` would close the pane rather than bring it up:
+    /// what the menu calls it, Show or Hide, and what its button in the
+    /// titlebar says, has to be what the key or the click then does.
     func activateHides(_ requested: InspectorPane) -> Bool {
-        if mainTabs.contains(.pane(requested)) { return activeMainTab == .pane(requested) }
-        if bottomTabs.contains(.pane(requested)) {
-            return bottomVisible && activeBottomTab == .pane(requested)
-        }
-        return isVisible && activeTab == .pane(requested)
+        let tab = SideTab.pane(requested)
+        guard let region = session?.workspace.region(of: tab) else { return false }
+        // Behind a zoomed split it isn't on screen: the command shows it.
+        if let zoomedRegion, zoomedRegion != region { return false }
+        return isShowing(region) && activeTab(in: region) == tab
     }
 
+    /// One rule, wherever the pane is: not open, it opens (in the split
+    /// Changes and Files open in); open behind another tab or a zoom, it
+    /// comes forward; on screen, it closes. A pane holds nothing a close
+    /// loses.
+    ///
+    /// Until 2026-11-26 a pane in the main row was swapped for the terminal
+    /// with its tab kept, and one in a split made by hand only ever came
+    /// forward: three answers to one key, by where the pane happened to be.
     func activate(_ requested: InspectorPane, via origin: PanelOrigin = .toolbar) {
-        // In the main area's row: the same toggle, against the terminal.
-        if mainTabs.contains(.pane(requested)) {
-            selectMain(activeMainTab == .pane(requested) ? .session : .pane(requested))
-            return
-        }
-        // In the strip: the same toggle, against the strip being up.
-        if bottomTabs.contains(.pane(requested)) {
-            if bottomVisible && activeBottomTab == .pane(requested) {
-                toggleBottom()
-            } else {
-                selectBottom(.pane(requested))
-            }
-            return
-        }
-        if isVisible && activeTab == .pane(requested) {
-            setVisible(false)
-            resolveCurrent()
-        } else {
+        let tab = SideTab.pane(requested)
+        guard let region = session?.workspace.region(of: tab) else { return show(requested, via: origin) }
+        if activateHides(requested) {
+            putAway([tab], from: region)
+        } else if region == .side {
+            // Through `show`, which counts a pane put in front of someone.
             show(requested, via: origin)
+        } else {
+            bringForward(tab, in: region)
         }
+    }
+
+    /// Close panes of `region`'s row as a Show command pressed again does.
+    /// If you were in that split: the keyboard stays in it when something is
+    /// left there, and goes to the split you were in before it when it went
+    /// with them. If you were somewhere else, it stays there.
+    ///
+    /// When the split goes, `close` has already sent the keyboard back (it
+    /// does for any tab whose split goes while you are in it), so this only
+    /// refocuses a split that is still there. It used to refocus after the
+    /// split had gone as well: `close` had moved you to the split before,
+    /// which rewrote `regionTrail`, so the second `regionBefore` picked the
+    /// one before that. Escape on an empty tab in a split made beside a ⌘D
+    /// split put you in the main row, not in the ⌘D split, and the window's
+    /// edge blinked twice.
+    private func putAway(_ tabs: [SideTab], from region: TabRegion) {
+        let wasThere = lastRegion == region
+        for tab in tabs { close(tab) }
+        resolveCurrent()
+        if wasThere, isShowing(region) { focus(region) }
     }
 
     /// Show a pane without the toggle — for the paths where a click can only
@@ -700,28 +833,49 @@ final class GitPanelModel {
         }
     }
 
-    /// Show or hide the column. Hiding keeps its tabs; showing a column that
-    /// has none opens the pane you last chose, because an empty column is not
-    /// something to show.
+    /// ⌥⌘B: Changes and Files, in the split they open in (the outer edge of
+    /// the window's splits, the right unless it was moved).
     ///
-    /// The keyboard follows, as it does for the strip (⌘J): showing the column
-    /// puts you in it (a terminal, or a pane's list), hiding it puts you back in
-    /// the session's terminal. That's what makes ⌥⌘B, ⌘T, ⌘W a sequence you can
-    /// type without reaching for the pointer.
+    /// With none of the panes open there, or that split behind a zoom,
+    /// Changes and Files are opened (or brought forward, which ends the
+    /// zoom), the one you last used in front, and the keyboard goes to it.
+    /// With any open there and on screen, they are closed (`putAway`): if
+    /// you were in that split the keyboard goes to the split you were in
+    /// before it, or stays in it when something is left. Changes, History
+    /// and Files hold nothing a close loses, so putting them away needs no
+    /// hidden state. Anything else in that split (a terminal, a file)
+    /// stays, and the split with it.
+    ///
+    /// Until 2026-11-26 this hid and showed the side column with its tabs
+    /// kept. With every split movable there is no side column to hide, and
+    /// a second kind of "gone" for one split among many was the last thing
+    /// that made it a place of its own. To have the whole window for the
+    /// terminal for a moment, zoom it (⇧⌘↩).
     func toggle() {
-        if !isVisible, tabs.isEmpty {
-            fillEmptyColumn()
-            focus(.side)
-            return
+        guard let session else { return }
+        if toggleCloses { return putAway(session.sideTabs.filter { $0.pane != nil }, from: .side) }
+        // Read first: opening a pane makes it the one last used.
+        let last = session.inspectorPane ?? Self.defaultPane
+        let front = SideTab.pane(last == .history ? .changes : last)
+        // A pane that is open in another split is brought forward where it
+        // is; the rest open here.
+        for pane in [InspectorPane.changes, .files] where session.workspace.region(of: .pane(pane)) == nil {
+            open(.pane(pane), in: .side)
         }
-        setVisible(!isVisible)
-        resolveCurrent()
-        if isVisible {
-            focus(.side)
-        } else {
-            focus(.main)
-        }
+        open(front)
+        focus(session.workspace.region(of: front) ?? .side)
     }
+
+    /// Whether ⌥⌘B would put Changes and Files away rather than open them:
+    /// what its menu item calls itself, so `toggle` decides by this too.
+    ///
+    /// Only while that split is on screen. Behind a zoom on another split
+    /// (`isShowing` answers false then) the panes are out of sight, and ⌥⌘B
+    /// takes the open path, which brings them forward and ends the zoom, as
+    /// ⇧⌘C does (`activateHides`). It used to look only at whether the row
+    /// held a pane: with the main row zoomed, ⌥⌘B closed Changes and Files
+    /// you could not see.
+    var toggleCloses: Bool { isShowing(.side) && tabs.contains { $0.pane != nil } }
 
     // MARK: - Tabs
     //
@@ -746,7 +900,13 @@ final class GitPanelModel {
     /// Every way a tab comes to the front ends here, and that is what makes
     /// it a stop on Back and Forward's trail (`onTabBroughtForward`). A new
     /// one has to as well, or Back will skip what it showed.
-    private func settle(_ tab: SideTab, in session: Session, isStop: Bool = true) {
+    ///
+    /// `takesKeyboard` is false for a tab that came forward without you
+    /// (`splitFromCommand`): the views and the file follow, and that is all.
+    /// The keyboard, the area you're in and Back's trail are about where you
+    /// are, and you haven't moved.
+    private func settle(_ tab: SideTab, in session: Session, isStop: Bool = true,
+                        takesKeyboard: Bool = true) {
         let region = session.workspace.region(of: tab)
         // `pane` is the column's; a pane picked in another row only counts
         // as the one you last chose.
@@ -754,17 +914,14 @@ final class GitPanelModel {
         mirror(session, animated: true, animatesClosing: false)
         onStateChanged?()
         resolveCurrent()
-        if let region { lastRegion = region }
-        switch region {
-        case .main?:
+        guard takesKeyboard else { return }
+        if let region {
+            lastRegion = region
             if tab == .session { onFocusMainTerminal?() }
-            else if tab.terminalID != nil { mainFocusRequest += 1 }
-        case .side?:
-            if tab.terminalID != nil { terminalFocusRequest += 1 }
-        case .bottom?:
-            if tab.terminalID != nil { bottomFocusRequest += 1 }
-        case nil:
-            break
+            else if tab.terminalID != nil { requestTerminalFocus(in: region) }
+            // Its page takes the keyboard when it appears; until then the
+            // terminal it now covers must not keep it.
+            else if tab.isBlank { onClearKeyboard?() }
         }
         if isStop { onTabBroughtForward?(tab, session) } else { onTabReplaced?(tab, session) }
     }
@@ -807,12 +964,16 @@ final class GitPanelModel {
 
     /// Close a tab, wherever it is. A terminal's shell ends with it. The
     /// neighbour that slides into its place comes to the front, and closing the
-    /// last one in the column or the strip hides it, instantly. The tab goes on
-    /// the session's reopen stack. Never the session's own terminal.
+    /// last one in a split (the column and the strip among them) takes the
+    /// split away, instantly. The tab goes on the session's reopen stack.
+    /// Never the session's own terminal.
     ///
     /// `target` is for a tab closing in a session that isn't the focused one,
     /// which is what a side shell exiting in the background looks like.
     func close(_ tab: SideTab, in target: Session? = nil) {
+        // Where you are, as the keyboard commands mean it: a split a zoom is
+        // hiding is not it (`lastRegion`).
+        let wasIn = lastRegion
         guard let owner = target ?? session,
               let region = change(owner, { $0.close(tab) }) else { return }
         if let id = tab.terminalID { owner.closeSideSurface(id) }
@@ -824,22 +985,27 @@ final class GitPanelModel {
         guard owner === session else { return }
         mirror(owner, animated: false)
         resolveCurrent()
-        // Only what can hold the keyboard: a terminal, or a browser's page.
-        guard tab.terminalID != nil || tab.browserID != nil else { return }
-        // Keep the keyboard in the row the tab was closed from if a terminal
-        // took its place there; otherwise hand it back.
-        if region == .side, isVisible, activeTab?.terminalID != nil {
-            terminalFocusRequest += 1
-        } else if region == .main, activeMainTab?.terminalID != nil {
-            mainFocusRequest += 1
-        } else if region == .bottom, bottomVisible, activeBottomTab?.terminalID != nil {
-            bottomFocusRequest += 1
-        } else if region == .main || (region == .side && isVisible) || (region == .bottom && bottomVisible) {
+        // The keyboard moves only when you were in the split the tab closed
+        // in. A tab that closed anywhere else (its shell exited, a × clicked
+        // in another split) leaves it where it is. Only the branch for a
+        // made split used to ask: when the column's or the strip's last
+        // terminal exited by itself, the keyboard went to `regionBefore`,
+        // which never holds the split you are in now, so it jumped out of
+        // the terminal you were typing in.
+        guard wasIn == region else { return }
+        if isShowing(region) {
+            // Only what can hold the keyboard: a terminal, or a browser's page.
+            guard tab.terminalID != nil || tab.browserID != nil else { return }
             // The row is still there: you're still in it, so the next ⌘W
             // closes its next tab rather than, from the main area, the session.
+            // (A terminal that took the tab's place takes the keyboard.)
             focusFront(of: region)
         } else {
-            focus(.main)
+            // The split went with its last tab, whatever the tab was: the
+            // place itself is gone, so the keyboard goes to the split you
+            // were in before it (or to what is zoomed). `putAway` counts on
+            // this, and does not refocus a split that went.
+            focus(regionBefore(region))
         }
     }
 
@@ -902,8 +1068,8 @@ final class GitPanelModel {
     // MARK: - Moving tabs
 
     /// Move a tab to `region` at `index`, or reorder it within its row; see
-    /// `WorkspaceTabs.move`. It comes to the front of its new row, and a row it
-    /// leaves empty hides. A terminal keeps its shell: moving is a new place for
+    /// `WorkspaceTabs.move`. It comes to the front of its new row, and a split
+    /// it leaves empty goes. A terminal keeps its shell: moving is a new place for
     /// the same view, not a new terminal.
     func move(_ tab: SideTab, to region: TabRegion, at index: Int) {
         guard let session, change(session, { $0.move(tab, to: region, at: index) }) else { return }
@@ -926,13 +1092,16 @@ final class GitPanelModel {
     /// row means: here.
     func open(_ tab: SideTab, in region: TabRegion) {
         guard let session else { return }
+        // A pane that has gone since whoever asked last looked: the main area.
+        let region = session.workspace.exists(region) ? region : .main
         if session.workspace.region(of: tab) == nil { reportOpened(tab, in: region) }
         switch session.workspace.region(of: tab) {
         case region?:
             change(session) { $0.bringForward(tab) }
         case _?:
-            // Asked for here (⌥-click, a menu naming the row), not dragged:
-            // it says nothing about where this kind of tab belongs.
+            // Asked for here (⌥-click, a menu naming the row): moved over.
+            // (`recordsHabit` is no longer read: where a kind of tab opens
+            // is `WorkspaceTabs.home(for:)`, the same every time.)
             change(session) { $0.move(tab, to: region, at: .max, recordsHabit: false) }
         case nil:
             change(session) {
@@ -943,6 +1112,52 @@ final class GitPanelModel {
         settle(tab, in: session)
     }
 
+    // MARK: - The empty tab
+
+    /// Bumped when the keyboard is sent to a split whose front tab is an
+    /// empty one: its page takes it (`NewTabPage`).
+    private(set) var newTabFocusRequest = 0
+
+    /// A row's "+": an empty tab at the end of `region`'s row, in front,
+    /// whose page offers what it can become. One a row already has is
+    /// brought forward instead: two of nothing is one too many.
+    func openBlank(in region: TabRegion) {
+        if let blank = tabs(in: region).first(where: \.isBlank) { return bringForward(blank, in: region) }
+        open(.blank(UUID()), in: region)
+    }
+
+    /// What an empty tab's page offers.
+    enum NewTabChoice {
+        case terminal, browser
+        case pane(InspectorPane)
+    }
+
+    /// The empty tab `blank` becomes `choice`, in its split: the new tab is
+    /// opened there, in front, and the empty one goes. A pane that is open
+    /// somewhere else is moved here, as by its row's menu before.
+    func fill(_ blank: SideTab, with choice: NewTabChoice) {
+        guard let session, let region = session.workspace.region(of: blank) else { return }
+        // The split you're in, whichever you were in when you clicked.
+        lastRegion = region
+        switch choice {
+        case .terminal: open(.terminal(UUID()), in: region)
+        case .browser: openBrowser(at: nil, in: region)
+        case .pane(let pane): open(.pane(pane), in: region)
+        }
+        close(blank)
+        focusFront(of: region)
+    }
+
+    /// Escape on an empty tab's page: the tab goes, and the keyboard goes to
+    /// what is in front of its row now, or to the split you were in before
+    /// it if the split went with it (`putAway`). Without this it was left
+    /// with nothing.
+    func dismissBlank(_ blank: SideTab) {
+        guard blank.isBlank, let region = session?.workspace.region(of: blank) else { return }
+        lastRegion = region
+        putAway([blank], from: region)
+    }
+
     /// A tab dragged in from outside the rows (a file out of a list) and dropped
     /// at `index` in `region`'s row: opened there, the way a dragged tab lands.
     /// One that's already open somewhere is moved there instead.
@@ -951,6 +1166,7 @@ final class GitPanelModel {
     /// was opened once already, where it came from.
     func openDropped(_ tab: SideTab, in region: TabRegion, at index: Int, isNew: Bool = true) {
         guard let session else { return }
+        let region = session.workspace.exists(region) ? region : .main
         guard session.workspace.region(of: tab) == nil else {
             move(tab, to: region, at: index)
             return
@@ -967,7 +1183,10 @@ final class GitPanelModel {
     private func fillEmptyColumn() {
         guard let session else { return }
         let panes = [Self.defaultPane] + InspectorPane.allCases
-        if let pane = panes.first(where: { !session.mainTabs.contains(.pane($0)) }) {
+        if let pane = panes.first(where: { pane in
+            !session.mainTabs.contains(.pane(pane))
+                && !session.paneTabs.values.contains { $0.tabs.contains(.pane(pane)) }
+        }) {
             open(.pane(pane), in: .side)
         } else {
             openTerminal()
@@ -989,10 +1208,10 @@ final class GitPanelModel {
     }
 
     /// Open a file's or a browser's tab where it belongs: where it is if it's
-    /// open, else where you last moved one of its kind (until you have, the
-    /// main area for a file and the column for a browser). `elsewhere`, for
+    /// open, else a file in the main row and a browser in the split beside
+    /// your work (`WorkspaceTabs.home(for:)`), every time. `elsewhere`, for
     /// ⌥-click, puts it in the other place (out of the main area, else into
-    /// it), without making that the habit.
+    /// it), just this once.
     func openAtHome(_ tab: SideTab, elsewhere: Bool = false) {
         guard let session else { return }
         if elsewhere {
@@ -1051,8 +1270,7 @@ final class GitPanelModel {
     /// browsers go (`elsewhere`: the other place, for ⌥-click).
     func showInBrowser(_ url: URL, elsewhere: Bool = false) {
         guard let session else { return }
-        let tabs = session.mainTabs + session.sideTabs + session.bottomTabs
-        let existing = tabs.first { tab in
+        let existing = session.allTabs.first { tab in
             guard let id = tab.browserID,
                   let address = session.browserAddresses[id].flatMap(URL.init(string:)) else { return false }
             return BrowserAddress.showsSame(address, as: url)
@@ -1066,12 +1284,201 @@ final class GitPanelModel {
         }
     }
 
-    /// Put the column on the terminal's leading or trailing side.
-    func setColumnLeading(_ leading: Bool) {
-        guard let session, session.sideColumnLeading != leading else { return }
-        session.sideColumnLeading = leading
+    // MARK: - Panes of the main area
+
+    /// The leaf you're in, for a command that doesn't say which: the row
+    /// you last worked in, the column and the strip included, while it is
+    /// in the tree and on screen. Else the main row.
+    private var currentLeaf: TabRegion {
+        let region = lastRegion
+        return splitLayout.contains(region.leaf) && isShowing(region) ? region : .main
+    }
+
+    /// The leaf a split asked for beside `region` is made beside: `region`
+    /// while it is in the tree and takes room, else the main row
+    /// (`WorkspaceTabs.split`).
+    private func splitTarget(_ region: TabRegion) -> TabRegion {
+        exists(region) && splitLayout.contains(region.leaf) && !hiddenLeaves.contains(region.leaf)
+            ? region : .main
+    }
+
+    /// Split a leaf: a new pane on `edge` of `region`, with `tab` in it and
+    /// the keyboard, if the tab takes it. The pane, or nil when nothing was
+    /// split (`WorkspaceTabs.split`).
+    ///
+    /// `region` nil is the leaf you're in, which from the column or the
+    /// strip is that one: the split is made beside it, not beside the main
+    /// row. `tab` nil is a new terminal; one
+    /// that is already open is moved into the pane. `recordsHabit` is passed
+    /// on and no longer read (`WorkspaceTabs.home(for:)`).
+    @discardableResult
+    func split(_ region: TabRegion? = nil, on edge: SplitLayout.Edge, with tab: SideTab? = nil,
+               recordsHabit: Bool = false) -> TabRegion? {
+        guard let session else { return nil }
+        let target = region ?? currentLeaf
+        // Asked of the window, which knows the sizes: halved when the split
+        // is big enough to be two, room made by the whole row when it isn't
+        // but the row is, and not at all (said out loud) when neither is. A
+        // split that opens too small to use is worse than none.
+        let room = roomToSplit?(splitTarget(target), edge) ?? .halves
+        guard room != .none else { return nil }
+        let tab = tab ?? .terminal(UUID())
+        return split(target, on: edge, placing: tab, in: session, recordsHabit: recordsHabit,
+                     reports: session.workspace.region(of: tab) == nil, spreads: room == .spreads)
+    }
+
+    /// How a split asked for by a key or a menu finds its room.
+    enum SplitRoom {
+        /// The split it is asked of is big enough to be two.
+        case halves
+        /// It isn't, but the row or column it is in can give the new one an
+        /// equal share: ⌘D in a narrow side split.
+        case spreads
+        /// Neither: nothing is made.
+        case none
+    }
+
+    /// The window's answer to where a new split's room comes from
+    /// (`MainAreaController.room`). A drag is told where it can land before
+    /// it lands, and never comes here.
+    @ObservationIgnored var roomToSplit: ((TabRegion, SplitLayout.Edge) -> SplitRoom)?
+
+    /// A tab let go on the edge of a part of the main area: a file dragged
+    /// out of a list (`isNew`), or a tab dragged from a row. A pane there,
+    /// holding it. Where its kind opens next time does not change: that is
+    /// `WorkspaceTabs.home(for:)`, the same every time.
+    ///
+    /// `isNew` is false for a tab that only changed windows (`handOver`): it
+    /// was opened once already, where it came from.
+    func splitDropped(_ tab: SideTab, beside region: TabRegion, on edge: SplitLayout.Edge, isNew: Bool) {
+        guard let session else { return }
+        split(region, on: edge, placing: tab, in: session, recordsHabit: true,
+              reports: isNew && session.workspace.region(of: tab) == nil, spreads: false)
+    }
+
+    @discardableResult
+    private func split(_ region: TabRegion, on edge: SplitLayout.Edge, placing tab: SideTab,
+                       in session: Session, recordsHabit: Bool, reports: Bool, spreads: Bool) -> TabRegion? {
+        guard let pane = change(session, {
+            $0.split(region, on: edge, placing: tab, recordsHabit: recordsHabit, spreads: spreads)
+        }) else { return nil }
+        if reports { reportOpened(tab, in: pane) }
+        // The tab may have left the column, as in `move`.
+        if let pane = session.activeSideTab?.pane, session.inspectorPane != pane { session.inspectorPane = pane }
+        settle(tab, in: session)
+        return pane
+    }
+
+    /// A split a command asked for (`wortel split`), not you: a new pane on
+    /// `edge` of `owner`'s main row, holding `tab`, and nothing else moves.
+    /// The keyboard stays where it is, the area you're in stays the one you're
+    /// in, it is no stop on Back's trail, and a zoom is left alone, with the
+    /// pane behind it. An agent runs this while someone is typing to it.
+    ///
+    /// `owner` need not be the session on screen: then its rows change and
+    /// are saved, as in `close(_:in:)`, and the pane is there when it is next
+    /// selected. The pane, or nil when nothing was split.
+    @discardableResult
+    func splitFromCommand(on edge: SplitLayout.Edge, placing tab: SideTab, in owner: Session) -> TabRegion? {
+        let isNew = owner.workspace.region(of: tab) == nil
+        guard let pane = change(owner, {
+            $0.split(.main, on: edge, placing: tab, recordsHabit: false, keepsZoom: true)
+        }) else { return nil }
+        if isNew { reportOpened(tab, in: pane) }
+        // The tab may have left the column, as in `move`.
+        if let pane = owner.activeSideTab?.pane, owner.inspectorPane != pane { owner.inspectorPane = pane }
+        guard owner === session else {
+            onStateChanged?()
+            return pane
+        }
+        settle(tab, in: owner, takesKeyboard: false)
+        return pane
+    }
+
+    /// Show one part of the main area alone, or all of them again
+    /// (`WorkspaceTabs.toggleZoom`). `region` nil is the part you're in.
+    /// Nothing is saved: a zoom is about now.
+    func toggleZoom(_ region: TabRegion? = nil) {
+        guard let session else { return }
+        let target = region ?? currentLeaf
+        let before = session.zoomedRegion
+        // Read while the zoom is still on: it answers with the zoomed part
+        // then, whatever a click on the titlebar or the sidebar last wrote.
+        let here = lastRegion
+        change(session) { $0.toggleZoom(target) }
+        guard session.zoomedRegion != before else { return }
+        mirror(session, animated: false)
+        // A pane that was showing a repo may be out of sight now, or back.
+        resolveCurrent()
+        // Zoomed in, that is where you are. Zoomed out, you stay where you were.
+        lastRegion = session.zoomedRegion != nil ? target : here
+        focusFront(of: lastRegion)
+    }
+
+    /// View ▸ Reset Layout: the session's tabs back in the arrangement a
+    /// session starts in (`WorkspaceTabs.Preset.standard`), for when the
+    /// splits have got away from you. Nothing is closed. The tab you were
+    /// looking at stays in front, and the keyboard goes with it.
+    func resetLayout() {
+        guard let session else { return }
+        let front = activeTab(in: lastRegion)
+        let arranged = session.workspace.arranged(as: .standard, keeping: front)
+        change(session) { $0 = arranged }
         mirror(session, animated: false)
         onStateChanged?()
+        resolveCurrent()
+        lastRegion = front.flatMap { session.workspace.region(of: $0) } ?? .main
+        focusFront(of: lastRegion)
+    }
+
+    /// Every part of the main area the same size as its siblings.
+    func equalizeSplits() {
+        guard let session, !session.splitLayout.isEqualized else { return }
+        change(session) { $0.equalize() }
+        mirror(session, animated: false)
+        onStateChanged?()
+    }
+
+    /// The layout as a divider's drag left it, from the view that moved it
+    /// (`SplitTreeView` moves the divider in its own copy first, so the pane
+    /// follows the pointer in the same event). Not saved: see
+    /// `commitSplitLayout`.
+    func setSplitLayout(_ layout: SplitLayout) {
+        guard let session, session.splitLayout != layout,
+              Set(layout.leaves) == Set(session.splitLayout.leaves) else { return }
+        session.splitLayout = layout
+        if splitLayout != layout { splitLayout = layout }
+    }
+
+    /// The end of a divider's drag: the layout as it now is, saved.
+    func commitSplitLayout() {
+        onStateChanged?()
+    }
+
+    /// Give `leaf` the size it was meant to open at: `extent` points along
+    /// the split it is a part of, as the tree is laid out in `bounds`
+    /// (`SplitLayout.resize`, with what is hidden now). Its share is no
+    /// guess after that, whether or not anything had to move.
+    ///
+    /// Called from a layout pass, so nothing is saved here: the size is
+    /// saved with the next change that is (`commitSplitLayout`).
+    func resizeLeaf(_ leaf: SplitLayout.Leaf, to extent: CGFloat, in bounds: CGRect,
+                    metrics: SplitLayout.Metrics) {
+        guard let session else { return }
+        change(session) { workspace in
+            workspace.layout.resize(leaf, to: extent, in: bounds, metrics: metrics,
+                                    hidden: workspace.hiddenLeaves)
+            workspace.markSized(leaf)
+        }
+        mirror(session, animated: false)
+    }
+
+    /// `leaf` has the size it is going to have: it is no longer waiting for
+    /// the window to give it one (`WorkspaceTabs.markSized`). Not saved.
+    func markLeafSized(_ leaf: SplitLayout.Leaf) {
+        guard let session, session.unsizedLeaves.contains(leaf) else { return }
+        change(session) { $0.markSized(leaf) }
+        mirror(session, animated: false)
     }
 
     // MARK: - Rows by region (for the keyboard)
@@ -1082,15 +1489,18 @@ final class GitPanelModel {
         case .main: return mainTabs
         case .side: return tabs
         case .bottom: return bottomTabs
+        case .pane(let id): return paneTabs[id]?.tabs ?? []
         }
     }
 
     /// The tab in front of a row that's showing.
     func activeTab(in region: TabRegion) -> SideTab? {
         switch region {
-        case .main: return activeMainTab ?? .session
-        case .side: return isVisible ? activeTab : nil
-        case .bottom: return bottomVisible ? activeBottomTab : nil
+        case .main: return isShowing(.main) ? activeMainTab ?? .session : nil
+        case .side: return isShowing(.side) ? activeTab : nil
+        case .bottom: return isShowing(.bottom) ? activeBottomTab : nil
+        case .pane(let id):
+            return isShowing(region) ? paneTabs[id].flatMap { $0.active ?? $0.tabs.first } : nil
         }
     }
 
@@ -1100,6 +1510,10 @@ final class GitPanelModel {
         case .main: selectMain(tab)
         case .side: select(tab)
         case .bottom: selectBottom(tab)
+        case .pane:
+            guard let session, session.workspace.tabs(in: region).contains(tab) else { return }
+            change(session) { $0.bringForward(tab) }
+            settle(tab, in: session)
         }
     }
 
@@ -1127,7 +1541,9 @@ final class GitPanelModel {
     /// Give the keyboard to what's in front of `region`: a terminal, a
     /// browser's page, or the list of a pane. ⌘] / ⌘[.
     func focus(_ region: TabRegion) {
+        // A pane that has gone: `lastRegion` answers with where you are then.
         lastRegion = region
+        let region = lastRegion
         focusFront(of: region)
         onAreaFocused?(region)
     }
@@ -1138,8 +1554,9 @@ final class GitPanelModel {
     @ObservationIgnored var onAreaFocused: ((TabRegion) -> Void)?
 
     /// Give the keyboard to what's in front of `region` without making it the
-    /// area you're in: for handing the keyboard back from a terminal that was
-    /// just hidden, which is housekeeping, not you going somewhere.
+    /// area you're in: for handing the keyboard back to the row you are
+    /// already in after a tab there closed or a zoom changed, which is
+    /// housekeeping, not you going somewhere.
     func focusFront(of region: TabRegion) {
         let tab: SideTab
         switch region {
@@ -1148,13 +1565,23 @@ final class GitPanelModel {
             tab = front
             if tab.terminalID != nil { mainFocusRequest += 1; return }
         case .side:
-            guard isVisible, let front = activeTab else { return }
+            guard isShowing(.side), let front = activeTab else { return }
             tab = front
             if tab.terminalID != nil { terminalFocusRequest += 1; return }
         case .bottom:
-            guard bottomVisible, let front = activeBottomTab else { return }
+            guard isShowing(.bottom), let front = activeBottomTab else { return }
             tab = front
             if tab.terminalID != nil { bottomFocusRequest += 1; return }
+        case .pane:
+            guard let front = activeTab(in: region) else { return }
+            tab = front
+            if tab.terminalID != nil { requestTerminalFocus(in: region); return }
+        }
+        if tab.isBlank {
+            // Off the terminal that had it, then to the empty tab's page.
+            onClearKeyboard?()
+            newTabFocusRequest += 1
+            return
         }
         if let id = tab.browserID, let page = BrowserTabs.shared.existingPage(for: id) {
             // Nowhere yet, its address field; else the page.
@@ -1172,34 +1599,27 @@ final class GitPanelModel {
 
     // MARK: - The strip under the terminal
 
-    /// Show or hide the strip. Showing one with nothing in it opens a
-    /// terminal there, because an empty strip is not something to show. ⌘J.
+    /// ⌘J: the terminal under the main row. With no strip, one is made
+    /// with a terminal in it. With one, the keyboard goes to it, and from
+    /// it back to the main row. Nothing is hidden: until 2026-11-26 this
+    /// tucked the strip away with its tabs kept, and a key that puts a
+    /// running shell out of sight was the strip's one difference from any
+    /// other split. Zoom the terminal (⇧⌘↩) to have the window for it.
     func toggleBottom() {
         guard let session else { return }
-        if session.bottomTabs.isEmpty {
+        guard let front = session.activeBottomTab ?? session.bottomTabs.first else {
             openBottomTerminal()
             return
         }
-        session.bottomVisible.toggle()
-        mirror(session, animated: true)
-        onStateChanged?()
-        if bottomVisible {
-            // A pane in front of the strip needs this session's repo: while
-            // nothing showed one, a session switch left the last session's.
-            resolveCurrent()
-            focus(.bottom)
-        } else {
+        // There and showing: back to the main row.
+        if lastRegion == .bottom, isShowing(.bottom) {
             focus(.main)
+            return
         }
-    }
-
-    /// The strip's divider was dragged shut: record it like ⌘J would.
-    func bottomCollapsedByDrag() {
-        guard let session, session.bottomVisible else { return }
-        session.bottomVisible = false
-        mirror(session, animated: false)
-        onStateChanged?()
-        focus(.main)
+        // Brought forward first, which ends a zoom that was hiding it.
+        selectBottom(front)
+        resolveCurrent()
+        focus(.bottom)
     }
 
     func openBottomTerminal() {
@@ -1212,24 +1632,11 @@ final class GitPanelModel {
         settle(tab, in: session)
     }
 
-    /// Writable mirror of `isVisible` for the paths that don't toggle: dragging
-    /// the divider to the edge collapses the panel behind this model's back
-    /// (MainSplitViewController reflects it here), and the toolbar's pane control
-    /// forces it open. Every write still goes through `setVisible`, so a
-    /// divider-drag dismissal is recorded on the session like any other.
-    var isPresented: Bool {
-        get { isVisible }
-        set {
-            guard newValue != isVisible else { return }
-            setVisible(newValue)
-            resolveCurrent()
-        }
-    }
-
     /// Show the panel if needed and ask the changes list to take keyboard focus.
     func requestListFocus() {
         // Where a source-control or files pane is in front, else the column's.
-        var region = [lastRegion, .main, .side, .bottom].first { activeTab(in: $0)?.pane != nil }
+        let panes = splitLayout.leaves.map(TabRegion.init).filter { $0.paneID != nil }
+        var region = ([lastRegion, .main, .side, .bottom] + panes).first { activeTab(in: $0)?.pane != nil }
         if region == nil {
             open(.pane(pane))
             // Wherever it came forward: the main row or the strip, if that's
@@ -1241,26 +1648,8 @@ final class GitPanelModel {
         onAreaFocused?(lastRegion)
     }
 
-    /// The user showed or hid the panel — record it on the session it was done
-    /// *to*, and have that persisted. Every write to `isVisible` outside `focus`
-    /// goes through here, so the session and the panel can't drift apart.
-    private func setVisible(_ visible: Bool) {
-        // An empty column has nothing to show; opening one goes through `open`.
-        if visible, tabs.isEmpty {
-            if let session, session.sideTabs.isEmpty {
-                fillEmptyColumn()
-            }
-            return
-        }
-        animatesVisibilityChange = true
-        isVisible = visible
-        guard let session, session.gitPanelVisible != visible else { return }
-        session.gitPanelVisible = visible
-        onStateChanged?()
-    }
-
-    /// The user chose a pane — the same funnel as `setVisible`, for the same
-    /// reason. It also updates the two app-wide defaults: the pane a session
+    /// The user chose a pane: recorded on the session it was done to, so the
+    /// session and the panel can't drift apart. It also updates the two app-wide defaults: the pane a session
     /// with no preference of its own opens on, and (for a source-control pane)
     /// the one ⌘⌥G returns to from Files. Those are defaults, not state — the
     /// session is the state.
@@ -1304,10 +1693,6 @@ final class GitPanelModel {
         resolveCurrent()
     }
 
-    /// Only the repo on screen scans when its work tree changes; every other
-    /// cached model just notes that it's stale (see `GitRepoModel.setActive`).
-    /// Hidden means none at all, which is what "no git work runs while hidden"
-    /// on `focus` has to mean for the watchers too.
     /// Drop the models of checkouts that are gone from disk, a removed
     /// worktree most of all. Each holds a recursive watch and its caches for
     /// as long as the app runs, for a folder that no longer exists. Done when
@@ -1319,6 +1704,11 @@ final class GitPanelModel {
         }
     }
 
+    /// Only the repo on screen scans when its work tree changes; every other
+    /// cached model just notes that it's stale (see `GitRepoModel.setActive`).
+    /// With no repo view on screen, none at all, which is what "no git work
+    /// runs while no repo view is on screen" on `focus` has to mean for the
+    /// watchers too.
     private func updateActive() {
         let shown = needsRepo ? repo : nil
         for model in cache.values { model.setActive(model === shown) }

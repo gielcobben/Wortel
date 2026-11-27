@@ -14,25 +14,48 @@ its name has a slash: the folder is the part before the last one. A folder also
 carries a directory (its **folder root**), where new sessions in it start. It is
 not a folder on disk, which is why the menu says "Ungroup Sessions".
 
-**Main area.** The middle of the window. Holds the session's own terminal, which
-never leaves it and cannot be closed.
+**Main area.** Everything in the window beside the sidebar
+(`MainAreaController`). It is a tree of columns and rows, and each part of it
+is a split. The word has an older, narrower meaning that is still about: the
+middle place only, which is now the main row. The released app and older docs
+use it that way. Where it matters which, say "main row".
+
+**Split.** A part of the main area with a row of tabs and the page under it.
+One of them is the **main row**: the split with the session's own terminal,
+which never leaves it and cannot be closed. The main row is always there.
+Every other split is there only while it has tabs. You make one with ⌘D or
+⇧⌘D, or by letting go of a tab on a split's edge. Wortel opens two for you,
+the side column and the bottom strip. In code a split you made is
+`TabRegion.pane(id)` and the tree is `SplitLayout`: that "pane" means a split,
+not the pane defined below. Splits date from 2026-11-26. They are on
+`main` and not in a release yet.
 
 **Start cover.** The empty page over a new session's terminal while the line
 it was made with is still starting. What is typed under it is held.
 
-**Side column.** The trailing column: Changes, History, Files, side terminals,
-previews, browsers. Older docs and some code call it the **inspector**.
+**Side column.** Where Changes and Files open when nobody says where: a split
+at the outer edge of the main area, on the right, at the width you last chose
+(⌥⌘B opens them there and closes them again). That is all the word means
+now. It is a split like any other: it is there while it holds a tab, and it
+cannot be hidden. No menu or tooltip uses the word since 2026-11-26. In the
+released app it is a fixed place that ⌥⌘B hides and shows. The code also says
+**side split**, and older docs and some code **inspector**.
 
-**Bottom strip.** The row under the main area (⌘J).
+**Bottom strip.** Where ⌘J's terminal opens: a split under the main row, at
+the height you last chose. Also only a default place now, and a split like any
+other. In the released app ⌘J hides and shows it.
 
-**Tab.** One thing in one of those three rows: a terminal, a pane, a file, a
-browser. The terminal engine has no tabs and no splits of its own. These are
-Wortel's.
+**Tab.** One thing in a split's row: a terminal, a pane, a file, a browser,
+or an **empty tab**, which is none of those yet. A row's "+" opens an empty
+tab, and its page lists what it can become.
+The session's own terminal is a tab too, named after the session, in the main
+row. It has no close button. The terminal engine has no tabs and no splits of
+its own. These are Wortel's.
 
 **Pane.** One of the three git and file views: Changes, History, Files.
 
-**Workspace.** A session's whole arrangement of tabs across the three rows
-(`WorkspaceTabs`).
+**Workspace.** A session's whole arrangement: the tabs in each split's row,
+and how the main area is divided among the splits (`WorkspaceTabs`).
 
 **Surface.** One libghostty terminal, and the view that hosts it
 (`SurfaceView`). Created lazily, then kept alive and hidden, never rebuilt.
@@ -56,7 +79,9 @@ the Trash instead.
 **Owned.** A worktree or branch Wortel made, recorded by a marker in git, never
 guessed from a path. Wortel only ever removes what it owns.
 
-**Window.** A main window: the four places with a sidebar of its own sessions.
+**Window.** A main window: a sidebar of its own sessions, and the main area
+beside it. With Changes beside the terminal and a terminal below it reads as
+four places, which is what older docs call it.
 A session is in exactly one window and moves between them with its terminal
 running. The **active window** is the one last in front; the commands act on
 its session. Not a preview window, which shows one file.

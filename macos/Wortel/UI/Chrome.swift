@@ -182,10 +182,46 @@ class HoverFillButton: NSButton {
                                   owner: self, userInfo: nil)
         addTrackingArea(area)
         trackingArea = area
+        dropStaleHover()
     }
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
+
+    /// A button that moves out from under a pointer that is standing still
+    /// is sent no `mouseExited`: its hover stayed lit until the pointer next
+    /// crossed it. A row's Split Right does exactly that to itself (the
+    /// click halves its split, and the row's end goes with it), which is
+    /// how the owner found it: "the hover hangs, the background stays
+    /// visible". So the hover is checked against where the pointer really
+    /// is: after the button's own action, once what it changed has been
+    /// laid out, and whenever its tracking areas are rebuilt.
+    #if DEBUG
+    /// For `SplitProbe`: light the hover as a pointer coming in would, and
+    /// read it back, to check that a click which moves the button puts it
+    /// out again.
+    func probeEnter() { hovering = true }
+    var probeHoverIsLit: Bool { hovering }
+    #endif
+
+    private func dropStaleHover() {
+        guard hovering else { return }
+        guard let window, !isHiddenOrHasHiddenAncestor,
+              bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) else {
+            hovering = false
+            return
+        }
+    }
+
+    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        let sent = super.sendAction(action, to: target)
+        // Now, a turn later (the rows follow the model a turn behind), and
+        // after a slide (0.26s) would have landed.
+        for delay in [0, 0.1, 0.4] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.dropStaleHover() }
+        }
+        return sent
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let fill: NSColor? = isHighlighted ? Chrome.selectedFill

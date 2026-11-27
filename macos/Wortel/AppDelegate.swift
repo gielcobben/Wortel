@@ -25,10 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Deliberately not `NSApp.keyWindow`: a preview window can be key, and a
     /// sheet about a session belongs on the window the session is in.
     static var mainWindow: NSWindow? { (NSApp.delegate as? AppDelegate)?.window }
-    /// The active window's split: sessions, the main area, the side column.
+    /// The active window's split: sessions and the main area with its splits.
     private var splitController: MainSplitViewController? { active?.split }
-    /// Drives the active window's side column. Whether it's up follows that
-    /// window's session (see GitPanelModel); new sessions start hidden.
+    /// Drives the active window's layout of splits and their tabs. Each
+    /// session has its own (see GitPanelModel).
     private var gitPanel: GitPanelModel { active?.gitPanel ?? idleGitPanel }
     /// The active window's Files pane.
     private var fileTree: FileTreeModel { active?.fileTree ?? idleFileTree }
@@ -71,11 +71,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.runtime = runtime
         #if DEBUG
         AppearanceTestHook.install()
-        // These two drive the app: they resize its window, switch its
-        // sessions and, for one check, close them all. Only ever a
-        // throwaway copy, which is one with a data folder of its own; a
-        // Debug build is also what runs every day.
-        if DataDirectory.custom != nil { ResizeBench.install() }
+        // The probes drive the app: they resize its window, switch its
+        // sessions, close tabs and sessions and run menu commands. Only a
+        // throwaway copy gets them, one whose data folder was asked for with
+        // WORTEL_DATA_DIR, as the test scripts do. A Debug build's default
+        // folder (`Wortel Dev`) is not enough: that is every contributor's
+        // everyday build, and a probe answers any local process.
+        if DataDirectory.wasGiven { ResizeBench.install() }
         #endif
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
@@ -124,8 +126,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let first = addController(for: manager.windows[0])
         #if DEBUG
         // The first window's panel: the probe measures the session in front
-        // of a one-window copy.
-        if DataDirectory.custom != nil { SwitchProbe.install(manager: manager, git: first.gitPanel) }
+        // of a one-window copy. Same gate as the bench above.
+        if DataDirectory.wasGiven {
+            SwitchProbe.install(manager: manager, git: first.gitPanel)
+            SplitProbe.install(manager: manager, controller: first)
+        }
         #endif
         // Where it was, before anything is shown in it: a terminal laid out
         // at a size the window is about to leave is a resize its program
@@ -283,7 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // keeps watching its file, for as long as anything holds them.
         manager.onSessionClosed = { [weak self] session in
             let workspace = session.workspace
-            let tabs = workspace.main + workspace.side + workspace.bottom + workspace.closed.map(\.tab)
+            let tabs = workspace.allTabs + workspace.closed.map(\.tab)
             for tab in tabs {
                 if let id = tab.browserID { BrowserTabs.shared.forget(id) }
                 if let path = tab.filePath { self?.releaseFile(path) }
@@ -391,6 +396,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         SurfaceView.onKeyboardActivity = { [weak self] surface in
             self?.noteKeyboardActivity(in: surface)
         }
+        // A session out of sight, its window resized: the size its terminal
+        // has in its own splits, which only its window can lay out.
+        SurfaceView.sizeWhenShown = { [weak self] surface in
+            guard let self, let session = self.manager.sessions.first(where: { $0.surfaceView === surface }),
+                  let controller = self.controllers.first(where: { $0.window === surface.window }) else { return nil }
+            return controller.split.mainArea?.terminalSize(of: session)
+        }
         // A click in an area puts you in it, whatever it lands on: a web page,
         // a pane's list or the file tree never take part in the terminals'
         // typing reports, and without this ⌘W after clicking into a browser in
@@ -441,7 +453,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // tab. Every other file: its preview.
                 if BrowserAddress.isPage(url) { self?.openPage(url) } else { self?.openPreview(url) }
             },
-            orderFront: { [weak self] in self?.window?.makeKeyAndOrderFront(nil) })
+            orderFront: { [weak self] in self?.window?.makeKeyAndOrderFront(nil) },
+            splitMainArea: { [weak self] session, edge, tab in
+                self?.splitFromCommand(session, on: edge, placing: tab) ?? .notMade
+            })
         cli.start()
         self.cli = cli
 
@@ -652,6 +667,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.openPreview(url, placement: .dropped(region, index: index == .max ? .max : index + offset))
             }
         }
+        // Dropped on an edge of the main area: the first file makes the
+        // split, as any dropped file is opened (so it shows its diff), and
+        // the rest join it there.
+        controller.split.openSplitFiles = { [weak self] urls, region, edge in
+            guard let self, let first = urls.first else { return }
+            self.openPreview(first, placement: .split(region, edge))
+            let tab = SideTab.file(first.resolvingSymlinksInPath().standardizedFileURL.path)
+            let made = self.manager.selected?.workspace.region(of: tab)
+            for (offset, url) in urls.dropFirst().enumerated() {
+                // A file outside the repo is looked up first and has no
+                // split yet: the rest go where files go.
+                self.openPreview(url, placement: made.map { .dropped($0, index: offset + 1) } ?? .home(elsewhere: false))
+            }
+        }
         fileTree.onOpenPreview = { [weak self] url in self?.openPreview(url) }
         gitPanel.onOpenPreview = { [weak self] url, diff, hasChanges in
             self?.presentPreview(url, diff: diff, hasChanges: hasChanges)
@@ -737,15 +766,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // A file, a page or a pane in front of it: what is in front
                 // of the main area, which is then where you are, so ⌘W and
                 // the rest act there.
+                // (Or of the part of it that is zoomed: `lastRegion` says.)
                 if gitPanel.lastRegion != .main { gitPanel.lastRegion = .main }
-                gitPanel.focusFront(of: .main)
+                gitPanel.focusFront(of: gitPanel.lastRegion)
             }
         }
-        gitPanel.onFocusMainTerminal = { [weak window, weak gitPanel, weak home] in
+        gitPanel.onFocusMainTerminal = { [weak window, weak gitPanel, weak home, weak controller] in
             // Not while a tab in the main area's row covers the terminal.
             guard let window, let gitPanel, gitPanel.activeMainTab == nil,
-                  let view = home?.selected?.surfaceView,
-                  view.window === window, !view.isHiddenOrHasHiddenAncestor else { return }
+                  let view = home?.selected?.surfaceView, view.window === window else { return }
+            // Out of sight behind a zoomed split that this same change has
+            // just ended: the main area lays out a turn later, and until
+            // then the terminal looks hidden and would be refused.
+            if view.isHiddenOrHasHiddenAncestor, gitPanel.isShowing(.main) {
+                controller?.split.mainArea?.applyNow()
+            }
+            guard !view.isHiddenOrHasHiddenAncestor else { return }
             window.makeFirstResponder(view)
         }
 
@@ -1388,6 +1424,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private enum FilePlacement {
         case home(elsewhere: Bool)
         case dropped(TabRegion, index: Int)
+        /// Let go on an edge of a part of the main area: a split there.
+        case split(TabRegion, SplitLayout.Edge)
         /// The preview tab, looked at from the list in this pane tab. Only
         /// while `generation` is the latest: a file outside the panel's repo
         /// is looked up first, and a lookup finishing after a newer click
@@ -1558,6 +1596,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Opened on purpose: the preview tab showing it stays.
             gitPanel.keep(tab)
         case .dropped(let region, let index): gitPanel.openDropped(tab, in: region, at: index)
+        case .split(let region, let edge):
+            gitPanel.splitDropped(tab, beside: region, on: edge,
+                                  isNew: manager.selected?.workspace.region(of: tab) == nil)
         case .peek(let list, let generation):
             guard generation == peekGeneration else { return }
             gitPanel.showPeek(tab, from: list)
@@ -1700,10 +1741,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// picking one in the column the keyboard is still in the main terminal,
     /// and "move this tab" would have moved the wrong one.
     private func focusedRegion() -> TabRegion {
-        switch gitPanel.lastRegion {
+        let region = gitPanel.lastRegion
+        switch region {
         case .side: return gitPanel.isVisible ? .side : .main
         case .bottom: return gitPanel.bottomVisible ? .bottom : .main
         case .main: return .main
+        // `lastRegion` never answers with a pane that has gone or that a
+        // zoom hides, so this one is on screen.
+        case .pane: return gitPanel.isShowing(region) ? region : .main
         }
     }
 
@@ -1724,15 +1769,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if gitPanel.lastRegion != region { gitPanel.lastRegion = region }
     }
 
-    /// The areas in the order ⌘] walks them: left to right as they sit, then
-    /// the strip.
+    /// The areas in the order ⌘] walks them: the tree's leaves that are on
+    /// screen, as they read, left to right and top down. The column and the
+    /// strip are leaves of it, so each comes where it sits, and only the
+    /// zoomed leaf while one is.
     private var visibleRegions: [TabRegion] {
-        var regions: [TabRegion] = [.main]
-        if gitPanel.isVisible {
-            gitPanel.columnLeading ? regions.insert(.side, at: 0) : regions.append(.side)
-        }
-        if gitPanel.bottomVisible { regions.append(.bottom) }
-        return regions
+        let regions = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { gitPanel.isShowing($0) }
+        return regions.isEmpty ? [.main] : regions
     }
 
     /// ⌘] / ⌘[. With the keyboard in a browser's page they are Forward and
@@ -1760,12 +1803,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.focus(regions[(index + offset + regions.count) % regions.count])
     }
 
+    /// ⌥⌘T: an empty tab in the row you're in, which asks what it should be
+    /// (`NewTabPage`). The row's "+" as a key.
+    @objc func newTabHere(_ sender: Any?) {
+        focusMainWindow()
+        guard manager.selected != nil else { return }
+        gitPanel.openBlank(in: focusedRegion())
+    }
+
     @objc func newTerminalHere(_ sender: Any?) {
         focusMainWindow()
         switch focusedRegion() {
         case .main: gitPanel.openMainTerminal()
         case .side: gitPanel.openTerminal()
         case .bottom: gitPanel.openBottomTerminal()
+        case .pane(let id): gitPanel.open(.terminal(UUID()), in: .pane(id))
         }
     }
 
@@ -1782,10 +1834,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         StoredFlag.changesDiff.value.toggle()
     }
 
-    /// ⇧⌘L: a new browser in the row you're in.
+    /// ⇧⌘B (and ⇧⌘L, what it was): a new browser where ⇧⌘C, ⇧⌘H and ⇧⌘F
+    /// open theirs, in the split beside your work, and where a ⌘-clicked
+    /// address opens one. It opened over the tab you were in, the one of the
+    /// four that did. In a split of your choosing: its "+", or ⌥⌘T and B.
     @objc func newBrowserHere(_ sender: Any?) {
         focusMainWindow()
-        gitPanel.openBrowser(at: nil, in: focusedRegion())
+        guard let session = manager.selected else { return }
+        gitPanel.openBrowser(at: nil, in: session.workspace.home(for: .browser(UUID())))
     }
 
     /// ⌘L: the address field of the browser in front, the area you're in
@@ -1799,16 +1855,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         BrowserTabs.shared.page(for: id).focusAddress()
     }
 
+    /// The areas a command that acts on "the one in front" looks through:
+    /// the one you're in, then the column, the main area, the strip and the
+    /// panes split off the main area.
+    private var frontRegions: [TabRegion] {
+        let panes = gitPanel.splitLayout.leaves.map(TabRegion.init).filter { $0.paneID != nil }
+        return [focusedRegion(), .side, .main, .bottom] + panes
+    }
+
     private func frontBrowser() -> UUID? {
-        let regions: [TabRegion] = [focusedRegion(), .side, .main, .bottom]
-        let visible = regions.filter { region in
-            switch region {
-            case .main: return true
-            case .side: return gitPanel.isVisible
-            case .bottom: return gitPanel.bottomVisible
-            }
-        }
-        return visible.lazy.compactMap { self.gitPanel.activeTab(in: $0)?.browserID }.first
+        // `activeTab(in:)` is nil for an area that isn't showing.
+        return frontRegions.lazy.compactMap { self.gitPanel.activeTab(in: $0)?.browserID }.first
     }
 
     /// ⌘R: reload the browser in front, the area you're in first. It works
@@ -1908,7 +1965,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         controller.show()
     }
 
-    /// ⌃⌘1 — open Changes, bring it forward, or close it, as ⌃⌘2 does History.
+    /// ⇧⌘C — open Changes, bring it forward, or close it, as ⇧⌘H does History.
     @objc func showChanges(_ sender: Any?) {
         focusMainWindow()
         gitPanel.activate(.changes, via: .shortcut)
@@ -1923,36 +1980,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         manager.requestCloseSelected()
     }
 
-    /// Move the tab in front of the row you're in to the area in `direction`.
-    /// Sideways crosses between the main area and the column, whichever side
-    /// the column is on; down puts a terminal in the strip, up brings it back
-    /// to the main area. The session's own terminal moving sideways swaps sides.
-    private func moveFocusedTab(_ direction: NSRectEdge) {
+    /// Move the tab in front of the row you're in to the split in
+    /// `direction`. With none there, toward the edge Changes and Files open
+    /// on makes a split there with it, and down one under the main row. The
+    /// session's own terminal never leaves its row.
+    private func moveFocusedTab(_ direction: SplitLayout.Edge) {
         let from = focusedRegion()
         guard let tab = gitPanel.activeTab(in: from) else { return }
-        let columnOnLeft = gitPanel.columnLeading
-        var target: TabRegion?
-        switch (from, direction) {
-        case (.main, .minX): target = columnOnLeft ? .side : nil
-        case (.main, .maxX): target = columnOnLeft ? nil : .side
-        case (.side, .minX): target = columnOnLeft ? nil : .main
-        case (.side, .maxX): target = columnOnLeft ? .main : nil
-        case (.main, .minY), (.side, .minY): target = .bottom
-        case (.bottom, .maxY): target = .main
-        default: target = nil
-        }
+        let target = neighbouringArea(of: from, toward: direction, showingOnly: false)
         guard let target else { return }
-        if tab == .session {
-            if target == .side { gitPanel.setColumnLeading(!columnOnLeft) }
-            return
-        }
+        // The session's terminal stays in its row.
+        guard tab != .session else { return }
         gitPanel.move(tab, to: target, at: .max)
     }
 
-    @objc func moveTabLeft(_ sender: Any?) { moveFocusedTab(.minX) }
-    @objc func moveTabRight(_ sender: Any?) { moveFocusedTab(.maxX) }
-    @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.minY) }
-    @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.maxY) }
+    /// The split beside `region` on `edge`'s side, as the window is laid out.
+    /// With none there and `showingOnly` false (a tab being moved, not the
+    /// keyboard), past the edge the side split is on is the side split and
+    /// down is the strip, when they aren't showing: a tab sent toward one
+    /// opens it, as it always has.
+    private func neighbouringArea(of region: TabRegion, toward edge: SplitLayout.Edge,
+                                  showingOnly: Bool) -> TabRegion? {
+        if let split = splitController?.mainArea?.neighbour(of: region, toward: edge) { return split }
+        guard !showingOnly else { return nil }
+        let sideEdge: SplitLayout.Edge = gitPanel.columnLeading ? .left : .right
+        if edge == sideEdge, region != .side, !gitPanel.isVisible { return .side }
+        if edge == .down, region != .bottom, !gitPanel.bottomVisible { return .bottom }
+        return nil
+    }
+
+    // MARK: - Splits of the main area
+
+    /// ⌘D and ⇧⌘D: a new terminal in a split of its own, beside or under the
+    /// one you're in, whichever split that is.
+    @objc func splitRight(_ sender: Any?) { split(.right) }
+    @objc func splitDown(_ sender: Any?) { split(.down) }
+
+    private func split(_ edge: SplitLayout.Edge) {
+        focusMainWindow()
+        guard manager.selected != nil else { return }
+        gitPanel.split(on: edge)
+    }
+
+    /// `wortel split`: a split on `edge` of `session`'s main row, holding
+    /// `tab`, through the panel of the window the session is in. No window
+    /// comes forward and the keyboard stays where it is
+    /// (`GitPanelModel.splitFromCommand`).
+    private func splitFromCommand(_ session: Session, on edge: SplitLayout.Edge,
+                                  placing tab: SideTab) -> WortelCLIService.SplitOutcome {
+        let controller = controller(for: manager.window(of: session))
+        let git = controller?.gitPanel ?? gitPanel
+        // Measured, as ⌘D measures it: a split too small to use is worse
+        // than none. In the session's own layout, laid out in its window's
+        // main area as that is now, because the session may not be the one
+        // on screen there, or may have a zoom over its main row.
+        if controller?.split.mainArea?.hasRoom(toSplit: .main, on: edge, in: session.splitLayout,
+                                               hidden: session.workspace.hiddenLeaves) == false {
+            return .noRoom
+        }
+        return git.splitFromCommand(on: edge, placing: tab, in: session) != nil ? .made : .notMade
+    }
+
+    @objc func zoomSplit(_ sender: Any?) {
+        gitPanel.toggleZoom()
+    }
+    @objc func equalizeSplits(_ sender: Any?) { gitPanel.equalizeSplits() }
+
+    /// View ▸ Reset Layout: every tab back where a session starts with it.
+    @objc func resetLayout(_ sender: Any?) {
+        focusMainWindow()
+        gitPanel.resetLayout()
+    }
+
+    @objc func focusSplitLeft(_ sender: Any?) { focusArea(toward: .left) }
+    @objc func focusSplitRight(_ sender: Any?) { focusArea(toward: .right) }
+    @objc func focusSplitUp(_ sender: Any?) { focusArea(toward: .up) }
+    @objc func focusSplitDown(_ sender: Any?) { focusArea(toward: .down) }
+
+    private func focusArea(toward edge: SplitLayout.Edge) {
+        guard let target = neighbouringArea(of: focusedRegion(), toward: edge, showingOnly: true) else { return }
+        gitPanel.focus(target)
+    }
+
+    @objc func moveTabLeft(_ sender: Any?) { moveFocusedTab(.left) }
+    @objc func moveTabRight(_ sender: Any?) { moveFocusedTab(.right) }
+    @objc func moveTabDown(_ sender: Any?) { moveFocusedTab(.down) }
+    @objc func moveTabUp(_ sender: Any?) { moveFocusedTab(.up) }
 
     /// Let a file's document go, unless another session still has it open:
     /// documents are one per file for the whole app, tabs are per session.
@@ -2039,7 +2152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// column, the main area, the strip. A file that is text and not
     /// rendered, or a browser that is somewhere.
     private func findTarget() -> FindTarget? {
-        for tab in [focusedRegion(), .side, .main, .bottom].compactMap({ gitPanel.activeTab(in: $0) }) {
+        for tab in frontRegions.compactMap({ gitPanel.activeTab(in: $0) }) {
             if let path = tab.filePath {
                 let document = previewTabs.document(for: path).document
                 if document.mode != .rendered, !document.isBinary { return .file(path) }
@@ -2060,19 +2173,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         gitPanel.toggleBottom()
     }
 
-    @objc func toggleColumnSide(_ sender: Any?) {
-        focusMainWindow()
-        gitPanel.setColumnLeading(!gitPanel.columnLeading)
-    }
-
     @objc func reopenClosedTab(_ sender: Any?) {
         focusMainWindow()
         gitPanel.reopenClosedTab(in: focusedRegion())
-    }
-
-    @objc func newSideTerminal(_ sender: Any?) {
-        focusMainWindow()
-        gitPanel.openTerminal()
     }
 
     @objc func selectNextSideTab(_ sender: Any?) {
@@ -2282,12 +2385,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// ⌘⌥E — the same rule for the Files pane.
     @objc func toggleFileTree(_ sender: Any?) {
-        // As ⌃⌘1 and ⌃⌘2: from a preview window, act on the window you'll see.
+        // As ⇧⌘C and ⇧⌘H: from a preview window, act on the window you'll see.
         focusMainWindow()
         gitPanel.activate(.files, via: .shortcut)
     }
 
-    /// The pane ⌃⌘1, ⌃⌘2 or ⌃⌘3 opens, for the menu titles.
+    /// The pane ⇧⌘C, ⇧⌘H or ⇧⌘F opens, for the menu titles.
     private static func pane(toggledBy action: Selector?) -> InspectorPane? {
         switch action {
         case #selector(showChanges(_:)): return .changes
@@ -2403,8 +2506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         if menuItem.action == #selector(toggleBottomStrip(_:)) {
-            menuItem.title = gitPanel.bottomVisible ? "Hide Bottom Strip" : "Show Bottom Strip"
-            return true
+            return manager.selected != nil
         }
         if menuItem.action == #selector(showPreviewFind(_:)) {
             return findTarget() != nil
@@ -2439,14 +2541,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(reopenClosedTab(_:)) {
             return gitPanel.canReopenClosedTab
         }
-        if menuItem.action == #selector(toggleColumnSide(_:)) {
-            menuItem.title = gitPanel.columnLeading
-                ? "Move Side Column to the Right" : "Move Side Column to the Left"
-            return true
-        }
         if menuItem.action == #selector(toggleSideColumn(_:)) {
-            menuItem.title = gitPanel.isVisible ? "Hide Side Column" : "Show Side Column"
-            return true
+            menuItem.title = gitPanel.toggleCloses ? "Hide Changes and Files" : "Show Changes and Files"
+            return manager.selected != nil
         }
         if menuItem.action == #selector(selectNextSideTab(_:))
             || menuItem.action == #selector(selectPreviousSideTab(_:)) {
@@ -2455,6 +2552,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if menuItem.action == #selector(focusNextArea(_:))
             || menuItem.action == #selector(focusPreviousArea(_:)) {
             return visibleRegions.count > 1 || keyboardBrowserPage != nil
+        }
+        if menuItem.action == #selector(splitRight(_:)) || menuItem.action == #selector(splitDown(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(zoomSplit(_:)) {
+            menuItem.title = gitPanel.zoomedRegion == nil ? "Zoom Split" : "Show All Splits"
+            return gitPanel.zoomedRegion != nil || visibleRegions.count > 1
+        }
+        if menuItem.action == #selector(equalizeSplits(_:)) {
+            return gitPanel.splitLayout.isSplit && !gitPanel.splitLayout.isEqualized
+        }
+        // Never dimmed while there is a session: the owner looked for it and
+        // could not find it, and a dimmed item is not in the palette at all.
+        // With nothing to put back it does nothing.
+        if menuItem.action == #selector(resetLayout(_:)) {
+            return manager.selected != nil
+        }
+        if menuItem.action == #selector(focusSplitLeft(_:)) || menuItem.action == #selector(focusSplitRight(_:))
+            || menuItem.action == #selector(focusSplitUp(_:)) || menuItem.action == #selector(focusSplitDown(_:)) {
+            return visibleRegions.count > 1
         }
 
         if menuItem.action == #selector(mergeAllWindows(_:)) {

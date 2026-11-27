@@ -320,7 +320,13 @@ enum SideTab: Hashable, Sendable {
     /// the same address or none yet; where each one is lives on the session
     /// (`Session.browserAddresses`) and its live page in `BrowserTabs`.
     case browser(UUID)
+    /// An empty tab, not anything yet: its page offers what it can become
+    /// (`NewTabPage`), and choosing puts that in its place. A row's "+"
+    /// opens one. A build from before it reads `"new:…"` as no tab and
+    /// drops it, which is right for a tab that holds nothing.
+    case blank(UUID)
 
+    private static let blankPrefix = "new:"
     private static let terminalPrefix = "terminal:"
     private static let filePrefix = "file:"
     private static let browserPrefix = "browser:"
@@ -336,6 +342,9 @@ enum SideTab: Hashable, Sendable {
         } else if rawValue.hasPrefix(Self.browserPrefix),
                   let id = UUID(uuidString: String(rawValue.dropFirst(Self.browserPrefix.count))) {
             self = .browser(id)
+        } else if rawValue.hasPrefix(Self.blankPrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.blankPrefix.count))) {
+            self = .blank(id)
         } else if rawValue == "session" {
             self = .session
         } else {
@@ -350,7 +359,13 @@ enum SideTab: Hashable, Sendable {
         case .session: return "session"
         case .file(let path): return Self.filePrefix + path
         case .browser(let id): return Self.browserPrefix + id.uuidString
+        case .blank(let id): return Self.blankPrefix + id.uuidString
         }
+    }
+
+    var isBlank: Bool {
+        if case .blank = self { return true }
+        return false
     }
 
     var filePath: String? {
@@ -378,9 +393,10 @@ enum SideTab: Hashable, Sendable {
     }
 }
 
-/// The kinds of tab that open somewhere by habit: a file or a browser opened
-/// without saying where goes where you last moved one of its kind
-/// (`WorkspaceTabs.home(for:)`). Terminals and panes open where you ask.
+/// The kinds of tab with a place of their own to open when nothing says
+/// where: a file in the main row, a browser beside your work, every time
+/// (`WorkspaceTabs.home(for:)`). Until 2026-11-26 each went where you had
+/// last moved one of its kind (`WorkspaceTabs.habits`).
 enum TabKind: String, Sendable {
     case file, browser
 }
@@ -395,12 +411,76 @@ extension SideTab {
     }
 }
 
-/// Where a tab can live: the main area (beside the session's own terminal,
-/// which is one of its tabs), the side column, or the strip under the
-/// session's terminal. Any tab goes anywhere, except the session's terminal,
-/// which stays in the main area.
-enum TabRegion: String, Sendable {
+/// Where a tab can live: the main area's row (beside the session's own
+/// terminal, which is one of its tabs), the side column, the strip under the
+/// session's terminal, or a pane split off the main area, which has a row of
+/// its own (`WorkspaceTabs.panes`, `SplitLayout`). Any tab goes anywhere,
+/// except the session's terminal, which stays in the main row.
+///
+/// Saved as a string (`"main"`, `"side"`, `"bottom"`, `"pane:<uuid>"`), in a
+/// closed tab's entry and in the habits. A build from before panes reads
+/// `"pane:…"` as no region at all and drops the entry, which is what it
+/// should do with a place it can't show.
+enum TabRegion: Hashable, Sendable {
     case main, side, bottom
+    /// A pane split off the main area, by its id: a leaf of the session's
+    /// `SplitLayout` that somebody made by splitting.
+    case pane(UUID)
+
+    private static let panePrefix = "pane:"
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "main": self = .main
+        case "side": self = .side
+        case "bottom": self = .bottom
+        default:
+            guard rawValue.hasPrefix(Self.panePrefix),
+                  let id = UUID(uuidString: String(rawValue.dropFirst(Self.panePrefix.count)))
+            else { return nil }
+            self = .pane(id)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .main: return "main"
+        case .side: return "side"
+        case .bottom: return "bottom"
+        case .pane(let id): return Self.panePrefix + id.uuidString
+        }
+    }
+
+    /// The leaf of the session's tree this region is. Every region is one:
+    /// the main row, a pane, and the column and the strip, which are in the
+    /// tree while they have tabs.
+    var leaf: SplitLayout.Leaf {
+        switch self {
+        case .main: return .main
+        case .side: return .side
+        case .bottom: return .bottom
+        case .pane(let id): return .pane(id)
+        }
+    }
+
+    init(_ leaf: SplitLayout.Leaf) {
+        switch leaf {
+        case .main: self = .main
+        case .side: self = .side
+        case .bottom: self = .bottom
+        case .pane(let id): self = .pane(id)
+        }
+    }
+
+    /// Whether this is a leaf of the tree. Every region is, since the column
+    /// and the strip became leaves like any other.
+    var isSplitLeaf: Bool { true }
+
+    /// The pane's id, for a pane.
+    var paneID: UUID? {
+        if case .pane(let id) = self { return id }
+        return nil
+    }
 }
 
 /// Why a list (Changes, Files) is asking to show a file in the preview tab.
@@ -443,7 +523,8 @@ struct ClosedTab: Equatable, Sendable {
     let index: Int
 
     /// `side:2:changes`, the form it's saved in: a relaunch shouldn't empty
-    /// the list of what ⌘⇧T can bring back.
+    /// the list of what ⌘⇧T can bring back. One closed in a pane is
+    /// `pane:<uuid>:2:changes`.
     var rawValue: String { "\(region.rawValue):\(index):\(tab.rawValue)" }
 
     init(tab: SideTab, region: TabRegion, index: Int) {
@@ -453,7 +534,14 @@ struct ClosedTab: Equatable, Sendable {
     }
 
     init?(rawValue: String) {
-        let parts = rawValue.split(separator: ":", maxSplits: 2).map(String.init)
+        // A pane's region has a colon of its own (`pane:<uuid>:2:changes`),
+        // so it is one part more. The tab comes last because its raw value
+        // can hold any number of them (a file's path).
+        let inPane = rawValue.hasPrefix("pane:")
+        var parts = rawValue.split(separator: ":", maxSplits: inPane ? 3 : 2).map(String.init)
+        if inPane, parts.count == 4 {
+            parts = [parts[0] + ":" + parts[1], parts[2], parts[3]]
+        }
         guard parts.count == 3, let region = TabRegion(rawValue: parts[0]),
               let index = Int(parts[1]), let tab = SideTab(rawValue: parts[2]) else { return nil }
         self.init(tab: tab, region: region, index: index)

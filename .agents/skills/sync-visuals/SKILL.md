@@ -112,11 +112,20 @@ through its menu, below), then write both and launch it again:
 # the canvas's sidebar folders, top to bottom, then the ones it shows folded
 defaults write $ID WortelFolderOrder -array <folder> <folder> …
 defaults write $ID WortelCollapsedFolders -array <folder> …
-defaults write $ID "NSSplitView Subview Frames main-split" -array \
-  "0, 0, 234, 815, NO, NO" "235, 0, 1075, 815, NO, NO" "1310, 0, 384, 815, YES, YES"
+defaults write $ID "NSSplitView Subview Frames window-split" -array \
+  "0, 0, 234, 815, NO, NO" "235, 0, 1459, 815, NO, NO"
 ```
 
-The last line gives the sidebar the canvas's 234pt and hides the column.
+The last line gives the sidebar the canvas's 234pt. The window's split view
+has two panes since 2026-11-26 (the sidebar, and everything beside it), saved
+as `window-split`. The side column is a split inside the second pane, not a
+pane, so nothing here hides it: use View ▸ Hide Changes and Files through
+the menu, below (the item is Show Changes and Files while they are closed,
+and since 2026-11-26 it closes those panes; nothing is hidden with its tabs
+kept). This line was written from the code (`MainSplitViewController`) and
+has not been tried yet. A build from before that date has three panes, saved
+as `main-split`, and takes a third frame that hides the column:
+`"1310, 0, 384, 815, YES, YES"` after `"235, 0, 1075, 815, NO, NO"`.
 
 **Open panes and windows through its menus.** This does not bring the copy
 forward or take the keyboard:

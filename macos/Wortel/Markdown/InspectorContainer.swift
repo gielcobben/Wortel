@@ -79,7 +79,7 @@ final class SideColumnController: NSViewController {
     private func sync() {
         let tab = git.activeTab
         // A hidden column shows no terminal: it would keep the keyboard.
-        let terminal = git.isVisible ? tab?.terminalID : nil
+        let terminal = git.isShowing(.side) ? tab?.terminalID : nil
         // Only for the session the panel is pointed at: its tabs are that
         // session's. The two differ for a moment whenever the panel follows
         // a turn later (a session whose worktree is still being made is
@@ -116,7 +116,7 @@ struct SideColumnPage: View {
     }
 
     /// Whether a page or document for this tab exists already. A hidden
-    /// column keeps showing those (it slides shut with them in it) but makes
+    /// column keeps showing those (it goes with them in it) but makes
     /// none: a restored column that's hidden would otherwise start a web page
     /// or a file watcher nobody can see.
     private func isBuilt(_ tab: SideTab) -> Bool {

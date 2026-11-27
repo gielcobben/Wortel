@@ -54,8 +54,10 @@ at every step of a drag (`../../../docs/decisions.md`, 2026-11-19; measure
 with `scripts/bench-resize.sh` before changing it). A terminal's size
 otherwise comes from its view when shown, and for one made out of sight its
 session's last size on screen (`shownSizes`); one out of sight follows the
-window by the window's change (`followWindow`), through the keeper when it has
-no surface. The size is the keeper's to apply (`PtyHost.resizeInKeeper`):
+window (`followWindow`) to the size its main row has in its session's own
+splits, which the app works out for it (`SurfaceView.sizeWhenShown`,
+`workspace-tabs.md`; by the window's change when nobody can say), through the
+keeper when it has no surface. The size is the keeper's to apply (`PtyHost.resizeInKeeper`):
 libghostty's placeholder grid, reported before the surface is told a size,
 never reaches it (`ignoreSizesUntilTold`).
 

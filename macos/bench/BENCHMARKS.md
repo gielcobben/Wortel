@@ -118,7 +118,15 @@ step with the column shut, 5.2 ms with it open, 5.3 ms on the divider, with
 libghostty's frame at every step 6.8, 6.9 and 7.3. `--panes`: a pane sliding
 open or shut has about one turn of the run loop over 8.3 ms, where it had
 10 to 15. A machine that is busy moves every figure: at a load of 20 they
-double.
+double. Those figures are from while the side column was a pane of the
+window's split view. Since the splits of 2026-11-26 (on `main`, not in a
+release yet) it is a split of the window's tree. `ResizeBench` reads that tree now: the
+divider round drags the divider on the side column's inner edge, and
+`--panes` times the tree's own slide for the column. One thing reads
+differently: sizes are shares, so the side column gives with the terminal at
+every step of a window round, and the count of steps where the pane beside
+the terminal changed width (`besideResized`), which was 0 of 480 while it
+kept its width, is now every step. No figures were taken since.
 
 `./scripts/try-switch.sh` is the same idea for a session switch: 72 returns
 to a session with the side column open, at six paces, and where its terminal

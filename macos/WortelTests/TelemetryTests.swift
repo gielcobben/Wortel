@@ -193,6 +193,8 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CommandVerb(.remind(session: nil, at: 0)).rawValue, "remind")
         XCTAssertEqual(CommandVerb(.changeDirectory(session: nil, path: "/secret/repo")).rawValue, "cd")
         XCTAssertEqual(CommandVerb(.close(session: nil)).rawValue, "close")
+        XCTAssertEqual(CommandVerb(.split(session: nil, edge: "down", argv: ["make", "secret-target"])).rawValue,
+                       "split")
         XCTAssertEqual(CommandVerb(.list(caller: nil)).rawValue, "list")
         XCTAssertEqual(CommandVerb(.read(session: "x", lines: nil)).rawValue, "read")
         XCTAssertEqual(CommandVerb(.send(session: "x", text: "secret prompt", enter: true)).rawValue, "send")
@@ -210,6 +212,7 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(TabArea(.main).rawValue, "main")
         XCTAssertEqual(TabArea(.side).rawValue, "side")
         XCTAssertEqual(TabArea(.bottom).rawValue, "bottom")
+        XCTAssertEqual(TabArea(.pane(UUID())).rawValue, "split")
     }
 
     /// Every agent the shell integration detects maps to its own case, and
@@ -668,8 +671,8 @@ final class TelemetryTests: XCTestCase {
         }
         events.append(.appHung(activity: .other, site: nil, signature: nil, version: nil, arch: .other,
                                lasted: nil, memory: nil))
-        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .remind, .cd, .list, .read, .send,
-                                    .wait, .version]
+        let verbs: [CommandVerb] = [.open, .new, .rename, .notify, .mark, .remind, .cd, .split, .list, .read,
+                                    .send, .wait, .version]
         for verb in verbs {
             events.append(.commandRun(verb: verb))
         }

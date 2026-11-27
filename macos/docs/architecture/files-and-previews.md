@@ -57,8 +57,9 @@ It inherits the git panel's cost rule, and that is the whole design:
   directions if you reach for `hasPrefix`: `src/foo` changing must not decorate
   `src/foobar`, and a collapsed directory that fails to roll up just looks clean.
 
-A file opens in the main area unless you've put one elsewhere, so the tree
-stays where it is. One opened into the column still takes the **whole** column
+A file opens in the main row, so the tree stays where it is. (Until
+2026-11-26 it opened where you had last moved one. That memory is gone,
+`workspace-tabs.md`.) One opened into the column still takes the **whole** column
 (a terminal with two right columns gets cramped), so opening a `.md` from the
 tree there hides the tree until the preview is closed or the Files segment
 reclaims it, the same rule as clicking a `.md` path in the terminal.

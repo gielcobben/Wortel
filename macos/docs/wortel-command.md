@@ -26,8 +26,9 @@ not on your `PATH` in Terminal.app or iTerm, by design.
 
 ### `wortel open <path>`
 
-Opens a file as a tab in the side column, the same view a double-click in the Files
-pane gives you: source, diff, or rendered Markdown depending on the file.
+Opens a file as a tab, the same view a double-click in the Files pane gives
+you: source, diff, or rendered Markdown depending on the file. It opens beside
+the session's terminal tab. (It was the side column until 2026-11-17.)
 
 ```sh
 wortel open README.md                  # relative to where you are
@@ -287,6 +288,41 @@ only closes the session. If the turn doesn't end within an hour, the session
 gets a red dot and stays open. No `--session`: it closes the session it was
 run in, and nothing else.
 
+### `wortel split [right|down|left|up] [--session <s>] [-- <command>]`
+
+Opens a new terminal in a split beside the session's main terminal: to the
+right unless you say `down`, `left` or `up`. It starts in the
+session's folder, as a terminal you open beside it by hand does. With a
+command after `--`, that command is typed into the new shell and run, the way
+`wortel new -- <command>` does it, so the shell is still there when it exits.
+
+```sh
+wortel split                              # a shell to the right
+wortel split down -- npm run dev          # a dev server under the terminal
+wortel split --session "Site build" -- tail -f build.log
+```
+
+Meant for an agent as much as for you: it can put a dev server, a test watcher
+or a log beside itself while you are typing to it. So **nothing moves**. The
+keyboard stays where it is, the selected session stays selected, and no window
+comes forward. In the session on screen the split appears beside what you are
+doing. In a session that isn't on screen it is there when you next select it,
+and its shell starts at once either way, so the command is running whether or
+not anyone is looking. If a split is zoomed (⇧⌘↩), it stays zoomed and the new
+one waits behind it.
+
+The split always goes beside the session's main row of tabs, wherever the
+command was run, so two of them in a row give three columns. `--session` names
+another session, by id or name as [below](#naming-a-session); without it the
+command means the session it was run in.
+
+It prints nothing and exits 0. It exits 1, with one line saying why, when the
+session's worktree is still being made, when its main terminal is too small
+to halve (what ⌘D beeps at), or when the command could not be typed into the
+new shell. A command is refused with exit status 2
+for the two reasons `new` refuses one: longer than 1024 bytes, or a control
+character in it.
+
 ## Reaching other sessions
 
 The commands above act on the session they're run in. These four act on any
@@ -459,7 +495,7 @@ take it over. Its id is the only thing the first one has to keep.
 
 ## Which session a command means
 
-`rename`, `notify`, `mark` and `remind` act on the session they were run in, unless given `--session`. You never pass an id:
+`rename`, `notify`, `mark`, `remind` and `split` act on the session they were run in, unless given `--session`. You never pass an id:
 every Wortel shell carries `$WORTEL_SESSION_ID`, and the command reads it. Run
 from outside Wortel they say so instead of guessing:
 

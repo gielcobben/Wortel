@@ -389,6 +389,83 @@ doesn't outlive the shell that asked.
   `list`'s state column
   reads, so the CLI and the sidebar can't disagree.
 
+## `split`: a terminal beside the agent, and nothing moves
+
+`wortel split [right|down|left|up] [--session <s>] [-- <command>]` is ⌘D for
+something that isn't at the keyboard: an agent putting its dev server or a log
+beside itself. The decisions:
+
+- **It takes nothing from the person.** ⌘D ends in the new split having the
+  keyboard, which is right for a key and wrong for a command: the agent runs
+  it while someone is typing to it, and their next word would land in a fresh
+  shell. So `GitPanelModel.splitFromCommand` makes the split and stops:
+  no keyboard, no change to the area you're in (`lastRegion`), no stop on
+  Back's trail (you didn't go anywhere), no window ordered front, nothing
+  selected. `settle(takesKeyboard: false)` is the one place that knows.
+- **Beside the main row, always** (`TabRegion.main`), not beside wherever the
+  caller's shell happens to be. The caller may be a side terminal, a process
+  three levels down, or another session; "the split you're in" is a fact
+  about a person's keyboard and there is none here.
+- **A zoom stays.** `WorkspaceTabs.split` ends a zoom because a new split is
+  something to look at; with `keepsZoom` it doesn't, and the new one is in
+  the tree behind the zoom until that ends. Showing one split alone is the
+  person's choice, and a script undoing it is the same theft as the keyboard.
+- **The shell starts now, not when its tab is first shown.** Every other side
+  terminal's view (and so its keeper session and its shell) is made by the
+  row that shows it, the first time it does. For a split in a session that
+  isn't on screen, or behind a zoom, that is whenever someone next looks:
+  the server would not be running, and its line would have nowhere to wait,
+  since the keeper types `initialInput` as it forks the shell. So the service
+  calls `SessionManager.startSideTerminal` in the same turn as the split,
+  which makes the view out of sight with the line as its first input
+  (`Session.ensureSideSurface(_:runtime:initialInput:)`), tells it it can't be
+  seen, and leaves it for the row to pick up. The alternative, holding the
+  line on the session until the view is made, was turned down: a command
+  that runs "when you next click there" is not what `-- npm run dev` asks
+  for. The cost is a terminal starting at the placeholder size and being
+  resized when it is first shown, as a session made by `wortel new` is.
+- **One wire case, the edge as a string.** `.split(session:edge:argv:)` is a
+  case of its own, so an older app refuses it ("This Wortel doesn't
+  understand that command") rather than doing half of it. The edge goes over
+  as typed and the app checks it against `SplitLayout.Edge`, as a colour is
+  checked: this file is also the CLI's and the keeper's.
+- **Nothing printed.** The new terminal has an id (its `$WORTEL_SESSION_ID`),
+  and printing it would promise something: `read` and `send` take a session
+  and reach its main terminal, so the id of a side terminal handed to them
+  would answer with the wrong screen. Until a verb can use it, it stays in.
+- **Refused in one line:** a session whose worktree is still being made (no
+  folder to start in, as `read` and `send` say), one whose main row has no
+  room to be halved (what ⌘D beeps at), and a line the keeper could not vouch
+  for typing (`initialInputDropped`, a failure as for `new`). Room is
+  measured in the session's own layout, laid out in its window's main area as
+  that is now (`MainAreaController.hasRoom(toSplit:on:in:)`): the session may
+  not be the one on screen, or its main row may be behind a zoom, and
+  without a measure a script could halve a session nobody is looking at
+  until nothing in it is usable. Since 2026-11-26 the session's side column
+  and strip are leaves of that layout, so they are measured with it, and one
+  that is hidden in that session is left out
+  (`session.workspace.hiddenLeaves`; since later that day nothing can be
+  hidden, so the set is empty). One thing still makes it an estimate,
+  read from the code and not tried: a column or a strip that was never laid
+  out is at its guessed share.
+  An agent asleep (`AgentSleep`) is no reason: the new terminal is a shell of
+  its own and nothing is typed at the agent, so it isn't woken either.
+
+Verified (2026-11-26) in a throwaway copy, with `SplitProbe` reading the
+window: from the session in front, `split down -- sh -c '…; sleep 600'` put a
+split under the main row, the keyboard and the area stayed in the session's
+terminal, and the command was running in the session's folder; with
+`--session` on a session not in front, the command was running before the
+session was ever selected, the one in front was untouched, the split was in
+`sessions.json`, and selecting the session showed it with its terminal at
+its view's size; under a zoom on the main row, the zoom stayed, the shell
+started, and zooming out showed all three. The frontmost app never changed.
+Not looked at: what the new terminals draw (the probe can't see the GPU's
+pixels), two windows, fish, and a keeper that refuses the session.
+
+Not done, on purpose: no `--focus` (a person has ⌘D), no way to pick a split
+to split or to add a tab to one that exists, and no verb that closes one.
+
 ## Failure modes worth knowing
 
 - **Nothing listening** — "Wortel isn't running", for both a missing socket and a

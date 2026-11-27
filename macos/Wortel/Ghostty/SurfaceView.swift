@@ -1296,6 +1296,14 @@ final class SurfaceView: NSView {
     /// for one that is out of sight to follow the window by the same amount
     /// (`followWindow`).
     private var windowSizeWhenTold: NSSize?
+
+    /// The size, in points, a session's terminal out of sight would have if
+    /// it were shown now: its session's own tree of splits laid out in the
+    /// window as it is. Set by the app, which has the sessions. Sizes are
+    /// shares of the area, so a terminal beside a side split takes only its
+    /// share of a window's change, and one that followed the window by the
+    /// whole of it was told a width it was never shown at.
+    static var sizeWhenShown: ((SurfaceView) -> NSSize?)?
     private var followWork: DispatchWorkItem?
 
     @objc private func windowDidResize(_ notification: Notification) {
@@ -1328,10 +1336,21 @@ final class SurfaceView: NSView {
             return
         }
         let scale = window?.backingScaleFactor ?? 2
-        let dw = (now.width - then.width) * scale, dh = (now.height - then.height) * scale
-        guard abs(dw) >= 1 || abs(dh) >= 1 else { return }
-        let width = max(40 * scale, CGFloat(told.width) + dw)
-        let height = max(20 * scale, CGFloat(told.height) + dh)
+        let width: CGFloat, height: CGFloat
+        if let shown = Self.sizeWhenShown?(self) {
+            // The app knows the session's own splits: the size its main row
+            // has in the window as it is now, to the point.
+            width = max(40 * scale, shown.width * scale)
+            height = max(20 * scale, shown.height * scale)
+            guard abs(width - CGFloat(told.width)) >= 1 || abs(height - CGFloat(told.height)) >= 1 else { return }
+        } else {
+            // Nobody to ask: by as much as the window changed, which is
+            // right while nothing beside the terminal changes with it.
+            let dw = (now.width - then.width) * scale, dh = (now.height - then.height) * scale
+            guard abs(dw) >= 1 || abs(dh) >= 1 else { return }
+            width = max(40 * scale, CGFloat(told.width) + dw)
+            height = max(20 * scale, CGFloat(told.height) + dh)
+        }
         guard surface != nil else { return followWindowWithoutSurface(width: UInt32(width), height: UInt32(height)) }
         setSurfaceSize(width: UInt32(width), height: UInt32(height))
         // What a change of scale or screen passes on again
@@ -2099,17 +2118,35 @@ final class SurfaceView: NSView {
         }
     }
 
+    /// What libghostty makes of a key: whether it is one of its bindings,
+    /// and whether it is a performable one, which goes to it ahead of the
+    /// menu. A key the menu owns must not be one of those (`wortel.conf`
+    /// unbinds each), or it is typed into the terminal instead.
+    private func binding(for event: NSEvent, on surface: ghostty_surface_t) -> (isBinding: Bool, aheadOfMenu: Bool) {
+        var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
+        var flags = ghostty_binding_flags_e(0)
+        let isBinding = (event.characters ?? "").withCString { ptr in
+            ghosttyEvent.text = ptr
+            return ghostty_surface_key_is_binding(surface, ghosttyEvent, &flags)
+        }
+        return (isBinding, isBinding && flags.rawValue & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue != 0)
+    }
+
+    #if DEBUG
+    /// For `SplitProbe`: whether this terminal would take `event` ahead of
+    /// the menu, by the test `performKeyEquivalent` makes.
+    func takesAheadOfMenu(_ event: NSEvent) -> Bool {
+        guard let surface else { return false }
+        return binding(for: event, on: surface).aheadOfMenu
+    }
+    #endif
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
         guard focused else { return false }
         guard let surface else { return false }
 
-        var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
-        var bindingFlags = ghostty_binding_flags_e(0)
-        let isBinding = (event.characters ?? "").withCString { ptr in
-            ghosttyEvent.text = ptr
-            return ghostty_surface_key_is_binding(surface, ghosttyEvent, &bindingFlags)
-        }
+        let (isBinding, aheadOfMenu) = binding(for: event, on: surface)
 
         // A performable binding is ghostty's, ahead of the menu: it acts only
         // when it can, and otherwise the key goes to the program, as in
@@ -2117,7 +2154,7 @@ final class SurfaceView: NSView {
         // Codex in fullscreen copies the selection it draws itself; the menu's
         // Copy swallowed it. In legacy key encoding a ⌘ key sends nothing, so
         // a shell sees no difference.
-        if isBinding, bindingFlags.rawValue & GHOSTTY_BINDING_FLAGS_PERFORMABLE.rawValue != 0 {
+        if aheadOfMenu {
             keyDown(with: event)
             return true
         }

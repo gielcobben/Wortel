@@ -1216,35 +1216,12 @@ final class SessionManager {
         // answer, so the session follows the last pane chosen anywhere
         // rather than being pinned to a guess made here.
         session.inspectorPane = entry.inspectorPane.flatMap(InspectorPane.init(rawValue:))
-        // The column's tabs. A file from before the column had them said only
-        // whether it was up and on which pane, and that becomes a strip of
-        // one: a session with Changes open opens on a Changes tab, and one
-        // that never had the column up starts with none, which is also what
-        // makes its first ⌘⌥G open the pane you'd expect.
-        var tabs = WorkspaceTabs(
-            main: (entry.mainTabs ?? []).compactMap(SideTab.init(rawValue:)),
-            activeMain: entry.activeMainTab.flatMap(SideTab.init(rawValue:)),
-            side: (entry.sideTabs ?? []).compactMap(SideTab.init(rawValue:)),
-            activeSide: entry.activeSideTab.flatMap(SideTab.init(rawValue:)),
-            sideVisible: session.gitPanelVisible,
-            bottom: (entry.bottomTabs ?? []).compactMap(Self.stripTab),
-            activeBottom: entry.activeBottomTab.flatMap(Self.stripTab),
-            bottomVisible: entry.bottomVisible ?? false,
-            closed: (entry.closedTabs ?? []).compactMap(ClosedTab.init(rawValue:)),
-            habits: Dictionary(uniqueKeysWithValues: (entry.tabHabits ?? [:]).compactMap { key, value in
-                TabKind(rawValue: key).flatMap { kind in TabRegion(rawValue: value).map { (kind, $0) } }
-            }))
-        if entry.sideTabs == nil, session.gitPanelVisible {
-            let pane = session.inspectorPane ?? GitPanelModel.defaultPane
-            tabs.side = [.pane(pane)]
-            tabs.activeSide = .pane(pane)
-        }
-        // Whatever the file said, made consistent: the terminal in the main
-        // row exactly once, what's in front something the row has, an empty
-        // column or strip hidden. See `WorkspaceTabs.normalized`.
-        session.workspace = tabs.normalized()
+        // The column's, the strip's, the main row's and the panes' tabs and
+        // the tree they share, made consistent (`PersistedSession.restoredTabs`,
+        // where each step is told). Pure, so a test runs the same steps.
+        session.workspace = entry.restoredTabs(panelVisible: session.gitPanelVisible,
+                                               defaultPane: GitPanelModel.defaultPane)
         session.sideColumnWidth = entry.sideColumnWidth
-        session.sideColumnLeading = entry.sideColumnLeading ?? false
         // A checkout that's gone (a worktree removed since) is forgotten:
         // the panes follow the terminal again.
         session.gitCheckout = entry.gitCheckout.flatMap {
@@ -5287,6 +5264,23 @@ final class SessionManager {
         return view
     }
 
+    /// One of `session`'s side terminals started now, on screen or not, with
+    /// `input` as its shell's first line: `wortel split`.
+    ///
+    /// A side terminal's view, and with it its shell, is otherwise made the
+    /// first time its tab is shown. For a split made in a session that isn't
+    /// in front, or behind a zoom, that is whenever someone next looks: the
+    /// dev server an agent asked for there would not be running until then,
+    /// and its line would have nowhere to wait (the keeper types it as it
+    /// forks the shell). So the shell starts when it is asked for, and the
+    /// row that later shows the view finds it made. Until one does it is
+    /// told it can't be seen, as a terminal behind another tab is.
+    func startSideTerminal(_ id: UUID, of session: Session, typing input: String?) -> SurfaceView {
+        let view = session.ensureSideSurface(id, runtime: runtime, initialInput: input)
+        if view.superview == nil { view.occlusionDidChange(visible: false) }
+        return view
+    }
+
     /// Put `line` on a prompt for the person to run: there, unsent, as if they
     /// had typed it and not yet pressed Return. For a command that is theirs
     /// to read first (an agent's own installer, `AgentInstall`).
@@ -5305,7 +5299,7 @@ final class SessionManager {
         // front of the terminal the line would be typed out of sight, and
         // the keyboard handed to a terminal nobody is looking at.
         if let session = (placingWindow ?? activeWindow)?.selected, let view = session.surfaceView,
-           session.activeMainTab ?? .session == .session,
+           session.workspace.showsSessionTerminal,
            let window = view.window, window.isVisible, !view.isHiddenOrHasHiddenAncestor,
            shellIsAtPrompt(session, view) {
             view.sendText(line, scripted: true)
@@ -6057,8 +6051,7 @@ final class SessionManager {
     /// waiting for ⌘⇧T; the rest are gone for good.
     private static func persistedBrowserAddresses(of session: Session) -> [String: String]? {
         let workspace = session.workspace
-        let kept = Set((workspace.main + workspace.side + workspace.bottom
-                        + workspace.closed.map(\.tab)).compactMap(\.browserID))
+        let kept = Set((workspace.allTabs + workspace.closed.map(\.tab)).compactMap(\.browserID))
         let addresses = session.browserAddresses.filter { kept.contains($0.key) }
         guard !addresses.isEmpty else { return nil }
         return Dictionary(uniqueKeysWithValues: addresses.map { ($0.key.uuidString, $0.value) })
@@ -6111,6 +6104,17 @@ final class SessionManager {
             gitCheckout: session.gitCheckout,
             tabHabits: session.tabHabits.isEmpty ? nil
                 : Dictionary(uniqueKeysWithValues: session.tabHabits.map { ($0.key.rawValue, $0.value.rawValue) }),
+            // Only when there is more than the main row: a session with no
+            // column, no strip and no split saves what it always has. The
+            // column and the strip are in the tree, and their tabs, whether
+            // they are up, the side and the width are still saved beside it
+            // as they were, which is all an older build reads.
+            splitLayout: session.splitLayout.isSplit ? session.splitLayout : nil,
+            paneTabs: session.paneTabs.isEmpty ? nil
+                : Dictionary(uniqueKeysWithValues: session.paneTabs.map { id, pane in
+                    (id.uuidString, PersistedPaneTabs(tabs: pane.tabs.map(\.rawValue),
+                                                      active: pane.active?.rawValue))
+                }),
             runningAgent: agent?.agent, runningModel: agent?.model,
             runningArgv: agent?.argv,
             runningConversationID: agent == nil ? nil : conversationID,
@@ -6181,12 +6185,6 @@ final class SessionManager {
             return (ended.marker, ended.conversationID)
         }
         return (nil, nil)
-    }
-
-    /// A strip tab as saved: a `SideTab` raw value, or, in files from when the
-    /// strip held terminals only, a bare UUID.
-    private static func stripTab(_ raw: String) -> SideTab? {
-        SideTab(rawValue: raw) ?? UUID(uuidString: raw).map { .terminal($0) }
     }
 
     private func scheduleSave() {

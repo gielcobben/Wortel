@@ -309,9 +309,17 @@ the design is enforced, and pull requests adding them are unlikely to land.
 [`docs/product.md`](docs/product.md) has the reasoning and the questions a new
 feature is held to.
 
-- **No splits.** A session has tabs in three rows (the main area, a side
-  column, a strip under the terminal), not a grid of panes; the sidebar of
-  named sessions is where you switch work.
+- **No layout to build.** A window is a sidebar and, beside it, splits: parts
+  with a row of tabs each. The window is arranged as it always was: Changes
+  and Files beside the terminal (`⌥⌘B`) and a second terminal under it
+  (`⌘J`) are splits that Wortel opens for you, where and as big as they
+  always were. Any split can be split again (`⌘D`, `⇧⌘D`), and one is gone
+  when its last tab closes. Nothing is hidden with its tabs kept: to have
+  the window for one split, zoom it (`⇧⌘↩`). A split holds
+  tabs, never another session: the sidebar of named sessions is where you
+  switch work. The engine's own tab and split actions still return "unhandled".
+  Splits are on `main` and not in a release yet
+  ([`docs/decisions.md`](docs/decisions.md), 2026-11-26).
 - **Almost nothing to configure, and no user config.** Settings (⌘,) holds
   the few switches that differ per person. Everything about the terminal
   itself is the bundled read-only `macos/Resources/wortel.conf`, and your real
@@ -338,11 +346,18 @@ feature is held to.
 | `⌘P` | Go to a session, or bring back an archived one |
 | `⌘Y` | Find a prompt you typed to an agent |
 | `⌥⇧⌘↓` | Jump to the next session waiting on you |
-| `⌘B` / `⌥⌘B` / `⌘J` | Show or hide the sidebar, the side column, the bottom strip |
-| `⇧⌘E` / `⌃⇧G` | Files / source control |
+| `⌘B` | Show or hide the sidebar |
+| `⌥⌘B` | Open Changes and Files beside the terminal, or close them |
+| `⌘J` | Go to the terminal under the main one (making it if there is none), and back |
+| `⇧⌘C` / `⇧⌘H` / `⇧⌘F` | Changes / History / Files (`⌃⇧G` is source control, on the one you used last) |
 | `⌘T` | New terminal tab in the area you are in |
-| `⌘D` / `⇧⌘D` | New terminal in the side column / the bottom strip |
-| `⇧⌘L` | New browser tab |
+| `⌥⌘T` | New tab that asks what it should be: a terminal, a browser, Changes, History or Files |
+| `⌘D` / `⇧⌘D` | Split right / split down: a new terminal in a split beside or under the one you are in |
+| `⇧⌘↩` / `⌃⌘=` | Show one split alone, and all of them again / make the splits equal |
+| `⌃⌥⌘` and an arrow | Focus the split in that direction |
+| `⌃⌘` and an arrow | Move the tab in front to the split in that direction |
+| `` ⌃⇧` `` | New terminal below |
+| `⇧⌘B` | New browser tab |
 | `⇧⌘T` | Reopen closed tab |
 | `⌃Tab` / `⌃⇧Tab` | Next / previous tab (also `⌥⌘→` / `⌥⌘←`) |
 | `⌘]` / `⌘[` | Focus the next / previous area |

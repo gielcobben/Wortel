@@ -27,7 +27,7 @@ final class PreviewWindowBar: ChromeBarView {
 
         let icon = FileButton(url: document.url)
         let name = PassthroughLabel(labelWithString: document.requestedURL.lastPathComponent)
-        // The session name's font in the main window's row (MainBar).
+        // The font the main window's row had for the session's name.
         name.font = .systemFont(ofSize: 13, weight: .medium)
         name.textColor = .labelColor
         name.lineBreakMode = .byTruncatingMiddle

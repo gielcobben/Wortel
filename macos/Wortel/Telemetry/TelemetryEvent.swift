@@ -409,11 +409,13 @@ enum TabOpenedKind: String, CaseIterable {
     case pane
 }
 
-/// Mirrors `TabRegion`.
+/// Mirrors `TabRegion`. A pane split off the main area is `split`, whichever
+/// pane it is: which one would be an id, and an id is not a closed set.
 enum TabArea: String, CaseIterable {
     case main
     case side
     case bottom
+    case split
 }
 
 /// ⌘P (sessions, files and commands) or ⇧⌘P (commands only).
@@ -696,6 +698,7 @@ enum CommandVerb: String {
     case remind
     case cd
     case close
+    case split
     case list
     case read
     case send

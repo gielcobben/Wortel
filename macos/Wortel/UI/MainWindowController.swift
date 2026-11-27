@@ -84,7 +84,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             titleBars: titleBars, previewTabs: previewTabs)
         super.init()
         home.onSwitch = { [weak split] session in split?.show(session) }
-        window.contentViewController = BackdropController(child: split, overlay: titleBars.sidebarControls)
+        window.contentViewController = BackdropController(child: split, overlay: titleBars.windowControls)
         movability = WindowMovability(window: window)
         titleBars.start()
         window.delegate = self

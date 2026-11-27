@@ -3,6 +3,43 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.48.4 beta 1</title>
+            <pubDate>Fri, 27 Nov 2026 15:15:02 -0500</pubDate>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>2026.48.4b1</sparkle:version>
+            <sparkle:shortVersionString>2026.48.4 beta 1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Mark-up holds through a reload, and a hidden sidebar still shows who's waiting</h1>
+<p class="date">Wortel 2026.48.4 beta 1 &middot; 2026-11-27</p>
+<p><strong>Mark-up holds through a reload.</strong> When an agent changed a file while you marked up its page, the dev server reloaded the page and your marks and note were gone. A page’s own reload, or a jump it makes by itself, now waits while you mark up and until the note is copied. The reload button in the tab’s header shows a dot while one waits, and the note bar says “The page changed. It loads when you copy.” It happens once you copy or press Esc. A link you click, and Back and Forward, still go through at once.</p>
+<p><strong>Your typing stays in the note.</strong> Clicking the session in the sidebar, picking the tab or ⌘] could hand the keyboard to the page during mark-up, so a space scrolled it and a page shortcut could act. The note keeps the keyboard now.</p>
+<p><strong>A long note scrolls.</strong> Past six lines the note bar cut its first and last lines in half and the caret went out of sight. It scrolls now, keeps the line you are typing in view, and a note you come back to opens where you left the caret.</p>
+<p><strong>A dot on the sidebar button.</strong> With the sidebar hidden (⌘B), nothing in the window said a session was waiting. The sidebar button in the title bar now carries the dot of the most urgent one, in its colour, and its tooltip says what kind it is.</p>
+<p><strong>Smaller things.</strong> A beta now names the release it leads up to: this is 2026.48.4 beta 1, and 2026.48.4 replaces it when it comes out, whether or not you still take betas. Send Feedback names the version as About does.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.48.4b1.zip" length="29897532" type="application/octet-stream" sparkle:edSignature="mmsrMGA6B5tCGJkoVveyDbU9qPsdndTWdCBALMWlwu0VdLYzEEdO1x0NDdlMtDcghrVTZbzcDg8P69vA8qQSDQ=="/>
+        </item>
+        <item>
             <title>2026.48.3</title>
             <pubDate>Fri, 27 Nov 2026 10:47:04 -0500</pubDate>
             <sparkle:channel>beta</sparkle:channel>

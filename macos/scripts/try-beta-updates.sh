@@ -58,6 +58,7 @@ cleanup() {
   stop_copy
   [[ -n ${server:-} ]] && kill $server 2>/dev/null
   defaults delete $bundle >/dev/null 2>&1
+  rm -f "$HOME/Library/Preferences/$bundle.plist"   # emptied, not removed, by the delete
   rm -rf "$HOME/Library/Caches/$bundle" "$HOME/Library/Application Support/$bundle" 2>/dev/null
   # generate_appcast unpacks every zip it signs into a cache of its own, a
   # whole app each (about 65 MB), under a new name every run.
@@ -65,8 +66,10 @@ cleanup() {
     [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $d/Wortel.app/Contents/Info.plist 2>/dev/null) == $bundle ]] && rm -rf $d
   done
   # The last build is stamped as a beta and points at the live feed: nothing
-  # should be able to launch it. The rest of the folder is kept, for speed.
-  rm -rf $derived/Build/Products/Debug/Wortel.app
+  # should be able to launch it. The whole folder, because Xcode's next
+  # build trusts what it left: without the app alone, the build phase that
+  # reads its Info.plist fails.
+  rm -rf $derived
   (( keep )) && print "kept $work and $data" || rm -rf "$work" "$data"
 }
 # A Ctrl-C, a kill or a closed terminal cleans up too: zsh skips an EXIT

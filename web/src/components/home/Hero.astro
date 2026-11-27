@@ -55,7 +55,9 @@ const latest = await latestRelease();
   /* The window rises once the photo has opened a little, not with it. */
   :global(.js) .hero :global(.stage.first > *) { transition-delay: 450ms; }
   /* The column a little narrower than the canvas drew it (it is a divider you
-     drag), so the three tabs in the main bar show their names in full. */
+     drag), so the three tabs in the main row show their names in full beside
+     the "+" and the split buttons: at the canvas's 360 the row is 4 short and
+     the tabs behind the front one lose the room for their close buttons. */
   .hero :global([data-name="Side column slot"]) { width: 336px; }
   @media (max-width: 900px) { .hero { padding-top: 104px; } .top { margin-bottom: 48px; } }
   /* No controls over this window: on a phone the photo keeps a strip above it. */

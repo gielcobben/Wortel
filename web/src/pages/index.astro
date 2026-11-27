@@ -8,6 +8,7 @@ import Hero from '../components/home/Hero.astro';
 import Start from '../components/home/Start.astro';
 import Agents from '../components/home/Agents.astro';
 import Panes from '../components/home/Panes.astro';
+import Markup from '../components/home/Markup.astro';
 import Bento from '../components/home/Bento.astro';
 import Glance from '../components/home/Glance.astro';
 import { homeSchema } from '../data/schema';
@@ -29,6 +30,7 @@ const schema = homeSchema(await latestRelease());
   <Start />
   <Agents />
   <Panes />
+  <Markup />
   <Bento />
   <Glance />
 </Layout>

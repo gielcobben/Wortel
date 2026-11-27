@@ -38,6 +38,7 @@ import Changes from '../../app/gen/Changes.astro';
 import FileMain from '../../app/gen/FileMain.astro';
 import AppContent from '../AppContent.astro';
 import Browser from '../../app/gen/Browser.astro';
+import MarkUp from '../../app/gen/MarkUp.astro';
 
 // The order the tiles arrive in: the terminal first, then outwards from it.
 const ARRIVE = ['hero', 'agents', 'browser', 'plan', 'palette', 'worktree', 'diff', 'status', 'settings', 'quit', 'free', 'send', 'looks'];
@@ -45,8 +46,13 @@ const ARRIVE = ['hero', 'agents', 'browser', 'plan', 'palette', 'worktree', 'dif
 // by name; anything else runs the same.
 const AGENTS = ['claude', 'codex', 'gemini', 'opencode', 'pi', 'amp', 'goose', 'aider', 'crush'];
 const delay = (scene: string) => `--d:${ARRIVE.indexOf(scene) * 50}ms`;
+// The plan tile shows Mark Up over the rendered plan: the bottom of the
+// preview, with the note bar and two of its marks. Mark Up is on a branch that
+// may ship later than the rest; false brings back the plain rendered plan
+// (and its words in BENTO, data/site.ts: "Plans, rendered").
+const MARK_UP = false;
 // A tile that shows a part lifted out of a pane: which part, by its name.
-const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
+const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' : 'Markdown' };
 ---
 <Section id="more" {...HOME.glance}>
   <Fragment slot="anchors">
@@ -126,7 +132,7 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
     </ul>
     <!-- The panes the tiles take their parts from, and what a window with no
          sidebar gains in its bar. Never shown: scripts/bento.ts clones from them. -->
-    <template data-src><Changes /><AppContent><FileMain /></AppContent></template>
+    <template data-src><Changes /><AppContent><FileMain /></AppContent>{MARK_UP && <AppContent><MarkUp /></AppContent>}</template>
     <template data-tpl="lead"><Lead /></template>
 </Section>
 
@@ -211,7 +217,14 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
   /* Wider than the tile, so the agent's lines run as they would in a real
      window instead of wrapping; the tile cuts its right edge and its foot. */
   .hero :global(.win) { position: absolute; left: 16px; top: 64px; width: var(--w); max-width: none; text-align: left; }
-  .hero :global([data-solo] header[data-name="Main bar"]) { padding-left: 78px; }
+  /* With no sidebar the window owns the traffic lights (Lights) and the
+     corner pair, Running and "…" (Window.astro draws it), as the app's does. The
+     main row is the window's only row: it starts clear of the lights and ends
+     72 from the window's edge, clear of the pair (the app's trailing
+     clearance). Its split buttons stay: the row has far more than the 240 the
+     app needs for them. A tile narrower than the window (all but 760 to 960
+     wide) cuts its right side, the corner and the split buttons with it. */
+  .tile :global([data-solo] header[data-name="Main bar"]) { padding-left: 78px; padding-right: 72px; }
 
   /* ---- parts of the app, at their own size, cut by the tile ------------------ */
   .part, .pal, .rows { text-align: left; }
@@ -222,6 +235,15 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
   }
   .diff .part { width: 420px; height: 240px; }
   .plan .part { width: 560px; height: 420px; }
+  /* Mark Up on the plan: the foot of the preview, down to the tile's edge, so
+     the note bar the app pins to the bottom is in view, with the arrow and the
+     highlight above it. 650 wide is the preview at which the plan's column
+     reaches its 602 and wraps as the canvas drew it, which is where the marks
+     were placed; narrower, the text would move out from under them. The part
+     is placed so the two marks are in the middle of the tile (the column's
+     242nd point, 24 into the part), and the tile cuts both sides. */
+  .plan .part[data-part="Preview"] { width: 650px; height: auto; bottom: 0; left: calc(50% - 266px); border-radius: 12px 12px 0 0; }
+  .plan .part > :global([data-name="Preview"]) { flex: 1 1 auto; min-height: 0; }
 
   .part > :global(*) { flex: none; width: 100%; }
   /* The browser as it is in the app: a session's window with its tabs, the
@@ -229,7 +251,6 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
      browser-light and -dark, this homepage at the tab's width), since the one
      the canvas drew dates; bento.ts sets it. */
   .browser :global(.win) { position: absolute; left: 24px; top: 72px; width: var(--w); max-width: none; text-align: left; }
-  .browser :global([data-solo] header[data-name="Main bar"]) { padding-left: 78px; }
   .browser :global([data-name="Web page"]) { object-fit: cover; object-position: 50% 0; }
 
   /* The top of the command palette. */
@@ -238,6 +259,9 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
 
   /* Three rows of the real sidebar on its own glass, as wide as the sidebar
      is: bento.ts leaves one folder and its worktree sessions. */
+  /* The glass takes the card's corners: a backdrop filter is not clipped by
+     its parent's rounded ones (app.css gives only a window's glass its 18). */
+  .rows > :first-child { border-radius: inherit; }
   .rows { position: relative; display: flex; width: 234px; overflow: hidden; border-radius: 14px; box-shadow: 0 16px 40px rgb(0 0 0 / 0.3), 0 0 0 0.5px rgb(0 0 0 / 0.3); }
   .rows :global([data-name="Sidebar bar"]), .rows :global([data-name="Sidebar footer"]) { display: none; }
   .rows :global([data-name="Sessions"]) { overflow: hidden; padding-block: 6px; }
@@ -321,5 +345,9 @@ const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown' };
     .worktree, .diff, .plan, .palette, .browser { grid-row: span 2; }
     .quit, .status, .settings, .free { grid-column: span 2; }
     .cmd p { padding-inline: 16px; }
+  }
+  /* A tile wide enough for the whole preview shows it whole, in the middle. */
+  @media (min-width: 800px) and (max-width: 960px) {
+    .plan .part[data-part="Preview"] { left: calc(50% - 325px); }
   }
 </style>

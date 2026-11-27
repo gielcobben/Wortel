@@ -1,65 +1,78 @@
 ---
-// The window, explained by the ways people arrange it, and by letting you.
+// Splits: the window, and how it bends to the work.
 //
-// One live window built from the canvas's pane library. Its chapters are
-// arrangements you would actually use, named for what you are doing rather
-// than for the panes involved. The window's own controls work too: the
-// sidebar and column buttons, the tabs, the sessions. scripts/panes.ts moves
-// it the way the app does, a place at a time. The window is never scaled.
+// One live window built from the canvas's pane library, and one story in
+// three chapters named for what you do, each a cause and its effect in that
+// same window, which never goes back: ⌘D splits the agent's terminal and a
+// dev server is started in the new shell; the page it serves opens beside
+// them and its tab is dragged to the bottom edge of the server's split, which
+// makes a split there; and ⇧⌘↩ gives the agent's terminal the whole window
+// and puts the three back. The window is never swapped for a picture and
+// never scaled.
+//
+// The session is the one building the landing page (the canvas's "Terminal,
+// a note pasted", its prompt emptied), so the film after this one, mark-up,
+// picks up in the same session on the same page.
+//
+// scripts/panes.ts moves the window the way the app does: a tab opened
+// beside the terminal slides in, and a split you make, a tab you drop and a
+// zoom land in one cut.
 import Section from '../Section.astro';
 import Stage from '../Stage.astro';
 import { HOME } from '../../data/site';
 import Window from '../Window.astro';
-import Sidebar from '../../app/gen/Sidebar.astro';
-import TerminalNarrow from '../../app/gen/TerminalNarrow.astro';
-import FileMain from '../../app/gen/FileMain.astro';
 import AppContent from '../AppContent.astro';
-import Browser from '../../app/gen/Browser.astro';
-import Changes from '../../app/gen/Changes.astro';
-import History from '../../app/gen/History.astro';
-import Files from '../../app/gen/Files.astro';
-import BottomStrip from '../../app/gen/BottomStrip.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import NotePasted from '../../app/gen/NotePasted.astro';
+import ZoomedSplit from '../../app/gen/ZoomedSplit.astro';
+import MarkUpPage from '../../app/gen/MarkUpPage.astro';
 import Lead from '../Lead.astro';
 import Lights from '../Lights.astro';
 
-const chapters = ['Changes', 'History', 'Browser', 'Files', 'Terminal'];
+const chapters = ['⌘D', 'Drag a tab', 'Zoom'];
 ---
-<Section id="panes" {...HOME.window}>
-  <Fragment slot="anchors"><span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span></Fragment>
+<Section id="splits" {...HOME.window}>
+  <Fragment slot="anchors"><span id="panes" class="anchor"></span><span id="sessions" class="anchor"></span><span id="git-and-files" class="anchor"></span></Fragment>
     <Stage film="panes" chapters={chapters} photo="skye" at="50% 50%">
       <Window live data-pwin>
         <div class="slot sb" data-slot="sidebar">
           <div class="pane" data-pane="sidebar"><Sidebar /></div>
         </div>
         <div class="divider" data-div="sidebar"></div>
-        <div class="mainarea">
-          <div class="slot main" data-slot="main">
-            <div class="pane" data-pane="terminal"><TerminalNarrow /></div>
-            <div class="pane" data-pane="file"><AppContent><FileMain /></AppContent></div>
-            <div class="pane" data-pane="browser"><AppContent><Browser /></AppContent></div>
-          </div>
-          <div class="slot strip" data-slot="strip">
-            <div class="pane" data-pane="strip"><BottomStrip /></div>
-          </div>
+        <!-- The agent's terminal. Alone, its row is the rightmost along the
+             top and clears the window's corner (data-end, styles/site.css);
+             scripts/panes.ts moves that mark to whichever row is. -->
+        <div class="slot main" data-slot="main" data-end>
+          <div class="pane" data-pane="terminal"><NotePasted /></div>
         </div>
-        <div class="divider" data-div="side"></div>
-        <div class="slot side" data-slot="side">
-          <div class="pane" data-pane="changes"><Changes /></div>
-          <div class="pane" data-pane="history"><History /></div>
-          <div class="pane" data-pane="files"><Files /></div>
+        <!-- What ⌘D makes: a column with the new shell in it, and later a
+             second split under that one. The terminal is the canvas's dev
+             server split: the film starts it as a new shell and runs the
+             server in it. -->
+        <div class="divider" data-div="side" hidden></div>
+        <div class="col" data-col hidden>
+          <div class="slot side" data-slot="side">
+            <div class="pane" data-pane="split"><ZoomedSplit /></div>
+          </div>
+          <div class="rule" data-div="below" hidden></div>
+          <div class="slot below" data-slot="below" hidden></div>
+        </div>
+        <!-- Where a tab opened beside the terminal goes: a column at the
+             outer edge. The browser opens here, and is dragged from here to
+             the slot under the shell. -->
+        <div class="divider" data-div="edge" hidden></div>
+        <div class="slot edge" data-slot="edge" hidden>
+          <div class="pane" data-pane="page"><AppContent><MarkUpPage /></AppContent></div>
         </div>
         <Lights slot="over" />
       </Window>
-      <!-- What the main bar gains when a neighbour is hidden, as the canvas
-           draws its "No sidebar" and "Terminal" states. Cloned by panes.ts. -->
+      <div class="keys glass" data-keys="split" aria-hidden="true"><kbd>⌘</kbd><kbd>D</kbd></div>
+      <div class="keys glass" data-keys="command" aria-hidden="true"><kbd>⌘</kbd></div>
+      <div class="keys glass" data-keys="zoom" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↩</kbd></div>
+      <!-- What the leftmost row gains when the sidebar is hidden, as the
+           canvas draws its "No sidebar" state. Cloned by panes.ts. -->
       <template data-tpl="lead">
         <Lead />
-      </template>
-      <template data-tpl="trail">
-        <div data-name="Toolbar divider" class="h-4 w-px shrink-0 bg-input"></div>
-        <div data-name="Show Side Column" class="flex size-7 shrink-0 items-center justify-center">
-          <div class="h-[15px] w-[20px] shrink-0 bg-sidebar-accent-foreground [mask-image:url(/app/fcba5c820534b40058a17d1ab0846f7f.png)] [mask-size:100%_100%]"></div>
-        </div>
       </template>
     </Stage>
 </Section>
@@ -70,39 +83,79 @@ const chapters = ['Changes', 'History', 'Browser', 'Files', 'Terminal'];
 </script>
 
 <style>
-  [data-film="panes"] :global([data-pane="browser"] img[data-name="Web page"]) { object-position: 50% 0; }
+  /* Keys show over the split that has the keyboard, in a gap in what it
+     shows: scripts/panes.ts finds the place. */
+  .keys { left: 50%; top: 50%; translate: -50% -50%; }
 
-  /* Slots, sized the way the canvas sizes them: the sidebar 234, the column
-     384, or 234 when it holds the file tree. A divider stays where it was
-     dragged, so the strip's height is ours. */
+  /* Slots. The sidebar is the canvas's 234. A split made with ⌘D takes half
+     of what is beside the sidebar, a tab opened beside the terminal makes a
+     column at the outer edge and the splits already there share the rest,
+     and one made by a drop on a bottom edge takes half of that split's
+     height: scripts/panes.ts works the widths out. */
   .slot { position: relative; display: grid; min-height: 0; min-width: 0; overflow: hidden; }
   .slot > * { grid-area: 1 / 1; min-width: 0; min-height: 0; }
   .sb { width: 234px; flex: none; }
-  .mainarea { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; }
-  .main { flex: 1; min-height: 80px; }
-  .strip { flex: none; height: 200px; min-height: 0; }
-  /* One track as wide as the column, so the file tree's narrower pane is
-     not held at the width of the widest pane stacked with it. */
-  .side { width: 384px; flex: none; grid-template-columns: 100%; }
+  .main { flex: 1; min-width: 80px; }
+  .col { display: flex; flex-direction: column; flex: none; min-height: 0; overflow: hidden; }
+  .side, .below { flex: 1 1 0; grid-template-columns: 100%; }
+  .edge { flex: none; grid-template-columns: 100%; }
   .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
+  .rule { height: 1px; flex: none; background: var(--sidebar-border); }
   .pane { display: flex; }
-  /* A folding slot clips its pane, the way a split view does, instead of
-     reflowing it through every width on the way to zero. */
+  /* What slides in clips its pane, the way a split view does, instead of
+     reflowing it through every width on the way: the pane stays where it is
+     at rest, held to the window's edge on its own side, and the divider
+     passes over it. So a row is never carried under the window's corner. */
   .sb .pane { min-width: 234px; }
-  .side .pane { min-width: 384px; }
-  .side [data-pane="files"] { min-width: 234px; }
-  .strip .pane { min-height: 200px; }
+  .edge .pane { min-width: var(--edge, 0px); width: 100%; justify-self: end; }
   .pane > :global(*) { flex: 1; }
-  .pane:not(:first-child) { visibility: hidden; opacity: 0; }
 
-  /* On a phone: the main pane as wide as the stage, and the column beside
-     it just as wide, so each is whole when the film pans to it
-     (scripts/panes.ts). */
+  /* A split's row lower down has the band look, where the canvas drew the
+     browser's with the titlebar's: 36 high, the strip's wash on the page
+     colour, no hairline under it, and the front tab on the card colour (as
+     the canvas's Splits state and its bottom strip draw one). */
+  .below :global(header) { height: 36px; border-bottom-width: 0; background: linear-gradient(var(--muted), var(--muted)), var(--background); }
+  .below :global(header .bg-sidebar-accent) { background-color: var(--card); }
+  /* The browser split is the canvas's "Mark-up, a page", for its capture of
+     the landing page at a split's width in both colour schemes. Here nothing
+     is being marked up, so its mark-up layers and the header hairline that
+     comes with them are left out. */
+  :is(.edge, .below) :global(:is([data-name="Mark Up"], [data-name="Header hairline"], [data-name="Hover outline"], [data-name="Mark 1"], [data-name="Mark 2"], [data-name="Note bar"])) { display: none; }
+  /* The page is as wide as its split and as tall as that makes it, cut off
+     at the bottom, as the mark-up film has it (Markup.astro): covering a
+     tall split instead cut its sides off. Where a split is taller than the
+     capture, the page's own ground goes on under it. */
+  :is(.edge, .below) :global([data-name="Page"]) { background: var(--fog-0); }
+  :is(.edge, .below) :global([data-name="Page"] > img) { height: auto; object-fit: fill; }
+
+  /* On a phone the stage shows one split's worth of this window at a time:
+     the agent's terminal, the column beside it, or the column at the edge
+     while there is one, each as wide as the stage, and the film pans to the
+     one that has the keyboard (scripts/panes.ts sets --n, how many of them
+     the window is wide: 2, 3 while a tab is open at the edge, 1 zoomed). */
   @media (max-width: 760px) {
-    :global([data-film="panes"] .stage .win) { width: calc(200% + 1px); }
-    .side { width: calc((100% - 1px) / 2); }
-    .side .pane, .side [data-pane="files"] { min-width: 100%; }
+    :global([data-film="panes"] .stage .win) { width: calc(var(--n, 2) * 100% + (var(--n, 2) - 1) * 1px); }
+    .main, .col, .edge { flex: none; width: calc((100% - (var(--n, 2) - 1) * 1px) / var(--n, 2)); }
+    .edge .pane { min-width: 0; }
+    /* The stage is cut at its own edge, 16 past the window's: what would
+       show there of the split next door is left undrawn, so the window runs
+       on past the edge without a strip of something else in it. */
+    :global([data-pwin][data-view="main"]) :is(.col, .edge),
+    :global([data-pwin][data-view="side"]) :is(.main, .edge),
+    :global([data-pwin][data-view="edge"]) :is(.main, .col) { visibility: hidden; }
+    /* A zoomed split is the whole of a window this narrow, with the traffic
+       lights at one end of its row and the window's corner at the other.
+       What is left between them goes to the session's name and the lit Show
+       All Splits, which are what the scene is about: Show Sidebar and the
+       "+" are left out, as they are from the other folded windows' rows
+       (styles/site.css). */
+    .main[data-zoomed] :global(:is([data-lead], [data-name="New Tab"])) { display: none; }
   }
+
+  /* A shell starts at the top of its terminal. The canvas says so with a
+     spacer under the last line, which styles/app.css takes out of every
+     terminal for the sake of Claude's pinned prompt box. */
+  .pane[data-pane="split"] :global([data-name="Terminal"]) { justify-content: flex-start; }
 
   /* The window owns the traffic lights (Lights.astro); the pane's copy hides. */
   [data-film="panes"] :global([data-pane="sidebar"] [data-name="Traffic lights"]) { visibility: hidden; }

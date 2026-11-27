@@ -45,7 +45,12 @@ const untuck = (root: HTMLElement) => {
 const mark = (el: HTMLElement) => { el.dataset.fit = ''; return el; };
 const drawn = (el: HTMLElement) => shown(el) && el.getClientRects().length > 0;
 
-/** Put the oldest rows of a terminal out of sight until what is left fits whole. */
+/**
+ * Put the oldest rows of a terminal out of sight until what is left fits whole.
+ * A terminal that says so (data-reserve, in points) is scrolled a little
+ * further, so that much stays clear under its last line: room for something a
+ * scene shows over the terminal without covering a line of it.
+ */
 export function fitTerminal(root: HTMLElement) {
   untuck(root);
   const all = (Array.from(root.children) as HTMLElement[]).filter(drawn);
@@ -68,12 +73,13 @@ export function fitTerminal(root: HTMLElement) {
   const cs = getComputedStyle(root);
   const room = root.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   const used = rows.reduce((h, r) => h + r.offsetHeight, 0);
-  if (used <= room + 0.5) return;
+  const fits = room - (Number(root.dataset.reserve) || 0);
+  if (used <= fits + 0.5) return;
 
   const max = body.length;
   let i = 0, gone = 0;
   const tuck = () => { gone += body[i].offsetHeight; mark(body[i++]).style.visibility = 'hidden'; };
-  while (i < max && used - gone > room + 0.5) tuck();
+  while (i < max && used - gone > fits + 0.5) tuck();
   if (!i) return;
   // Having cut, do not open on an empty row, or on a result whose tool line went.
   while (i < max && (!body[i].textContent?.trim() || body[i].dataset.name === 'Result')) tuck();
@@ -146,8 +152,108 @@ export function fitSidebar(nav: HTMLElement, also?: HTMLElement) {
   }
 }
 
-/** Keep every terminal and sidebar inside `root` to whole rows, now and as it resizes. */
+// ---- a picture drawn twice ----------------------------------------------------
+/**
+ * A pane that carries a picture in both colour schemes holds two images, one
+ * hidden by class (dark:hidden, and hidden dark:block). A hidden image is
+ * still fetched once it is no longer lazy, so of each such pair only the one
+ * the colour scheme shows keeps its address; the other gets it back when the
+ * scheme changes. Call it before the stage nears (scripts/reveal.ts).
+ */
+export function schemePictures(root: ParentNode) {
+  const dark = matchMedia('(prefers-color-scheme: dark)');
+  const all = Array.from(root.querySelectorAll<HTMLImageElement>('img')).filter((img) => /(^|\s)dark:(hidden|block)(\s|$)/.test(img.className));
+  const pick = () => all.forEach((img) => {
+    const mine = img.classList.contains('dark:block') === dark.matches;
+    if (!mine && img.getAttribute('src')) { img.dataset.src = img.getAttribute('src')!; img.removeAttribute('src'); }
+    if (mine && img.dataset.src) { img.src = img.dataset.src; delete img.dataset.src; }
+  });
+  pick();
+  dark.addEventListener('change', pick);
+}
+
+// ---- a split's row of tabs --------------------------------------------------
+// What the app works out from a row's width, worked out here the same way, so
+// a pane drawn at one width on the canvas is right at another.
+//
+// The split buttons: shown while the row has 240 points of its own, which is
+// its width less what stands before and after it (SplitPane.swift,
+// roomForSplitButtons). Under that they go, and the tabs have the row.
+//
+// Tabs that do not fit, in the app's three steps (SideTabStrip.swift, plan):
+// the tabs behind the one in front give up the room kept for their close
+// button (data-short); then every tab gives way together, its title cut with
+// an ellipsis, down to 130 points or its own width if that is less
+// (data-short="squeeze", each tab's floor in --floor); and when they are all
+// at their floors the row scrolls to the tab in front, its other end under a
+// 20 point fade, with the "+" still after the last tab (data-over). A row
+// whose front tab is its last is scrolled to its end. One whose front tab is
+// its first stays where it is and fades at the far end (data-over="end"),
+// though the "+" is then out of sight, where the app would pin it: only the
+// hero's row at a tablet's width gets there. The styles are in site.css.
+const SPLIT_ROOM = 240;
+const BACK_AND_FORWARD = 60 + 8;
+const TAB_FLOOR = 130;
+function fitBar(bar: HTMLElement) {
+  const tabs = bar.querySelector<HTMLElement>(':scope > [data-name="Tabs"]');
+  // A row that is not drawn (a pane in a template, a hidden window) has no width to go by.
+  if (!tabs || !bar.offsetWidth) return;
+  const pair = bar.querySelector<HTMLElement>(':scope > [data-name="Split buttons"]');
+  if (pair) {
+    const gap = parseFloat(getComputedStyle(bar).columnGap) || 0;
+    let room = tabs.offsetWidth + (pair.offsetWidth ? pair.offsetWidth + gap : 0);
+    // On a phone Back and Forward are left out of a folded window's row
+    // (site.css). The app has them, so its row is that much shorter.
+    const arrows = bar.querySelector<HTMLElement>('[data-lead] [data-name="Back and Forward"]');
+    if (arrows && !arrows.offsetWidth) room -= BACK_AND_FORWARD;
+    const hides = room < SPLIT_ROOM;
+    // A zoomed split's row has Show All Splits after the two, and keeps it
+    // when they go (SplitPane.swift, fitSplitButtons).
+    const unzoom = pair.querySelector<HTMLElement>(':scope > [data-name="Show All Splits"]');
+    const keeps = !!unzoom && !unzoom.hidden;
+    for (const b of Array.from(pair.children) as HTMLElement[]) if (b !== unzoom) b.hidden = keeps && hides;
+    pair.hidden = hides && !keeps;
+  }
+  const kids = (Array.from(tabs.children) as HTMLElement[]).filter((k) => k.dataset.name && k.offsetWidth);
+  const first = kids[0], last = kids[kids.length - 1];
+  // Measured to the fraction: a whole-pixel sum can call a row that fits too long.
+  const over = () => !!first && last.getBoundingClientRect().right - first.getBoundingClientRect().left > tabs.getBoundingClientRect().width + 0.5;
+  delete tabs.dataset.short; delete tabs.dataset.over;
+  if (!over()) return;
+  tabs.dataset.short = '';
+  if (!over()) return;
+  const named = kids.filter((k) => k.dataset.name!.endsWith(' tab'));
+  // To the fraction of a point: a floor rounded down cuts a title that fits.
+  // A tab alone in its row has nothing to scroll past, so it has no floor
+  // and its title is cut as far as the row needs (a phone's window is
+  // narrower than the app's can be made).
+  const alone = named.length === 1;
+  named.forEach((k) => k.style.setProperty('--floor', alone ? '0px' : `${Math.min(parseFloat(getComputedStyle(k).width) || k.offsetWidth, TAB_FLOOR)}px`));
+  tabs.dataset.short = 'squeeze';
+  // The tab in front is the one with a fill: the titlebar's, or a band row's.
+  const front = named.find((k) => k.classList.contains('bg-sidebar-accent') || k.classList.contains('bg-card'));
+  if (!over() || !front) return;
+  if (front === named[named.length - 1]) tabs.dataset.over = '';
+  else if (front === named[0]) tabs.dataset.over = 'end';
+}
+
+/** Keep every split's row in `root` to what fits it, now and as it resizes. */
+export function fitBars(root: ParentNode) {
+  const ro = new ResizeObserver((entries) => entries.forEach((e) => fitBar((e.target as HTMLElement).parentElement!)));
+  // A row's tabs take whatever the row has left, so their box changes with
+  // the row's width, its insets, and anything put in beside them. What does
+  // not change it is a tab's own title, which a scene rewrites when the
+  // session changes: that is watched for apart. Fitting writes attributes
+  // and styles only, which neither of the two watches.
+  root.querySelectorAll<HTMLElement>('header > [data-name="Tabs"]').forEach((t) => {
+    ro.observe(t);
+    new MutationObserver(() => fitBar(t.parentElement!)).observe(t, { childList: true, subtree: true, characterData: true });
+  });
+}
+
+/** Keep every terminal and sidebar inside `root` to whole rows, now and as it resizes. A row of tabs is kept to what fits it too (fitBars). */
 export function wholeRows(root: ParentNode) {
+  fitBars(root);
   const terms = Array.from(root.querySelectorAll<HTMLElement>('[data-name="Terminal"], [data-name="Strip terminal"]'));
   const navs = Array.from(root.querySelectorAll<HTMLElement>('[data-name="Sessions"]'));
   terms.forEach((t) => { if (t.dataset.name === 'Terminal') withHeader(t); });
@@ -368,8 +474,10 @@ export class Sidebar {
   pulse() {
     this.pulseTween?.kill();
     const dots = this.root.querySelectorAll('[data-name="Working"] > div');
+    // No session at work: nothing to set, and GSAP warns about an empty target.
+    if (!dots.length) return;
     gsap.set(dots, { opacity: 1 });
-    if (dots.length && !reduced()) {
+    if (!reduced()) {
       this.pulseTween = gsap.to(dots, { opacity: 0.2, duration: 0.5, ease: 'sine.inOut', stagger: { each: 0.18, repeat: -1, yoyo: true } });
     }
   }
@@ -844,10 +952,15 @@ export class Pointer {
     box.appendChild(this.el);
   }
 
-  /** Travel to `target` and press it. Resolves in `seconds`: act then. */
-  click(target: Element, seconds = 0.7) {
+  /** Where the pointer points at something: its middle, or 120 in when it is wide. In the box's own points. */
+  at(target: Element) {
     const b = this.box.getBoundingClientRect(), t = target.getBoundingClientRect();
-    const x = t.left - b.left + Math.min(t.width / 2, 120), y = t.top - b.top + t.height / 2;
+    return { x: t.left - b.left + Math.min(t.width / 2, 120), y: t.top - b.top + t.height / 2 };
+  }
+
+  /** Travel to `to` (a thing, or a point of the box) without pressing. */
+  move(to: Element | { x: number; y: number }, seconds = 0.7) {
+    const { x, y } = to instanceof Element ? this.at(to) : to;
     if (!this.shownAt) {
       gsap.set(this.el, { x: x + 120, y: y + 90, opacity: 0 });
       this.shownAt = true;
@@ -856,8 +969,13 @@ export class Pointer {
     const tl = gsap.timeline();
     tl.to(this.el, { opacity: 1, duration: 0.15 }, 0);
     tl.to(this.el, { x, y, duration: seconds, ease: 'power3.inOut' }, 0);
-    tl.to(this.el, { scale: 0.86, duration: 0.08, yoyo: true, repeat: 1, transformOrigin: '10% 6%' }, seconds);
     return tl;
+  }
+
+  /** Travel to `target` and press it. Resolves in `seconds`: act then. */
+  click(target: Element | { x: number; y: number }, seconds = 0.7) {
+    return this.move(target, seconds)
+      .to(this.el, { scale: 0.86, duration: 0.08, yoyo: true, repeat: 1, transformOrigin: '10% 6%' }, seconds);
   }
 
   hide() { gsap.to(this.el, { opacity: 0, duration: 0.3, overwrite: 'auto' }); this.shownAt = false; }

@@ -124,7 +124,7 @@ export const SECTIONS: Section[] = [
         p: 'Most agent apps are a chat window with a small terminal inside, and an ordinary terminal runs your agents but does not keep track of them. Wortel is a real terminal first: every session is a shell on Ghostty’s engine, and an agent is one more command in it, so Claude Code, Codex, Gemini, opencode, Pi or anything else runs as it is. Once you name yours in Settings, ⌘N opens every new session with it already running.',
       },
       {
-        p: 'It is fully native: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No grid of panes to tile.',
+        p: 'It is fully native: Swift and AppKit, no web view. Open it and the work is where you left it, every session still named and still in its own directory. No layout to build first.',
       },
       {
         p: 'Point it at a repository and each agent gets its own branch and its own files, with the diff of what they did beside them. None of it stops when you quit.',
@@ -181,6 +181,34 @@ export const SECTIONS: Section[] = [
       },
       {
         p: 'It ships no per-agent integrations on purpose: a terminal that adapts to six agents by name is a terminal that is wrong about the seventh. A bundled wortel command sits on every session’s PATH instead, so anything that can run a command can drive the app.',
+      },
+    ],
+  },
+
+  {
+    id: 'splits',
+    title: 'Split it anywhere',
+    lead: 'Everything beside the sidebar is made of splits, and every split has its own row of tabs.',
+    blocks: [
+      {
+        p: '`⌘D` splits the split you are in to the right and `⇧⌘D` splits it down, each with a new terminal. A tab let go on the edge of a split makes a new one there, and let go on its middle moves into it. The + in a row opens a tab that asks what it should be: a terminal, a browser, Changes, History or Files.',
+      },
+      {
+        p: 'Wortel opens the first two for you, where they have always been: Changes and Files beside the terminal (`⌥⌘B`) and a second shell under it (`⌘J`). So the window is useful before you arrange anything, and arranging it is never a setting. `⇧⌘↩` zooms the split you are in to the whole window and back.',
+      },
+    ],
+  },
+
+  {
+    id: 'mark-up',
+    title: 'Show it what you mean',
+    lead: 'Point at what a preview shows, say something about it, and paste it to an agent.',
+    blocks: [
+      {
+        p: 'Mark Up (`⇧⌘M`) works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',
+      },
+      {
+        p: 'Your note goes in a bar at the bottom of the preview, with each mark in it as a chip, so the sentence is written around them. Return copies it as plain text, with a picture of each mark and the page or file it was about. Paste it to the agent in this session or another. Nothing is typed or sent for you.',
       },
     ],
   },
@@ -305,20 +333,28 @@ export const HOME = {
   terminal: {
     title: 'A terminal first',
     tone: 'An agent is one more command',
-    body: 'Every session is a real shell on Ghostty’s engine. Type claude, codex or pi and the agent has it. Name yours once in Settings and ⌘N opens every new session with it already running.',
+    body: 'Every session is a real shell on Ghostty’s engine. Type `claude`, `codex` or `pi` and the agent runs in it. Name yours once in Settings and `⌘N` opens every new session with it already running.',
     link: ['How new sessions start', '/docs#new-sessions'],
   },
   agents: {
     title: 'Know which one needs you',
     tone: 'The agent says so, Wortel shows it',
-    body: 'Claude Code, Codex, Pi, opencode and others report when they are working, waiting on you, done or failed. A dot in the sidebar, a notification for a session out of sight, and ⌥⇧⌘↓ takes you there.',
+    body: 'Claude Code, Codex, Pi, opencode and others report when they are working, waiting on you, done or failed. A dot in the sidebar, a notification for a session out of sight, and `⌥⇧⌘↓` takes you there.',
     link: ['How the agents report', '/docs#agent-detection'],
   },
   window: {
-    title: 'One window, four places',
-    tone: 'Arranged the way you work',
-    body: 'Sessions on the left, the terminal in the middle, your changes, history and files beside it, a second shell underneath. Every place folds away, and nothing in it is a setting.',
-    link: ['Every shortcut', '/docs#shortcuts'],
+    title: 'Split it anywhere',
+    tone: 'Every split has its own tabs',
+    body: '`⌘D` splits where you are and `⇧⌘D` splits it down. Drag a tab to the edge of any split and it makes a new one there. Every split has its own row of tabs: a terminal, a browser, a file, your changes. `⇧⌘↩` gives one the whole window.',
+    link: ['How splits and tabs work', '/docs#splits'],
+  },
+  // This entry, the section that reads it (components/home/Markup.astro) and
+  // its line in pages/index.astro go together.
+  markup: {
+    title: 'Show it what you mean',
+    tone: 'Point at it, say it, paste it',
+    body: 'Mark Up (`⇧⌘M`) works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
+    link: ['How mark-up works', '/docs#mark-up'],
   },
   glance: {
     title: 'Everything around the terminal',
@@ -372,6 +408,8 @@ export const DOCS_SECTIONS: Section[] = [
             ['wortel remind <when>', 'Brings the session back to you later'],
             ['wortel cd <dir>', 'Moves the session, and its agent, to another folder'],
             ['wortel close', 'Closes the session when the agent is done, and its worktree with it'],
+            ['wortel split', 'A new terminal in a split beside the session’s own. The keyboard stays where it is'],
+            ['wortel split down -- <command>', 'The same under it, running a command: a dev server, a log'],
             ['wortel list', 'The open sessions, in sidebar order'],
             ['wortel read <session>', 'Prints the text on a session’s screen'],
             ['wortel send <session> <text>', 'Types text into a session as a paste'],
@@ -381,6 +419,9 @@ export const DOCS_SECTIONS: Section[] = [
       },
       {
         p: 'This is how Wortel avoids shipping an integration per agent. An agent that just wrote a file opens a preview of it. A hook you wrote names the session after the ticket you are on. A build that finishes raises attention.',
+      },
+      {
+        p: '`wortel new` files its session by where the command was run, not by what is selected: in the folder that covers its directory, right after the session that ran it. Closing the new session takes you back there.',
       },
     ],
   },
@@ -414,22 +455,31 @@ export const DOCS_SECTIONS: Section[] = [
             ['Jump to session by position', '⌘1 … ⌘9'],
             ['Jump to the next waiting session', '⌥⇧⌘↓'],
             ['Show or hide the sidebar', '⌘B'],
-            ['Show or hide the side column', '⌥⌘B'],
-            ['Show or hide the bottom strip', '⌘J or ⌃`'],
-            ['Show changes / history / files', '⌃⌘1 / ⌃⌘2 / ⌃⌘3'],
+            ['Open Changes and Files beside the terminal, or close them', '⌥⌘B'],
+            ['Go to the terminal below, making one if there is none, and back', '⌘J or ⌃`'],
+            ['Show Changes / History / Files', '⇧⌘C / ⇧⌘H / ⇧⌘F'],
             ['Show source control', '⌃⇧G'],
-            ['Focus the list in the side column', '⌥⌘L'],
+            ['Focus the list in Changes, History or Files', '⌥⌘L'],
+            ['New tab that asks what it should be', '⌥⌘T'],
             ['New terminal tab where you are', '⌘T'],
-            ['New terminal in the side column', '⌘D'],
-            ['New terminal in the bottom strip', '⇧⌘D'],
-            ['New browser tab', '⇧⌘L'],
+            ['Split right, with a new terminal', '⌘D'],
+            ['Split down, with a new terminal', '⇧⌘D'],
+            ['New terminal tab under the main terminal', '⌃⇧`'],
+            ['New browser tab', '⇧⌘B'],
             ['Reopen closed tab', '⇧⌘T'],
             ['Next / previous tab', '⇧⌘] / ⇧⌘[ or ⌃Tab ⌃⇧Tab'],
-            ['Focus the next / previous area', '⌘] / ⌘['],
+            ['Focus the next / previous split', '⌘] / ⌘['],
+            ['Focus the split to the left / right / above / below', '⌃⌥⌘ ← → ↑ ↓'],
+            ['Move the tab in front to the split on that side', '⌃⌘ ← → ↑ ↓'],
+            ['Zoom the split you are in, and show all of them again', '⇧⌘↩'],
+            ['Make the splits equal', '⌃⌘='],
             ['Browser: address field', '⌘L'],
             ['Browser: reload', '⌘R'],
             ['Browser: back / forward', '⌘[ / ⌘]'],
+            ['Browser: a page from a file, its source and back', '⌥⌘U'],
             ['Find in a file or a page, next / previous match', '⌘F, ⌘G / ⇧⌘G'],
+            ['Mark up the page or file in front, and stop', '⇧⌘M'],
+            ['Mark-up: copy the note, and stop', 'Return'],
             ['Jump to the previous / next prompt', '⌘↑ / ⌘↓'],
             ['Clear the terminal', '⌘K'],
             ['Increase / decrease / reset font size', '⌘+ / ⌘− / ⌘0'],
@@ -515,6 +565,31 @@ export const DOCS_SECTIONS: Section[] = [
   },
 
   {
+    id: 'splits',
+    title: 'Splits and tabs',
+    lead: 'Everything beside the sidebar is made of splits, and each split has a row of tabs of its own.',
+    blocks: [
+      {
+        p: 'A session starts with one split, its terminal, and Wortel opens two more where they have always been: `⌥⌘B` opens Changes and Files in a split at the right edge and closes them again, and `⌘J` takes you to a terminal under the main one, making it if there is none. So there is no layout to build before the window is useful.',
+      },
+      {
+        p: '`⌘D` splits the split you are in to the right and `⇧⌘D` splits it down, each with a new terminal. The two buttons at the end of a split’s row split it the same two ways, with an empty tab that asks what goes there. A tab let go on the edge of a split makes a split there, and let go on its middle moves into it. A split is there while it holds a tab and gone when its last one closes.',
+      },
+      { h: 'A new tab' },
+      {
+        p: 'The + in a split’s row, or `⌥⌘T`, opens an empty tab that lists what it can become: Terminal, Browser, Changes, History or Files. Click one, or press its first letter. Each has a key that skips the list: `⌘T`, `⇧⌘B`, `⇧⌘C`, `⇧⌘H` and `⇧⌘F`.',
+      },
+      { h: 'Moving around' },
+      {
+        p: '`⌘]` and `⌘[` walk the splits in reading order. ⌃⌥⌘ and an arrow goes to the split on that side, and ⌃⌘ and an arrow moves the tab in front there. The line between two splits drags, and `⌃⌘=` makes them equal.',
+      },
+      {
+        p: 'Nothing is hidden with its tabs kept. To have the whole window for one split, zoom it with `⇧⌘↩`, and press that again for the rest. When the splits have got away from you, View ▸ Reset Layout puts every tab back where a session starts with it, and closes nothing.',
+      },
+    ],
+  },
+
+  {
     id: 'windows',
     title: 'More than one window',
     blocks: [
@@ -523,6 +598,39 @@ export const DOCS_SECTIONS: Section[] = [
       },
       {
         p: 'Closing a window closes its sessions, and asks first if something is still running in them. New Worktree Session is `⌥⇧⌘N`, since `⇧⌘N` opens a window.',
+      },
+    ],
+  },
+
+  {
+    id: 'browser',
+    title: 'The browser tab',
+    blocks: [
+      {
+        p: '`⇧⌘B` opens a browser tab in the split beside your work, for the site an agent is building. `⌘L`, `⌘R` and `⌘F` reach the browser in front from anywhere, the terminal included: change something, `⌘R`, look.',
+      },
+      {
+        p: 'An `.html` file opens as the page it makes, from `wortel open report.html` or a ⌘-click on its path, and the page loads again when the file changes on disk. `⌥⌘U` shows its source in the same tab, and back.',
+      },
+      {
+        p: 'A download is saved to `~/Downloads` and never replaces a file. Nothing downloaded is opened. A button in the tab’s header lists what was saved.',
+      },
+    ],
+  },
+
+  {
+    id: 'mark-up',
+    title: 'Marking up a preview',
+    lead: 'Point at what a preview shows and say something about it, for an agent to read.',
+    blocks: [
+      {
+        p: 'Mark Up is a button in a preview’s header, View ▸ Mark Up, and `⇧⌘M`. It works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image, in a tab or a preview window. Not over a PDF or anything else Quick Look shows. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',
+      },
+      {
+        p: 'A bar at the bottom of the preview holds your note, with each mark in it as a chip, so the sentence is written around them. Return copies the note as plain text and turns mark-up off: the sentence, the path of a picture of each mark, the page or file it was about, a picture of the whole with every mark on it, and a file of details. Paste it to an agent, in this session or another. Nothing is typed into a terminal and nothing is sent.',
+      },
+      {
+        p: 'Esc stops and keeps the note, and deleting a chip removes its mark. The note is dropped when the preview goes elsewhere: another address, a reload, a file switched between Diff, Source and Rendered, a closed tab. The pictures stay on your Mac, in Wortel’s cache folder, and are removed after seven days.',
       },
     ],
   },
@@ -571,7 +679,7 @@ export const DOCS_SECTIONS: Section[] = [
 const FAQ_AUTHORED: { q: string; a: string }[] = [
   {
     q: 'What is Wortel?',
-    a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine, made for working next to coding agents. It is a real terminal first: an agent is one more command in a session, and `⌘N` can start yours for you. It replaces tabs and splits with a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
+    a: 'Wortel is a fully native macOS terminal emulator built on Ghostty’s engine, made for working next to coding agents. It is a real terminal first: an agent is one more command in a session, and `⌘N` can start yours for you. It keeps your work in a sidebar of named, persistent sessions, gives each coding agent its own git worktree so several can work one repository at once, keeps those shells running after you quit the app, and ships with no configuration to maintain. A git panel, a file tree and agent activity detection are built in.',
   },
   {
     q: 'Is Wortel free?',
@@ -587,11 +695,11 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'How is Wortel different from Ghostty?',
-    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it: Ghostty gives you tabs, splits and a large configuration file, while Wortel gives you a sidebar of named sessions that persist across restarts, a git worktree per session, shells that keep running after the app quits, a built-in git and files inspector, coding-agent activity detection, and no configuration at all.',
+    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it. Ghostty gives you tabs, splits and a large configuration file. Wortel has tabs and splits too, on the same keys (`⌘T`, `⌘D`, `⇧⌘D`), and adds a sidebar of named sessions that persist across restarts, a git worktree per session, shells that keep running after the app quits, a built-in git and files inspector, coding-agent activity detection, and next to nothing to configure.',
   },
   {
     q: 'How is Wortel different from iTerm2, Warp, Kitty or Alacritty?',
-    a: 'Wortel has no themes, no plugin system, no AI chat box and no splits, and its settings are five rows. What it has instead is built around running coding agents: named shells that survive a restart and switch on a click, a git worktree per session so several agents can work one repository at once, shells that keep running after you quit the app, a git and files inspector beside the terminal, and detection of which background agent has stopped and is waiting on you.',
+    a: 'Wortel has no themes, no plugin system and no AI chat box, and its settings are five rows. What it has instead is built around running coding agents: named shells that survive a restart and switch on a click, a git worktree per session so several agents can work one repository at once, shells that keep running after you quit the app, a git and files inspector beside the terminal, and detection of which background agent has stopped and is waiting on you.',
   },
   {
     q: 'How is Wortel different from Conductor, Emdash or Superset?',
@@ -603,7 +711,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel have tabs or split panes?',
-    a: 'Tabs, yes; splits, no. Each session has three rows of tabs: the main area with its terminal, a side column, and a strip under the terminal, and any tab (a terminal, a browser, a file, the git panes) can be dragged between them. A file tab can also be dragged out of the window into a preview window of its own, and back. What Wortel does not do is split a terminal into a grid of panes: the sidebar of named sessions is where you switch work, and `⌘P` finds any of them by name.',
+    a: 'Both. Everything beside the sidebar is made of splits, each with its own row of tabs, and a tab is a terminal, a browser, a file or one of the git panes. `⌘D` splits where you are to the right and `⇧⌘D` down, and a tab dragged to the edge of a split makes a new one there. Wortel opens two for you where they have always been, Changes and Files beside the terminal (`⌥⌘B`) and a second terminal under it (`⌘J`), so there is no layout to build first. A file tab can also be dragged out of the window into a preview window of its own, and back. Switching work is still the sidebar’s job: a split holds tabs, never another session, and `⌘P` finds any session by name.',
   },
   {
     q: 'Can I configure Wortel’s fonts, colours and keybinds?',
@@ -623,7 +731,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Can I control Wortel from the command line or from an agent?',
-    a: 'Yes. A `wortel` command ships inside the app bundle and is on the `PATH` of every session, with no installer and no admin prompt. It speaks to the running app over a socket: `wortel open` opens a file in a tab, `wortel new --branch` opens a session in its own worktree, `wortel rename` renames the session it was run in, and `wortel notify` raises attention on it. `wortel list`, `read`, `send` and `wait` let one session drive another. That is how Wortel avoids shipping a separate integration per agent: anything that can run a command can drive it, including your own hooks and scripts.',
+    a: 'Yes. A `wortel` command ships inside the app bundle and is on the `PATH` of every session, with no installer and no admin prompt. It speaks to the running app over a socket: `wortel open` opens a file in a tab, `wortel new --branch` opens a session in its own worktree, `wortel rename` renames the session it was run in, `wortel notify` raises attention on it, and `wortel split` opens a terminal in a split beside it, for a dev server or a log. `wortel list`, `read`, `send` and `wait` let one session drive another. That is how Wortel avoids shipping a separate integration per agent: anything that can run a command can drive it, including your own hooks and scripts.',
   },
   {
     q: 'Does Wortel work with Claude Code, Codex and other coding agents?',

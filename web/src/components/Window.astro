@@ -4,16 +4,22 @@
 // radius, the edge and the shadow come from .stage .win (styles/site.css).
 // The default slot is the row of panes; "over" is for anything the window
 // itself owns (the traffic lights when no pane carries them).
+// The corner is the window's too: Running and "…" (the canvas's Window
+// controls), 8 from its right edge over the titlebar, whatever the splits
+// under it do. The rightmost row along the top makes room for them: mark the
+// slot that holds it with data-end (styles/site.css).
 // The row of panes is cut to the window's corners itself, as well as by
 // .win: at 1x Chrome drops .win's rounded clip while another layer (the
 // Settings window in Start.astro) lies over it, and the corner showed square.
 // data-nosnippet: what the window shows is made-up work (session names, a
 // diff, a plan), and a search result must not quote it as the page's words.
+import WindowControls from '../app/gen/WindowControls.astro';
 interface Props { class?: string; live?: boolean; [key: string]: unknown }
 const { class: cls, live = false, ...rest } = Astro.props;
 ---
 <div class:list={["win wapp", cls]} inert={!live} aria-hidden="true" data-nosnippet {...rest}>
   <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
   <div class="relative flex size-full overflow-hidden rounded-[18px]"><slot /></div>
+  <WindowControls />
   <slot name="over" />
 </div>

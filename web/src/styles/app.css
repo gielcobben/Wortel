@@ -171,8 +171,11 @@
 
 /* The glass behind a window blurs what is under it. A backdrop filter is not
    clipped by its parent's rounded corners, so it left a square of blur poking
-   out behind each corner: the glass takes the window's radius itself. */
-.wapp [class*="backdrop-blur"] { border-radius: 18px; }
+   out behind each corner: the glass takes the window's radius itself. Only
+   the window's glass: the canvas's (Glass, in the hero and Settings) and
+   Window.astro's own. A blurred bar or popover inside a window keeps the
+   radius the canvas gave it. */
+.wapp :is([data-name="Glass"], .win > [class*="backdrop-blur"]) { border-radius: 18px; }
 
 /* ---- a Claude Code session, as it is laid out now ----------------------------
    The transcript runs down from the session's header; the prompt box and the

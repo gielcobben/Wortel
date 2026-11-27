@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Wortel and wortel.sh record, what they never record, and how to turn the app's reporting off.
-updated: 2026-11-23
+updated: 2026-11-26
 nav: Privacy
 order: 10
 ---
@@ -119,7 +119,8 @@ about the thing it happened to:
 - sessions were moved to another window, and how: dragged onto another
   window, dragged out to a new one, from a menu, or by merging all windows
 - a `wortel` command was run, and which one (`open`, `new`, `rename`, `notify`,
-  `mark`, `remind`, `cd`, `list`, `read`, `send`, `wait`, `version`)
+  `mark`, `remind`, `cd`, `close`, `split`, `list`, `read`, `send`, `wait`,
+  `version`)
 - one last message when you turn reporting off, and then silence
 
 Each carries the app version, your macOS version to one decimal place, and

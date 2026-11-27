@@ -376,7 +376,6 @@ final class SideTabStrip: NSView {
 
     // MARK: Scrolling
 
-    /// Scroll so the tab in front is in view, with a little room beside it.
     #if DEBUG
     /// For `SplitProbe`: what each tab shows with the pointer over it.
     var tabsUnderPointer: [String] { tabViews.map { $0.probeUnderPointer() } }
@@ -719,14 +718,20 @@ private final class SideTabView: NSControl, TabTitleProviding {
 
     #if DEBUG
     /// For `SplitProbe`: what the tab shows with the pointer over it. Its
-    /// state as it is ("front", "hug", "pinned"), then whether a close
-    /// button shows and where, and whether the glyph does.
+    /// state as it is ("front", "back", "hug", "pinned"), then whether a
+    /// close button shows and where, whether it lies over the title, and
+    /// whether the glyph shows.
     func probeUnderPointer() -> String {
         let was = hovering
         hovering = true
         defer { hovering = was }
         let kind = pinned ? "pinned" : isActive ? "front" : isHugging ? "hug" : "back"
-        let close = closeButton.isHidden ? "no close" : closeButton.frame.midX > bounds.midX ? "close at end" : "close at START"
+        var close = closeButton.isHidden ? "no close"
+            : closeButton.frame.midX > bounds.midX ? "close at end" : "close at START"
+        // Laid out as it would be shown: a button over the end of the title
+        // is what a hugging tab's would be, since its title runs to the end.
+        layoutSubtreeIfNeeded()
+        if !closeButton.isHidden, closeButton.frame.minX < label.frame.maxX { close += " OVER the title" }
         return "\(kind): \(close)\(icon.isHidden ? ", NO glyph" : "")"
     }
     #endif

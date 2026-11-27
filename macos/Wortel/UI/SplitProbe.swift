@@ -166,7 +166,12 @@ enum SplitProbe {
                 let tabs = strip?.tabsUnderPointer ?? []
                 var entry = state(manager, controller)
                 entry["step"] = step
-                let wrong = tabs.contains { $0.contains("START") || $0.contains("NO glyph") }
+                // The one most likely to come back: a tab that gave up its
+                // button's room showing a button anyway, over its title.
+                let wrong = tabs.contains {
+                    $0.contains("START") || $0.contains("NO glyph") || $0.contains("OVER the title")
+                        || ($0.hasPrefix("hug:") && !$0.contains("no close"))
+                }
                 entry["landed"] = (wrong ? "FAULT " : "") + (tabs.isEmpty ? "FAULT no row" : tabs.joined(separator: " | "))
                 trail.append(entry)
                 continue

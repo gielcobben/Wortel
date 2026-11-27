@@ -946,8 +946,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   throwaway copy): the app builds. `tab tab hover-tabs right right tab tab
   hover-tabs`: in the roomy main row "pinned: no close | back: close at
   end | front: close at end"; in a 160pt split with three tabs "hug: no
-  close | hug: no close | front: close at end"; 0 faults. The unit tests
-  were not run again. Not verified: with a real pointer.
+  close | hug: no close | front: close at end"; 0 faults. WortelTests
+  1944 tests, 0 failures. A reviewer read the commit and found no defect,
+  and that the step as first written could not catch the fault it is for
+  (the button back on a tab that gave up its room): it now can, checked by
+  taking the rule out of `applyState`, which gives "hug: close at end OVER
+  the title" and a fault. Not verified: with a real pointer.
 - **2026-11-26. "No splits" was reversed: the main area splits into columns
   and rows.** Built on the branch `flexible-panes` and on `main` since it
   was merged. Not in a release yet: the released app and the site still have

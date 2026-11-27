@@ -497,8 +497,9 @@ The views:
   menu. For a few hours the button showed over the glyph on hover: two
   places for one button, and a click on the glyph, meant to pick the tab,
   closed it. The probe's `hover-tabs` step reads each tab as it looks under
-  the pointer, and a close button at a tab's start, or a tab without its
-  glyph, is a fault. Then the tabs that still can shrink
+  the pointer, and a close button on a tab that gave up its room (it would
+  lie over the title), one at a tab's start, or a tab without its glyph, is
+  a fault. Then the tabs that still can shrink
   together, down to 130pt or their title, whichever is less. Only then does
   the row scroll, with "+" pinned past the visible end. The first step is
   from 2026-11-26: it is what lets Changes and Files both keep their names

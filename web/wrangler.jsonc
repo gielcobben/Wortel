@@ -13,6 +13,17 @@
   // Cobben account — the one that holds the wortel.sh zone.
   "account_id": "c91d5fdf38b8d28d8220c2a7d5b5610f",
   "compatibility_date": "2026-07-15",
+  // Since compatibility date 2025-04-01 (`assets_navigation_prefers_asset_serving`)
+  // a browser navigation (Sec-Fetch-Mode: navigate) to a path with no file is
+  // answered by the assets layer with the 404 page and never reaches the
+  // Worker, whatever its method. That made the letter's links and buttons dead
+  // in a browser: the confirm link opened the 404 page, and the Confirm, Leave
+  // and no-JavaScript Subscribe buttons got a 405 (found 2026-11-27; a curl
+  // without that header reached the Worker, which is how it was missed). This
+  // flag turns that off, so a navigation that matches no file reaches the
+  // Worker like any other request, and worker/index.ts hands what is not its
+  // own back to ASSETS for the same 404 page. A file is still served first.
+  "compatibility_flags": ["assets_navigation_has_no_effect"],
   "main": "./worker/index.ts",
   "assets": {
     "directory": "./dist",
@@ -29,15 +40,15 @@
     // itself, and it is what the internal links use.
     "html_handling": "drop-trailing-slash",
     // A path that matches no file gets dist/404.html (src/pages/404.astro)
-    // with a 404 status, instead of an empty body. Navigations are answered
-    // by the assets layer without invoking the Worker, so /ph is unaffected:
-    // posthog-js calls it with fetch and sendBeacon, never as a navigation.
+    // with a 404 status, instead of an empty body. It comes back through the
+    // Worker (index.ts hands a path it does not own to ASSETS).
     "not_found_handling": "404-page"
     // No run_worker_first. The letter needed the Worker in front of two pages,
     // and a list here was tried: with it, every POST to a path NOT on the list
     // got a 405 from the assets layer instead of reaching the Worker, /ph's
     // analytics included (wrangler 4.134, 2026-11-26). So the letter's routes
-    // are paths with no file behind them, like /ph (worker/letter-routes.ts).
+    // are paths with no file behind them, like /ph (worker/letter-routes.ts),
+    // and the flag above lets a browser's navigation reach them too.
   },
   // The letter's list: addresses that asked for an email when something big
   // ships. Created in the EU jurisdiction (`wrangler d1 create wortel-letter
@@ -51,6 +62,10 @@
   "send_email": [
     { "name": "EMAIL", "allowed_sender_addresses": ["letter@wortel.sh"] }
   ],
+  // Once a day: deletes the letter's addresses not confirmed within a week
+  // (worker/index.ts, `scheduled`). Joins sweep too, but on a week with none
+  // nothing else would, and /privacy promises the week.
+  "triggers": { "crons": ["17 3 * * *"] },
   // Joins per IP, counted in memory at the edge and never stored.
   "ratelimits": [
     { "name": "JOIN_LIMIT", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }

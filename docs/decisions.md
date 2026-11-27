@@ -3406,6 +3406,31 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   button pages are static files at `/letter/confirming` and `/letter/leaving`
   that the Worker serves with the token filled in; `run_worker_first` was
   tried for this and turned every other POST, `/ph` included, into a 405.
+- **2026-11-27. A browser's navigation reaches the site's Worker.** Since
+  compatibility date 2025-04-01 the assets layer answers a navigation to a
+  path with no file itself, with the 404 page, so in a browser the letter's
+  confirm link opened "Nothing grows here" and its buttons got a 405; curl,
+  which sends no `Sec-Fetch-Mode`, reached the Worker, which is why it was
+  missed. `assets_navigation_has_no_effect` turns that off rather than a
+  `run_worker_first` list (see the entry above). A file is still served
+  without the Worker; only misses wake it. The 404 page drops its query
+  before analytics starts, so a mangled link's token is not reported.
+- **2026-11-27. The letter's unconfirmed addresses are swept by a daily
+  cron, not only on a join.** The 2026-11-26 entry above swept on the next
+  join, on the thought that the table only grows through one; but on a week
+  with no join, nothing ran, and an unconfirmed address stayed past the week
+  `/privacy` promises. A cron (`17 3 * * *`, `scheduled` in
+  `web/worker/index.ts`) runs the same delete once a day; a join still runs
+  it too, so an address past its week starts again with a new token.
+- **2026-11-27. A join answers before its mail is sent, and a failed mail
+  is not reported.** Waiting for the mail made a new address's answer slower
+  than a known one's, and a failed send answered "sorry" only for an address
+  that was mailed: both told a stranger whether an address was on the list.
+  Now every valid join runs the same two statements and answers "check your
+  inbox"; the mail goes out in `waitUntil`. When it fails, the log says so
+  and the claim is undone, so sending the form again tries again, which is
+  what the "check your inbox" page already tells someone whose mail does not
+  come. The cost: with Email Sending off, the form looks like it worked.
 
 ## Contributing
 

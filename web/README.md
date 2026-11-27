@@ -400,8 +400,8 @@ there is one to send (`docs/decisions.md`, 2026-11-26). What is kept is on
 
 ```
 worker/letter.ts           the decisions: what an address is, the form, the token, the mail
-worker/letter-routes.ts    POST /letter/join, GET+POST /letter/confirm and /letter/leave
-worker/letter.test.ts      `npm test`
+worker/letter-routes.ts    POST /letter/join, GET+POST /letter/confirm and /letter/leave, the sweep
+worker/letter*.test.ts     `npm test` (letter-routes.test.ts on node:sqlite with the real schema)
 migrations/                the D1 schema (database `wortel-letter`, EU jurisdiction)
 components/LetterForm.astro  the form: a real POST, sent in place with JS
 pages/letter.astro, pages/letter/[state].astro   /letter and the pages the requests end on
@@ -418,7 +418,9 @@ plan, `npx wrangler email sending enable wortel.sh`, then
 `wrangler.jsonc`, and `npx wrangler d1 migrations apply wortel-letter --remote`.
 The database was created and migrated on 2026-11-27. Email Sending for
 wortel.sh was not enabled then: until it is, a site deploy puts up a form
-whose confirmation mail fails, and every join answers "sorry".
+whose confirmation mail fails. The form still says "check your inbox" (a join
+answers before its mail is sent, so the answer cannot tell anyone who is on
+the list), no mail comes, and the log says `letter: confirmation mail failed`.
 
 **Try it locally:**
 
@@ -426,6 +428,10 @@ whose confirmation mail fails, and every join answers "sorry".
 npx wrangler d1 migrations apply wortel-letter --local
 npm run build && npx wrangler dev --local
 ```
+
+Addresses not confirmed within a week are deleted once a day by the cron in
+`wrangler.jsonc`, and on every join. To run the sweep by hand under `wrangler
+dev`: `curl "localhost:8787/cdn-cgi/handler/scheduled?cron=17+3+*+*+*"`.
 
 The confirmation mail is not sent from `wrangler dev`: it is written under
 `.wrangler/tmp/email/` and the path is printed in the log. Its link says
@@ -678,7 +684,11 @@ them, and `llms-full.txt`, render from `src/data/markdown.ts`.
 
 `src/pages/404.astro` builds `dist/404.html`, which `not_found_handling:
 "404-page"` in `wrangler.jsonc` serves with a 404 status for any path that
-matches no file. It is `noindex` with no canonical.
+matches no file. It is `noindex` with no canonical. A miss, a browser's
+navigation included, reaches the Worker first and is handed back for this page
+(the `assets_navigation_has_no_effect` flag in `wrangler.jsonc`, without which
+the letter's links never reached the Worker). The page drops its own query
+before analytics starts, so a mangled letter link's token is not reported.
 
 `www.wortel.sh` is not served by this Worker. It is a proxied placeholder DNS
 record plus a zone Redirect Rule (dashboard: Rules, Redirect Rules) that 301s

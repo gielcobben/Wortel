@@ -58,6 +58,14 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         didSet { if tool != oldValue { everyLayer { $0.toolChanged() } } }
     }
 
+    /// The page under the note wanted to load again, or to go elsewhere,
+    /// and waits for the note to let go (`BrowserPage.waitsToLoad`). The
+    /// bar says so, or the page staying as it was looks like an agent's
+    /// change that never came.
+    @ObservationIgnored var pageChanged = false {
+        didSet { if pageChanged != oldValue { everyLayer { $0.noteBar.update() } } }
+    }
+
     /// Tell every layer on the note, the one in use last.
     private func everyLayer(_ tell: (MarkupOverlayView) -> Void) {
         for layer in layers.allObjects where layer !== overlay { tell(layer) }
@@ -98,9 +106,13 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     /// Whether there is anything to come back to.
     var hasNote: Bool { !marks.isEmpty || text.length > 0 }
 
-    /// The note has words or marks that were never copied: a reload nobody
-    /// asked for waits for them (`BrowserPage.holdsReload`).
-    var hasUncopied: Bool { hasNote && edits != editsCopied }
+    /// The note has marks, and words or marks that were never copied: a
+    /// reload nobody asked for waits for them (`BrowserPage.holdsReload`).
+    /// Words alone don't hold it. They can't be copied (Copy needs a
+    /// mark), so "it reloads when you copy" would never come true, and
+    /// every reload of a dev server would wait on a sentence with no mark
+    /// in it (found in review, 2026-11-27).
+    var hasUncopied: Bool { !marks.isEmpty && edits != editsCopied }
 
     // MARK: - On, off, gone
 
@@ -153,6 +165,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         edits = 0
         editsCopied = 0
         marks = []
+        pageChanged = false
         everyLayer { $0.marksChanged() }
         surface?.deactivate(forgetting: true)
         if wasOn { onChange() }

@@ -130,6 +130,31 @@ final class BrowserPage: NSObject {
         hasMarkup && (markup.isOn || markup.hasUncopied)
     }
 
+    /// Where the page wanted to go by itself while the note held it
+    /// (`BrowserAddress.pageLoad`): gone to once the note lets go. A reload
+    /// it wanted is `reloadWhenShown`, as for a file that changed.
+    @ObservationIgnored private var heldLoad: URL?
+    /// A load waits for the note: the header's Reload and the note bar say so.
+    private(set) var waitsToLoad = false
+
+    /// Says whether a load is waiting, wherever that changed.
+    private func noteWaiting() {
+        let waits = holdsReload && (reloadWhenShown || heldLoad != nil)
+        if waitsToLoad != waits { waitsToLoad = waits }
+        if hasMarkup { markup.pageChanged = waits }
+    }
+
+    /// A load Wortel starts because the person asked (⌘R, Back, the address
+    /// field): the note lets go first, as the load would have made it do at
+    /// its commit, and it is never held. What the page was holding is
+    /// done with: this load is newer.
+    private func letGo() {
+        reloadWhenShown = false
+        heldLoad = nil
+        endMarkup()
+        noteWaiting()
+    }
+
     /// Whether there is a page here to mark up: somewhere, loaded, and not
     /// behind its own source.
     var canMarkUp: Bool {
@@ -216,6 +241,10 @@ final class BrowserPage: NSObject {
         super.init()
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        (webView as? BrowserWebView)?.keyboardWhileMarkingUp = { [weak self] in
+            guard let self, self.hasMarkup, self.markup.isOn, let overlay = self.markup.overlay, overlay.window != nil else { return }
+            overlay.noteBar.focus()
+        }
         find.webView = webView
         watch.onChange = { [weak self] in self?.fileChanged() }
         // Inspect Element in the context menu.
@@ -327,6 +356,7 @@ final class BrowserPage: NSObject {
         // copied or cleared (`holdsReload`).
         guard webView.window != nil, !webView.isHiddenOrHasHiddenAncestor, !holdsReload else {
             reloadWhenShown = true
+            noteWaiting()
             return
         }
         // Past the cache: a stylesheet has no server to say it changed.
@@ -361,13 +391,22 @@ final class BrowserPage: NSObject {
     func go(to typed: String) {
         guard let url = BrowserAddress.url(from: typed) else { return }
         if address == nil { address = url }
+        letGo()
         load(url)
     }
 
-    func goBack() { webView.goBack() }
-    func goForward() { webView.goForward() }
+    func goBack() {
+        letGo()
+        webView.goBack()
+    }
+
+    func goForward() {
+        letGo()
+        webView.goForward()
+    }
 
     func reload() {
+        letGo()
         if isWaiting || failure != nil || webView.url == nil {
             if let location { load(location) }
         } else {
@@ -377,6 +416,7 @@ final class BrowserPage: NSObject {
 
     /// Reload past the cache. ⇧⌘R.
     func reloadFromOrigin() {
+        letGo()
         if isWaiting || failure != nil || webView.url == nil {
             reload()
         } else {
@@ -472,19 +512,43 @@ final class BrowserPage: NSObject {
     fileprivate func screenMayHaveChanged() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let visible = self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor
-            // Not while a load is under way: it brings the page anew, and
-            // its commit settles what was owed. A new address is heard
-            // before its load starts and ends mark-up there (measured
-            // 2026-11-26: a link, Back), so the reload the note held would
-            // otherwise start in the middle of the next page's load.
-            if visible, self.reloadWhenShown, !self.holdsReload, !self.webView.isLoading {
-                self.reloadWhenShown = false
-                // Past the cache: it may be owed for a file that changed.
-                self.reloadFromOrigin()
-            }
-            self.onScreenChanged(visible)
+            self.makeWhatWasOwed()
+            self.onScreenChanged(self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor)
         }
+    }
+
+    /// The reload or load that waited (for the screen, or for the note), if
+    /// nothing holds it now. Asked when the page shows or hides, when
+    /// mark-up goes off (a copy turns it off), and when a load finishes.
+    private func makeWhatWasOwed() {
+        let visible = webView.window != nil && !webView.isHiddenOrHasHiddenAncestor
+        // Not while a load is under way: it brings the page anew, and its
+        // commit settles what was owed. A new address is heard before its
+        // load starts and ends mark-up there (measured 2026-11-26: a link,
+        // Back), so the reload the note held would otherwise start in the
+        // middle of the next page's load. Asked again when a load finishes:
+        // one that was under way at the copy (a slow image, a stalled
+        // script) left what was owed waiting with no dot until the tab was
+        // hidden and shown (found in review, 2026-11-27).
+        if visible, reloadWhenShown || heldLoad != nil, !holdsReload, !webView.isLoading {
+            let held = heldLoad
+            reloadWhenShown = false
+            heldLoad = nil
+            // Where the page wanted to go while the note held it, asked by
+            // the page itself, so it goes only where the page may go: made
+            // as Wortel's own load it would pass as the person's (an `http`
+            // page sending itself to a `file:` address), and it would set
+            // the tab's address before anything answered (security review,
+            // 2026-11-27). Or the page again, past the cache: it may be
+            // owed for a file that changed.
+            if let held {
+                webView.callAsyncJavaScript("location.assign(address)", arguments: ["address": held.absoluteString],
+                                            in: nil, in: .defaultClient)
+            } else {
+                reloadFromOrigin()
+            }
+        }
+        noteWaiting()
     }
 
     /// While the page is on screen, keep its picture recent: a page changes
@@ -540,7 +604,9 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         // change, or for a crash off screen, is done with. First, as ending
         // mark-up below lets go of the reload it held.
         reloadWhenShown = false
+        heldLoad = nil
         endMarkup()
+        noteWaiting()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -548,6 +614,9 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         failure = nil
         retry?.cancel()
         followFile()
+        // What waited while this load was under way. A turn later, when
+        // WebKit no longer counts the page as loading.
+        DispatchQueue.main.async { [weak self] in self?.makeWhatWasOwed() }
         // Once it's had a moment to paint.
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
@@ -603,6 +672,7 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         switch BrowserExternalLink.decide(scheme: url?.scheme,
                                           fromMainFrame: fromMainFrame, toMainFrame: toMainFrame) {
         case .load:
+            if !action.shouldPerformDownload, holds(action) { return decisionHandler(.cancel) }
             guard action.shouldPerformDownload else { return decisionHandler(.allow) }
             // A link that says it is for saving (`<a download>`): saved from
             // the page and from its own frames, and from a frame on another
@@ -620,6 +690,34 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         case .refuse:
             decisionHandler(.cancel)
         }
+    }
+
+    /// A load the page makes by itself while the note holds it waits
+    /// (`BrowserAddress.pageLoad`), and is made once the note lets go
+    /// (`screenMayHaveChanged`). Whether it was held.
+    private func holds(_ action: WKNavigationAction) -> Bool {
+        let kind: BrowserAddress.LoadKind = switch action.navigationType {
+        case .linkActivated: .link
+        case .formSubmitted, .formResubmitted: .form
+        case .backForward: .backForward
+        case .reload: .reload
+        default: .other
+        }
+        let decision = BrowserAddress.pageLoad(
+            holding: holdsReload, markingUp: hasMarkup && markup.isOn,
+            personActed: (webView as? BrowserWebView)?.personActed ?? false,
+            toMainFrame: action.targetFrame?.isMainFrame ?? false, kind: kind,
+            method: action.request.httpMethod, url: action.request.url, current: webView.url ?? currentURL)
+        switch decision {
+        case .allow: return false
+        // The last the page asked for is what it gets.
+        case .reloadLater:
+            reloadWhenShown = true
+            heldLoad = nil
+        case .loadLater(let url): heldLoad = url
+        }
+        noteWaiting()
+        return true
     }
 
     /// A page that wants another app says which, and waits for a yes.
@@ -707,6 +805,9 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard action.navigationType != .linkActivated else {
+            // Made again here, WebKit asks about it as `.other`. After Esc
+            // the person's click on it is theirs all the same (`personActed`),
+            // and while marking up only a script could have clicked it.
             if let url = action.request.url, url.absoluteString != "about:blank" { webView.load(action.request) }
             return nil
         }
@@ -918,8 +1019,21 @@ private struct BrowserHeader: View {
             if page.isLoading && !page.isWaiting {
                 button("xmark", "Stop Loading", action: page.stop)
             } else {
-                button("arrow.clockwise", "Reload", action: page.reload)
+                button("arrow.clockwise",
+                       page.waitsToLoad ? "Reload. The page changed. It loads when you copy the note, or clear it and press Esc."
+                                        : "Reload",
+                       action: page.reload)
                     .disabled(page.location == nil)
+                    // A load the page wanted waits for the note.
+                    .overlay(alignment: .topTrailing) {
+                        if page.waitsToLoad {
+                            Circle()
+                                .fill(Color(nsColor: .controlAccentColor))
+                                .frame(width: 6, height: 6)
+                                .offset(x: -3, y: 3)
+                                .allowsHitTesting(false)
+                        }
+                    }
             }
             TextField("Address, or a port like 3000", text: $typed)
                 .textFieldStyle(.plain)
@@ -1294,6 +1408,46 @@ private final class BrowserWebView: WKWebView {
     /// lighting what the pointer passes and setting its own cursor.
     var isMarkingUp = false {
         didSet { if isMarkingUp, !oldValue { window?.invalidateCursorRects(for: self) } }
+    }
+
+    /// Where the keyboard goes instead of the page while mark-up is on: the
+    /// note. Set by the page.
+    var keyboardWhileMarkingUp: (() -> Void)?
+
+    // While mark-up is on, the page never takes the keyboard. What hands it
+    // back after a click in the sidebar, picking the tab, ⌘] or closing
+    // find asks for the page, and the page then had every key typed for
+    // the note: a space scrolled it, and a shortcut of its own or a Return
+    // on a focused link took it elsewhere, which ends mark-up and drops the
+    // note with its marks (owner's report, 2026-11-27). The note takes it
+    // a turn later, once the window has settled this request.
+    override func becomeFirstResponder() -> Bool {
+        guard isMarkingUp, let keyboardWhileMarkingUp else { return super.becomeFirstResponder() }
+        DispatchQueue.main.async(execute: keyboardWhileMarkingUp)
+        return false
+    }
+
+    /// When the person last clicked or typed on the page, as the system's
+    /// uptime: a load that follows soon after is theirs, never held for a
+    /// note (`BrowserAddress.pageLoad`, `personActed`). WebKit reports a
+    /// button whose script sets `location` like a dev server's reload.
+    private(set) var lastInput: TimeInterval = -.infinity
+
+    /// Whether the person clicked or typed on the page lately enough that
+    /// the load it is making now is theirs. Long enough for a button that
+    /// asks its server first, short enough that a dev server's reload
+    /// seldom lands inside it, and when one does, it goes through as every
+    /// reload did before.
+    var personActed: Bool { ProcessInfo.processInfo.systemUptime - lastInput < 5 }
+
+    override func mouseDown(with event: NSEvent) {
+        lastInput = event.timestamp
+        super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        lastInput = event.timestamp
+        super.keyDown(with: event)
     }
 
     override func mouseMoved(with event: NSEvent) {

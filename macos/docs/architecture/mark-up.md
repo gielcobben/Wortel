@@ -244,6 +244,18 @@ While mark-up is on over a page (`BrowserPage.markupChanged`):
   view on top takes the clicks, but a web view hears the pointer through a
   tracking area, and would go on lighting what it passes and setting its
   own cursor.
+- The web view never takes the keyboard: asked for it, it refuses and
+  the note takes it a turn later (`BrowserWebView.becomeFirstResponder`,
+  `keyboardWhileMarkingUp`). Everything that hands the keyboard back to
+  what is in front (a click on the session in the sidebar, picking the
+  tab, ⌘], closing find: `GitPanelModel.focusFront`, `BrowserFind.dismiss`)
+  asks for the page, and before this the page then had every key typed
+  for the note. A space scrolled it, and a shortcut of the page's own or
+  a Return on a focused link took it elsewhere, which ends mark-up and
+  drops the note with its marks (owner's report, 2026-11-27; the refusal
+  and the hand-over measured in a harness with a real `WKWebView` that
+  day: a space sent through the window scrolled the page 460pt before,
+  and was typed into the note after, the page unmoved).
 - A reload owed for a changed file waits (`fileChanged`, `reloadWhenShown`,
   `holdsReload`) until mark-up is off and the note has nothing in it that
   was not copied (`MarkupSession.hasUncopied`). A reload drops the note,
@@ -256,6 +268,27 @@ While mark-up is on over a page (`BrowserPage.markupChanged`):
   WebKit: a link, Back, a typed address), and mark-up ended there let go
   of the reload it held, which then started in the middle of the next
   page's load (found in review).
+- A load the page makes by itself waits the same way
+  (`BrowserAddress.pageLoad`, asked in `decidePolicyFor action`): a dev
+  server reloading after an agent's edit, or sending the page to the file
+  that was edited. A reload is owed as `reloadWhenShown`, a load elsewhere
+  as `heldLoad`, the last one asked for wins, and `makeWhatWasOwed` makes
+  it once: when the page shows, when mark-up goes off (a copy turns it
+  off), and when a load finishes (one under way at the copy left it
+  waiting, found in review). Wortel's own loads (⌘R, Back, Forward, the
+  address field) let go of the note first (`letGo`) and are never held.
+  While mark-up is on, everything else that loads the main frame is the
+  page's, a script's `history.back()` too. After Esc a link, a form, a
+  step through history and any load within 5 seconds of a click or key
+  on the page (`BrowserWebView.personActed`: WebKit reports a button whose
+  script sets `location` like a dev server's reload) are the person's and
+  go through. A frame, a POST and a new fragment always do. Words with
+  no mark hold nothing (`hasUncopied` needs a mark): Copy needs one, so
+  "it loads when you copy" would never come true. While a load waits
+  (`waitsToLoad`), Reload in the header has a dot and the note bar says
+  "The page changed. It loads when you copy." (`MarkupSession.pageChanged`,
+  in the tool row, absent where it does not fit). Why, and what was
+  measured, is in `docs/decisions.md` (2026-11-27).
 - ⌘+ and ⌘R still reach the page with the keyboard in the note
   (`BrowserTabs.page(holding:)` counts the note as its page's). ⌘[ and
   ⌘] do not: they are Back and Forward only with the keyboard in the web
@@ -457,8 +490,10 @@ turn of the run loop after each step), and a document with pictures in it.
 
 There is no lock on the header. When what was marked up goes elsewhere,
 mark-up ends and the marks and the note are dropped (`MarkupSession.end`):
-a new address or a route change (`webView.url`), a load committed
-(`didCommit`, which a reload is), a load that failed (the page is behind
+a new address or a route change (`webView.url`; a `pushState` route is no
+load, so it cannot wait as a page's own load does), a load committed
+(`didCommit`, which a reload is, by the person or by the page once the
+note let go), a load that failed (the page is behind
 a notice then, where mark-up could be neither seen nor turned off),
 Page · Source, the page's process dying, the tab closing (its source's
 mark-up with it: an open note's folder is one the sweep skips); and for

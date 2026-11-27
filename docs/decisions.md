@@ -3007,6 +3007,37 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the note goes with it: the loop is copy the note, the agent edits the
   file, see the change, and a copied note has been used. A reload the
   person asks for (⌘R) still ends mark-up whatever the note holds.
+- **2026-11-27. A page's own load waits for the note too.** The owner
+  marked up a page on a Vite server while an agent edited the files it
+  served; the server reloaded the page, which ended mark-up and dropped
+  every mark. The rule above held only Wortel's reload of a file. Every
+  dev server and live-reload tool reloads from a script in the page
+  (`location.reload()`; some set `location.href` or go to the page that
+  was edited), so the hold is in the navigation policy and keyed on what
+  the load is, not on the server: while mark-up is on or the note is
+  uncopied, a load of the main frame the page makes by itself is
+  cancelled and made once the note lets go, a reload as a reload past
+  the cache and a load elsewhere as a load there (the owner's choice: a
+  page being marked up never leaves on its own). What still goes through:
+  the person's loads (⌘R, Back, the address field, which let go of the
+  note first; after Esc a link, a form, a step through history, and any
+  load within 5 seconds of their click or key on the page, since WebKit
+  reports a button's `location =` like a dev server's reload), a frame
+  inside the page, a POST (held, it would be sent twice), and a new
+  fragment. A note of words with no mark holds nothing, as it can't be
+  copied. Hot updates in place were never loads and still apply.
+  A `pushState` route change is no load and cannot be held, and still
+  ends mark-up. The cost is a page one edit behind while it waits, so
+  the header's Reload carries a dot and the note bar says the page
+  changed. Re-placing the marks on the reloaded page (as Plannotator
+  does with a selector per mark) was weighed and left: the pictures are
+  of the old page, a drawn area has no element, and the edit may have
+  removed what was marked. Measured 2026-11-27 with a real `WKWebView` and
+  the rule itself: Vite 8 (an `index.html` edit, a module without HMR, a
+  restart's reconnect: held; a CSS edit: no load), live-server, and plain
+  pages (`location.reload()`, `href` to itself, `assign` elsewhere, meta
+  refresh, a script's click and GET form: held; hash, frame reload, POST,
+  the person's click after Esc: through), each released as one load.
 - **2026-11-26. A load that fails ends mark-up.** A reload during mark-up
   against a stopped server fails before anything is loaded: no load, no
   new address, so nothing ended it. The page went behind a notice, and

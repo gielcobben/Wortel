@@ -72,6 +72,10 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     private let clear = HoverFillButton.glyph("trash", "Clear Note")
     private let button = CopyButton(title: "Copy", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
+    /// The page changed under the note and waits for it (`pageChanged`).
+    /// In the tool row, between the tools and Copy, so the bar keeps its
+    /// height; absent where the row has no room for all of it.
+    private let waiting = NSTextField(labelWithString: "The page changed. It loads when you copy.")
     /// The bar grew or shrank a line: whoever places it lays out again.
     var onHeightChange: () -> Void = {}
     /// The pointer is on a mark's chip, or on none.
@@ -201,6 +205,11 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
         content.addSubview(spinner)
+
+        waiting.font = .systemFont(ofSize: 12)
+        waiting.textColor = .secondaryLabelColor
+        waiting.lineBreakMode = .byClipping
+        content.addSubview(waiting)
 
         update()
     }
@@ -378,6 +387,10 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         // from the tools: in the narrowest column the tools and Copy have
         // the row to themselves, and ⌘A then ⌫ clears.
         clear.isHidden = session.text.length == 0 || clear.frame.minX < x + 6
+        waiting.sizeToFit()
+        let room = (clear.isHidden ? button.frame.minX : clear.frame.minX) - 12 - (x + 10)
+        waiting.isHidden = !session.pageChanged || waiting.frame.width > room
+        waiting.frame.origin = NSPoint(x: x + 10, y: (row.midY - waiting.frame.height / 2).rounded())
         let before = scroll.frame.size
         let following = caretInSight()
         scroll.frame = NSRect(x: Self.padding.width, y: Self.padding.height,

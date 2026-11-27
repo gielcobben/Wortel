@@ -155,6 +155,9 @@ export type Section = Beta & {
   id: string;
   title: string;
   lead?: string;
+  /** The feature's own page (/layouts, /mark-up), linked under the section's
+   *  name on /docs and after its lead in the Markdown. */
+  page?: readonly [text: string, href: string];
   blocks: Block[];
 };
 
@@ -881,6 +884,7 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Splits and tabs',
     beta: true,
     lead: 'Everything beside the sidebar is made of splits, and each split has a row of tabs of its own.',
+    page: ['Layouts, shown step by step', '/layouts'],
     blocks: [
       {
         p: 'A session starts with one split, its terminal, and Wortel opens two more where they have always been: `⌥⌘B` opens Changes and Files in a split at the right edge and closes them again, and `⌘J` takes you to a terminal under the main one, making it if there is none. So there is no layout to build before the window is useful.',
@@ -939,6 +943,7 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Marking up a preview',
     beta: true,
     lead: 'Point at what a preview shows and say something about it, for an agent to read.',
+    page: ['Mark-up, shown step by step', '/mark-up'],
     blocks: [
       {
         p: 'Mark Up is a button in a preview’s header, View ▸ Mark Up, and `⇧⌘M`. It works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image, in a tab or a preview window. Not over a PDF or anything else Quick Look shows. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',

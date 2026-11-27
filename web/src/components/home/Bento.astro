@@ -97,7 +97,7 @@ const SMALL = ['send', 'looks', 'quit'];
             <div class="wapp cmd"><p class="bg-background font-mono text-[14px] font-medium leading-[19px] tracking-[-0.155px] text-[#1f2328] dark:text-[#e6edf3]"><span class="text-[#666666] dark:text-[#999999]">$ </span>wortel send tests "run it"<i></i></p></div>
           )}
 
-          {PART[t.scene] && <div class="wapp part bg-background" data-part={PART[t.scene]} inert></div>}
+          {PART[t.scene] && <div class="wapp part bg-background" data-part={PART[t.scene]} data-note="flow" inert></div>}
 
           {t.scene === 'palette' && <div class="wapp pal" inert><Palette /></div>}
 
@@ -239,7 +239,7 @@ const SMALL = ['send', 'looks', 'quit'];
      sides. The note bar stays whole: it is as wide as the tile shows of the
      preview, 8 in from each side, as the app has it in a preview that
      narrow, its sentence wrapping around the chips as a text view's does
-     (the caret takes no room of its own, so it never wraps to a line alone).
+     (data-note="flow", styles/app.css).
      The plan is moved up by the lines the bar gains, so the marks stay
      clear of it. */
   @container (max-width: 698px) {
@@ -252,10 +252,6 @@ const SMALL = ['send', 'looks', 'quit'];
       --from: max(16px, calc(266px - 50cqw - 16px));
       left: var(--from); right: auto; width: calc(50cqw + 282px - var(--from)); margin: 0;
     }
-    .markup .part :global([data-name="Note"]) { display: block; }
-    .markup .part :global([data-name="Note"] > [data-name^="Chip"]) { display: inline-flex; vertical-align: -5px; }
-    .markup .part :global([data-name="Note"] > [data-name="Caret"]) { display: inline-block; vertical-align: -4px; margin-left: -1.5px; }
-    .markup .part :global([data-name="Note"] > span) { white-space: pre-wrap; }
     .markup .part :global([data-name="Markdown"]) { padding-bottom: 24px; }
   }
   @container (max-width: 480px) {

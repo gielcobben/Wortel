@@ -36,7 +36,7 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
     <>
       <li class="tile bar">
         <p class="cap">The note, in its bar</p>
-        <div class="wapp hold" data-part="Note bar" data-words={JSON.stringify(MARKUP_NOTE.words)} inert aria-hidden="true" data-nosnippet></div>
+        <div class="wapp hold" data-part="Note bar" data-note="flow" data-words={JSON.stringify(MARKUP_NOTE.words)} inert aria-hidden="true" data-nosnippet></div>
       </li>
       <li class="tile text">
         <p class="cap">{copied?.label}</p>
@@ -118,11 +118,9 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
   .hold { position: relative; flex: 1; align-self: stretch; display: flex; text-align: left; }
   .hold > :global([data-name="Note bar"]) { position: relative; inset: auto; flex: 1; margin: 0; max-width: none; }
   .hold :global([data-name="Placeholder"]) { display: none; }
-  /* The sentence wraps as a text view's does, around its chips. */
-  .hold :global([data-name="Note"]) { display: block; flex: 1 0 auto; }
-  .hold :global([data-name="Note"] > [data-name^="Chip"]) { display: inline-flex; vertical-align: -5px; }
-  .hold :global([data-name="Note"] > [data-name="Caret"]) { display: inline-block; vertical-align: -4px; margin-left: -1.5px; }
-  .hold :global([data-name="Note"] > span) { white-space: pre-wrap; }
+  /* The sentence wraps as a text view's does, around its chips
+     (data-note="flow", styles/app.css), and has the room the bar gains. */
+  .hold :global([data-name="Note"]) { flex: 1 0 auto; }
   /* The same note as text: what is pasted, on the lines it is pasted on. */
   .text { align-items: stretch; }
   .copied {

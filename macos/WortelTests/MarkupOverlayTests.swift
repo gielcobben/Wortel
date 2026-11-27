@@ -30,9 +30,14 @@ final class MarkupOverlayTests: XCTestCase {
         var picksThings: Bool { true }
         var scrollsInside: Bool { false }
         var readingColumn: CGRect? { nil }
-        func attach(to layer: NSView) {}
-        func activate(moved: @escaping () -> Void) {}
-        func deactivate(forgetting: Bool) {}
+        /// The layer marks are placed and tied through, as a file's
+        /// adapter converts through it, and the one each tie went through.
+        weak var attached: NSView?
+        var tiedThrough: [ObjectIdentifier?] = []
+        var isActive = false
+        func attach(to layer: NSView) { attached = layer }
+        func activate(moved: @escaping () -> Void) { isActive = true }
+        func deactivate(forgetting: Bool) { isActive = false }
         func probe(at point: CGPoint, reply: @escaping (CGRect?) -> Void) { reply(nil) }
         func pick(_ number: Int, at point: CGPoint, unless picked: [Int], reply: @escaping (MarkPick?) -> Void) {
             picks += 1
@@ -42,6 +47,7 @@ final class MarkupOverlayTests: XCTestCase {
         }
         func tie(_ number: Int, to box: CGRect, reply: @escaping (MarkTie?) -> Void) {
             ties.append(box)
+            tiedThrough.append(attached.map(ObjectIdentifier.init))
             let answer = { [self] in
                 tied[number] = box.size
                 reply(MarkTie(placement: placement(of: number)!, name: nil, details: MarkDetails()))
@@ -90,9 +96,14 @@ final class MarkupOverlayTests: XCTestCase {
         session.turnOn()
     }
 
+    /// Windows of a test's own, beside the one every test has.
+    private var others: [NSWindow] = []
+
     override func tearDown() async throws {
         window?.close()
         window = nil
+        others.forEach { $0.close() }
+        others = []
         session?.pasteboard.releaseGlobally()
         if let folder { try? FileManager.default.removeItem(at: folder) }
     }
@@ -193,6 +204,85 @@ final class MarkupOverlayTests: XCTestCase {
         XCTAssertEqual(layer.affineTransform(), .identity)
         let mark = try XCTUnwrap(session.mark(1))
         XCTAssertEqual(try XCTUnwrap(page.placement(of: 1)).box(of: mark.shape), landed)
+    }
+
+    // MARK: - One note in two windows
+
+    /// A layer on the same note in a window of its own, over a preview of
+    /// its own, as a file shown in a second window has.
+    private func mountElsewhere() -> MarkupOverlayView {
+        let size = NSSize(width: 600, height: 400)
+        let other = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                             backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        others.append(other)
+        let otherRoot = NSView(frame: NSRect(origin: .zero, size: size))
+        other.contentView = otherRoot
+        let otherPreview = NSView(frame: otherRoot.bounds)
+        otherRoot.addSubview(otherPreview)
+        let overlay = MarkupOverlayView(session: session, surface: page)
+        overlay.follow(otherPreview)
+        otherRoot.addSubview(overlay, positioned: .above, relativeTo: otherPreview)
+        otherRoot.layoutSubtreeIfNeeded()
+        settle()
+        return overlay
+    }
+
+    /// The file in mark-up in two windows, and the newer one closed: the
+    /// marks go to the one left. They were let go of, so the one left drew
+    /// no new mark and its preview was no longer followed.
+    func testWhenTheLayerWithTheMarksGoesTheOtherOnTheNoteTakesThem() throws {
+        let first = mount()
+        drag(first, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 160))
+        settle()
+        let second = mountElsewhere()
+        XCTAssertTrue(session.overlay === second)
+        XCTAssertTrue(page.attached === second)
+        XCTAssertTrue(second.hasMarks)
+        XCTAssertNotNil(second.markLayers[1])
+        XCTAssertFalse(first.hasMarks, "placed through the other window's preview")
+
+        second.removeFromSuperview()
+        settle()
+        XCTAssertTrue(session.overlay === first)
+        XCTAssertTrue(page.attached === first)
+        XCTAssertTrue(page.isActive, "the layer left was let go of with the one that went")
+        XCTAssertTrue(first.hasMarks)
+
+        drag(first, from: CGPoint(x: 300, y: 100), to: CGPoint(x: 400, y: 160))
+        settle()
+        XCTAssertEqual(session.marks.map(\.number), [1, 2])
+        XCTAssertNotNil(first.markLayers[2], "a new mark is drawn on the layer left")
+    }
+
+    /// The file in mark-up in two windows: a press in the one without the
+    /// marks takes them, and what it draws is tied through its own preview.
+    func testAPressOnTheOtherLayerOnTheNoteTiesThroughIt() throws {
+        let first = mount()
+        let second = mountElsewhere()
+        XCTAssertTrue(session.overlay === second)
+
+        drag(first, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 160))
+        settle()
+        XCTAssertEqual(session.marks.map(\.number), [1])
+        XCTAssertEqual(page.tiedThrough.last, ObjectIdentifier(first), "tied through the other window's layer")
+        XCTAssertTrue(session.overlay === first)
+        XCTAssertTrue(first.hasMarks)
+        XCTAssertNotNil(first.markLayers[1])
+        XCTAssertFalse(second.hasMarks)
+
+        // The first going leaves the second with the marks.
+        first.removeFromSuperview()
+        settle()
+        XCTAssertTrue(session.overlay === second)
+        XCTAssertNotNil(second.markLayers[1])
+        XCTAssertTrue(page.isActive)
+
+        // And the last going lets the preview go.
+        second.removeFromSuperview()
+        settle()
+        XCTAssertNil(session.overlay)
+        XCTAssertFalse(page.isActive)
     }
 
     // MARK: - Pins

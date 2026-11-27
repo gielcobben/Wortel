@@ -40,7 +40,13 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     /// Mark-up went on or off: what its owner does about it (a page stops
     /// taking the swipe back, and reloads what it put off).
     @ObservationIgnored var onChange: () -> Void = {}
+    /// The layer the marks are drawn on, and tied and pictured through.
+    /// A file's note can be on screen more than once (two windows, or two
+    /// splits, showing the file), and then this is the layer last shown
+    /// or used (`MarkupOverlayView.claim`).
     @ObservationIgnored weak var overlay: MarkupOverlayView?
+    /// Every layer on the note now, `overlay` among them.
+    @ObservationIgnored let layers = NSHashTable<MarkupOverlayView>.weakObjects()
     /// Where the pictures go and where the note is copied to: the app's
     /// own, unless something trying this out says otherwise.
     @ObservationIgnored var store = MarkupStore.shared
@@ -49,7 +55,13 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     /// The tool in hand. Kept with the note: what you were drawing with is
     /// what you draw with when the tab comes back.
     @ObservationIgnored var tool = MarkupTool.box {
-        didSet { if tool != oldValue { overlay?.toolChanged() } }
+        didSet { if tool != oldValue { everyLayer { $0.toolChanged() } } }
+    }
+
+    /// Tell every layer on the note, the one in use last.
+    private func everyLayer(_ tell: (MarkupOverlayView) -> Void) {
+        for layer in layers.allObjects where layer !== overlay { tell(layer) }
+        if let overlay { tell(overlay) }
     }
 
     /// Every mark made for this note, those whose chip was deleted too: an
@@ -141,7 +153,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         edits = 0
         editsCopied = 0
         marks = []
-        overlay?.marksChanged()
+        everyLayer { $0.marksChanged() }
         surface?.deactivate(forgetting: true)
         if wasOn { onChange() }
     }
@@ -216,7 +228,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         known[mark.number] = moved
         edits += 1
         if let index = marks.firstIndex(where: { $0.number == mark.number }) { marks[index] = moved }
-        overlay?.marksChanged()
+        everyLayer { $0.marksChanged() }
     }
 
     /// A mark's picture, taken when it is made and written at once: what
@@ -257,7 +269,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
             let now = known.values.filter { present.contains($0.number) }.sorted { $0.number < $1.number }
             guard now != marks else { return }
             marks = now
-            overlay?.marksChanged()
+            everyLayer { $0.marksChanged() }
         }
     }
 

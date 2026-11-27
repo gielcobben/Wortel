@@ -288,9 +288,7 @@ private struct ImagePreview: NSViewRepresentable {
     }
 
     private func register(_ view: NSImageView) {
-        guard let markup, markup.image !== view else { return }
-        markup.image = view
-        markup.changed()
+        markup?.sign(view)
     }
 
     /// Fit if it's too big, natural size if it isn't.

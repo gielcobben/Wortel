@@ -257,6 +257,26 @@ and the views sign in to `MarkupViews` as they are made: `DiffView` its
 table, `MarkdownView` the view that stands for its stack, `ImagePreview`
 its image view. Weak, all of it.
 
+A file's session is one per path, app-wide (`PreviewTabs`), so the same
+file in two windows, or in two splits of one, is one note with a layer
+over each preview. Each preview signs in its own views, and what the
+adapter reads is the one under the layer the marks are on now
+(`MarkupViews.layer`, set by `attach`): in that layer's window, the one
+most of the layer lies over. The adapter has one layer to place and tie
+through, so one layer has the marks (`session.overlay`): the one last
+shown or used. A press, a scroll, a chip's click or the window coming to
+the front hands them over (`MarkupOverlayView.claim`). The other layer
+keeps its note bar on the same note and draws no marks, since placed
+through the other preview they would be wrong there; when the layer with
+the marks goes, the other takes them (`hide`). Before, the views were one
+slot each, which the last preview to update took, and the last layer
+shown took the adapter: a mark drawn in one window was tied through the
+other's table, to whatever line was at that height there, and when the
+newer layer went it let the adapter go, so the one left drew no new mark
+and stopped following its scroll. Found in review, shown in
+`MarkupFileTests` (two windows, one table each) and `MarkupOverlayTests`
+(two layers on one note), 2026-11-27.
+
 - **Source and Diff** (`LinesMarkupSurface`). A mark is tied to a row, and
   the row's height is its unit, so ⌘+ scales it with the text. The clip
   view's bounds notification moves the marks in the frame the rows move.
@@ -959,5 +979,8 @@ looked at.
   sideways inside a Markdown document, and a paragraph rewrapped by a
   narrower window moves under its mark.
 - A file open in two sessions has one note between them, as it has one
-  find. With both in view at once (two windows) only the newer layer is
-  kept up to date.
+  find. With both in view at once (two windows, or two splits) the marks
+  are drawn over one of them, the one last used, and the other shows the
+  note with no marks until it is pressed, scrolled or brought to the
+  front. Not tried by hand in the app: the tests drive two layers and two
+  tables in windows that are never shown.

@@ -71,7 +71,12 @@ final class BlocksMarkupSurface: MarkupSurface {
 
     // MARK: - On and off
 
-    func attach(to layer: NSView) { self.layer = layer }
+    /// The layer, and with it which of the file's previews the marks are
+    /// on, where the file is shown more than once (`MarkupViews`).
+    func attach(to layer: NSView) {
+        self.layer = layer
+        views.layer = layer
+    }
 
     func activate(moved: @escaping () -> Void) {
         self.moved = moved

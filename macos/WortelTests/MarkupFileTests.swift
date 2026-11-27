@@ -78,13 +78,74 @@ final class MarkupFileTests: XCTestCase {
         try XCTUnwrap(MarkStroke.area(of: points, pen: pen, within: layer.bounds))
     }
 
+    /// Windows of a test's own, beside the one every test has.
+    private var others: [NSWindow] = []
+
     override func tearDown() async throws {
         window?.close()
         window = nil
         layer = nil
+        others.forEach { $0.close() }
+        others = []
+    }
+
+    /// The same preview in a second window, signed in to the same views,
+    /// with a layer of its own over it: the file shown twice.
+    private func showElsewhere<Content: View>(_ content: Content,
+                                              size: NSSize = NSSize(width: 600, height: 400)) -> Layer {
+        let other = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                             backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        others.append(other)
+        let root = NSView(frame: NSRect(origin: .zero, size: size))
+        other.contentView = root
+        let host = NSHostingView(rootView: content)
+        host.frame = root.bounds
+        root.addSubview(host)
+        let over = Layer(frame: root.bounds)
+        root.addSubview(over)
+        root.layoutSubtreeIfNeeded()
+        other.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        root.layoutSubtreeIfNeeded()
+        return over
     }
 
     // MARK: - Source and Diff
+
+    /// A file shown in two windows has a table in each, signed in to one
+    /// session's views. A mark is tied through the table under the layer it
+    /// was drawn on, and placed in each window by that window's table. It
+    /// was one slot, the table that updated last: a mark drawn in one window
+    /// was tied to whatever row was at that height in the other.
+    func testAFileShownInTwoWindowsIsMarkedThroughTheTableUnderTheLayer() throws {
+        _ = show(diff(numbered(200)))
+        let here = layer!
+        let table = try XCTUnwrap(views.table)
+        let height = table.rowHeight
+        let there = showElsewhere(diff(numbered(200)))
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
+
+        // The second window is scrolled twenty rows down.
+        surface.attach(to: there)
+        let otherTable = try XCTUnwrap(views.table)
+        XCTAssertFalse(otherTable === table, "the second window's table did not sign in")
+        let otherScroll = try XCTUnwrap(otherTable.enclosingScrollView)
+        otherScroll.contentView.scroll(to: NSPoint(x: 0, y: height * 20))
+        otherScroll.reflectScrolledClipView(otherScroll.contentView)
+
+        // Drawn in the first, around its sixth row.
+        surface.attach(to: here)
+        surface.activate(moved: {})
+        XCTAssertTrue(views.table === table)
+        let made = try XCTUnwrap(tie(surface, 1, to: area(of: [CGPoint(x: 80, y: height * 5 + 3),
+                                                               CGPoint(x: 200, y: height * 6 - 3)], pen: .box)))
+        XCTAssertEqual(made.placement.origin.y, height * 5, accuracy: 0.5)
+
+        // In the second, the same line, twenty rows up.
+        surface.attach(to: there)
+        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * -15, accuracy: 0.5)
+    }
 
     func testAMarkIsTiedToTheRowItWasDrawnOnAndScrollsWithIt() throws {
         _ = show(diff(numbered(200)))
@@ -436,12 +497,11 @@ final class MarkupFileTests: XCTestCase {
         var texts = ["# Title", "one", "two", "three", "four", "five"]
         func signIn() {
             let held = texts
-            views.stack = stack
-            views.blockFrames = Dictionary(uniqueKeysWithValues: held.indices.map {
-                ($0, CGRect(x: 20, y: CGFloat($0) * 50, width: 500, height: 40))
-            })
-            views.blockKey = { held.indices.contains($0) ? held[$0].hashValue : nil }
-            views.changed()
+            views.sign(stack: stack,
+                       frames: Dictionary(uniqueKeysWithValues: held.indices.map {
+                           ($0, CGRect(x: 20, y: CGFloat($0) * 50, width: 500, height: 40))
+                       }),
+                       scale: 1, key: { held.indices.contains($0) ? held[$0].hashValue : nil }, reveal: { _ in })
         }
         signIn()
         let surface: any MarkupSurface = BlocksMarkupSurface(views: views)
@@ -480,11 +540,11 @@ final class MarkupFileTests: XCTestCase {
         settle()
         // Ten items 20pt tall, 4pt apart.
         let items = (1...10).map { "item \($0)" }
-        views.stack = stack
-        views.blockFrames = Dictionary(uniqueKeysWithValues: items.indices.map {
-            ($0, CGRect(x: 20, y: CGFloat($0) * 24, width: 500, height: 20))
-        })
-        views.blockKey = { items.indices.contains($0) ? items[$0].hashValue : nil }
+        views.sign(stack: stack,
+                   frames: Dictionary(uniqueKeysWithValues: items.indices.map {
+                       ($0, CGRect(x: 20, y: CGFloat($0) * 24, width: 500, height: 20))
+                   }),
+                   scale: 1, key: { items.indices.contains($0) ? items[$0].hashValue : nil }, reveal: { _ in })
         let surface: any MarkupSurface = BlocksMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})
@@ -522,7 +582,7 @@ final class MarkupFileTests: XCTestCase {
         imageView.imageScaling = .scaleProportionallyDown
         imageView.image = try picture(400, 200)
         mount(imageView, size: NSSize(width: 300, height: 300))
-        views.image = imageView
+        views.sign(imageView)
 
         let surface: any MarkupSurface = ImageMarkupSurface(views: views)
         surface.attach(to: layer)
@@ -569,7 +629,7 @@ final class MarkupFileTests: XCTestCase {
         imageView.imageScaling = .scaleProportionallyDown
         imageView.image = huge
         mount(imageView, size: imageView.frame.size)
-        views.image = imageView
+        views.sign(imageView)
         let surface: any MarkupSurface = ImageMarkupSurface(views: views)
         surface.attach(to: layer)
         surface.activate(moved: {})

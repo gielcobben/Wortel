@@ -154,16 +154,18 @@ final class MarkupOverlayView: NSView {
     private func show() {
         guard !isShowing, !isLeaving else { return }
         isShowing = true
-        session.overlay = self
+        session.layers.add(self)
         noteBar.attach()
         startFollowing()
-        surface.attach(to: self)
-        surface.activate(moved: { [weak self] in self?.moved() })
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey),
+                                                   name: NSWindow.didBecomeKeyNotification, object: window)
+        }
+        take()
         // Once more when everything around has its place: SwiftUI puts this
         // view in its window before it has finished placing its neighbours,
         // and the bar is laid out against them.
         DispatchQueue.main.async { [weak self] in self?.needsLayout = true }
-        marksChanged()
         // The keyboard to the note: mark-up is pointing and then typing.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.window?.isKeyWindow == true else { return }
@@ -182,6 +184,7 @@ final class MarkupOverlayView: NSView {
         awaiting = false
         setFaint(false)
         NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
         noteBar.detach()
         // A press that will never hear its mouse-up, and its stroke. One
         // whose mark is being made (`pending`) is hidden by its own reply.
@@ -199,11 +202,73 @@ final class MarkupOverlayView: NSView {
             selectionLayer.setAffineTransform(.identity)
         }
         held = nil
+        session.layers.remove(self)
         // Only the layer the session knows as its own lets go: a tab moving
         // rows has a new one before the old one is taken down.
         guard session.overlay === self else { return }
         session.overlay = nil
+        // The note is still on screen elsewhere (the file in another window
+        // or split): the marks go there. Let go of here, the other layer was
+        // left with marks that no longer moved and drags that made nothing
+        // (found in review, 2026-11-27).
+        if session.isOn, let other = session.layers.allObjects.first(where: { $0.isShowing && !$0.isLeaving }) {
+            return other.take()
+        }
         surface.deactivate(forgetting: !session.isOn && !session.hasNote)
+    }
+
+    // MARK: - More than one layer on a note
+
+    // A file's note is one per path, app-wide, and the file can be shown in
+    // two windows, or two splits of one, each with a layer over it. The
+    // adapter has one layer to place and tie the marks through, so one of
+    // them has the marks (`session.overlay`): the last shown or used. The
+    // other keeps its note bar, the same note, and draws no marks until it
+    // is used: placed through the other preview they would be wrong here.
+
+    /// Take the marks from another layer on the note, if one has them: this
+    /// is the one being used now. A press, a scroll, a chip's click, or the
+    /// window coming to the front.
+    func claim() {
+        guard isShowing, !isLeaving, session.overlay !== self else { return }
+        take()
+    }
+
+    private func take() {
+        let had = session.overlay
+        session.overlay = self
+        surface.attach(to: self)
+        surface.activate(moved: { [weak self] in self?.moved() })
+        if let had, had !== self { had.passed() }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        marksLayer.isHidden = false
+        CATransaction.commit()
+        marksChanged()
+    }
+
+    /// Another layer on the note took the marks.
+    private func passed() {
+        behind?.cancel()
+        behind = nil
+        awaiting = false
+        setFaint(false)
+        showHover(nil)
+        selected = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        marksLayer.isHidden = true
+        CATransaction.commit()
+    }
+
+    /// Whether this layer has the marks.
+    var hasMarks: Bool { isShowing && session.overlay === self }
+
+    @objc private func windowBecameKey() {
+        // From another window only: two splits of one window are told apart
+        // by which is used, not by which window is in front.
+        guard session.overlay?.window !== window else { return }
+        claim()
     }
 
     /// The bar comes up from just under where it rests. Not with Reduce
@@ -289,7 +354,7 @@ final class MarkupOverlayView: NSView {
     /// none for a mark that is gone.
     func marksChanged() {
         noteBar.update()
-        guard isShowing else { return }
+        guard hasMarks else { return }
         let numbers = Set(session.marks.map(\.number))
         for (number, layer) in markLayers where !numbers.contains(number) {
             layer.removeFromSuperlayer()
@@ -315,6 +380,8 @@ final class MarkupOverlayView: NSView {
 
     /// Put every mark where its content is now.
     func place() {
+        // Where the preview says through the layer that has the marks.
+        guard hasMarks else { return }
         CATransaction.begin()
         // No animation: a mark that eases to its place is a mark that is
         // somewhere else for a quarter of a second.
@@ -408,6 +475,7 @@ final class MarkupOverlayView: NSView {
 
     /// Bring a mark into view: its chip was clicked, or its pin.
     func reveal(_ number: Int) {
+        claim()
         guard let mark = session.mark(number) else { return }
         // What the bar covers, from its top down: the strip under it is
         // too thin to show a mark in.
@@ -417,6 +485,9 @@ final class MarkupOverlayView: NSView {
     // MARK: - Scrolling goes through
 
     override func scrollWheel(with event: NSEvent) {
+        // To this layer's preview, which the adapter scrolls only once this
+        // layer has the marks: it scrolled the other window's.
+        claim()
         showHover(nil)
         guard let view = surface.view else { return }
         // To what is under the pointer inside the preview, where it has
@@ -440,6 +511,13 @@ final class MarkupOverlayView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.patience, execute: check)
     }
 
-    override func magnify(with event: NSEvent) { surface.view?.magnify(with: event) }
-    override func smartMagnify(with event: NSEvent) { surface.view?.smartMagnify(with: event) }
+    override func magnify(with event: NSEvent) {
+        claim()
+        surface.view?.magnify(with: event)
+    }
+
+    override func smartMagnify(with event: NSEvent) {
+        claim()
+        surface.view?.smartMagnify(with: event)
+    }
 }

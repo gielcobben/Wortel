@@ -333,7 +333,7 @@ export const SECTIONS: Section[] = [
 export type Tile = {
   scene:
     | 'worktree' | 'agents' | 'send' | 'diff' | 'plan' | 'hero' | 'palette' | 'quit' | 'status'
-    | 'browser' | 'settings' | 'free' | 'looks';
+    | 'browser' | 'settings' | 'free' | 'looks' | 'markup' | 'splits' | 'history' | 'files';
   label: string;
   big?: string;
   body: string;
@@ -356,6 +356,10 @@ export const BENTO: { tiles: Tile[] } = {
     { scene: 'settings', big: '5', label: 'settings', body: 'The font, the theme and the keybinds were chosen once. Settings is five rows long.' },
     { scene: 'free', big: 'Free', label: 'No account', body: 'Wortel is free, and has no account.' },
     { scene: 'looks', label: 'Follows light and dark', body: 'Every terminal follows the system between light and dark, at once.' },
+    { scene: 'markup', label: 'Mark up what you see', body: 'Mark Up draws on a page, a diff, source, rendered Markdown or an image, and copies your note as text an agent can read.' },
+    { scene: 'splits', label: 'Splits, each with its own tabs', body: 'Everything beside the sidebar is made of splits, and every split has its own row of tabs: a terminal, a browser, a file, your changes.' },
+    { scene: 'history', label: 'The branch graph', body: 'History is the commit list with its branch graph, in a tab beside the terminal.' },
+    { scene: 'files', label: 'The project tree', body: 'Files is the project as a tree. Drag a row into the terminal and its path lands at your prompt.' },
   ],
 };
 

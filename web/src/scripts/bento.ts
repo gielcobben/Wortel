@@ -11,7 +11,9 @@
 //             Pi is shown only here: the stages show Claude Code and Codex,
 //             whose screens at work were captured, and Pi's could not be;
 //   rows      the worktree tile shows three rows of the sidebar: one folder,
-//             filled with clones of the canvas's own worktree row.
+//             filled with clones of the canvas's own worktree row;
+//   splits    a window in three splits: a session's shell, the dev server's
+//             under it, and a new tab beside both.
 // Everything else is still, or moves in CSS.
 import { Terminal, named, pi, piScreen, wholeRows } from './app';
 
@@ -22,6 +24,7 @@ export function initBento() {
   parts(scope, poster);
   terminal(scope, poster);
   browser(scope, poster);
+  splits(scope, poster);
   rows(poster);
 }
 
@@ -67,6 +70,24 @@ function terminal(scope: HTMLElement, poster: HTMLElement) {
   run.add(pi.tool('read', 'updates/appcast.xml'));
   run.working(true);
   new Terminal(named(win, 'Terminal')!).swap(run.nodes);
+  wholeRows(win);
+}
+
+// A plain session in the repository's folder, named for it, as a session with
+// no agent is: the canvas's own new shell (its "Terminal pane") shown in the
+// session's terminal. The canvas draws the shell under it zoomed, so its Show
+// All Splits is put away here.
+function splits(scope: HTMLElement, poster: HTMLElement) {
+  const win = poster.querySelector<HTMLElement>('[data-win="splits"]');
+  const lead = scope.querySelector<HTMLTemplateElement>('template[data-tpl="lead"]')?.content;
+  const shell = scope.querySelector<HTMLTemplateElement>('template[data-src]')?.content.querySelector<HTMLElement>('[data-name="Terminal pane"] [data-name="Terminal"]');
+  if (!win || !lead || !shell) return;
+  const bar = win.querySelector<HTMLElement>('header[data-name="Main bar"]')!;
+  bar.prepend(lead.cloneNode(true));
+  named(bar, 'Title')!.textContent = 'wortel';
+  named(bar.parentElement!, 'Terminal')!.replaceChildren(...Array.from(shell.children).map((el) => el.cloneNode(true)));
+  const unzoom = named(win, 'Show All Splits');
+  if (unzoom) unzoom.hidden = true;
   wholeRows(win);
 }
 

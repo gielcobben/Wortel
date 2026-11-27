@@ -271,11 +271,27 @@ enum WebMarkupScript {
         return !!name && name.length <= 80 && !unseen.test(name);
       }
 
+      // Between a shadow root's host and a selector in that root. Not a
+      // selector itself: `find` reads it, and so can an agent.
+      var into = ' >>> ';
+
       // A selector that finds this element and no other, as short as that
       // allows: its id, a test id, or the way down to it from the nearest
-      // id. None where none finds it alone.
+      // id. In a shadow root, it is found in that root, after its host's
+      // selector and `into`: `document.querySelectorAll` does not look
+      // inside one, and a selector made as if it did found an element of
+      // the page with the same way down (found in review, 2026-11-27).
+      // None where none finds it alone.
       function selectorOf(el) {
-        var root = el.ownerDocument;
+        var root = el.getRootNode ? el.getRootNode() : el.ownerDocument;
+        var host = '';
+        if (root && root.nodeType === 11 && root.host) {
+          host = selectorOf(root.host);
+          if (!host) { return null; }
+          host += into;
+        } else if (!root || root.nodeType !== 9) {
+          return null;
+        }
         function alone(selector) {
           try { return root.querySelectorAll(selector).length === 1; } catch (e) { return false; }
         }
@@ -317,7 +333,22 @@ enum WebMarkupScript {
         // app would take for one too many: one space between parts, none
         // at the ends, finds the same element.
         var found = within();
-        return found ? found.replace(/\s+/g, ' ').trim() : null;
+        return found ? host + found.replace(/\s+/g, ' ').trim() : null;
+      }
+
+      // The one element a selector of `selectorOf` finds in the page, or
+      // none.
+      function find(selector) {
+        var steps = selector.split(into), root = document, el = null;
+        for (var i = 0; i < steps.length; i++) {
+          if (el) { root = el.shadowRoot; }
+          if (!root) { return null; }
+          var found = null;
+          try { found = root.querySelectorAll(steps[i]); } catch (e) {}
+          if (!found || found.length !== 1) { return null; }
+          el = found[0];
+        }
+        return el;
       }
 
       // The styles someone asking for a change would name, and no others.
@@ -373,13 +404,12 @@ enum WebMarkupScript {
       // The report: where every mark is now.
 
       // An element that left the page is looked for again by its selector:
-      // a page that draws itself anew replaces its elements with like ones.
+      // a page that draws itself anew replaces its elements with like ones,
+      // and a web component its shadow root.
       function rebind(mark) {
-        if (!mark.selector) { return; }
-        var found = null;
-        try { found = document.querySelectorAll(mark.selector); } catch (e) {}
-        if (!found || found.length !== 1) { return; }
-        mark.el = found[0];
+        var found = mark.selector ? find(mark.selector) : null;
+        if (!found) { return; }
+        mark.el = found;
         var around = chainOf(mark.el);
         mark.chain = around.chain;
         mark.fixed = around.fixed;

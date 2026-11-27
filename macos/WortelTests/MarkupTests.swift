@@ -1028,7 +1028,8 @@ final class MarkupTests: XCTestCase {
     }
 
     func testASelectorIsKeptWholeOrNotAtAll() {
-        for selector in ["#buy", "#\\31", "main > p:nth-of-type(2)", "[data-testid=\"save\"]"] {
+        for selector in ["#buy", "#\\31", "main > p:nth-of-type(2)", "[data-testid=\"save\"]",
+                         "my-el:nth-of-type(1) >>> button:nth-of-type(1)"] {
             XCTAssertEqual(MarkText.selectorFromPage(selector), selector)
         }
         // Cut, or with anything taken out, it would find something else.

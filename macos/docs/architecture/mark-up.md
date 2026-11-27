@@ -160,6 +160,19 @@ itself anew replaces its elements with like ones. One that is not found has
 no place: its mark is not drawn, and its chip and its picture stay. A
 selector is one that finds the element alone, or there is none.
 
+**An element in a shadow root is found in that root.** Its selector is its
+host's, then ` >>> `, then its own in the root (`selectorOf`), and `find`
+walks it down one root at a time: `my-el:nth-of-type(1) >>> button:nth-of-type(1)`.
+`>>>` is not CSS; it is there for `find` and for an agent to read. Before
+this, a button in a web component's shadow root was given
+`button:nth-of-type(1)`, which `document.querySelectorAll` finds in the
+page's own tree, so `details.json` named another button, and when the
+component drew itself anew the mark moved onto that button (found in
+review, 2026-11-27; checked after in a harness with the real script: the
+mark stays on the new button, and on one two shadow roots down). An
+element in a frame keeps no selector to be found again by: `find` looks
+from the top page.
+
 **A drawn area follows the block under its middle**, not the element that
 holds all of it (`blockUnder`). The element that holds an area whole is
 often the whole column, and the column stays where it is when the text in

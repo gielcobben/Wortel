@@ -48,9 +48,34 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
 {set === 'marks' && <template data-tiles-src><AppContent><MarkUpPage /></AppContent><AppContent><MarkUp /></AppContent></template>}
 
 <script>
+  import { planMarks, phrase } from '../../scripts/plan';
   // Each holder gets a clone of the named part, out of the frames in the
   // page's template.
   const src = document.querySelector<HTMLTemplateElement>('template[data-tiles-src]')?.content;
+  /** The page, as wide as its tile shows it: what the canvas drew over it is
+   *  placed in the page's own points (537 wide), so each mark says where it
+   *  is in those and the styles below scale them with the page. */
+  const page = (part: HTMLElement) => {
+    part.querySelectorAll<HTMLElement>(':scope > [data-name^="Mark "]').forEach((mark) => {
+      const cs = getComputedStyle(mark);
+      for (const [k, v] of [['--l', cs.left], ['--t', cs.top], ['--w', cs.width], ['--h', cs.height]]) mark.style.setProperty(k, String(parseFloat(v)));
+      mark.dataset.scaled = '';
+    });
+  };
+  /** The plan, as wide as its tile shows it, from "Steps" down: its marks are
+   *  put over the same words again when it wraps (scripts/plan.ts). */
+  const plan = (doc: HTMLElement) => {
+    const { column, place } = planMarks(doc);
+    const fit = () => {
+      const from = Array.from(column.children).find((el) => el.textContent?.trim() === 'Steps') as HTMLElement | undefined;
+      // The heading at the top, and the paragraph over it out of sight whole.
+      column.style.marginTop = from ? `${-from.offsetTop}px` : '';
+      place();
+    };
+    fit();
+    new ResizeObserver(fit).observe(doc);
+    document.fonts?.ready.then(fit);
+  };
   if (src) {
     document.querySelectorAll<HTMLElement>('[data-tiles] [data-part]').forEach((holder) => {
       const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`)?.cloneNode(true) as HTMLElement | undefined;
@@ -61,6 +86,8 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
       const words: string[] = JSON.parse(holder.dataset.words || '[]');
       if (words.length) part.querySelectorAll<HTMLElement>('[data-name^="Words "]').forEach((w, i) => { w.textContent = words[i] ?? ''; w.hidden = !words[i]; });
       holder.append(part);
+      if (holder.dataset.part === 'Page') page(part);
+      if (holder.dataset.part === 'Markdown') plan(part);
     });
   }
 </script>
@@ -86,21 +113,31 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
     position: absolute; left: 24px; top: 64px; bottom: 0; display: flex; flex-direction: column; overflow: hidden; text-align: left;
     border-radius: 12px 0 0 0; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.1);
   }
-  /* The page at the 537 it was captured at, shown from just above the
-     paragraph down: the box drawn around the paragraph and the button a
-     click picked. Nothing else of mark-up is in this picture. */
-  .pick .part { width: 537px; }
-  .pick .part > :global([data-name="Page"]) { flex: none; height: 640px; margin-top: -192px; }
+  /* Both parts run to their tile's right edge, whatever its width: a part of
+     a fixed width stopped short of it in a wide tile (one column, under 900)
+     and left a blank strip beside a square edge. */
+  .pick .part, .draw .part { right: 0; width: auto; }
+  /* The page fills its part's width, as a page fills a browser split, and is
+     shown from just above the paragraph down: the box drawn around the
+     paragraph and the button a click picked, then the hero's stage. What the
+     canvas drew over it is in the page's own points, 537 wide, so it is
+     scaled with it: --u is one of those points (the script gives each mark
+     its place in them). Nothing else of mark-up is in this picture. */
+  .pick .part { container-type: inline-size; }
+  .pick .part > :global([data-name="Page"]) { --u: calc(100cqw / 537); flex: none; margin-top: calc(-192 * var(--u)); }
+  .pick .part :global([data-name="Page"] > img) { position: relative; inset: auto; width: 100%; height: auto; object-fit: fill; }
+  .pick .part :global([data-name="Page"] > [data-scaled]) { left: calc(var(--l) * var(--u)); top: calc(var(--t) * var(--u)); width: calc(var(--w) * var(--u)); height: calc(var(--h) * var(--u)); }
   .pick .part :global(:is([data-name="Note bar"], [data-name="Hover outline"])) { display: none; }
-  /* The rendered plan at the 650 its marks were placed at, from "Steps" down
-     to the last of its tasks, so it reads as the document it is: a heading,
-     a list with the box around two of its steps, a code block, and "Checks"
-     with the arrow and the highlight. The tiles are tall enough for that. */
+  /* The rendered plan, as wide as its part, from "Steps" down (the script
+     moves it up to there): a heading, a list with the box around two of its
+     steps, a code block, and "Checks" with the arrow, the highlight and the
+     ticks. At 650 and up it is the canvas's plan as drawn; narrower it wraps,
+     and its marks are put over the same words again (scripts/plan.ts). The
+     tiles are tall enough for all of it at the page's full width. */
   .tiles.marks { grid-auto-rows: 512px; }
-  /* 16 in, so the box, which is as wide as the plan's column, ends inside the tile. */
-  .draw .part { left: 16px; width: 650px; }
+  .draw .part { left: 16px; }
   .draw .part > :global([data-name="Markdown"]) { flex: 1 1 auto; min-height: 0; justify-content: flex-start; overflow: hidden; }
-  .draw .part > :global([data-name="Markdown"] > :first-child) { flex: none; margin-top: -424px; }
+  .draw .part > :global([data-name="Markdown"] > :first-child) { flex: none; }
 
   /* The note bar by itself, where the app pins it to the foot of a preview,
      beside the same note as text. The two boxes are one height. The bar's

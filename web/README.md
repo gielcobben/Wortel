@@ -69,6 +69,7 @@ src/
   scripts/scenes.ts        the agents scene and the terminal-first scene
   scripts/markup.ts        the mark-up scene: point, say it, copy, paste
   scripts/review.ts        the review scene: Changes, History, Files and a preview, in one session
+  scripts/plan.ts          the canvas's marks on its rendered plan, kept on their words at any width
   scripts/surfaces.ts      /mark-up's second scene: the marks drawn and the note written over three previews
   scripts/bento.ts         puts the real app into the bento's ten tiles: parts cloned out of the generated panes (a preview being marked up, the commits, the file tree) and two windows (a terminal, one in splits)
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
@@ -212,7 +213,15 @@ frame of each on the canvas would replace that, and one of an image would add
 the chapter that is missing. On a phone the plan wraps and its marks are
 placed over the same words again, the plan moves down to a mark drawn above
 what shows, and code scrolls sideways or up to a mark that would be out of
-sight. The two rows of tiles lift their pieces out of the same two frames. The
+sight. The two rows of tiles lift their pieces out of the same two frames. In the
+first row each piece runs to its tile's right edge at any width. The page
+fills its piece as a page fills a browser split, and what the canvas drew
+over it is scaled with it: each mark carries its place in the page's own 537
+points, and one of those points is a share of the piece's width. The plan is
+as wide as its piece and starts at "Steps"; narrower than 650 it wraps, and
+`scripts/plan.ts` puts its marks over the same words again (the second film
+uses the same). Both were pieces of a fixed width, which stopped short of a
+wide tile and were cut by a narrow one. The
 second row's note is `MARKUP_NOTE` in `data/site.ts`: the bar shows it, and
 the text beside it is written from it the way the app copies one, so the two
 cannot disagree. Their boxes are one height: the bar's tile is the narrower

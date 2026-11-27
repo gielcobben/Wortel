@@ -16,6 +16,7 @@
 import { gsap } from 'gsap';
 import { Pointer, Sidebar, foldable, named, pressKeys, reduced, wholeRows } from './app';
 import { film } from './film';
+import { planMarks } from './plan';
 
 const SESSION = 'Quicker panes';
 /** A character, typed, and from a key going down to the app answering. */
@@ -145,41 +146,10 @@ export function initSurfaces() {
     Object.assign(m.el.style, { left: `${at.right + 8 - 4.5 - o.left}px`, top: `${(at.top + at.bottom) / 2 - 37 - o.top}px` });
   };
   // The plan's marks are the canvas's while the plan is as wide as it was
-  // drawn (a preview of 650 or more, its column 602). In a narrower one the
-  // plan wraps, and the marks are put over the same things again: the box
-  // around steps 2 and 3, the arrow at the end of "Checks", the highlight on
-  // "without a stutter".
+  // drawn, and are put over the same things again where it is narrower
+  // (scripts/plan.ts).
   const doc = named(plan, 'Markdown')!;
-  // The column the plan is set in, which its marks are placed against: found
-  // once, while the marks are drawn (a hidden one has no offset parent).
-  const column = (rendered.marks[0].el.offsetParent ?? doc.firstElementChild) as HTMLElement;
-  const phrase = (root: Element, words: string) => {
-    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-      const at = (n.textContent || '').indexOf(words);
-      if (at < 0) continue;
-      const range = document.createRange();
-      range.setStart(n, at); range.setEnd(n, at + words.length);
-      // On one line it is one box; over two, the longer part.
-      return Array.from(range.getClientRects()).sort((a, b) => b.width - a.width)[0] ?? null;
-    }
-    return null;
-  };
-  const placePlan = () => {
-    const [boxed, arrow, glow] = rendered.marks.map((m) => m.el);
-    const inks = [named(glow, 'Ink')!];
-    for (const el of [boxed, arrow, glow, ...inks]) for (const k of ['left', 'top', 'width', 'height'] as const) el.style[k] = '';
-    if (!doc.clientWidth || doc.clientWidth >= 650) return;
-    const o = column.getBoundingClientRect();
-    const items = Array.from(doc.querySelectorAll<HTMLElement>('[data-name="Item"]')).slice(1, 3).map((el) => el.getBoundingClientRect());
-    const heading = phrase(doc, 'Checks'), words = phrase(doc, 'without a stutter');
-    if (items.length === 2) Object.assign(boxed.style, { left: `${items[0].left - o.left - 7.5}px`, top: `${items[0].top - o.top - 4.5}px`, width: `${Math.max(items[0].width, items[1].width) + 15}px`, height: `${items[1].bottom - items[0].top + 9}px` });
-    if (heading) Object.assign(arrow.style, { left: `${heading.right + 12 - 4.5 - o.left}px`, top: `${(heading.top + heading.bottom) / 2 - 37 - o.top}px` });
-    if (words) {
-      Object.assign(glow.style, { left: `${words.left - o.left}px`, top: `${(words.top + words.bottom) / 2 - 10 - o.top}px`, width: `${words.width + 10}px` });
-      inks[0].style.width = `${words.width}px`;
-    }
-  };
+  const { column, place: placePlan } = planMarks(doc);
   /** Scroll a file's lines up until row `last` is clear of the note bar: in a
    *  window as short as a phone's the lines being marked would lie under it.
    *  The bar is allowed its tallest, a note of three lines. */

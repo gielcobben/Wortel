@@ -188,8 +188,8 @@ enum MarkStroke {
             return (.arrow, [tail, tip])
         case .line(let start, let end):
             return (.pen, levelled(start, end))
-        case .oval(let rect):
-            return (.pen, oval(in: rect))
+        case .oval(let rect, let tilt):
+            return (.pen, oval(in: rect, tilt: tilt))
         }
     }
 
@@ -217,7 +217,9 @@ enum MarkStroke {
     /// How many points an oval is kept as, round its whole.
     static let ovalPoints = 96
 
-    /// The oval that fills `rect`, as points for the pen's line.
+    /// The oval that fills `rect`, turned by `tilt` about its middle, as
+    /// points for the pen's line. A hand's loop round a few words leans, and
+    /// an upright oval over it would cover other words than were circled.
     ///
     /// The line through them (`path(through:)`) runs inside each corner, so
     /// with too few points it is a smaller oval than asked for: with these
@@ -230,11 +232,12 @@ enum MarkStroke {
     /// It starts at the upper left, in a view counted from the top: a
     /// mark's badge sits where its ink begins (`MarkPlacement.badge`), and
     /// that is where a box has its own.
-    static func oval(in rect: CGRect) -> [CGPoint] {
+    static func oval(in rect: CGRect, tilt: CGFloat = 0) -> [CGPoint] {
         let step = 2 * CGFloat.pi / CGFloat(ovalPoints)
+        let turn = CGAffineTransform(translationX: rect.midX, y: rect.midY).rotated(by: tilt)
         return (0...(ovalPoints + 3)).map { index in
             let angle = CGFloat(index) * step - 3 * .pi / 4
-            return CGPoint(x: rect.midX + cos(angle) * rect.width / 2, y: rect.midY + sin(angle) * rect.height / 2)
+            return CGPoint(x: cos(angle) * rect.width / 2, y: sin(angle) * rect.height / 2).applying(turn)
         }
     }
 

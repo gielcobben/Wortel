@@ -340,6 +340,29 @@ final class MarkupOverlayTests: XCTestCase {
         XCTAssertFalse(session.undo.canUndo)
     }
 
+    /// A note longer than the bar's six lines scrolls, and the line being
+    /// typed on stays in sight. The text view stayed the box's height once,
+    /// its words ran on below the bar and nothing scrolled.
+    func testALongNoteScrollsAndKeepsTheCaretInSight() throws {
+        let overlay = mount()
+        let text = overlay.noteBar.textView
+        window.makeFirstResponder(text)
+        for line in 1...12 {
+            if line > 1 { text.insertNewlineIgnoringFieldEditor(nil) }
+            text.insertText("line \(line)", replacementRange: text.selectedRange())
+            settle()
+        }
+        let scroll = try XCTUnwrap(text.enclosingScrollView)
+        let visible = scroll.contentView.bounds
+        XCTAssertGreaterThan(text.frame.height, visible.height, "the text view grows past the box")
+        XCTAssertGreaterThan(visible.minY, 0, "the note scrolled to its end")
+        let caret = text.firstRect(forCharacterRange: text.selectedRange(), actualRange: nil)
+        let inText = text.convert(window.convertFromScreen(caret), from: nil)
+        XCTAssertTrue(visible.insetBy(dx: -1, dy: -1).contains(inText), "caret \(inText) out of \(visible)")
+        // Its line whole, not cut by the bar's edge.
+        XCTAssertEqual(visible.maxY, text.frame.height, accuracy: 1)
+    }
+
     /// The note cleared as the trash button clears it: one edit of the text.
     private func clear(_ overlay: MarkupOverlayView) {
         let text = overlay.noteBar.textView

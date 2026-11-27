@@ -127,6 +127,13 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         textView.insertionPointColor = .controlAccentColor
         textView.textContainerInset = .zero
         textView.isVerticallyResizable = true
+        // Free to grow as tall as the note. A text view made with a frame
+        // of zero has a largest size of zero (measured 2026-11-27), so past
+        // six lines it stayed the box's height, its words ran on below it
+        // unclipped and cut off by the bar, and there was nothing to
+        // scroll: the caret went out of sight with the line it was on.
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.smartInsertDeleteEnabled = false
@@ -365,10 +372,19 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         // from the tools: in the narrowest column the tools and Copy have
         // the row to themselves, and ⌘A then ⌫ clears.
         clear.isHidden = session.text.length == 0 || clear.frame.minX < x + 6
+        let before = scroll.frame.size
         scroll.frame = NSRect(x: Self.padding.width, y: Self.padding.height,
                               width: max(bounds.width - Self.padding.width * 2, 40),
                               height: max(row.minY - Self.toolGap - Self.padding.height, Self.lineHeight))
         textView.frame.size.width = scroll.contentSize.width
+        // The caret stays in sight when the box changes size: the text view
+        // scrolls to it as it is typed into, but against the box before the
+        // bar grew a line, or before the window was made narrower and the
+        // words wrapped onto more lines. Only then: a layout for anything
+        // else leaves a note scrolled back to read where it was.
+        if scroll.frame.size != before {
+            textView.scrollRangeToVisible(textView.selectedRange())
+        }
         colour()
     }
 

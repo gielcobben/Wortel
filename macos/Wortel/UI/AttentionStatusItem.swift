@@ -81,7 +81,7 @@ final class AttentionStatusItem: NSObject, NSMenuDelegate {
             menu.addItem(entry)
         }
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(title: "Show Wortel") { [weak self] in self?.showApp() })
+        menu.addItem(ClosureMenuItem(title: "Show \(AppName.shown)") { [weak self] in self?.showApp() })
     }
 
     /// "now", "4m", "2h", "3d".

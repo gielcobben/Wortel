@@ -1983,7 +1983,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 
 
-                Wortel \(device["app_version"] ?? "unknown"), macOS \(device["macos"] ?? "unknown"), \(chip)
+                \(AppName.shown) \(device["app_version"] ?? "unknown"), macOS \(device["macos"] ?? "unknown"), \(chip)
                 """),
         ]
         if let url = mail.url { NSWorkspace.shared.open(url) }

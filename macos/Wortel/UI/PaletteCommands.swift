@@ -34,10 +34,7 @@ enum PaletteCommands {
 
     /// The app menu has no title of its own (the system draws the app's name
     /// there), and its item's title is the class name: "NSMenuItem".
-    private static var appName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? ProcessInfo.processInfo.processName
-    }
+    private static var appName: String { AppName.shown }
 
     /// What a palette has no business offering: quitting and hiding the app,
     /// text editing (it would act on the palette's own field), the window

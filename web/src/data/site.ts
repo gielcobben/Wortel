@@ -245,7 +245,7 @@ export const SECTIONS: Section[] = [
         p: '`⌘D` splits the split you are in to the right and `⇧⌘D` splits it down, each with a new terminal. A tab let go on the edge of a split makes a new one there, and let go on its middle moves into it. The + in a row opens a tab that asks what it should be: a terminal, a browser, Changes, History or Files.',
       },
       {
-        p: 'Wortel opens the first two for you, where they have always been: Changes and Files beside the terminal (`⌥⌘B`) and a second shell under it (`⌘J`). So the window is useful before you arrange anything, and arranging it is never a setting. `⇧⌘↩` zooms the split you are in to the whole window and back.',
+        p: 'Wortel opens the first two for you, where they have always been: `⌥⌘B` opens Changes and Files beside the terminal and `⌘J` a second shell under it. So the window is useful before you arrange anything, and arranging it is never a setting. `⇧⌘↩` zooms the split you are in to the whole window and back.',
       },
     ],
   },
@@ -257,7 +257,7 @@ export const SECTIONS: Section[] = [
     lead: 'Point at what a preview shows, say something about it, and paste it to an agent.',
     blocks: [
       {
-        p: 'Mark Up (`⇧⌘M`) works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',
+        p: 'Mark Up `⇧⌘M` works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',
       },
       {
         p: 'Your note goes in a bar at the bottom of the preview, with each mark in it as a chip, so the sentence is written around them. Return copies it as plain text, with a picture of each mark and the page or file it was about. Paste it to the agent in this session or another. Nothing is typed or sent for you.',
@@ -317,7 +317,7 @@ export const SECTIONS: Section[] = [
         p: 'This is the feature. A terminal you can spend an afternoon tuning is a terminal you will. Wortel chooses the font, the theme, the keybinds and the scrollback once, and treats them as finished. Font size is the one thing about the look you can change.',
       },
       {
-        p: 'Settings (⌘,) is two short tabs: what a new session starts with, whether Source Control shows its commit box, where a local server opens, automatic updates, and anonymous usage data. A setting is only added for something you decide once and that really differs from one person to the next.',
+        p: 'Settings `⌘,` is two short tabs: what a new session starts with, whether Source Control shows its commit box, where a local server opens, automatic updates, and anonymous usage data. A setting is only added for something you decide once and that really differs from one person to the next.',
       },
     ],
   },
@@ -377,7 +377,10 @@ export type Head = Beta & {
   title: string;
   tone?: string;
   body?: string;
+  /** Where the paragraph goes further, after it: a part of /docs. */
   link?: readonly [text: string, href: string];
+  /** The feature's own page (/layouts, /mark-up), under the heading. */
+  page?: readonly [text: string, href: string];
 };
 
 export const HOME = {
@@ -412,7 +415,7 @@ export const HOME = {
     title: 'Split it anywhere',
     tone: 'Every split has its own tabs',
     body: '`⌘D` splits where you are and `⇧⌘D` splits it down. Drag a tab to the edge of any split and it makes a new one there. Every split has its own row of tabs: a terminal, a browser, a file, your changes. `⇧⌘↩` gives one the whole window.',
-    link: ['Everything a layout does', '/layouts'],
+    page: ['Everything a layout does', '/layouts'],
     beta: true,
   },
   // This entry, the section that reads it (components/home/Markup.astro) and
@@ -420,8 +423,8 @@ export const HOME = {
   markup: {
     title: 'Show it what you mean',
     tone: 'Point at it, say it, paste it',
-    body: 'Mark Up (`⇧⌘M`) works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
-    link: ['Everything mark-up does', '/mark-up'],
+    body: 'Mark Up `⇧⌘M` works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
+    page: ['Everything mark-up does', '/mark-up'],
     beta: true,
   },
   glance: {
@@ -811,10 +814,10 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Starting an agent in every new session',
     blocks: [
       {
-        p: 'In Settings (`⌘,`), “New sessions start with” takes any command. Type one, like `claude` or `codex`, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: `⌘N`, `⌥⌘N`, `⌥⇧⌘N`, `⌘O`, a folder’s + and a folder dropped on the sidebar.',
+        p: 'In Settings `⌘,`, “New sessions start with” takes any command. Type one, like `claude` or `codex`, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: `⌘N`, `⌥⌘N`, `⌥⇧⌘N`, `⌘O`, a folder’s + and a folder dropped on the sidebar.',
       },
       {
-        p: 'Session ▸ New Terminal (`⌃⌘N`) opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. `wortel new` and the sessions brought back at launch never use it.',
+        p: 'Session ▸ New Terminal `⌃⌘N` opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. `wortel new` and the sessions brought back at launch never use it.',
       },
       { h: 'A folder of its own' },
       {
@@ -895,7 +898,7 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'More than one window',
     blocks: [
       {
-        p: 'Window ▸ New Window (`⇧⌘N`) opens another window with a sidebar of its own. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all. A session’s menu has Move to New Window and Move to Window, and Window ▸ Merge All Windows puts everything back in one.',
+        p: 'Window ▸ New Window `⇧⌘N` opens another window with a sidebar of its own. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all. A session’s menu has Move to New Window and Move to Window, and Window ▸ Merge All Windows puts everything back in one.',
       },
       {
         p: 'Closing a window closes its sessions, and asks first if something is still running in them. New Worktree Session is `⌥⇧⌘N`, since `⇧⌘N` opens a window.',
@@ -1000,7 +1003,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'How is Wortel different from Ghostty?',
-    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it. Ghostty gives you tabs, splits and a large configuration file. Wortel has tabs and splits too, on the same keys (`⌘T`, `⌘D`, `⇧⌘D`), and adds a sidebar of named sessions that persist across restarts, a git worktree per session, shells that keep running after the app quits, a built-in git and files inspector, coding-agent activity detection, and next to nothing to configure.',
+    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it. Ghostty gives you tabs, splits and a large configuration file. Wortel has tabs and splits too, on the same keys, `⌘T`, `⌘D` and `⇧⌘D`, and adds a sidebar of named sessions that persist across restarts, a git worktree per session, shells that keep running after the app quits, a built-in git and files inspector, coding-agent activity detection, and next to nothing to configure.',
   },
   {
     q: 'How is Wortel different from iTerm2, Warp, Kitty or Alacritty?',
@@ -1016,11 +1019,11 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel have tabs or split panes?',
-    a: 'Both. Everything beside the sidebar is made of splits, each with its own row of tabs, and a tab is a terminal, a browser, a file or one of the git panes. `⌘D` splits where you are to the right and `⇧⌘D` down, and a tab dragged to the edge of a split makes a new one there. Wortel opens two for you where they have always been, Changes and Files beside the terminal (`⌥⌘B`) and a second terminal under it (`⌘J`), so there is no layout to build first. A file tab can also be dragged out of the window into a preview window of its own, and back. Switching work is still the sidebar’s job: a split holds tabs, never another session, and `⌘P` finds any session by name.',
+    a: 'Both. Everything beside the sidebar is made of splits, each with its own row of tabs, and a tab is a terminal, a browser, a file or one of the git panes. `⌘D` splits where you are to the right and `⇧⌘D` down, and a tab dragged to the edge of a split makes a new one there. Wortel opens two for you where they have always been, Changes and Files beside the terminal on `⌥⌘B` and a second terminal under it on `⌘J`, so there is no layout to build first. A file tab can also be dragged out of the window into a preview window of its own, and back. Switching work is still the sidebar’s job: a split holds tabs, never another session, and `⌘P` finds any session by name.',
   },
   {
     q: 'Can I configure Wortel’s fonts, colours and keybinds?',
-    a: 'Only font size, which is adjustable per session with `⌘+` and `⌘−`. Everything else about how the terminal looks and types is fixed: its whole configuration is a read-only file inside the app bundle, and your `~/.config/ghostty` is never read. Settings (`⌘,`) holds five things that differ per person, such as what a new session starts with, and none of them is about the look. Next to nothing to configure is the design goal, not a missing feature.',
+    a: 'Only font size, which is adjustable per session with `⌘+` and `⌘−`. Everything else about how the terminal looks and types is fixed: its whole configuration is a read-only file inside the app bundle, and your `~/.config/ghostty` is never read. Settings `⌘,` holds five things that differ per person, such as what a new session starts with, and none of them is about the look. Next to nothing to configure is the design goal, not a missing feature.',
   },
   {
     q: 'How does Wortel know when a coding agent is waiting for me?',

@@ -4,7 +4,8 @@
 //
 // The row is a hairline, a heading in two lines at the left (the claim in
 // ink, its other half in grey) and one short paragraph with a link at the
-// right. They stay put while a film below plays. What the section shows (a
+// right. A section whose feature has a page of its own (`page`) links to it
+// under the heading, and one that only the beta has says "Beta" over it. They stay put while a film below plays. What the section shows (a
 // stage, the bento, a table) is the slot, at the full width of the page.
 //
 // With `aside`, what it shows is a column of its own (the questions): the
@@ -18,21 +19,25 @@ interface Props {
   tone?: string;
   body?: string;
   link?: readonly [text: string, href: string];
+  /** The feature's own page, linked under the heading. */
+  page?: readonly [text: string, href: string];
   aside?: boolean;
-  /** Only in the beta: a small "Beta" under the heading (data/site.ts, BETA). */
+  /** Only in the beta: a small "Beta" over the heading (data/site.ts, BETA). */
   beta?: boolean;
 }
 import { inline } from '../data/inline';
 import Beta from './Beta.astro';
-const { id, title, tone, body, link, aside = false, beta = false } = Astro.props;
+const { id, title, tone, body, link, page, aside = false, beta = false } = Astro.props;
+const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 ---
 <section class="sec" id={id}>
   <slot name="anchors" />
   <div class="page">
-    <div class:list={['row12 open', { aside }]} data-reveal>
+    <div class:list={['row12 open', { aside, flagged: beta }]} data-reveal>
       <div class:list={['k', { stick: aside }]}>
-        <h2 class="h2">{title} {tone && <span class="tone">{tone}</span>}</h2>
         {beta && <Beta />}
+        <h2 class="h2">{title} {tone && <span class="tone">{tone}</span>}</h2>
+        {page && <a class="arrow" href={page[1]}>{page[0]}<Fragment set:html={chevron} /></a>}
         {aside && body && <p class="copy" set:html={inline(body)} />}
         {aside && link && <a class="arrow" href={link[1]}>{link[0]}<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>}
       </div>
@@ -50,6 +55,13 @@ const { id, title, tone, body, link, aside = false, beta = false } = Astro.props
 </section>
 
 <style>
+  /* "Beta" goes over the heading, where a heading otherwise starts, and the
+     heading 40 under that. It is out of the flow, so the heading is still
+     what the paragraph beside it sits on the baseline of (.row12 lines the
+     two up on their first lines). */
+  .flagged { padding-top: 88px; }
+  .flagged .k { position: relative; }
+  .flagged .k > :global(.beta) { position: absolute; left: 0; bottom: 100%; margin: 0 0 16px; }
   .aside .k .copy { margin-top: 24px; max-width: 400px; }
   /* The column starts on the heading's line: the section's hairline is
      already over it, so its first row brings none of its own. */

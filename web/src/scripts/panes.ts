@@ -18,7 +18,7 @@
 // leftmost gains the sidebar's buttons when the sidebar is gone, and with
 // three splits on screen the front tabs of the two you are not in go quiet.
 import { gsap } from 'gsap';
-import { Pointer, Sidebar, Terminal, fitTerminal, named, pressKeys, reduced, schemePictures, sessionScreen, wholeRows } from './app';
+import { Pointer, Sidebar, Terminal, fitTerminal, named, pressKeys, reduced, retaken, schemePictures, sessionScreen, wholeRows } from './app';
 import { film, type Film } from './film';
 
 /** The agent's split, the shell under it, the browser's column at the edge. */
@@ -158,6 +158,7 @@ export function initPanes() {
   const tabOfPage = pane('page').querySelector<HTMLElement>('[data-name="Browser tab"]')!;
   // Of the page's two captures, light and dark, only the one in use is fetched.
   schemePictures(pane('page'));
+  retaken(named(pane('page'), 'Page')!.querySelectorAll<HTMLImageElement>(':scope > img'));
   // Once the browser has the agent's split it is as wide as the window gives
   // it, and the page is the capture made at that width (PanesFilm.astro). Those
   // are fetched the first time they are shown, the scheme in use only.

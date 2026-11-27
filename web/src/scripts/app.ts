@@ -172,6 +172,23 @@ export function schemePictures(root: ParentNode) {
   dark.addEventListener('change', pick);
 }
 
+/**
+ * The page a browser split shows is the canvas's picture of this site at 537
+ * points. It was taken before the hero's stage had arrived, so under the
+ * buttons it shows an empty box where the window on the lake is. These are a
+ * retake, this site at the same width with the hero held
+ * (public/img/page-narrow-*.webp, README): the same layout to the point, so
+ * whatever the canvas drew over the page is where it was. Call it after
+ * schemePictures, which keeps the address of the picture not in use in
+ * data-src.
+ */
+export function retaken(imgs: Iterable<HTMLImageElement>) {
+  for (const img of imgs) {
+    const src = `/img/page-narrow-${img.classList.contains('dark:block') ? 'dark' : 'light'}.webp`;
+    if (img.dataset.src) img.dataset.src = src; else img.src = src;
+  }
+}
+
 // ---- a split's row of tabs --------------------------------------------------
 // What the app works out from a row's width, worked out here the same way, so
 // a pane drawn at one width on the canvas is right at another.

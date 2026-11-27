@@ -183,15 +183,50 @@ async function leave(request: Request, url: URL, env: LetterEnv): Promise<Respon
   return see(url, '/letter/left');
 }
 
+/**
+ * The form a POST carries, or null. The cap is on the bytes actually read,
+ * not on Content-Length, which a chunked request leaves out: the body is read
+ * into a buffer that stops at MAX_BODY, and only that buffer is parsed.
+ * Multipart is kept because RFC 8058 has mail clients send one-click
+ * unsubscribe that way.
+ */
 async function readForm(request: Request): Promise<FormData | null> {
-  const length = Number(request.headers.get('content-length') ?? '0');
-  if (length > MAX_BODY) return null;
   const type = request.headers.get('content-type') ?? '';
   if (!type.includes('application/x-www-form-urlencoded') && !type.includes('multipart/form-data')) return null;
+  if (Number(request.headers.get('content-length') ?? '0') > MAX_BODY) return null;
+  const body = await readCapped(request.body, MAX_BODY);
+  if (!body) return null;
   try {
-    return await request.formData();
+    return await new Request('https://letter.invalid/', { method: 'POST', headers: { 'content-type': type }, body }).formData();
   } catch {
     return null;
+  }
+}
+
+/** Past the cap, how much more is read and thrown away before giving up on the body. */
+const MAX_DRAIN = 1024 * 1024;
+
+/**
+ * The whole stream if it is at most `max` bytes, else null. Past `max` nothing
+ * more is kept: the rest is read and dropped, so memory stays at `max`.
+ * Dropping rather than cancelling at once because a cancelled body left
+ * wrangler dev's proxy unable to answer the next POST (measured 2026-11-26);
+ * a body past MAX_DRAIN is cancelled anyway.
+ */
+async function readCapped(stream: ReadableStream<Uint8Array> | null, max: number): Promise<Uint8Array | null> {
+  if (!stream) return new Uint8Array(0);
+  const reader = stream.getReader();
+  const out = new Uint8Array(max);
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return size > max ? null : out.slice(0, size);
+    if (size + value.byteLength <= max) out.set(value, size);
+    size += value.byteLength;
+    if (size > max + MAX_DRAIN) {
+      await reader.cancel();
+      return null;
+    }
   }
 }
 

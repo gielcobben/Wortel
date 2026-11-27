@@ -1,0 +1,316 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.23529,0.59216,0.94510,1.00000",
+      "display-p3:0.23922,0.44706,0.96471,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.88100,0.91000,0.95500,0.95000",
+                  "display-p3:1.00000,1.00000,1.00000,0.74000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.566,
+                    "y" : 0.149
+                  },
+                  "stop" : {
+                    "x" : 0.699,
+                    "y" : 0.922
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.32900,0.58900,1.00000,0.93000",
+                  "display-p3:0.14500,0.48000,1.00000,0.86000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.181,
+                    "y" : 0.037
+                  },
+                  "stop" : {
+                    "x" : 0.699,
+                    "y" : 0.922
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "linear-gradient" : [
+                  "extended-gray:0.86100,0.93000",
+                  "extended-gray:0.99200,0.86000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.181,
+                    "y" : 0.037
+                  },
+                  "stop" : {
+                    "x" : 0.699,
+                    "y" : 0.922
+                  }
+                }
+              }
+            }
+          ],
+          "image-name" : "SVG Image 2.svg",
+          "name" : "SVG Image",
+          "position" : {
+            "scale" : 2,
+            "translation-in-points" : [
+              -144.22737499999994,
+              145.70518749999997
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.27700,0.64300,1.00000,0.84000",
+                  "display-p3:0.36600,0.68700,1.00000,0.88000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.067,
+                    "y" : 0.5
+                  },
+                  "stop" : {
+                    "x" : 0.826,
+                    "y" : 0.5
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "linear-gradient" : [
+                  "extended-gray:0.69100,0.84000",
+                  "extended-gray:0.66700,0.88000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.067,
+                    "y" : 0.5
+                  },
+                  "stop" : {
+                    "x" : 0.826,
+                    "y" : 0.5
+                  }
+                }
+              }
+            }
+          ],
+          "image-name" : "SVG Image 7.svg",
+          "name" : "SVG Image 7",
+          "position" : {
+            "scale" : 2.5000000000000004,
+            "translation-in-points" : [
+              161.41022499999985,
+              128.66200000000003
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "layers" : [
+
+      ],
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.3
+      }
+    },
+    {
+      "blur-material" : null,
+      "hidden" : false,
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "display-p3:0.00000,0.00000,0.00000,0.00000"
+          },
+          "image-name" : "Rectangle.svg",
+          "name" : "Rectangle",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "Glass",
+      "refractivity" : {
+        "depth" : 0.53,
+        "enabled" : true,
+        "strength" : 0.46
+      },
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.6
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 1
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : "none"
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.10100,0.39100,0.91900,1.00000"
+              }
+            }
+          ],
+          "image-name" : "Grid 10pt.svg",
+          "name" : "Grid 10pt",
+          "opacity-specializations" : [
+            {
+              "value" : 0.71
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.41
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0.47
+            }
+          ],
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -0.9986,
+              -1
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "Line 5.svg",
+          "name" : "Line",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              256
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "Line 4.svg",
+          "name" : "Line",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "Line 2.svg",
+          "name" : "Line",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              -256
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "Line 3 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2.svg",
+          "name" : "Line",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -256,
+              0
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "Line 3 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 3.svg",
+          "name" : "Line",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              256,
+              0
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "Line 3 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2.svg",
+          "name" : "Line",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Grid",
+      "opacity" : 1,
+      "refractivity" : {
+        "depth" : 0.5,
+        "enabled" : false,
+        "strength" : 0.3
+      },
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.6
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

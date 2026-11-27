@@ -409,6 +409,59 @@ final class MarkupTests: XCTestCase {
         XCTAssertLessThanOrEqual(path.boundingBoxOfPath.width, MarkDrawing.badge)
     }
 
+    /// The window drawn on wortel.sh clips what is in it, and scrolled past,
+    /// all that was left of it was a strip a few points tall at the top of
+    /// the view: the pin in it showed its point and lost its number.
+    func testAPinIsWholeWhereWhatClipsItsMarkIsTooSmallForIt() {
+        let view = CGRect(x: 0, y: 0, width: 900, height: 700)
+        let inset = MarkBadge.reach + MarkBadge.margin
+        let window = CGRect(x: 80, y: -704, width: 740, height: 704)
+        // An 8pt strip of the box at the top: the pin stands in the view
+        // under it, whole, pointing straight up.
+        let strip = MarkBadge.spot(for: window.origin, of: window, in: CGRect(x: 32, y: 0, width: 836, height: 8),
+                                   seen: view, above: 600)
+        XCTAssertEqual(strip.centre, CGPoint(x: 80, y: inset))
+        XCTAssertEqual(try XCTUnwrap(strip.toward), -.pi / 2, accuracy: 0.001)
+        // The box gone too: the same, where it had no room at all.
+        let gone = MarkBadge.spot(for: window.origin, of: window, in: CGRect(x: 32, y: 0, width: 836, height: 0),
+                                  seen: view, above: 600)
+        XCTAssertEqual(gone, strip)
+        // Gone below with its box: above the note bar.
+        let low = CGRect(x: 80, y: 900, width: 200, height: 40)
+        let under = MarkBadge.spot(for: low.origin, of: low, in: CGRect(x: 32, y: 700, width: 836, height: 0),
+                                   seen: view, above: 600)
+        XCTAssertEqual(under.centre, CGPoint(x: 80, y: 600 - inset))
+        XCTAssertEqual(try XCTUnwrap(under.toward), .pi / 2, accuracy: 0.001)
+        // A box with room for a pin keeps it, wholly under the bar as well.
+        let panel = MarkBadge.spot(for: CGPoint(x: 40, y: 900), of: CGRect(x: 40, y: 900, width: 80, height: 40),
+                                   in: CGRect(x: 0, y: 610, width: 400, height: 80), seen: view, above: 600)
+        XCTAssertEqual(panel.centre, CGPoint(x: 40, y: 690 - inset))
+        // A circle on a mark showing in a strip thinner than itself: whole,
+        // and inside the view.
+        let sliver = MarkBadge.spot(for: CGPoint(x: 100, y: 692), of: CGRect(x: 100, y: 692, width: 80, height: 40),
+                                    in: CGRect(x: 0, y: 692, width: 400, height: 8), seen: view)
+        XCTAssertEqual(sliver, MarkBadge.Spot(centre: CGPoint(x: 100, y: 700 - MarkDrawing.badge / 2), toward: nil))
+    }
+
+    /// The layer cut its badge off with its ink, at the clip: in that 8pt
+    /// strip the number was under the cut wherever the pin stood.
+    @MainActor
+    func testAMarkLayerCutsOffItsInkAndNotItsBadge() throws {
+        let mark = Mark(number: 1, shape: .thing, name: "window", details: MarkDetails())
+        let layer = MarkLayer(mark: mark, colour: CGColor(gray: 0, alpha: 1), scale: 2)
+        let view = CGRect(x: 0, y: 0, width: 900, height: 700)
+        layer.place(mark, at: MarkPlacement(origin: CGPoint(x: 80, y: -704), size: CGSize(width: 740, height: 704),
+                                            scale: 1, clip: CGRect(x: 32, y: 0, width: 836, height: 8)),
+                    in: view, above: 600)
+        XCTAssertTrue(view.contains(try XCTUnwrap(layer.pin)))
+        XCTAssertFalse(layer.masksToBounds)
+        // The badge is the one layer with a picture in it; nothing that cuts holds it.
+        let cutting = (layer.sublayers ?? []).filter(\.masksToBounds)
+        XCTAssertFalse(cutting.isEmpty)
+        XCTAssertTrue(cutting.allSatisfy { ($0.sublayers ?? []).allSatisfy { $0.contents == nil } })
+        XCTAssertTrue((layer.sublayers ?? []).contains { $0.contents != nil })
+    }
+
     // MARK: - A chip
 
     /// A colour as it is in an appearance, laid over `ground` where it is

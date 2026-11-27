@@ -1,9 +1,12 @@
 import AppKit
 
-/// One mark on screen: its ink or its outline and its badge, cut off where
-/// its content is cut off.
+/// One mark on screen: its ink or its outline, cut off where its content is
+/// cut off, and its badge, which is not.
 final class MarkLayer: CALayer {
     private let shape = CAShapeLayer()
+    /// What cuts the ink off. Only the ink: a badge held whole where the
+    /// clip is too small for it (`MarkBadge.spot`) lies partly outside it.
+    private let cut = CALayer()
     private let badge = CALayer()
     /// The point of a badge that is a pin (`MarkBadge`), under the badge.
     private let point = CAShapeLayer()
@@ -13,7 +16,9 @@ final class MarkLayer: CALayer {
     init(mark: Mark, colour: CGColor, scale: CGFloat) {
         super.init()
         anchorPoint = .zero
-        masksToBounds = true
+        cut.anchorPoint = .zero
+        cut.masksToBounds = true
+        addSublayer(cut)
         shape.anchorPoint = .zero
         shape.fillColor = nil
         shape.strokeColor = colour
@@ -27,7 +32,7 @@ final class MarkLayer: CALayer {
         } else {
             shape.lineWidth = MarkDrawing.outline
         }
-        addSublayer(shape)
+        cut.addSublayer(shape)
         point.anchorPoint = .zero
         point.fillColor = colour
         point.strokeColor = nil
@@ -42,13 +47,15 @@ final class MarkLayer: CALayer {
     override init(layer: Any) { super.init(layer: layer) }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    /// Draw `mark` where `placement` says it is. `floor` is where the note
-    /// bar begins: a pin is kept above it (`MarkBadge.spot`).
-    func place(_ mark: Mark, at placement: MarkPlacement, above floor: CGFloat) {
+    /// Draw `mark` where `placement` says it is. `view` is the view's
+    /// bounds and `floor` where the note bar begins: a pin is kept in the
+    /// one and above the other (`MarkBadge.spot`).
+    func place(_ mark: Mark, at placement: MarkPlacement, in view: CGRect, above floor: CGFloat) {
         // The layer is the part of the view the mark may show in; what it
         // draws is placed in the view's own coordinates, moved back by that.
         let clip = placement.clip
         frame = clip
+        cut.frame = bounds
         let offset = CGAffineTransform(translationX: -clip.minX, y: -clip.minY)
         let box = placement.box(of: mark.shape)
         switch mark.shape {
@@ -63,9 +70,10 @@ final class MarkLayer: CALayer {
             var transform = offset
             shape.path = MarkStroke.path(for: mark.pen, through: ink.map(placement.point)).copy(using: &transform)
         }
-        // On the corner, never off the edge of what it may show in, and a
-        // pin pointing at the mark once the mark has left.
-        let spot = MarkBadge.spot(for: placement.badge(of: mark.shape), of: box, in: clip, above: floor)
+        // On the corner, never off the edge of what it may show in (or of
+        // the view, where that has no room for it), and a pin pointing at
+        // the mark once the mark has left.
+        let spot = MarkBadge.spot(for: placement.badge(of: mark.shape), of: box, in: clip, seen: view, above: floor)
         badge.position = CGPoint(x: spot.centre.x - clip.minX, y: spot.centre.y - clip.minY)
         point.path = spot.toward.map { MarkBadge.point(at: badge.position, toward: $0) }
         let half = MarkDrawing.badge / 2

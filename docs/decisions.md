@@ -2856,6 +2856,17 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   below is kept above the note bar. And a press on a pin brings its mark
   into view, as its chip's click does: a thing that points somewhere is
   pressed to go there.
+- **2026-11-26. A pin is always whole, also where what its mark may show
+  in has no room for one.** A badge was held inside its mark's clip and cut
+  off at it. The clip of a mark in a box that clips (a card, the window drawn
+  on wortel.sh) is what is left of the box, and scrolled past, that was a
+  strip a few points tall at the top of the view: the owner saw the pin's
+  point under the page's own header and not its number, and once the box had
+  gone there was no pin at all. Where the clip is too small for a pin (37pt
+  each way) or a circle (20pt), the badge now stands in that much of the
+  view round the clip, above the note bar where there is room, and only the
+  ink is cut off. A clip big enough keeps its badge in it as before, so a
+  pin for a mark in a scrolling panel stays in the panel.
 - **2026-11-26. The pen does not make a rough shape a clean one. Tried and
   taken out the same day.** Preview's Sketch pen turns a rough loop into a
   clean oval on letting go, and the owner asked what could be learned

@@ -80,6 +80,8 @@ export const docsSections = (level: number): string[] => {
   for (const section of DOCS_SECTIONS) {
     out.push('', `${hashes(level)} ${section.title}${beta(section)}`, '');
     if (section.lead) out.push(section.lead, '');
+    // The feature's own page, where the section has one.
+    if (section.page) out.push(`[${section.page[0]}](${abs(section.page[1])})`, '');
     out.push(section.blocks.map(renderBlock).join('\n\n'));
   }
   return out;

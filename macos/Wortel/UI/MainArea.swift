@@ -566,13 +566,15 @@ final class MainAreaController: NSViewController {
     /// Checked after every change here and when the window becomes key, since
     /// the session's terminal takes the keyboard at launch and on a switch.
     /// Out of sight behind a zoomed split is covered too, and the keyboard
-    /// goes to that split.
+    /// goes to that split. A switch to a hibernated terminal shows it after
+    /// this has run, and the host asks the same of `GitPanelModel.focusCover`
+    /// itself then (`TerminalHostViewController.swap`).
     private func keepKeyboardOffCoveredTerminal() {
         let hidden = !git.isShowing(.main)
         guard git.activeMainTab != nil || hidden, let window = view.window,
               let main = home.selected?.surfaceView, window.firstResponder === main else { return }
         window.makeFirstResponder(nil)
-        git.focusFront(of: hidden ? (git.zoomedRegion ?? .main) : .main)
+        git.focusCover()
     }
 
     override func viewDidAppear() {

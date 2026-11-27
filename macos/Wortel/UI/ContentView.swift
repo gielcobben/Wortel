@@ -1757,6 +1757,7 @@ final class TerminalPaneController: NSViewController {
         pages = PagesView(rootView: TerminalPages(manager: manager, git: git, files: files, home: home))
         super.init(nibName: nil, bundle: nil)
         TerminalHostViewController.register(host)
+        host.keyboardWhenCovered = { [weak git] in git?.focusCover() }
     }
 
     @available(*, unavailable)

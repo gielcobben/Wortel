@@ -878,6 +878,19 @@ The keyboard:
   zoom was on, and `onFocusMainTerminal` lays the main area out first when
   the change that sends the keyboard there has also just ended the zoom
   that hid it.
+- A session switch shows a covered terminal without giving it the keyboard
+  (`TerminalHostViewController.swap`, `SurfaceView.isCovered`): it goes to
+  what covers it (`GitPanelModel.focusCover`), the tab in front of the main
+  row or of the zoomed split. The main area's check runs a turn after the
+  switch lays it out, and a hibernated terminal is swapped in 10 to 500 ms
+  later, after it. Until 2026-11-27 nothing ran it again, so back in a
+  session whose split was zoomed (or whose main row had a file in front)
+  the session's own terminal took the keys, Return included, out of sight.
+  Checked with `HIBERNATE_AFTER=0.3 try-splits.sh file next next next
+  right zoom next next next`: with the old swap, a file's session came back
+  with the keyboard in the terminal under the file, and the zoomed one with
+  it in the hidden terminal (a fault); with this one, nobody and the zoomed
+  split's terminal.
 
 Known limits:
 

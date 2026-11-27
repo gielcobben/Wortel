@@ -1632,6 +1632,16 @@ final class GitPanelModel {
         focusFront(of: isShowing(region) ? region : lastRegion)
     }
 
+    /// The session's own terminal is covered: a tab is in front of it in the
+    /// main row, or the main row is behind a zoom on another split. The
+    /// keyboard goes to what covers it, the tab in front of the main row or
+    /// of the zoomed split. For the main area's check after a change, and
+    /// for a session switch that shows the terminal later, once it has woken
+    /// (`TerminalHostViewController.keyboardWhenCovered`).
+    func focusCover() {
+        focusFront(of: isShowing(.main) ? .main : (zoomedRegion ?? .main))
+    }
+
     /// Give the keyboard to what's in front of `region` without making it the
     /// area you're in: for handing the keyboard back to the row you are
     /// already in after a tab there closed or a zoom changed, which is

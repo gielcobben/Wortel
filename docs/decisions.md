@@ -2985,6 +2985,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the load that brings the page back would end it then. Turning it off
   and keeping the note until then was the other choice, and keeps a note
   for no more than that wait.
+- **2026-11-26. A diff emptied under its marks keeps the note in sight.**
+  When the agent put a file back while it was marked up in Diff, the diff
+  had nothing to mark, and the bar, the marks and the header's button
+  went while mark-up stayed on; the next view of the file dropped a note
+  nobody could see. A file rewritten under its marks is not elsewhere,
+  and a line that is gone leaves its chip, so now the layer stays over
+  the view it was turned on in while mark-up is on, the marks with no
+  place and the note, the tools and the button where they were. Turning
+  mark-up off when the view empties, the note kept as Esc keeps it, was
+  the other choice. It hides a note for something the person did not
+  do, which the next view of the file then drops unseen, and a diff also
+  has nothing to mark for the moment it is read again after every
+  rewrite, so that rule would have turned mark-up off at every edit, or
+  needed a way to tell the two apart.
 
 ## Running processes
 

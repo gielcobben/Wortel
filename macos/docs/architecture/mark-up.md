@@ -208,8 +208,19 @@ While mark-up is on over a page (`BrowserPage.markupChanged`):
   and this one would do it mid-sentence, or after Esc, for an edit nobody
   at the page asked for. After a copy it runs at once: the agent was
   handed the note to edit the file, and the page shows what it did.
+  A load that commits is the page anew, so whatever reload was owed is
+  done with (`didCommit`), and none starts while a load is under way. A
+  new address is heard before its load starts (measured 2026-11-26 in
+  WebKit: a link, Back, a typed address), and mark-up ended there let go
+  of the reload it held, which then started in the middle of the next
+  page's load (found in review).
 - ⌘+ and ⌘R still reach the page with the keyboard in the note
-  (`BrowserTabs.page(holding:)` counts the note as its page's).
+  (`BrowserTabs.page(holding:)` counts the note as its page's). ⌘[ and
+  ⌘] do not: they are Back and Forward only with the keyboard in the web
+  view itself (`AppDelegate.historyBrowserPage`), and from the note move
+  between areas, as from anywhere else. A step back from the note ended
+  mark-up and dropped a note that may never have been copied (found in
+  review, 2026-11-26).
 
 ## A file
 
@@ -219,6 +230,23 @@ bar, while its session is on (and not over a tab kept built behind the one
 in front). SwiftUI places the layer here, over views SwiftUI also places, so
 a file's adapters convert through the layer (`attach(to:)`) and assume no
 shared origin.
+
+**A view emptied under its marks keeps the note in sight.** The layer is
+over the view of the file it was turned on in for as long as mark-up is
+on (`MarkupSession.isShown(over:)`), also once that view has nothing
+left to mark: a diff the agent emptied by putting the file back, a file
+cleared. Its marks have no place there, as a deleted line's mark has
+none (`MarkupViews.emptied`), and the note, the tools and the header's
+button stay (`isOffered(over:)`), so Esc or the button turns it off
+where it is. The layer showed only while there was something to mark,
+and nothing turned mark-up off when there was not: the bar, the marks
+and the button went, mark-up stayed on behind them, and the next view
+of the file dropped a note nobody could see (found in review,
+2026-11-26). A diff also has nothing to mark for the moment it is read
+again after every rewrite of the file (`diffLoaded` is false), and the
+layer was taken down and made anew each time; it stays now. Shown by
+`MarkupFileTests` with a real repository and document, against the old
+rule and the new.
 
 A file tab's views are rebuilt whenever the tab comes back from behind
 others, and its marks must not be. So the adapter lives with the session,
@@ -359,11 +387,13 @@ mark-up ends and the marks and the note are dropped (`MarkupSession.end`):
 a new address or a route change (`webView.url`), a load committed
 (`didCommit`, which a reload is), a load that failed (the page is behind
 a notice then, where mark-up could be neither seen nor turned off),
-Page · Source, the page's process dying, the tab closing; and for a file,
-another of Diff · Source · Rendered
+Page · Source, the page's process dying, the tab closing (its source's
+mark-up with it: an open note's folder is one the sweep skips); and for
+a file, another of Diff · Source · Rendered
 (`PreviewContent`, and `MarkupSession.prepare`), its tab or window
 closing. A file rewritten on disk is not elsewhere: the marks stay, each
-where its line or block now is. One rule covers what the person does and what a page does
+where its line or block now is, and a diff emptied by it keeps its note
+(see "A file"). One rule covers what the person does and what a page does
 by itself, which nothing could lock anyway.
 
 A new fragment alone is not a new address (`BrowserAddress.isElsewhere`).
@@ -843,6 +873,11 @@ looked at.
   was typed by a hand.
 - That Claude Code and Codex each read a picture from the cache folder
   without asking.
+- In the app, as of 2026-11-26: ⌘[ from the note moving between areas, a
+  held reload not starting after ⌘R or a link, and the note over an
+  emptied diff. The first two were read through and the WebKit order
+  measured in a harness; the third is tested with a real document but not
+  with the layer drawn over it.
 
 ## Known limits
 

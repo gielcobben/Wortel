@@ -182,6 +182,85 @@ final class MarkupFileTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * 20, accuracy: 0.5)
     }
 
+    /// The agent puts the file back as it was committed while it is being
+    /// marked up in Diff. The diff is empty, and that is a file rewritten,
+    /// not elsewhere: the note stays in sight and can be turned off where
+    /// it is. Before, the layer and the button went and mark-up stayed on,
+    /// and the next view of the file dropped a note nobody could see.
+    func testADiffEmptiedUnderItsMarksKeepsTheNoteInSight() async throws {
+        let repo = GitFixture.newRepo("markup-emptied")
+        defer { GitFixture.destroy(repo) }
+        let file = repo.appendingPathComponent("a.swift")
+        try "let a = 1\n".write(to: file, atomically: false, encoding: .utf8)
+        GitFixture.sh("git add a.swift && git commit -q -m one", in: repo)
+        try "let a = 2\n".write(to: file, atomically: false, encoding: .utf8)
+        let document = PreviewDocument(
+            url: file, diffSource: .workingTree(root: repo.path, path: "a.swift", untracked: false), mode: .diff)
+        // Every turn of the main actor, so a state that lasts only while git
+        // runs is seen.
+        func until(_ what: String, _ condition: () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while !condition() {
+                guard Date() < deadline else { return XCTFail("never: \(what)") }
+                await Task.yield()
+            }
+        }
+        try await until("a diff to mark") { document.markupPlace == .diff }
+
+        let session = MarkupSession()
+        XCTAssertTrue(session.prepare(for: document))
+        session.turnOn()
+        session.text.append(NSAttributedString(string: "make this 3"))
+        XCTAssertTrue(session.isShown(over: document))
+
+        try "let a = 1\n".write(to: file, atomically: false, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)],
+                                              ofItemAtPath: file.path)
+        document.reload()
+        // While the diff is read again it has nothing to mark either.
+        try await until("the diff read again") { !document.diffLoaded }
+        XCTAssertTrue(session.isShown(over: document), "the layer went while the diff was read again")
+        try await until("the diff emptied") { document.diffLoaded && document.diffLines.isEmpty }
+
+        XCTAssertNil(document.markupPlace)
+        XCTAssertTrue(session.isOn)
+        XCTAssertTrue(session.isShown(over: document), "the note is out of sight with mark-up on")
+        XCTAssertTrue(session.isOffered(over: document), "no button to turn mark-up off with")
+        XCTAssertEqual(session.text.string, "make this 3")
+
+        // Turned off, the note is kept, and the button goes with nothing
+        // left to mark.
+        session.turnOff()
+        XCTAssertFalse(session.isOffered(over: document))
+        XCTAssertTrue(session.hasNote)
+        // Another view of the file is elsewhere, as it always was.
+        session.turnOn()
+        document.mode = .source
+        XCTAssertFalse(session.isShown(over: document))
+    }
+
+    /// What lets the layer stop drawing marks over an emptied view: the
+    /// views are said to be gone, and the marks have no place until a
+    /// view comes back.
+    func testAViewEmptiedUnderItsMarksTakesTheirPlaceAway() throws {
+        let texts = numbered(60)
+        let host = show(diff(texts))
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
+        surface.attach(to: layer)
+        var moves = 0
+        surface.activate(moved: { moves += 1 })
+        let height = try XCTUnwrap(views.table).rowHeight
+        XCTAssertNotNil(tie(surface, 1, to: CGRect(x: 80, y: height * 9 + 2, width: 100, height: 10)))
+
+        views.emptied()
+        XCTAssertNil(surface.placement(of: 1))
+        XCTAssertGreaterThan(moves, 0, "the layer was not told")
+
+        host.rootView = diff(texts)
+        settle()
+        XCTAssertEqual(try XCTUnwrap(surface.placement(of: 1)).origin.y, height * 9, accuracy: 0.5)
+    }
+
     func testAMarkFindsItsLineWhenTheFileWasRewrittenWhileMarkUpWasOff() throws {
         var texts = numbered(60)
         let host = show(diff(texts))

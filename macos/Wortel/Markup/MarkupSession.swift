@@ -323,15 +323,24 @@ extension PreviewDocument {
     /// there is nothing to mark: a Quick Look preview (which is closed to
     /// the app), an empty file, a diff with no changes.
     var markupPlace: MarkupPlace? {
+        guard let view = markupView else { return nil }
+        switch view {
+        case .source: return sourceLines.isEmpty ? nil : view
+        case .diff: return diffLoaded && !diffIsBinary && !diffLines.isEmpty ? view : nil
+        case .rendered: return blocks.isEmpty ? nil : view
+        case .image, .page: return view
+        }
+    }
+
+    /// The view of the file that is showing, with something in it to mark
+    /// or not: a diff the agent has emptied is still the diff, and so is
+    /// one being loaded again after the file was rewritten.
+    var markupView: MarkupPlace? {
         if isBinary { return PreviewMode.isImage(url) ? .image : nil }
         switch mode {
-        case .source:
-            return sourceLines.isEmpty ? nil : .source
-        case .diff:
-            return diffLoaded && !diffIsBinary && !diffLines.isEmpty ? .diff : nil
-        case .rendered:
-            if PreviewMode.isSVG(url) { return .image }
-            return blocks.isEmpty ? nil : .rendered
+        case .source: return .source
+        case .diff: return .diff
+        case .rendered: return PreviewMode.isSVG(url) ? .image : .rendered
         }
     }
 }
@@ -361,5 +370,22 @@ extension MarkupSession {
         let view: String? = place == .image ? nil : document.mode.title
         subject = { .file(path: path, view: view) }
         return true
+    }
+
+    /// Whether the layer lies over the file as it is shown now: while on,
+    /// over the view it was turned on in, also once that view has nothing
+    /// left to mark. A file rewritten under its marks is not elsewhere, so
+    /// a diff the agent emptied keeps the note in sight, its marks with no
+    /// place, as a deleted line's mark has none (docs/decisions.md,
+    /// 2026-11-26).
+    func isShown(over document: PreviewDocument) -> Bool {
+        isOn && surface != nil && document.markupView == place
+    }
+
+    /// Whether a file's header offers the button: where there is something
+    /// to mark, and wherever mark-up is on, so it can be turned off where
+    /// it is.
+    func isOffered(over document: PreviewDocument) -> Bool {
+        isOn || document.markupPlace != nil
     }
 }

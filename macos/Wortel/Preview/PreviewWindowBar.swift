@@ -77,7 +77,7 @@ private struct PreviewWindowModeSwitch: View {
             OpenAsPageButton(document: document, size: Chrome.controlSize, open: openPage)
             // The row's controls are 28pt, as its FileButton is (DESIGN.md).
             OpenInEditorButton(document: document, size: Chrome.controlSize)
-            if let markup, document.markupPlace != nil {
+            if let markup, markup.isOffered(over: document) {
                 MarkupButton(session: markup, size: Chrome.controlSize,
                              prepare: { markup.prepare(for: document) })
             }

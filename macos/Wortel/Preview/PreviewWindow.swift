@@ -289,7 +289,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleMarkup(_:)) {
             menuItem.state = markup.isOn ? .on : .off
-            return markup.isOn || file.markupPlace != nil
+            return markup.isOffered(over: file)
         }
         if menuItem.action == #selector(showPreviewMode(_:)) {
             guard let mode = PreviewMode.mode(menuTag: menuItem.tag) else { return false }

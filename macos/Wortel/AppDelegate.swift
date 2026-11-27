@@ -1789,18 +1789,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// a page with no history that way lets the key through to the areas, so
     /// the keyboard is never stuck in a page.
     @objc func focusNextArea(_ sender: Any?) {
-        if let page = keyboardBrowserPage, page.canGoForward { return page.goForward() }
+        if let page = historyBrowserPage, page.canGoForward { return page.goForward() }
         stepArea(1)
     }
 
     @objc func focusPreviousArea(_ sender: Any?) {
-        if let page = keyboardBrowserPage, page.canGoBack { return page.goBack() }
+        if let page = historyBrowserPage, page.canGoBack { return page.goBack() }
         stepArea(-1)
     }
 
-    /// The browser whose page has the keyboard, if one does.
+    /// The browser whose page has the keyboard, if one does. The mark-up
+    /// note over a page counts as the page's, so ⌘+ there zooms it.
     private var keyboardBrowserPage: BrowserPage? {
         BrowserTabs.shared.page(holding: window?.firstResponder)
+    }
+
+    /// The browser whose web view itself has the keyboard: what ⌘[ and ⌘]
+    /// are Back and Forward in. Not the mark-up note, which lies beside the
+    /// web view: from there a step back would end mark-up and drop a note
+    /// that may never have been copied, so the keys move between areas, as
+    /// from anywhere else.
+    private var historyBrowserPage: BrowserPage? {
+        guard let page = keyboardBrowserPage, let view = window?.firstResponder as? NSView,
+              view.isDescendant(of: page.webView) else { return nil }
+        return page
     }
 
     private func stepArea(_ offset: Int) {
@@ -1919,12 +1931,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         for tab in frontRegions.compactMap({ gitPanel.activeTab(in: $0) }) {
             if let path = tab.filePath {
                 let document = previewTabs.document(for: path).document
-                if let session = previewTabs.markup(for: path), session.isOn || document.markupPlace != nil {
+                if let session = previewTabs.markup(for: path), session.isOffered(over: document) {
                     return (session, { session.prepare(for: document) })
                 }
             } else if let id = tab.browserID, let page = BrowserTabs.shared.existingPage(for: id) {
                 if let source = page.shownSource {
-                    if source.markup.isOn || source.document.markupPlace != nil {
+                    if source.markup.isOffered(over: source.document) {
                         return (source.markup, { source.markup.prepare(for: source.document) })
                     }
                 } else if page.canMarkUp {
@@ -2596,7 +2608,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(focusNextArea(_:))
             || menuItem.action == #selector(focusPreviousArea(_:)) {
-            return visibleRegions.count > 1 || keyboardBrowserPage != nil
+            return visibleRegions.count > 1 || historyBrowserPage != nil
         }
         if menuItem.action == #selector(splitRight(_:)) || menuItem.action == #selector(splitDown(_:)) {
             return manager.selected != nil

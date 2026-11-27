@@ -48,9 +48,13 @@ struct PreviewContent: View {
         // The marks and the note, over the content and under the find bar.
         // Not over a tab kept built behind the one in front.
         .overlay {
-            if let markup, markup.isOn, isEnabled, markup.surface != nil, document.markupPlace == markup.place {
+            if let markup, isEnabled, markup.isShown(over: document) {
                 MarkupOverlayHost(session: markup)
             }
+        }
+        // Nothing left to mark: the marks' rows or blocks went with it.
+        .onChange(of: document.markupPlace) { _, place in
+            if place == nil { markup?.views.emptied() }
         }
         .safeAreaInset(edge: .top, spacing: 0) { findBar }
         .safeAreaInset(edge: .bottom, spacing: 0) { notices }

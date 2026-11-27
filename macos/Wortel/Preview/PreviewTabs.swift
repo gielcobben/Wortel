@@ -233,8 +233,9 @@ private struct PreviewTabHeader: View {
             .foregroundStyle(.secondary)
             .help("Open in New Window")
             // Last at the right, as in a browser tab. Absent where there is
-            // nothing to mark: Quick Look, an empty file, no changes.
-            if let markup, document.markupPlace != nil {
+            // nothing to mark: Quick Look, an empty file, no changes. Unless
+            // mark-up is on, which it stays while a diff is emptied under it.
+            if let markup, markup.isOffered(over: document) {
                 MarkupButton(session: markup, prepare: { markup.prepare(for: document) })
             }
         }

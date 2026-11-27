@@ -456,7 +456,12 @@ final class BrowserPage: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let visible = self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor
-            if visible, self.reloadWhenShown, !self.holdsReload {
+            // Not while a load is under way: it brings the page anew, and
+            // its commit settles what was owed. A new address is heard
+            // before its load starts and ends mark-up there (measured
+            // 2026-11-26: a link, Back), so the reload the note held would
+            // otherwise start in the middle of the next page's load.
+            if visible, self.reloadWhenShown, !self.holdsReload, !self.webView.isLoading {
                 self.reloadWhenShown = false
                 // Past the cache: it may be owed for a file that changed.
                 self.reloadFromOrigin()
@@ -479,6 +484,9 @@ final class BrowserPage: NSObject {
 
     fileprivate func close() {
         endMarkup()
+        // The source's too: an open note's folder is one the sweep skips,
+        // and a closed tab's would be skipped until the app quits.
+        source?.markup.end()
         retry?.cancel()
         watch.stop()
         snapshotTimer?.invalidate()
@@ -511,6 +519,10 @@ final class BrowserPage: NSObject {
 extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
     /// The page is another one from here on, or the same one loaded anew.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // Loaded anew, from the file as it is now: a reload owed for a
+        // change, or for a crash off screen, is done with. First, as ending
+        // mark-up below lets go of the reload it held.
+        reloadWhenShown = false
         endMarkup()
     }
 
@@ -949,7 +961,7 @@ private struct BrowserHeader: View {
             // to mark up: nowhere yet, still waiting, failed, or its source.
             if page.showsSource, let source = page.source {
                 // Over the file's source it is the source that is marked up.
-                if source.document.markupPlace != nil {
+                if source.markup.isOffered(over: source.document) {
                     MarkupButton(session: source.markup, prepare: { source.markup.prepare(for: source.document) })
                 }
             } else if page.canMarkUp {

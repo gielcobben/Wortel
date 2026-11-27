@@ -44,6 +44,20 @@ final class MarkupViews {
     var onChange: () -> Void = {}
 
     func changed() { onChange() }
+
+    /// The view shows nothing to mark any more (a diff emptied, a file
+    /// cleared), and the views the marks were on are gone with it. Said
+    /// rather than left to the weak references, which nothing announces:
+    /// the layer stays over an emptied view and would go on drawing the
+    /// marks where their lines were. A view that comes back registers anew.
+    func emptied() {
+        table = nil
+        rowKey = { _ in nil }
+        stack = nil
+        blockFrames = [:]
+        blockKey = { _ in nil }
+        changed()
+    }
 }
 
 /// Hears one of a file's views move: its frame, and for a clip view its

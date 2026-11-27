@@ -11,8 +11,15 @@ export type Counted = { event: string; props: Record<string, string> };
 /// Sparkle's agent is "Wortel/2026.32.3 Sparkle/2.9.0", so the leading token is
 /// the version the app is running *now*: on an appcast fetch that is what is
 /// installed, and on a zip fetch it is what is being upgraded from.
+///
+/// A beta names itself by its shown name and version, "Wortel Beta/2026.48.4
+/// beta 1 Sparkle/2.9.4", and is counted under its bundle version, 2026.48.4b1:
+/// the spelling its zip is named with, so from_version and to_version agree.
 export function appVersion(ua: string): string | null {
-  return ua.match(/^Wortel\/(\S+)/)?.[1] ?? null;
+  const m = ua.match(/^Wortel(?: Beta)?\/(\S+)(?: beta (\d+))?(?= Sparkle\/|$)/)
+    ?? ua.match(/^Wortel(?: Beta)?\/(\S+)/);
+  if (!m) return null;
+  return m[2] ? `${m[1]}b${m[2]}` : m[1];
 }
 
 /// Only the unambiguous ones. curl and wget stay in: someone scripting a

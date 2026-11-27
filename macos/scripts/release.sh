@@ -30,7 +30,10 @@
 #                                         the link to hand a tester: the first
 #                                         launch of a beta build puts that Mac
 #                                         on the channel (Updater.swift). It
-#                                         wears Wortel/AppIconBeta.icon.
+#                                         wears Wortel/AppIconBeta.icon. Its
+#                                         version is the next release's with
+#                                         b1, b2… after it: 2026.48.4b1, read
+#                                         as "2026.48.4 beta 1".
 #   ./scripts/release.sh --publish 2026.33.1 --republish
 #                                       replace the version already published,
 #                                         same bytes-key, same appcast <item>.
@@ -71,6 +74,11 @@
 # and year rollovers, and the 0.3.x -> 2026.x transition all rank forward, so the
 # sequence never regresses). CFBundleShortVersionString is stamped to the same
 # value, so the update dialog reads "2026.28.3 is available — you have 2026.27.1".
+# A beta is named for the release it leads up to: CFBundleVersion 2026.48.4b1,
+# CFBundleShortVersionString "2026.48.4 beta 1", and the release 2026.48.4 is
+# newer than every beta of it, so it replaces them on a tester's Mac. Betas
+# take no regular number, so the public ones have no gaps. The rules and why
+# the "b" (Sparkle stops reading at a dash) are in scripts/version.sh.
 # The Nth counter is derived from the *live appcast* (falling back to the
 # releases/BUILD record), because that feed is the only state shared by every
 # machine that can publish — see the comment at the derivation.
@@ -83,6 +91,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 mkdir -p build
+# What comes next, how two versions compare, and a beta's two spellings.
+. "$ROOT/scripts/version.sh"
 
 # --- Sparkle / distribution config ------------------------------------------
 BUCKET="wortel-updates"                 # R2 bucket served at updates.wortel.sh
@@ -155,6 +165,12 @@ case "${1:-}" in
     # The uploader is needed at the very end, after notarization. Find out
     # now whether it can be installed.
     [ -x "$ROOT/../updates/node_modules/.bin/wrangler" ] || ( cd "$ROOT/../updates" && npm ci --silent )
+    # The arithmetic below picks a number no installed copy can ever take
+    # back, so it is checked first, against Sparkle's own comparator when a
+    # build has left one here (a warning on stderr when not). After the build
+    # it is checked again against the Sparkle that build links, and there
+    # that comparator is required.
+    "$ROOT/scripts/test-version.sh" >/dev/null || { "$ROOT/scripts/test-version.sh" >&2; echo "✗ The version numbering is broken (above)." >&2; exit 1; }
     # What's actually out there. `releases/BUILD` is only ever *this checkout's*
     # memory of it: a release cut from another machine or a worktree, or one
     # whose commit was discarded, leaves it stale — and then the counter below
@@ -169,12 +185,12 @@ case "${1:-}" in
     # old BUILD-only behaviour rather than restarting at .1 over a live release.
     recorded=$(cat "$BUILD_FILE" 2>/dev/null || echo "")
     published=$(curl -fsS --max-time 15 "$FEED_BASE/appcast.xml?t=$(date +%s)" 2>/dev/null \
-      | sed -n 's/.*<sparkle:version>\([^<]*\)<.*/\1/p' | sort -V | tail -1 || true)
+      | sed -n 's/.*<sparkle:version>\([^<]*\)<.*/\1/p' | version_newest || true)
     if [ -z "$published" ]; then
       echo "!  Could not read $FEED_BASE/appcast.xml — falling back to releases/BUILD (${recorded:-none})." >&2
       echo "   If a release was published elsewhere, this run can silently reuse its version." >&2
     fi
-    last=$(printf '%s\n%s\n' "$recorded" "$published" | grep -v '^$' | sort -V | tail -1 || true)
+    last=$(printf '%s\n%s\n' "$recorded" "$published" | version_newest || true)
     if [ -n "$published" ] && [ "$published" != "$recorded" ]; then
       echo "==> Live feed is at $published; releases/BUILD says ${recorded:-none} — counting from $last"
     fi
@@ -184,23 +200,30 @@ case "${1:-}" in
     EXPLICIT_VERSION=$([ -n "$VERSION" ] && echo 1 || echo 0)
     if [ -z "$VERSION" ]; then
       # CalVer, auto-derived (Framer-style): <ISO-week-year>.<ISO-week>.<Nth
-      # release that week>. %G/%V are the ISO week-numbering year and week, so
-      # the triple only ever moves forward — Sparkle's comparator ranks it
-      # numerically (verified: 09<10, week and year rollovers, 0.3.x < 2026.x).
-      YEAR=$(date +%G); WEEK=$((10#$(date +%V)))
-      if [[ "$last" == "$YEAR.$WEEK."* ]]; then
-        VERSION="$YEAR.$WEEK.$(( ${last##*.} + 1 ))"   # another release this week
-      else
-        VERSION="$YEAR.$WEEK.1"                        # first release this week
-      fi
+      # release that week>, and a beta is the release it leads up to with
+      # b1, b2… after it (scripts/version.sh). %G/%V are the ISO
+      # week-numbering year and week, so the triple only ever moves forward.
+      VERSION=$(version_next "$last" "$BETA" "$(date +%G)" "$((10#$(date +%V)))")
     fi
-    # Explicit override must be dot-separated integers (still CalVer-shaped).
-    [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] || { echo "Usage: $0 --publish [version]   version is dot-separated integers, e.g. $0 --publish 2026.30.1 (omit to auto-derive)" >&2; exit 1; }
+    # An explicit version is CalVer-shaped too: dot-separated integers, and a
+    # beta's with b<n> after them. Never a dash or a space: scripts/version.sh
+    # says what Sparkle makes of those.
+    [ -n "$(version_key "$VERSION")" ] || { echo "Usage: $0 --publish [version]   version is dot-separated integers, a beta's with b<n>: 2026.30.1, 2026.30.2b1 (omit to auto-derive)" >&2; exit 1; }
+    if [ "$BETA" = 1 ] && ! version_is_beta "$VERSION"; then
+      echo "✗ A beta's version is the release it leads up to with b<n>: ${VERSION}b1, not $VERSION." >&2; exit 1
+    fi
+    if [ "$BETA" = 0 ] && version_is_beta "$VERSION"; then
+      echo "✗ $VERSION is a beta's version. Publish it with --beta, or the release as ${VERSION%%b*}." >&2; exit 1
+    fi
+    # What a person reads, "2026.48.4 beta 1": CFBundleShortVersionString,
+    # so it is what Sparkle's dialog, About and `wortel --version` show.
+    DISPLAY_VERSION=$(version_display "$VERSION")
     # Guard against a version that isn't strictly newer than the last published
-    # one — that would make Sparkle silently never offer the update. sort -V
-    # orders dotted-numeric versions the same way Sparkle's comparator does.
-    # Now that `last` includes the live feed, this also catches an explicit
-    # --publish <version> that collides with a release cut somewhere else.
+    # one — that would make Sparkle silently never offer the update.
+    # version_is_newer orders versions the way Sparkle's comparator does
+    # (scripts/test-version.sh holds the two to each other). Now that `last`
+    # includes the live feed, this also catches an explicit --publish
+    # <version> that collides with a release cut somewhere else.
     if [ "$REPUBLISH" = 1 ]; then
       # Deliberately replacing what is already out there, bytes and all. The
       # zip goes back to the same key, generate_appcast rewrites that version's
@@ -216,9 +239,8 @@ case "${1:-}" in
       [ "$VERSION" = "$last" ] || { echo "✗ --republish is for replacing the last published version ($last), not $VERSION" >&2; exit 1; }
       echo "!  Republishing $VERSION over the copy already in the bucket."
       echo "   Anyone who has already taken $VERSION will never be offered this build."
-    elif [ -n "$last" ]; then
-      newest=$(printf '%s\n%s\n' "$last" "$VERSION" | sort -V | tail -1)
-      { [ "$VERSION" != "$last" ] && [ "$newest" = "$VERSION" ]; } || { echo "✗ Version $VERSION is not newer than the last published $last" >&2; exit 1; }
+    elif ! version_is_newer "$VERSION" "$last"; then
+      echo "✗ Version $VERSION is not newer than the last published $last" >&2; exit 1
     fi
     # The release note is checked here, before anything is built, signed or
     # uploaded — a release that stops halfway is only cheap while it is still
@@ -261,7 +283,7 @@ case "${1:-}" in
       fi
     fi
     if [ "$BETA" = 1 ]; then
-      echo "==> Publishing $VERSION as a beta"
+      echo "==> Publishing $DISPLAY_VERSION ($VERSION) as a beta"
     else
       echo "==> Publishing $VERSION"
     fi
@@ -317,7 +339,9 @@ fi
 # versions baked into project.yml.
 VERSION_ARGS=()
 if [ "$PUBLISH" = 1 ]; then
-  VERSION_ARGS=(MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION")
+  # Two spellings for a beta: "2026.48.4 beta 1" to read, 2026.48.4b1 for
+  # Sparkle to compare (scripts/version.sh). One for a release.
+  VERSION_ARGS=("MARKETING_VERSION=$DISPLAY_VERSION" "CURRENT_PROJECT_VERSION=$VERSION")
   # A beta build knows it is one (Info.plist's WortelUpdateChannel), which is
   # what puts the Mac it first runs on onto the beta channel. It also wears
   # its own icon (Wortel/AppIconBeta.icon) and name ("Wortel Beta", by
@@ -373,6 +397,12 @@ if [ "$PUBLISH" = 1 ]; then
     || /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Contents/Info.plist" 2>/dev/null || true)"
   WANT_NAME=$([ "$BETA" = 1 ] && echo "Wortel Beta" || echo Wortel)
   [ "$BUILT_NAME" = "$WANT_NAME" ] || { echo "✗ Built name (${BUILT_NAME:-none}) ≠ requested ($WANT_NAME)" >&2; exit 1; }
+  # And the order of versions, by the comparator this very build ships: a
+  # beta that ranks wrong is never replaced by its release, on every
+  # tester's Mac, and that can't be taken back.
+  SPARKLE_BUILT="$DERIVED/Build/Products/Release/Sparkle.framework"
+  "$ROOT/scripts/test-version.sh" "$SPARKLE_BUILT" >/dev/null \
+    || { "$ROOT/scripts/test-version.sh" "$SPARKLE_BUILT" >&2; echo "✗ The version order doesn't hold for the Sparkle this build ships (above)." >&2; exit 1; }
 fi
 
 # --- Sign -------------------------------------------------------------------
@@ -444,7 +474,9 @@ fi
 if [ "$PUBLISH" = 1 ]; then
   # Confirm the build actually picked up the version we stamped.
   BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-  [ "$BUILT" = "$VERSION" ] || { echo "✗ Built version ($BUILT) ≠ requested ($VERSION)" >&2; exit 1; }
+  [ "$BUILT" = "$DISPLAY_VERSION" ] || { echo "✗ Built version ($BUILT) ≠ requested ($DISPLAY_VERSION)" >&2; exit 1; }
+  BUILT_BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+  [ "$BUILT_BUNDLE" = "$VERSION" ] || { echo "✗ Built bundle version ($BUILT_BUNDLE) ≠ requested ($VERSION)" >&2; exit 1; }
   # The channel and the icon were checked right after the build, before
   # signing and notarizing spent minutes on a build that was going nowhere.
 
@@ -578,7 +610,7 @@ if [ "$PUBLISH" = 1 ]; then
     PH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
       "https://eu.posthog.com/api/projects/$PH_PROJECT/annotations/" \
       -H "Authorization: Bearer $PH_KEY" -H 'Content-Type: application/json' \
-      -d "{\"content\":\"Wortel $VERSION$([ "$BETA" = 1 ] && echo ' (beta)')\",\"date_marker\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scope\":\"project\"}" \
+      -d "{\"content\":\"Wortel $DISPLAY_VERSION\",\"date_marker\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scope\":\"project\"}" \
       || echo 000)"
     case "$PH_STATUS" in
       2??) echo "==> Annotated $VERSION in PostHog" ;;
@@ -619,7 +651,7 @@ if [ "$PUBLISH" = 1 ]; then
   fi
 
   if [ "$BETA" = 1 ]; then
-    echo "==> Published $VERSION as a beta"
+    echo "==> Published $VERSION ($DISPLAY_VERSION) as a beta"
     echo "    Appcast:         $FEED_BASE/appcast.xml (channel beta)"
     echo "    For testers:     $FEED_BASE/Wortel-${VERSION}.dmg"
     echo "                     Its first launch puts that Mac on the beta channel."

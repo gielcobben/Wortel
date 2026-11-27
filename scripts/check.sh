@@ -23,6 +23,8 @@ if run macos; then
     # yet (a cached build is a copy; a new one is about five minutes).
     scripts/build-ghostty.sh
     xcodegen generate --quiet
+    # The release version numbers, held to Sparkle's comparator.
+    scripts/test-version.sh
     # shellcheck disable=SC2086
     xcodebuild -project Wortel.xcodeproj -scheme WortelTests ${XCODEBUILD_FLAGS:-} test -quiet
   )

@@ -93,6 +93,16 @@ export const collections = { releases, legal };
 export const publicRelease = ({ data }: { data: { beta: boolean } }) => !data.beta;
 
 /**
+ * A version as a person reads it. A beta's note is named for its bundle
+ * version, `2026.48.4b1.md`, and the app shows it as "2026.48.4 beta 1"
+ * (macos/scripts/version.sh). A release is shown as it is.
+ */
+export function displayVersion(id: string): string {
+  const beta = id.match(/^([0-9.]+)b([0-9]+)$/);
+  return beta ? `${beta[1]} beta ${beta[2]}` : id;
+}
+
+/**
  * Sort key for CalVer strings (`2026.32.2`). Compares component by component
  * as integers, which is what Sparkle's own comparator does: string sort would
  * put 2026.29.10 before 2026.29.4, and date sort can't separate the three

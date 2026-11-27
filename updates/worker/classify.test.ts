@@ -87,6 +87,27 @@ test('appVersion only reads our own agent', () => {
   assert.equal(appVersion('WortelKeeper/1.0'), null);
 });
 
+test('a beta names itself Wortel Beta, and is counted under its bundle version', () => {
+  // Sparkle's agent is the shown name and the shown version.
+  assert.equal(appVersion('Wortel Beta/2026.48.4 beta 1 Sparkle/2.9.4'), '2026.48.4b1');
+  assert.equal(appVersion('Wortel Beta/2026.48.4 beta 12 Sparkle/2.9.4'), '2026.48.4b12');
+  // The two betas before the b-numbering: a plain version under the beta name.
+  assert.equal(appVersion('Wortel Beta/2026.48.3 Sparkle/2.9.4'), '2026.48.3');
+  assert.equal(appVersion('Wortel/2026.48.4 Sparkle/2.9.4'), '2026.48.4');
+  assert.equal(appVersion('Wortel Betamax/1.0'), null);
+});
+
+test('a beta taking the release is an upgrade from the beta, in one spelling', () => {
+  assert.deepEqual(classify('Wortel-2026.48.4.zip', 'Wortel Beta/2026.48.4 beta 2 Sparkle/2.9.4'), {
+    event: 'app_updated',
+    props: { to_version: '2026.48.4', from_version: '2026.48.4b2' },
+  });
+  assert.deepEqual(classify('Wortel-2026.48.4b2.zip', 'Wortel Beta/2026.48.4 beta 1 Sparkle/2.9.4'), {
+    event: 'app_updated',
+    props: { to_version: '2026.48.4b2', from_version: '2026.48.4b1' },
+  });
+});
+
 test('crawlers are excluded and real command line tools are not', () => {
   assert.ok(isCrawler('Googlebot/2.1 (+http://www.google.com/bot.html)'));
   assert.ok(isCrawler('facebookexternalhit/1.1'));

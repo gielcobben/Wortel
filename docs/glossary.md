@@ -189,7 +189,9 @@ person. Everything else is decided once: there is no user config file, and
 configuration. No inline comments: a `#` after a value becomes part of it.
 
 **Version.** `<ISO year>.<ISO week>.<nth release that week>`, such as
-`2026.46.5`. Derived from the date and the live feed. Nobody picks one.
+`2026.46.5`. Derived from the date and the live feed. Nobody picks one. A
+beta is the release it leads up to with `b1`, `b2`… after it: `2026.48.4b1`,
+shown as "2026.48.4 beta 1" (`macos/scripts/version.sh`).
 
 **Release note.** One Markdown file per version in `web/src/content/releases/`.
 The changelog and the update dialog both render from it.

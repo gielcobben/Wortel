@@ -20,7 +20,11 @@ All commands run from `macos/`.
 2. **There is a release note** at `web/src/content/releases/<version>.md`. The
    version is `<ISO year>.<ISO week>.<nth release that week>` and the script
    derives it from the live feed, so work out which one is next before writing
-   the file. The `release-note` skill covers the writing. Publishing without a
+   the file. A beta's is the next release's with `b1`, `b2`… after it
+   (`2026.48.4b1.md`), and the release after a beta takes that beta's number
+   (`2026.48.4.md`). `macos/scripts/version.sh` has the rules; to see what
+   comes next: `. scripts/version.sh; version_next <newest in the feed> <0|1
+   beta> $(date +%G) $(date +%V)`. The `release-note` skill covers the writing. Publishing without a
    note is refused before anything is built.
 3. **What's new is on wortel.sh/docs.** For each feature in the note that
    someone would look up (a menu item, a shortcut, a `wortel` verb, a change
@@ -82,13 +86,20 @@ DMG.
 
 For a change that can't be taken back once it is out (a keeper protocol
 change, saving and resume, anything that big), when the maintainer wants a few
-testers on it first. Same checks as above, same version sequence, and cut from
-`main` like any release: the change has merged first. A beta cut from a branch
+testers on it first. Same checks as above, and cut from `main` like any
+release: the change has merged first. A beta cut from a branch
 is taken away from its testers by the next regular release. **While a beta is
 out, no regular release goes out** until it has been promoted: one cut from
 `main` would carry the beta's change to everyone before the testers have had
 it. What differs:
 
+- The version is the next release's with `b<n>`: `2026.48.4b1`, then
+  `2026.48.4b2`, shown in the app and the update dialog as "2026.48.4 beta 1".
+  The release that promotes it is `2026.48.4`, which Sparkle ranks above every
+  beta of it, so it replaces the beta on every tester's Mac, betas on or off.
+  `--publish <version> --beta` refuses a version without `b<n>`, and a regular
+  publish one with it. Never a dash or a space in a version: Sparkle reads
+  `2026.48.4-beta.1` as `2026.48.4` (`macos/scripts/version.sh`).
 - The note's frontmatter has `beta: true` after `summary`. The script refuses a
   beta without it, and a regular release with it (any spelling but `true` or
   `false` is refused). The note shows in the testers' update dialog and on
@@ -104,7 +115,7 @@ it. What differs:
   `InfoPlist.strings` by `macos/scripts/display-name.sh`; the bundle is still
   `Wortel.app`). The script refuses to publish a beta without either, and a
   regular release with either.
-- The output ends `==> Published <version> as a beta` and prints
+- The output ends `==> Published <version> (<version shown>) as a beta` and prints
   `https://updates.wortel.sh/Wortel-<version>.dmg`. That link is what the
   maintainer hands a tester. Installing it once puts their Mac on the channel;
   Settings ▸ Beta updates takes it off.

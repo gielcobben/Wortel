@@ -293,10 +293,30 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(CalVer("2026.046.04")?.rawValue, "2026.46.4")
         XCTAssertNil(CalVer("2026.46"))
         XCTAssertNil(CalVer("2026.46.4-beta"))
+        XCTAssertNil(CalVer("2026.46.4-beta.1"))
+        XCTAssertNil(CalVer("2026.46.4 beta"))
+        XCTAssertNil(CalVer("2026.46.4b"))
+        XCTAssertNil(CalVer("2026.46.4b0"))
+        XCTAssertNil(CalVer("2026.46b1"))
+        XCTAssertNil(CalVer("2026.46.4 beta 1 (2026.46.4b1)"))
         XCTAssertNil(CalVer("/Users/x/2026.46.4"))
         XCTAssertNil(CalVer("0.0.0"))
         XCTAssertNil(CalVer(nil))
         XCTAssertNil(CodeOffset(0x100_0000_0000))
+    }
+
+    /// A beta, in both its spellings (`macos/scripts/version.sh`), is sent
+    /// as the bundle version: the name of its dSYM folder.
+    func testCalVerReadsABeta() {
+        XCTAssertEqual(CalVer("2026.48.4b1")?.rawValue, "2026.48.4b1")
+        XCTAssertEqual(CalVer("2026.48.4 beta 1")?.rawValue, "2026.48.4b1")
+        XCTAssertEqual(CalVer("2026.48.4 beta 12")?.beta, 12)
+        XCTAssertNil(CalVer("2026.48.4")?.beta)
+        XCTAssertEqual(HangReport.build(of: "2026.48.4 beta 1 (2026.48.4b1)"), "2026.48.4b1")
+        XCTAssertEqual(HangReport.build(of: "2026.47.4 (2026.47.4)"), "2026.47.4")
+        XCTAssertEqual(HangReport.build(of: "2026.47.4"), "2026.47.4")
+        XCTAssertEqual(CalVer(HangReport.build(of: "2026.48.4 beta 1"))?.rawValue, "2026.48.4b1")
+        XCTAssertNil(HangReport.build(of: nil))
     }
 
     /// A report on disk is matched to the unclean run by date: one written
@@ -336,6 +356,16 @@ final class TelemetryTests: XCTestCase {
         let dev = Self.crashReport.replacingOccurrences(of: "\"app_version\":\"2026.46.5\"",
                                                         with: "\"app_version\":\"0.0.0\"")
         XCTAssertNil(CrashReport.reduce(dev, executable: "Wortel", bundleID: nil))
+    }
+
+    /// A beta's crash is the one most worth hearing about, and its
+    /// `app_version` is the shown "2026.48.4 beta 1".
+    func testCrashOfABetaKeepsItsVersion() throws {
+        let beta = Self.crashReport
+            .replacingOccurrences(of: "\"app_version\":\"2026.46.5\"", with: "\"app_version\":\"2026.48.4 beta 1\"")
+            .replacingOccurrences(of: "\"build_version\":\"2026.46.5\"", with: "\"build_version\":\"2026.48.4b1\"")
+        let summary = try XCTUnwrap(CrashReport.reduce(beta, executable: "Wortel", bundleID: nil))
+        XCTAssertEqual(summary.version.rawValue, "2026.48.4b1")
     }
 
     // MARK: - Hang reports
@@ -434,6 +464,13 @@ final class TelemetryTests: XCTestCase {
                        "Graph", "4242"] {
             XCTAssertFalse(sent.contains(secret), "\(secret) leaked into app_hung: \(sent)")
         }
+    }
+
+    func testHangOfABetaKeepsItsVersion() throws {
+        let beta = Self.hangReport.replacingOccurrences(of: "2026.47.4 (2026.47.4)",
+                                                        with: "2026.48.4 beta 1 (2026.48.4b1)")
+        let summary = try XCTUnwrap(HangReport.reduce(beta, executable: "Wortel", bundleID: nil, uid: 501))
+        XCTAssertEqual(summary.version.rawValue, "2026.48.4b1")
     }
 
     func testHangReportOfAnythingElseIsIgnored() {

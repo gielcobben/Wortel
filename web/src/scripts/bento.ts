@@ -1,12 +1,10 @@
 // The bento's script: it puts the real app into the tiles.
 //
-// Nothing on the poster is drawn by hand. Three things are arranged here:
-//   parts     a tile that shows a piece of a pane (the diff, the rendered
-//             Markdown) gets a clone of that named part, out of the panes the
-//             component renders into a <template>;
-//   browser   a window with no sidebar, its bar as the canvas draws one, and
-//             the site itself in its tab, light or dark with the page;
-//   terminal  the window in the middle is a Pi session at work, with no
+// Nothing on the poster is drawn by hand. Four things are arranged here:
+//   parts     a tile that shows a piece of a pane (a preview being marked
+//             up, the commits, the file tree) gets a clone of that named
+//             part, out of the panes the component renders into a <template>;
+//   terminal  the first window is a Pi session at work, with no
 //             sidebar, so its bar gains what the canvas gives such a window.
 //             Pi is shown only here: the stages show Claude Code and Codex,
 //             whose screens at work were captured, and Pi's could not be;
@@ -23,7 +21,6 @@ export function initBento() {
   if (!scope || !poster) return;
   parts(scope, poster);
   terminal(scope, poster);
-  browser(scope, poster);
   splits(scope, poster);
   rows(poster);
 }
@@ -35,27 +32,6 @@ function parts(scope: HTMLElement, poster: HTMLElement) {
     const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`);
     if (part) holder.append(part.cloneNode(true));
   });
-}
-
-function browser(scope: HTMLElement, poster: HTMLElement) {
-  const win = poster.querySelector<HTMLElement>('[data-win="browser"]');
-  const lead = scope.querySelector<HTMLTemplateElement>('template[data-tpl="lead"]')?.content;
-  if (!win || !lead) return;
-  win.dataset.solo = '';
-  win.querySelector('header[data-name="Main bar"]')!.prepend(lead.cloneNode(true));
-  const img = named(win, 'Web page') as HTMLImageElement | null;
-  if (!img) return;
-  // The page follows the page around it, as everything in the windows does.
-  const picture = document.createElement('picture');
-  const dark = document.createElement('source');
-  dark.srcset = '/img/browser-dark.jpg';
-  dark.media = '(prefers-color-scheme: dark)';
-  img.replaceWith(picture);
-  picture.className = 'flex min-h-0 flex-1';
-  img.src = '/img/browser-light.jpg';
-  img.alt = 'The wortel.sh homepage';
-  img.width = 1440; img.height = 900;
-  picture.append(dark, img);
 }
 
 function terminal(scope: HTMLElement, poster: HTMLElement) {
@@ -92,7 +68,8 @@ function splits(scope: HTMLElement, poster: HTMLElement) {
 }
 
 function rows(poster: HTMLElement) {
-  const card = poster.querySelector<HTMLElement>('[data-rows]');
+  // By its tile: a window on the poster can carry the same mark.
+  const card = poster.querySelector<HTMLElement>('[data-tile="worktree"] [data-rows]');
   const nav = card && named(card, 'Sessions');
   if (!nav) return;
   const head = named(nav, 'Section wortel')!;

@@ -121,7 +121,7 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
   /* The sentence wraps as a text view's does, around its chips. */
   .hold :global([data-name="Note"]) { display: block; flex: 1 0 auto; }
   .hold :global([data-name="Note"] > [data-name^="Chip"]) { display: inline-flex; vertical-align: -5px; }
-  .hold :global([data-name="Note"] > [data-name="Caret"]) { display: inline-block; vertical-align: -4px; }
+  .hold :global([data-name="Note"] > [data-name="Caret"]) { display: inline-block; vertical-align: -4px; margin-left: -1.5px; }
   .hold :global([data-name="Note"] > span) { white-space: pre-wrap; }
   /* The same note as text: what is pasted, on the lines it is pasted on. */
   .text { align-items: stretch; }

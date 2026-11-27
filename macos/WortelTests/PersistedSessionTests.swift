@@ -783,4 +783,85 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertEqual(tabs.layout, SplitLayout())
         XCTAssertTrue(tabs.unsized.isEmpty)
     }
+
+    /// The entry `SessionManager.persistedEntry` writes for these tabs: the
+    /// tree, the leaves in it still at a guess, and what an older build
+    /// reads beside them.
+    private func saved(_ tabs: WorkspaceTabs, width: Double?) -> PersistedSession {
+        PersistedSession(
+            id: UUID(), name: "s", title: "shell", cwd: "/tmp", selected: false, nameSource: "user",
+            gitPanelVisible: tabs.sideVisible, sideTabs: tabs.side.map(\.rawValue),
+            activeSideTab: tabs.activeSide?.rawValue, sideColumnWidth: width,
+            bottomTabs: tabs.bottom.map(\.rawValue), activeBottomTab: tabs.activeBottom?.rawValue,
+            bottomVisible: tabs.bottomVisible, sideColumnLeading: tabs.sideLeading,
+            splitLayout: tabs.layout.isSplit ? tabs.layout : nil,
+            unsizedLeaves: PersistedSession.savedUnsized(tabs.unsized, in: tabs.layout))
+    }
+
+    private func reread(_ entry: PersistedSession) throws -> PersistedSession {
+        try JSONDecoder().decode(PersistedSession.self, from: JSONEncoder().encode(entry))
+    }
+
+    /// The upgrade from a release without the tree: a session that is not
+    /// on screen gets its column and strip at a guessed share, and no
+    /// window lays it out before the app saves. Saved and read back, they
+    /// are still a guess, so the window gives them the session's width and
+    /// the strip's height when the session is first shown. Until
+    /// 2026-11-27 the guess was saved as if chosen, and after one save the
+    /// column was a third of the window for good.
+    func testAColumnNobodyHasSizedIsStillAGuessAfterASave() throws {
+        let shell = SideTab.terminal(UUID())
+        let old = try decode("""
+        {"id":"\(UUID())","gitPanelVisible":true,"sideTabs":["changes"],"activeSideTab":"changes",
+         "bottomTabs":["\(shell.rawValue)"],"bottomVisible":true,"sideColumnWidth":480}
+        """)
+        let first = old.restoredTabs(panelVisible: true, defaultPane: .changes)
+        XCTAssertEqual(first.unsized, [.side, .bottom])
+
+        let entry = try reread(saved(first, width: old.sideColumnWidth))
+        XCTAssertEqual(entry.unsizedLeaves, ["bottom", "side"])
+        XCTAssertEqual(entry.splitLayout, first.layout)
+        XCTAssertEqual(entry.sideColumnWidth, 480, "the width it is to be given")
+        let second = entry.restoredTabs(panelVisible: true, defaultPane: .changes)
+        XCTAssertEqual(second.layout, first.layout)
+        XCTAssertEqual(second.unsized, [.side, .bottom], "still to be sized when first shown")
+
+        // Shown once, the column is given its width: from then on its share
+        // is somebody's, and only the strip is still a guess.
+        var shown = second
+        shown.markSized(.side)
+        let third = try reread(saved(shown, width: 480)).restoredTabs(panelVisible: true, defaultPane: .changes)
+        XCTAssertEqual(third.unsized, [.bottom])
+    }
+
+    /// Nothing at a guess writes no key, so the entry is what it was. And a
+    /// file without one (an older build's, or one from before this was
+    /// saved) takes every saved share as chosen.
+    func testWithNothingAtAGuessNoKeyIsWritten() throws {
+        var layout = SplitLayout()
+        layout.insert(.side, atRootEdge: .right, share: 0.25)
+        let tabs = WorkspaceTabs(side: [.pane(.changes)], sideVisible: true, layout: layout)
+        XCTAssertTrue(tabs.unsized.isEmpty)
+        let data = try JSONEncoder().encode(saved(tabs, width: nil))
+        let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
+        XCTAssertTrue(keys.contains("splitLayout"))
+        XCTAssertFalse(keys.contains("unsizedLeaves"))
+        XCTAssertNil(PersistedSession.savedUnsized([.bottom], in: layout), "a leaf the tree hasn't is no guess")
+    }
+
+    /// Read leniently: a value that isn't a list costs only itself, and a
+    /// name that is no leaf of the tree is dropped.
+    func testUnreadableGuessesCostOnlyThemselves() throws {
+        let tree = #"{"axis":"row","parts":[{"node":{"leaf":"main"},"weight":2},{"node":{"leaf":"side"},"weight":1}]}"#
+        let list = try decodeList("""
+        [{"id":"\(UUID())","name":"one","unsizedLeaves":7,"sideTabs":["changes"],"gitPanelVisible":true,
+          "splitLayout":\(tree)},
+         {"id":"\(UUID())","name":"two","unsizedLeaves":["side","sideways","bottom"],"sideTabs":["changes"],
+          "gitPanelVisible":true,"splitLayout":\(tree)}]
+        """)
+        XCTAssertEqual(list.map(\.name), ["one", "two"])
+        XCTAssertNil(list[0].unsizedLeaves)
+        XCTAssertTrue(list[0].restoredTabs(panelVisible: true, defaultPane: .changes).unsized.isEmpty)
+        XCTAssertEqual(list[1].restoredTabs(panelVisible: true, defaultPane: .changes).unsized, [.side])
+    }
 }

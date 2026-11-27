@@ -205,9 +205,30 @@ final class TerminalHostViewController: NSViewController {
             currentView = surfaceView
             coverStart(of: surfaceView)
 
-            focusTerminal(surfaceView)
+            // Covered (a tab in front of it in the main row) or out of sight
+            // behind a zoom on another split: the keyboard goes to what
+            // covers it, not to a terminal nobody can see. The main area's
+            // own check (`keepKeyboardOffCoveredTerminal`) runs a turn after
+            // it lays out, which is before a hibernated terminal's swap
+            // (10 to 500 ms later), and nothing ran it again: back to a
+            // session whose split was zoomed, its agent took the keys,
+            // Return included.
+            if surfaceView.isCovered, let keyboardWhenCovered {
+                if let window = view.window, let holder = window.firstResponder as? SurfaceView,
+                   holder.isHiddenOrHasHiddenAncestor {
+                    window.makeFirstResponder(nil)
+                }
+                keyboardWhenCovered()
+            } else {
+                focusTerminal(surfaceView)
+            }
         }
     }
+
+    /// Where the keyboard goes when the terminal shown is covered: what is
+    /// in front of the main row, or of the split zoomed over it
+    /// (`GitPanelModel.focusCover`).
+    var keyboardWhenCovered: (() -> Void)?
 
     /// Nothing in front: the selected session has no terminal yet (its
     /// worktree is still being made). The last one shown is hidden, not

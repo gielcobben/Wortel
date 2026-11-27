@@ -6115,6 +6115,9 @@ final class SessionManager {
                     (id.uuidString, PersistedPaneTabs(tabs: pane.tabs.map(\.rawValue),
                                                       active: pane.active?.rawValue))
                 }),
+            // A column or a strip no window has laid out yet: its share in
+            // the tree is a guess, and it is to be sized when first shown.
+            unsizedLeaves: PersistedSession.savedUnsized(session.unsizedLeaves, in: session.splitLayout),
             runningAgent: agent?.agent, runningModel: agent?.model,
             runningArgv: agent?.argv,
             runningConversationID: agent == nil ? nil : conversationID,

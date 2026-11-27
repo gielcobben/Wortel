@@ -118,6 +118,9 @@ final class MainAreaController: NSViewController {
             self?.git.commitSplitLayout()
             self?.rememberSizes()
         }
+        // The split being dragged changed under the drag: nothing of it is
+        // remembered as a width somebody chose.
+        tree.onDividerDragCancelled = { [weak self] in self?.framesBeforeDrag = nil }
         tree.onDividerDoubleClicked = { [weak self] in self?.git.equalizeSplits() }
         tree.onPlaced = { [weak self] in self?.placed() }
         view = tree
@@ -191,6 +194,10 @@ final class MainAreaController: NSViewController {
         }
         tree.setLeaves(views)
         sizeNewLeaves()
+        // Another session's tree: a divider held across the switch was
+        // moving the last one's, whose sizes are not this one's to save or
+        // remember, even where the two trees are alike.
+        if git.session !== sessionBefore { tree.cancelDrag() }
         let zoomed = git.zoomedRegion
         tree.apply(layout: git.splitLayout, zoomed: zoomed?.leaf, hidden: git.hiddenLeaves,
                    slides: slides(zoomed: zoomed))
@@ -550,7 +557,8 @@ final class MainAreaController: NSViewController {
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
         let surface = showing && git.session === session
             ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
-        tabHost.show(surface, focusRequest: git.mainFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
+        tabHost.show(surface, focusRequest: git.mainFocusRequest,
+                     handBack: { [weak git] in git?.handBackKeyboard(from: .main) })
         // Out of the way of clicks when it has nothing to show.
         tabHost.view.isHidden = surface == nil
         // Nor does its cursor show through what covers it.
@@ -565,13 +573,15 @@ final class MainAreaController: NSViewController {
     /// Checked after every change here and when the window becomes key, since
     /// the session's terminal takes the keyboard at launch and on a switch.
     /// Out of sight behind a zoomed split is covered too, and the keyboard
-    /// goes to that split.
+    /// goes to that split. A switch to a hibernated terminal shows it after
+    /// this has run, and the host asks the same of `GitPanelModel.focusCover`
+    /// itself then (`TerminalHostViewController.swap`).
     private func keepKeyboardOffCoveredTerminal() {
         let hidden = !git.isShowing(.main)
         guard git.activeMainTab != nil || hidden, let window = view.window,
               let main = home.selected?.surfaceView, window.firstResponder === main else { return }
         window.makeFirstResponder(nil)
-        git.focusFront(of: hidden ? (git.zoomedRegion ?? .main) : .main)
+        git.focusCover()
     }
 
     override func viewDidAppear() {

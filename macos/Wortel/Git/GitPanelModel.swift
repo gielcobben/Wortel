@@ -1617,6 +1617,31 @@ final class GitPanelModel {
     /// seen (MainSplitViewController.blink).
     @ObservationIgnored var onAreaFocused: ((TabRegion) -> Void)?
 
+    /// A terminal in `region` that had the keyboard went out of sight: a tab
+    /// came in front of it in its row (a file, Changes, another terminal),
+    /// or the row itself went behind a zoom. The keyboard goes to what is in
+    /// front of that row now, so you are still in the split you were in and
+    /// ⌘W closes the tab there. A row that is out of sight hands it to the
+    /// split you are in (`lastRegion`, which never answers with one that a
+    /// zoom hides or that has gone).
+    ///
+    /// Every row's terminal host handed it to the main row until 2026-11-27:
+    /// a file tab picked in a split whose terminal had the keyboard put you
+    /// in the session's own terminal, and the next ⌘W closed the session.
+    func handBackKeyboard(from region: TabRegion) {
+        focusFront(of: isShowing(region) ? region : lastRegion)
+    }
+
+    /// The session's own terminal is covered: a tab is in front of it in the
+    /// main row, or the main row is behind a zoom on another split. The
+    /// keyboard goes to what covers it, the tab in front of the main row or
+    /// of the zoomed split. For the main area's check after a change, and
+    /// for a session switch that shows the terminal later, once it has woken
+    /// (`TerminalHostViewController.keyboardWhenCovered`).
+    func focusCover() {
+        focusFront(of: isShowing(.main) ? .main : (zoomedRegion ?? .main))
+    }
+
     /// Give the keyboard to what's in front of `region` without making it the
     /// area you're in: for handing the keyboard back to the row you are
     /// already in after a tab there closed or a zoom changed, which is
@@ -1625,6 +1650,11 @@ final class GitPanelModel {
         let tab: SideTab
         switch region {
         case .main:
+            // Behind a zoom on another split, as the other rows: the main
+            // row's terminal or page would take keys nobody can see, and the
+            // keyboard in the session's own terminal makes ⌘W close the
+            // session.
+            guard isShowing(.main) else { return }
             guard let front = activeMainTab else { onFocusMainTerminal?(); return }
             tab = front
             if tab.terminalID != nil { mainFocusRequest += 1; return }

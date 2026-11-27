@@ -26,10 +26,15 @@
 # four numeric parts, zero-filled, then 0 for a beta and 1 for a release, then
 # the beta's number. Prints nothing for a version it can't read.
 #
-# In awk, so it reads the same sourced into bash (release.sh) or zsh (a
-# person's shell, or an agent's).
+# In awk, and the dot written [.], so it reads the same sourced into bash
+# (release.sh) or zsh (a person's shell, or an agent's): zsh drops the
+# backslash in an unquoted `\.`, which then matches any character.
+#
+# A beta's number is 1 to 99 with no leading zero, the range CalVer in
+# Telemetry/TelemetryEvent.swift reads back: a b0, b100 or b01 would ship,
+# and its crash reports would be dropped or name a dSYM folder that isn't.
 version_key() {
-  [[ "$1" =~ ^[0-9]+(\.[0-9]+){0,3}(b[0-9]+)?$ ]] || return 0
+  [[ "$1" =~ ^[0-9]+([.][0-9]+){0,3}(b[1-9][0-9]?)?$ ]] || return 0
   awk -v v="$1" 'BEGIN {
     base = v; beta = ""
     if ((i = index(v, "b")) > 0) { base = substr(v, 1, i - 1); beta = substr(v, i + 1) }
@@ -41,11 +46,15 @@ version_key() {
 
 # The newest of the versions on stdin, one per line. Lines it can't read are
 # skipped, so an odd entry in the feed can't become "the last version".
+#
+# A last line without a newline still counts, and an unreadable last line
+# doesn't fail the loop (which, under pipefail, would fail the caller after
+# it had printed the right answer).
 version_newest() {
   local v key
-  while IFS= read -r v; do
+  while IFS= read -r v || [ -n "$v" ]; do
     key=$(version_key "$v")
-    [ -n "$key" ] && printf '%s %s\n' "$key" "$v"
+    if [ -n "$key" ]; then printf '%s %s\n' "$key" "$v"; fi
   done | LC_ALL=C sort | tail -1 | cut -d' ' -f2
 }
 
@@ -57,7 +66,7 @@ version_is_newer() {
   [ -n "$a" ] && [[ "$a" > "$b" ]]
 }
 
-version_is_beta() { [[ "$1" =~ ^[0-9.]+b[0-9]+$ ]]; }
+version_is_beta() { [ -n "$(version_key "$1")" ] && [[ "$1" == *b* ]]; }
 
 # The version to publish next, after `last` (the newest published, machine
 # spelling, or empty), in ISO week `week` of ISO year `year`.

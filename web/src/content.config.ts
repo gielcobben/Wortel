@@ -89,8 +89,15 @@ const legal = defineCollection({
 
 export const collections = { releases, legal };
 
-/** The releases everyone is offered: every one but a beta. */
-export const publicRelease = ({ data }: { data: { beta: boolean } }) => !data.beta;
+/**
+ * The releases everyone is offered: every one but a beta. A note named like
+ * a beta (`2026.48.4b1.md`) is one even without `beta: true`, so a forgotten
+ * flag can't put it on the changelog, where compareVersions can't order it.
+ */
+export const publicRelease = ({ id, data }: { id: string; data: { beta: boolean } }) =>
+  !data.beta && !BETA_ID.test(id);
+
+const BETA_ID = /^([0-9.]+)b([1-9][0-9]?)$/;
 
 /**
  * A version as a person reads it. A beta's note is named for its bundle
@@ -98,7 +105,7 @@ export const publicRelease = ({ data }: { data: { beta: boolean } }) => !data.be
  * (macos/scripts/version.sh). A release is shown as it is.
  */
 export function displayVersion(id: string): string {
-  const beta = id.match(/^([0-9.]+)b([0-9]+)$/);
+  const beta = id.match(BETA_ID);
   return beta ? `${beta[1]} beta ${beta[2]}` : id;
 }
 

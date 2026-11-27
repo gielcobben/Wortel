@@ -22,7 +22,8 @@ All commands run from `macos/`.
    derives it from the live feed, so work out which one is next before writing
    the file. A beta's is the next release's with `b1`, `b2`… after it
    (`2026.48.4b1.md`), and the release after a beta takes that beta's number
-   (`2026.48.4.md`). `macos/scripts/version.sh` has the rules; to see what
+   (`2026.48.4.md`) in the same ISO week; in a later week it is that week's
+   next number (`2026.49.1.md`). `macos/scripts/version.sh` has the rules; to see what
    comes next: `. scripts/version.sh; version_next <newest in the feed> <0|1
    beta> $(date +%G) $(date +%V)`. The `release-note` skill covers the writing. Publishing without a
    note is refused before anything is built.
@@ -95,11 +96,15 @@ it. What differs:
 
 - The version is the next release's with `b<n>`: `2026.48.4b1`, then
   `2026.48.4b2`, shown in the app and the update dialog as "2026.48.4 beta 1".
-  The release that promotes it is `2026.48.4`, which Sparkle ranks above every
-  beta of it, so it replaces the beta on every tester's Mac, betas on or off.
-  `--publish <version> --beta` refuses a version without `b<n>`, and a regular
-  publish one with it. Never a dash or a space in a version: Sparkle reads
-  `2026.48.4-beta.1` as `2026.48.4` (`macos/scripts/version.sh`).
+  The release that promotes it is `2026.48.4` (in the same ISO week; in a
+  later one, that week's next number), which Sparkle ranks above every beta
+  of it, so it replaces the beta on every tester's Mac, betas on or off
+  (verified 2026-11-27 with Sparkle 2.9.4, `macos/scripts/try-beta-updates.sh`;
+  run it again after a Sparkle bump). `--publish <version> --beta` refuses a
+  version without `b<n>` (1 to 99), and a regular publish one with it. Never a
+  dash or a space in a version: Sparkle reads `2026.48.4-beta.1` as
+  `2026.48.4` (`macos/scripts/version.sh`; `test-version.sh` says so if that
+  ever changes).
 - The note's frontmatter has `beta: true` after `summary`. The script refuses a
   beta without it, and a regular release with it (any spelling but `true` or
   `false` is refused). The note shows in the testers' update dialog and on

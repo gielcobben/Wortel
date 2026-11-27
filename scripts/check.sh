@@ -23,10 +23,16 @@ if run macos; then
     # yet (a cached build is a copy; a new one is about five minutes).
     scripts/build-ghostty.sh
     xcodegen generate --quiet
-    # The release version numbers, held to Sparkle's comparator.
-    scripts/test-version.sh
+    # The packages a release builds against (macos/Package.resolved), as
+    # release.sh pins them: the project is generated, so its copy is put back.
+    resolved=Wortel.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+    mkdir -p "$resolved" && cp Package.resolved "$resolved/Package.resolved"
     # shellcheck disable=SC2086
     xcodebuild -project Wortel.xcodeproj -scheme WortelTests ${XCODEBUILD_FLAGS:-} test -quiet
+    # The release version numbers, held to Sparkle's comparator. After the
+    # build, so a fresh machine has the pinned Sparkle to ask; on CI a missing
+    # one fails rather than warns.
+    scripts/test-version.sh
   )
 fi
 

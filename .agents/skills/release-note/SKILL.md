@@ -12,8 +12,15 @@ is the short form for this one kind of writing.
 ## Find out what changed
 
 ```sh
+# A regular release: everything since the last regular one, so the betas
+# between are covered too (their Release commits say b<n>: `Release 2026.48.4b1:`).
+git log --format='%s%n%b' "$(git log --format=%h --grep='^Release [0-9.]*:' -1)"..HEAD
+# A beta: everything since the last release of either kind.
 git log --format='%s%n%b' "$(git log --format=%h --grep='^Release 20' -1)"..HEAD
 ```
+
+The first two betas, 2026.48.2 and .3, have regular-looking commits, so the
+regular release after them starts from `Release 2026.48.1`, by hand.
 
 Read the bodies, not only the subjects. Then translate: the note is for the
 person using the app, and a commit is for whoever reads the source. Leave out

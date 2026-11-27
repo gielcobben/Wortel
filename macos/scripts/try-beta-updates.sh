@@ -50,20 +50,36 @@ stop_copy() {
   pkill -f "$work/.*Autoupdate" 2>/dev/null
   pkill -f "Sparkle.*$bundle" 2>/dev/null
 }
+derived=$HOME/Library/Developer/Xcode/DerivedData/Wortel-betatest
+cleaned=0
 cleanup() {
+  (( cleaned )) && return
+  cleaned=1
   stop_copy
   [[ -n ${server:-} ]] && kill $server 2>/dev/null
   defaults delete $bundle >/dev/null 2>&1
   rm -rf "$HOME/Library/Caches/$bundle" "$HOME/Library/Application Support/$bundle" 2>/dev/null
+  # generate_appcast unpacks every zip it signs into a cache of its own, a
+  # whole app each (about 65 MB), under a new name every run.
+  for d in $HOME/Library/Caches/Sparkle_generate_appcast/*(N/); do
+    [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $d/Wortel.app/Contents/Info.plist 2>/dev/null) == $bundle ]] && rm -rf $d
+  done
+  # The last build is stamped as a beta and points at the live feed: nothing
+  # should be able to launch it. The rest of the folder is kept, for speed.
+  rm -rf $derived/Build/Products/Debug/Wortel.app
   (( keep )) && print "kept $work and $data" || rm -rf "$work" "$data"
 }
+# A Ctrl-C, a kill or a closed terminal cleans up too: zsh skips an EXIT
+# trap on a signal, and the copy, started by `open`, never gets it.
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
 trap cleanup EXIT
 
 locked=$(swift -e 'import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]; print((d["CGSSessionScreenIsLocked"] as? Int) ?? 0)' 2>/dev/null)
 [[ $locked == 1 ]] && { print -u2 "the screen is locked; unlock it and run again"; exit 2; }
 
 # --- Build: a release and a beta, stamped as release.sh stamps them --------
-derived=$HOME/Library/Developer/Xcode/DerivedData/Wortel-betatest
 build() { # version, then any extra build settings
   local v=$1; shift
   xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug -derivedDataPath $derived \
@@ -141,8 +157,9 @@ grep -q '<sparkle:version>2026.48.4b1</sparkle:version>' $work/appcast-after-202
   && grep -q '<sparkle:shortVersionString>2026.48.4 beta 1</sparkle:shortVersionString>' $work/appcast-after-2026.48.4b1.xml \
   && ok "the feed lists the beta as 2026.48.4b1, shown as \"2026.48.4 beta 1\"" || wrong "the feed's beta entry is wrong"
 # generate_appcast keeps three versions a channel (its default, which
-# release.sh has always used) and drops a beta once a release has passed it:
-# what is left must still be every release, untagged, and the betas tagged.
+# release.sh has always used) and of the betas a release has passed keeps
+# only the newest: what is left must still be every release, untagged, and
+# the betas tagged.
 channels=$(awk '/<item>/{c=""} /<sparkle:channel>/{c="beta"} /<sparkle:version>/{gsub(/.*<sparkle:version>|<.*/,""); v=$0} /<\/item>/{printf "%s:%s ", v, c}' $feed/appcast.xml)
 [[ " $channels " == *" 2026.48.4: "* && " $channels " == *" 2026.48.1: "* && " $channels " == *" 2026.48.5b1:beta "* \
    && " $channels " == *" 2026.48.4b2:beta "* ]] \

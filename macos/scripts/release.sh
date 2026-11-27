@@ -183,7 +183,14 @@ case "${1:-}" in
     # take whichever is higher. A cache-buster because the feed is served through
     # Cloudflare, and `|| true` throughout so an unreachable feed degrades to the
     # old BUILD-only behaviour rather than restarting at .1 over a live release.
-    recorded=$(cat "$BUILD_FILE" 2>/dev/null || echo "")
+    # Trimmed, and refused when unreadable: a BUILD the arithmetic can't read
+    # is skipped by version_newest, and with the feed unreachable too the
+    # count would restart at .1 over a version already out.
+    recorded=$(tr -d ' \t\r\n' < "$BUILD_FILE" 2>/dev/null || echo "")
+    if [ -n "$recorded" ] && [ -z "$(version_key "$recorded")" ]; then
+      echo "✗ releases/BUILD says '$recorded', which is not a version. Put the last published one there (the feed's newest)." >&2
+      exit 1
+    fi
     published=$(curl -fsS --max-time 15 "$FEED_BASE/appcast.xml?t=$(date +%s)" 2>/dev/null \
       | sed -n 's/.*<sparkle:version>\([^<]*\)<.*/\1/p' | version_newest || true)
     if [ -z "$published" ]; then
@@ -191,6 +198,12 @@ case "${1:-}" in
       echo "   If a release was published elsewhere, this run can silently reuse its version." >&2
     fi
     last=$(printf '%s\n%s\n' "$recorded" "$published" | version_newest || true)
+    # Neither says what is out: counting from nothing would reuse a number.
+    if [ -z "$last" ] && [ -z "$VERSION" ]; then
+      echo "✗ Neither the feed nor releases/BUILD says which version is out, so the next can't be counted." >&2
+      echo "  Wait for $FEED_BASE/appcast.xml to answer, or name the version: $0 --publish <version>" >&2
+      exit 1
+    fi
     if [ -n "$published" ] && [ "$published" != "$recorded" ]; then
       echo "==> Live feed is at $published; releases/BUILD says ${recorded:-none} — counting from $last"
     fi

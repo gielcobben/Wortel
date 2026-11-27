@@ -60,6 +60,18 @@ version_is_beta 2026.48.4 && wrong "2026.48.4 is not a beta"
 [ -z "$(version_key 2026.48.4-beta.1)" ] || wrong "a dashed version is refused"
 [ -z "$(version_key '2026.48.4 beta 1')" ] || wrong "the person's spelling is refused as a machine version"
 [ -z "$(version_key latest)" ] || wrong "'latest' is refused"
+# A beta's number is what CalVer reads back: 1 to 99, no leading zero.
+for v in 2026.48.4b0 2026.48.4b100 2026.48.4b01 2026.48.4B1 2026x48x4 2026.48.4b; do
+  [ -z "$(version_key "$v")" ] || wrong "$v is refused"
+  version_is_beta "$v" && wrong "$v is not a beta"
+done
+[ -n "$(version_key 2026.48.4b99)" ] || wrong "2026.48.4b99 is read"
+# The same in zsh, which reads an unquoted \. in =~ as any character.
+if command -v zsh >/dev/null; then
+  zsh_says=$(zsh -c '. scripts/version.sh; for v in 2026x48x4 2026.48.4-1 2026.48.4B1 2026.48.4b1 2026.48.4; do
+    [ -n "$(version_key $v)" ] && print -n "$v "; done')
+  expect "the versions zsh reads" "$zsh_says" "2026.48.4b1 2026.48.4 "
+fi
 
 # --- Order -------------------------------------------------------------------
 # Oldest first. The feed has carried 0.x versions and four-part ones never.
@@ -76,6 +88,9 @@ shuffled=$(printf '%s\n' "${ORDER[@]}" garbage 2026.48.4-beta.1 | sort -R)
 expect "newest of the lot" "$(version_newest <<<"$shuffled")" "2027.1.1"
 expect "newest with a beta on top" "$(printf '%s\n' 2026.48.3 2026.48.4b1 2026.48.2 | version_newest)" "2026.48.4b1"
 expect "newest with the release on top" "$(printf '%s\n' 2026.48.4b2 2026.48.4 2026.48.4b1 | version_newest)" "2026.48.4"
+expect "newest, last line without a newline" "$(printf '2026.48.3\n2026.48.4' | version_newest)" "2026.48.4"
+newest_strict=$(bash -c 'set -euo pipefail; . scripts/version.sh; printf "2026.48.4\ngarbage\n" | version_newest' 2>&1)
+expect "newest, unreadable last line, under pipefail" "$newest_strict" "2026.48.4"
 
 # --- Sparkle agrees ----------------------------------------------------------
 # The order above is ours. What decides an update is Sparkle's comparator over
@@ -93,6 +108,9 @@ else
 fi
 if [ -z "$FW" ] && [ -n "$REQUIRED_FW" ]; then
   echo "WRONG no Sparkle.framework with headers at $REQUIRED_FW: Sparkle's own order could not be checked." >&2
+  failures=$((failures + 1))
+elif [ -z "$FW" ] && [ -n "${CI:-}" ]; then
+  echo "WRONG no Sparkle $PINNED from a Wortel build on CI: Sparkle's own order was not checked." >&2
   failures=$((failures + 1))
 elif [ -z "$FW" ]; then
   echo "!  No Sparkle $PINNED from a Wortel build; Sparkle's own order was not checked here." >&2
@@ -112,6 +130,14 @@ for i in versions.indices {
         let want: ComparisonResult = i < j ? .orderedAscending : .orderedDescending
         if got != want { print("WRONG Sparkle orders \(versions[i]) vs \(versions[j]) as \(got.rawValue), want \(want.rawValue)"); bad += 1 }
     }
+}
+// Why a beta is spelled with "b" (scripts/version.sh). If either of these
+// stops being true, the reason is gone and the spelling deserves a look.
+if comparator.compareVersion("2026.48.4-beta.1", toVersion: "2026.48.4") != .orderedSame {
+    print("NOTE Sparkle no longer reads 2026.48.4-beta.1 as 2026.48.4")
+}
+if comparator.compareVersion("2026.48.4 beta 1", toVersion: "2026.48.4") != .orderedDescending {
+    print("NOTE Sparkle no longer ranks \"2026.48.4 beta 1\" above 2026.48.4")
 }
 exit(bad == 0 ? 0 : 1)
 EOF

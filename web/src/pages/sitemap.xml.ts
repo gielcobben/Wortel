@@ -87,6 +87,12 @@ const PAGES: { path: string; changefreq: string; priority: string; sources: stri
   },
   {
     // A feature in depth. Its words are in src/data/site.ts with the rest.
+    path: '/layouts',
+    changefreq: 'monthly',
+    priority: '0.7',
+    sources: ['src/data/site.ts', 'src/pages/layouts.astro', 'src/components/FeaturePage.astro', 'src/components/layouts', 'src/components/films'],
+  },
+  {
     path: '/mark-up',
     changefreq: 'monthly',
     priority: '0.7',

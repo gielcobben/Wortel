@@ -44,12 +44,14 @@ src/
   pages/compare.astro      /compare Wortel against nine named apps
   pages/docs.astro         /docs    commands, shortcuts, behaviour
   pages/mark-up.astro      /mark-up one feature in depth (see Feature pages)
+  pages/layouts.astro      /layouts the same for splits, tabs, zoom and windows
   components/FeaturePage.astro  the layout of a feature page, from a FeaturePage in data/site.ts
-  components/films/        a film more than one page shows: MarkupFilm (the homepage's section and /mark-up), ReviewFilm (the homepage's "See what it did")
+  components/films/        a film more than one page shows: PanesFilm (the homepage's splits and /layouts), MarkupFilm (the homepage's section and /mark-up), ReviewFilm (the homepage's "See what it did" and /layouts)
+  components/layouts/      what only /layouts shows: Windows (two windows on one stage)
   components/markup/       what /mark-up shows: Surfaces (mark-up over Markdown, source and a diff) and Tiles
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms*.txt.ts       maps for language models
-  pages/*.md.ts            /index.md, /docs.md, /compare.md, /mark-up.md, /updates.md: pages as Markdown
+  pages/*.md.ts            /index.md, /docs.md, /compare.md, /mark-up.md, /layouts.md, /updates.md: pages as Markdown
   data/markdown.ts         the renderers behind those and llms-full.txt
   pages/404.astro          the not-found page (dist/404.html)
   components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Markup and Review (each a section's words over a film in components/films/), Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ, in the right column beside its heading)
@@ -154,12 +156,13 @@ the app's generated markup uses those.
 
 ### Feature pages
 
-A feature page shows one feature in depth: `/mark-up`. It sits between the
+A feature page shows one feature in depth: `/mark-up` and `/layouts`. It sits between the
 homepage, which makes the point once, and `/docs`, which states it exactly.
 It keeps the homepage's layout (the opening, then sections that open with
 `.row12` over a stage or tiles) and ends in rows to read, as `/docs` does.
 
-- **The words** are a `FeaturePage` in `data/site.ts` (`MARKUP_PAGE`): the
+- **The words** are a `FeaturePage` in `data/site.ts` (`MARKUP_PAGE`,
+  `LAYOUTS_PAGE`): the
   opening lines, the parts (a two-line heading, one paragraph, a link, and
   short facts), the reference rows, and where to go next. `FEATURE_PAGES`
   lists the pages: the footer, `llms.txt`, `llms-full.txt` and each page's
@@ -198,6 +201,16 @@ the chapter that is missing. On a phone the plan wraps and its marks are
 placed over the same words again, the plan moves down to a mark drawn above
 what shows, and code scrolls sideways or up to a mark that would be out of
 sight. The two rows of tiles lift their pieces out of the same two frames.
+
+**/layouts** is made of the homepage's films. It opens with the splits film
+(`films/PanesFilm.astro`), which has a fourth chapter there (`sidebar`): ⌘B
+folds the sidebar away and the leftmost row gains its buttons. A window too
+narrow for a sidebar has it folded already, so at 1000px and under that
+chapter and its tab are left out. "Every split has its own tabs" is the
+review film. "More than one window" is `components/layouts/Windows.astro`:
+two windows on one stage, each with its own sidebar and sessions, nothing
+playing; the one behind is not the key window, so its traffic lights are
+grey. Dragging a session between windows is not shown.
 
 ### Motion and interaction
 
@@ -753,7 +766,7 @@ version numbers, no release counts): social networks cache a card for days.
 
 Besides `/llms.txt` and `/llms-full.txt`, the main pages exist as Markdown at
 the same path plus `.md`: `/index.md`, `/docs.md`, `/compare.md`,
-`/mark-up.md`, `/updates.md`. Each page's `<head>` points at its own with
+`/mark-up.md`, `/layouts.md`, `/updates.md`. Each page's `<head>` points at its own with
 `rel="alternate" type="text/markdown"` (the `markdown` prop on `Layout`). All of
 them, and `llms-full.txt`, render from `src/data/markdown.ts`.
 

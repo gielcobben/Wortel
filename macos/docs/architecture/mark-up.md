@@ -669,6 +669,11 @@ inside a box that scrolls sideways is pointed at sideways.
 
 A press on a pin brings its mark into view, with any tool in hand: the
 same `reveal` a chip's click asks for. So a drawing cannot begin on a pin.
+Only on a pin that is drawn: a mark whose content is gone is hidden, and
+its pin stayed where it last was, invisible, taking presses (and over
+Markdown scrolling back to where the block had been). `pinned(at:)` asks
+only the marks that are shown (found in review, shown in
+`MarkupOverlayTests`, 2026-11-27).
 
 A pin for a mark below the view is kept above the note bar, which floats
 over the foot of the preview: under the bar it pointed at nothing anyone

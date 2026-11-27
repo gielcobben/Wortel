@@ -395,8 +395,15 @@ final class MarkupOverlayView: NSView {
 
     /// The mark whose pin is under a point: one that is out of view, with
     /// its badge left at the edge pointing at it.
+    ///
+    /// Only a pin that is drawn. A mark whose content is gone is hidden
+    /// with its pin where it last was, and that pin took the press: a
+    /// drawing could not begin there, and over Markdown the press scrolled
+    /// back to where the block had been (found in review, 2026-11-27).
     func pinned(at point: CGPoint) -> Int? {
-        markLayers.first { $0.value.pin?.insetBy(dx: -2, dy: -2).contains(point) == true }?.key
+        markLayers.first { _, layer in
+            !layer.isHidden && layer.pin?.insetBy(dx: -2, dy: -2).contains(point) == true
+        }?.key
     }
 
     /// Bring a mark into view: its chip was clicked, or its pin.

@@ -195,6 +195,34 @@ final class MarkupOverlayTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(page.placement(of: 1)).box(of: mark.shape), landed)
     }
 
+    // MARK: - Pins
+
+    /// A pin is pressed only while it is drawn. A mark whose content went
+    /// is hidden, its pin with it, and a press where the pin was begins a
+    /// drawing like any other.
+    func testAPressWhereAHiddenMarksPinWasDrawsAMark() throws {
+        let overlay = mount()
+        session.tool = .box
+        drag(overlay, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 160))
+        XCTAssertEqual(session.marks.map(\.number), [1])
+
+        // Scrolled far below the mark: it leaves a pin at the top edge.
+        page.content.y -= 1000
+        overlay.place()
+        let layer = try XCTUnwrap(overlay.markLayers[1])
+        let pin = try XCTUnwrap(layer.pin, "a mark out of view leaves a pin")
+        let at = CGPoint(x: pin.midX, y: pin.midY)
+        XCTAssertEqual(overlay.pinned(at: at), 1)
+
+        // What it was on is gone: the mark is hidden, and so is its pin.
+        page.forget(1)
+        overlay.place()
+        XCTAssertTrue(layer.isHidden)
+        XCTAssertNil(overlay.pinned(at: at))
+        drag(overlay, from: at, to: CGPoint(x: at.x + 100, y: at.y + 60))
+        XCTAssertEqual(session.marks.map(\.number), [1, 2], "the hidden pin took the press")
+    }
+
     // MARK: - The note's undo
 
     /// A tab moving rows has a new layer before the old one is taken down,

@@ -1,11 +1,20 @@
 ---
 // One Block[] from site.ts as HTML. llms-full.txt renders the same arrays as
 // Markdown, which is why the shape stays this narrow. A sentence may carry
-// code, keys and bold (data/inline.ts).
+// code, keys and bold (data/inline.ts). A row only in the beta has a small
+// "Beta" after its first cell's words (data/site.ts, BETA). It holds on to
+// the last word, so a cell that wraps never starts a line with it alone.
 import type { Block } from '../data/site';
 import { inline } from '../data/inline';
+import Beta from './Beta.astro';
 interface Props { blocks: Block[] }
 const { blocks } = Astro.props;
+/** The words before the last one, and the last; all of it as the last when that would cut a mark in two. */
+const lastWord = (s: string): [string, string] => {
+  const i = s.lastIndexOf(' ');
+  const head = s.slice(0, i + 1);
+  return i < 0 || /[`*]/.test(s.slice(i)) ? ['', s] : [head, s.slice(i + 1)];
+};
 ---
 {blocks.map((b) =>
   'p' in b ? <p set:html={inline(b.p)} />
@@ -15,9 +24,13 @@ const { blocks } = Astro.props;
     <table class={b.table.mono === 'first' ? 'terms' : undefined}>
       <thead><tr><th set:html={inline(b.table.head[0])} /><th set:html={inline(b.table.head[1])} /></tr></thead>
       <tbody>
-        {b.table.rows.map(([a, c]) => (
+        {b.table.rows.map(([a, c, flag]) => (
           <tr>
-            {b.table.mono === 'first' ? <td class="mono">{a}</td> : <td set:html={inline(a)} />}
+            {!flag?.beta
+              ? (b.table.mono === 'first' ? <td class="mono">{a}</td> : <td set:html={inline(a)} />)
+              : b.table.mono === 'first'
+                ? <td class="mono">{lastWord(a)[0]}<span class="beta-hold">{lastWord(a)[1]}<Beta /></span></td>
+                : <td><Fragment set:html={inline(lastWord(a)[0])} /><span class="beta-hold"><Fragment set:html={inline(lastWord(a)[1])} /><Beta /></span></td>}
             {b.table.mono === 'last' ? <td class="mono">{c}</td> : <td set:html={inline(c)} />}
           </tr>
         ))}

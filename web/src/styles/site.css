@@ -157,6 +157,31 @@ kbd {
   font: 500 12px/1 var(--font-sans); color: var(--ink);
   background: var(--fog-0); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 6px;
 }
+/* "Beta": what only the beta has, while one is out (components/Beta.astro).
+   The flags are `beta: true` in data/site.ts and come off when the beta
+   becomes a regular release; this class stays for the next one. The
+   changelog's "Latest" pill in the quiet grey, since it is a note and not a
+   call to anything: under a section's heading as "Latest" is under its
+   version, and after the words in a table row (.beta-hold keeps it with the
+   last word), on the row's own line box so it never makes the row taller. */
+.beta {
+  display: inline-block; padding: 4px 8px; border-radius: 999px;
+  font: 500 12px/16px var(--font-sans); letter-spacing: 0; white-space: nowrap;
+  background: var(--btn-2); color: var(--ink-2);
+}
+.k > .beta { margin-top: 16px; }
+@media (max-width: 900px) { .k > .beta { margin-top: 8px; } }
+td > .beta-hold { white-space: nowrap; }
+.beta-hold > .beta { margin-left: 8px; vertical-align: top; }
+/* On a phone a column is too narrow to hold a word and the label together
+   (at 320 it pushed the shortcuts past the page), so the label takes the
+   line under the words, at the column's edge. */
+@media (max-width: 640px) {
+  td > .beta-hold { white-space: normal; }
+  .beta-hold > .beta { display: block; width: fit-content; margin: 8px 0 0; }
+  /* A stacked command has its meaning straight under it: keep the label off it. */
+  .prose table.terms td.mono .beta { margin-bottom: 8px; }
+}
 
 /* ---- buttons ------------------------------------------------------------ */
 .btn {

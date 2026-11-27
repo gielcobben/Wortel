@@ -103,6 +103,23 @@ export const LETTER = {
 } as const;
 export type LetterState = keyof typeof LETTER.states;
 
+// ---- the beta -------------------------------------------------------------
+// While a beta is out (2026.48.2, to a few testers, since 2026-11-27), what
+// only the beta has carries `beta: true` here: a homepage heading in HOME, a
+// section in SECTIONS or DOCS_SECTIONS, or a table row as its third item. The
+// pages draw a small "Beta" beside it (components/Beta.astro, `.beta` in
+// styles/site.css). Plain text (the Markdown, the llms files, the structured
+// data's feature list) says "(beta)" after it through betaNote(), and never
+// puts the word in a title. The splits and mark-up lines in data/schema.ts
+// and pages/llms.txt.ts read the flags on HOME.window and HOME.markup.
+// WHEN THE BETA BECOMES A REGULAR RELEASE THE FLAGS COME OFF: delete every
+// `beta: true` in this file, and that is all. The rest stays for the next beta.
+export const BETA = { label: 'Beta', text: '(beta)' } as const;
+/** What only the beta has. */
+export type Beta = { beta?: true };
+/** " (beta)" after what only the beta has, for plain text; nothing otherwise. */
+export const betaNote = (b?: Beta): string => (b?.beta ? ` ${BETA.text}` : '');
+
 // ---- the five-line summary in the hero's left column ----------------------
 // Short enough to sit in a 96px/1fr grid; these are the deck, not the article.
 export const FEATURES: [string, string][] = [
@@ -125,13 +142,14 @@ export type Block =
   | {
       table: {
         head: [string, string];
-        rows: [string, string][];
+        /** A row's third item marks it as only in the beta (BETA, above). */
+        rows: [string, string, Beta?][];
         /** Which column holds literal keys/values and is set in mono. */
         mono?: 'first' | 'last';
       };
     };
 
-export type Section = {
+export type Section = Beta & {
   id: string;
   title: string;
   lead?: string;
@@ -218,6 +236,7 @@ export const SECTIONS: Section[] = [
   {
     id: 'splits',
     title: 'Split it anywhere',
+    beta: true,
     lead: 'Everything beside the sidebar is made of splits, and every split has its own row of tabs.',
     blocks: [
       {
@@ -232,6 +251,7 @@ export const SECTIONS: Section[] = [
   {
     id: 'mark-up',
     title: 'Show it what you mean',
+    beta: true,
     lead: 'Point at what a preview shows, say something about it, and paste it to an agent.',
     blocks: [
       {
@@ -347,7 +367,7 @@ export const BENTO: { tiles: Tile[] } = {
 // chapter. The longer version of each section is SECTIONS above, which the
 // Markdown pages render.
 // ==========================================================================
-export type Head = {
+export type Head = Beta & {
   title: string;
   tone?: string;
   body?: string;
@@ -377,6 +397,7 @@ export const HOME = {
     tone: 'Every split has its own tabs',
     body: '`⌘D` splits where you are and `⇧⌘D` splits it down. Drag a tab to the edge of any split and it makes a new one there. Every split has its own row of tabs: a terminal, a browser, a file, your changes. `⇧⌘↩` gives one the whole window.',
     link: ['How splits and tabs work', '/docs#splits'],
+    beta: true,
   },
   // This entry, the section that reads it (components/home/Markup.astro) and
   // its line in pages/index.astro go together.
@@ -385,6 +406,7 @@ export const HOME = {
     tone: 'Point at it, say it, paste it',
     body: 'Mark Up (`⇧⌘M`) works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
     link: ['How mark-up works', '/docs#mark-up'],
+    beta: true,
   },
   glance: {
     title: 'Everything around the terminal',
@@ -438,8 +460,8 @@ export const DOCS_SECTIONS: Section[] = [
             ['wortel remind <when>', 'Brings the session back to you later'],
             ['wortel cd <dir>', 'Moves the session, and its agent, to another folder'],
             ['wortel close', 'Closes the session when the agent is done, and its worktree with it'],
-            ['wortel split', 'A new terminal in a split beside the session’s own. The keyboard stays where it is'],
-            ['wortel split down -- <command>', 'The same under it, running a command: a dev server, a log'],
+            ['wortel split', 'A new terminal in a split beside the session’s own. The keyboard stays where it is', { beta: true }],
+            ['wortel split down -- <command>', 'The same under it, running a command: a dev server, a log', { beta: true }],
             ['wortel list', 'The open sessions, in sidebar order'],
             ['wortel read <session>', 'Prints the text on a session’s screen'],
             ['wortel send <session> <text>', 'Types text into a session as a paste'],
@@ -487,29 +509,29 @@ export const DOCS_SECTIONS: Section[] = [
             ['Show or hide the sidebar', '⌘B'],
             ['Open Changes and Files beside the terminal, or close them', '⌥⌘B'],
             ['Go to the terminal below, making one if there is none, and back', '⌘J or ⌃`'],
-            ['Show Changes / History / Files', '⇧⌘C / ⇧⌘H / ⇧⌘F'],
+            ['Show Changes / History / Files', '⇧⌘C / ⇧⌘H / ⇧⌘F', { beta: true }],
             ['Show source control', '⌃⇧G'],
             ['Focus the list in Changes, History or Files', '⌥⌘L'],
-            ['New tab that asks what it should be', '⌥⌘T'],
+            ['New tab that asks what it should be', '⌥⌘T', { beta: true }],
             ['New terminal tab where you are', '⌘T'],
-            ['Split right, with a new terminal', '⌘D'],
-            ['Split down, with a new terminal', '⇧⌘D'],
+            ['Split right, with a new terminal', '⌘D', { beta: true }],
+            ['Split down, with a new terminal', '⇧⌘D', { beta: true }],
             ['New terminal tab under the main terminal', '⌃⇧`'],
-            ['New browser tab', '⇧⌘B'],
+            ['New browser tab', '⇧⌘B', { beta: true }],
             ['Reopen closed tab', '⇧⌘T'],
             ['Next / previous tab', '⇧⌘] / ⇧⌘[ or ⌃Tab ⌃⇧Tab'],
             ['Focus the next / previous split', '⌘] / ⌘['],
-            ['Focus the split to the left / right / above / below', '⌃⌥⌘ ← → ↑ ↓'],
-            ['Move the tab in front to the split on that side', '⌃⌘ ← → ↑ ↓'],
-            ['Zoom the split you are in, and show all of them again', '⇧⌘↩'],
-            ['Make the splits equal', '⌃⌘='],
+            ['Focus the split to the left / right / above / below', '⌃⌥⌘ ← → ↑ ↓', { beta: true }],
+            ['Move the tab in front to the split on that side', '⌃⌘ ← → ↑ ↓', { beta: true }],
+            ['Zoom the split you are in, and show all of them again', '⇧⌘↩', { beta: true }],
+            ['Make the splits equal', '⌃⌘=', { beta: true }],
             ['Browser: address field', '⌘L'],
             ['Browser: reload', '⌘R'],
             ['Browser: back / forward', '⌘[ / ⌘]'],
-            ['Browser: a page from a file, its source and back', '⌥⌘U'],
+            ['Browser: a page from a file, its source and back', '⌥⌘U', { beta: true }],
             ['Find in a file or a page, next / previous match', '⌘F, ⌘G / ⇧⌘G'],
-            ['Mark up the page or file in front, and stop', '⇧⌘M'],
-            ['Mark-up: copy the note, and stop', 'Return'],
+            ['Mark up the page or file in front, and stop', '⇧⌘M', { beta: true }],
+            ['Mark-up: copy the note, and stop', 'Return', { beta: true }],
             ['Jump to the previous / next prompt', '⌘↑ / ⌘↓'],
             ['Clear the terminal', '⌘K'],
             ['Increase / decrease / reset font size', '⌘+ / ⌘− / ⌘0'],
@@ -597,6 +619,7 @@ export const DOCS_SECTIONS: Section[] = [
   {
     id: 'splits',
     title: 'Splits and tabs',
+    beta: true,
     lead: 'Everything beside the sidebar is made of splits, and each split has a row of tabs of its own.',
     blocks: [
       {
@@ -635,6 +658,9 @@ export const DOCS_SECTIONS: Section[] = [
   {
     id: 'browser',
     title: 'The browser tab',
+    // The tab itself is in 2026.48.1, on ⇧⌘L. What this section says (⇧⌘B,
+    // find in a page, an .html file as a page, downloads) is the beta's.
+    beta: true,
     blocks: [
       {
         p: '`⇧⌘B` opens a browser tab in the split beside your work, for the site an agent is building. `⌘L`, `⌘R` and `⌘F` reach the browser in front from anywhere, the terminal included: change something, `⌘R`, look.',
@@ -651,6 +677,7 @@ export const DOCS_SECTIONS: Section[] = [
   {
     id: 'mark-up',
     title: 'Marking up a preview',
+    beta: true,
     lead: 'Point at what a preview shows and say something about it, for an agent to read.',
     blocks: [
       {

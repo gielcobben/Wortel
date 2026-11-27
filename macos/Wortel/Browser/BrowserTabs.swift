@@ -344,7 +344,8 @@ final class BrowserPage: NSObject {
 
     /// Watch the file this tab is on, and the local files it loaded, so a
     /// change on disk reloads it. Asked after each load: the list is the
-    /// page's as it is now. Any `file:` address is watched, a page or not.
+    /// page's as it is now. Any `file:` address is watched, a page or not,
+    /// if it is a file or a folder (`BrowserPageWatch.mayWatch`).
     private func followFile() {
         guard let file = location, file.isFileURL else { return watch.stop() }
         webView.evaluateJavaScript(Self.loadedAddresses, in: nil, in: .defaultClient) { [weak self] result in
@@ -392,8 +393,24 @@ final class BrowserPage: NSObject {
 
     func stop() { webView.stopLoading() }
 
+    /// A file goes to the default browser by name, never to its own app,
+    /// which for a `.command` is Terminal, running it (`BrowserOpenElsewhere`).
     func openInBrowser() {
-        if let location { NSWorkspace.shared.open(location) }
+        guard let location else { return }
+        let workspace = NSWorkspace.shared
+        let browser = URL(string: "https://example.com").flatMap { workspace.urlForApplication(toOpen: $0) }
+        switch BrowserOpenElsewhere.decide(location, browser: browser,
+                                           browserID: browser.flatMap { Bundle(url: $0)?.bundleIdentifier },
+                                           ownID: Bundle.main.bundleIdentifier) {
+        case .open(let url):
+            workspace.open(url)
+        case .openWith(let url, let app):
+            workspace.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        case .showInFinder(let url):
+            workspace.activateFileViewerSelecting([url])
+        case .nothing:
+            break
+        }
     }
 
     func focusAddress() { addressFocusRequest += 1 }

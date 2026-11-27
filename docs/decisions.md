@@ -2580,6 +2580,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+  **2026-11-27:** the header's Open in Your Browser had the same hole, on a
+  tab showing a file (a tab follows a page's link to `./run.command`). A
+  file now goes to the default browser named as the app to open it with,
+  and to the Finder when there is none or it is Wortel.
 - **2026-11-25. An `.html` file opens as the page it makes, in a browser
   tab**, from `wortel open` and a ⌘-clicked path, and loads again when the
   file changes on disk. A browser tab and not a Rendered mode of the file
@@ -2599,6 +2603,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Not done: a store of its own without the tab's sign-ins, scripts off, or
   read access cut to the file's folder (a page then loses a stylesheet one
   folder up). The spike for phase 3 looks at a separate store anyway.
+- **2026-11-27. What a local page names is watched wherever it is, if it is
+  a file or a folder.** A page naming a FIFO or a serial port froze the app,
+  and again at each launch: `open` on one never returns. The fix is the
+  path's type (a stat first, and `O_NONBLOCK`), not a limit to the page's
+  own folder, which was weighed and left out: a page loads `../style.css`,
+  and its reload on a change there would be lost.
 - **2026-11-25. A page's source shows in the same tab, behind a Page ·
   Source switch**, chosen by the owner over a file tab opened beside it.
   Nothing moves but the content: no second tab, the switch is under the
@@ -2622,6 +2632,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   shell: asking adds no safety when nothing is opened. A partial file from a
   stopped or failed download is removed, not moved to the Trash: Wortel made
   it seconds ago and it is half a file.
+  **2026-11-27:** that partial file is now `<name>.download` until the
+  download finishes, as Safari's is, and only a `.download` is ever removed,
+  the one that download was given. A name a server suggests loses a
+  `.download` ending, so it can't be another download's unfinished file.
+  A quit or a crash mid-download had left a truncated file under the real
+  name, and a failed download sharing a name with a running one deleted
+  the other's file. One left by a quit stays where it is, and its name says
+  what it is.
 - **2026-11-26. A `download` link in a frame from another site saves
   nothing.** A response from such a frame was already refused; a link with
   the `download` attribute was not, and a frame can click its own link from

@@ -21,6 +21,21 @@ import WebKit
 /// here: WebKit sets `com.apple.quarantine` on the file itself, and it has
 /// already made the server's file name a single path component. A stopped
 /// download leaves its partial file behind, so that is removed here.
+///
+/// A download is written as `<name>.download` and renamed to its name when
+/// it has finished, as Safari's are, so a quit, an update's restart or a
+/// crash mid-download leaves a file that says it is not whole, never a
+/// truncated one under the real name. Measured off screen on 2026-11-27:
+/// WebKit has set the quarantine by `downloadDidFinish`, and the rename keeps
+/// it. The rename never replaces a file (`RENAME_EXCL`); a name taken in the
+/// meantime is numbered.
+///
+/// A name is taken while a running download holds it, not only once it is
+/// on disk: WebKit creates the file a moment after it is given the name,
+/// and refuses a destination that exists (measured the same day: it fails
+/// and leaves the file alone). Until 2026-11-27 two downloads of one name
+/// were both given it, the second failed, and its cleanup deleted the
+/// first's file while that row said Done.
 @Observable
 @MainActor
 final class BrowserDownloads: NSObject {
@@ -38,7 +53,12 @@ final class BrowserDownloads: NSObject {
         let id: UUID
         /// The file's name as saved, which may be numbered.
         var name: String
+        /// Where its bytes are: `<name>.download` while it runs, the file
+        /// itself once it is done.
         var file: URL?
+        /// The `.download` WebKit was given, while it runs: the one address
+        /// this download's cleanup may remove, never one found by its name.
+        var partial: URL?
         var state: State
         var received: Int64 = 0
         /// nil when the server didn't say.
@@ -105,10 +125,11 @@ final class BrowserDownloads: NSObject {
     func stop(_ id: UUID) {
         guard let download = running[id], let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].state = .stopped
-        let file = items[index].file
+        let partial = items[index].partial
+        items[index].partial = nil
         finished(download)
         download.cancel { _ in
-            MainActor.assumeIsolated { Self.removePartial(file) }
+            MainActor.assumeIsolated { BrowserDownloadName.removePartial(partial) }
         }
     }
 
@@ -162,12 +183,12 @@ final class BrowserDownloads: NSObject {
         }
     }
 
-    /// What a download that didn't finish wrote. Removed rather than moved to
-    /// the Trash: it is a few seconds old, Wortel made it, and half a zip in
-    /// the Trash is nothing anyone would put back.
-    private static func removePartial(_ file: URL?) {
-        guard let file else { return }
-        try? FileManager.default.removeItem(at: file)
+    /// The names running downloads hold, each one's and its `.download`'s,
+    /// but `except`'s own.
+    private func held(except id: UUID? = nil) -> Set<String> {
+        Set(items.filter { $0.state == .running && $0.id != id }.flatMap { item in
+            [item.name] + (item.partial.map { [$0.lastPathComponent] } ?? [])
+        })
     }
 
     /// The Dock's Downloads stack bounces for a file it is told about, as it
@@ -209,12 +230,10 @@ extension BrowserDownloads: WKDownloadDelegate {
                               state: .failed("The Downloads folder can't be written to.")), at: 0)
             return completionHandler(nil)
         }
-        let name = BrowserDownloadName.free(wanted) {
-            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
-        }
-        let file = folder.appendingPathComponent(name)
+        let name = BrowserDownloadName.free(wanted, in: folder, held: held())
+        let file = folder.appendingPathComponent(BrowserDownloadName.partial(name))
         let expected = response.expectedContentLength
-        let item = Item(id: UUID(), name: name, file: file, state: .running,
+        let item = Item(id: UUID(), name: name, file: file, partial: file, state: .running,
                         total: expected > 0 ? expected : nil)
         items.insert(item, at: 0)
         running[item.id] = download
@@ -229,6 +248,14 @@ extension BrowserDownloads: WKDownloadDelegate {
 
     func downloadDidFinish(_ download: WKDownload) {
         guard let index = item(of: download) else { return finished(download) }
+        // Whole now: under its own name. Should the rename fail, the
+        // `.download` is kept, with every byte, and Show in Finder goes to it.
+        if let partial = items[index].partial,
+           let file = BrowserDownloadName.finish(partial, as: items[index].name, held: held(except: items[index].id)) {
+            items[index].file = file
+            items[index].name = file.lastPathComponent
+        }
+        items[index].partial = nil
         if let file = items[index].file {
             if let size = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int64 {
                 items[index].received = size
@@ -251,7 +278,8 @@ extension BrowserDownloads: WKDownloadDelegate {
         }
         guard items[index].state == .running else { return }
         items[index].state = .failed(error.localizedDescription)
-        Self.removePartial(items[index].file)
+        BrowserDownloadName.removePartial(items[index].partial)
+        items[index].partial = nil
         items[index].file = nil
     }
 }

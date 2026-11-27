@@ -105,6 +105,17 @@ file in the folder did not, a change while the tab was behind another waited
 until it was shown, and the tab was restored and loaded after a relaunch.
 Not checked there: ⌥⌘U and the pill in a live window.
 
+What is watched (`BrowserPageWatch`) is the page's file and up to 32 of the
+local paths its markup names, each with its folder, and only what is a file
+or a folder or isn't there yet. A page can name a FIFO or a serial port
+(`<link rel=canonical href=/dev/tty.Bluetooth-Incoming-Port>`), and `open`
+on one never returns: until 2026-11-27 that froze the app, and again at
+every launch, since the tab's address is saved. `DirectoryWatcher` now
+stats first and opens with `O_NONBLOCK`. A folder deleted and made again
+(`rm -rf dist`, a rebuild) is waited for on the nearest folder above it
+that exists, and watched again when it is back; a reload makes again any
+watch that died.
+
 **Mark-up** (⇧⌘M, the last button in the header) is in `mark-up.md`: its
 layer lies over the web view inside `WebViewContainer`, it turns the swipe
 back off and holds the reload-on-change while it is on, and any navigation
@@ -150,10 +161,29 @@ second and a redraw of whichever button is on screen.
 Measured off screen 2026-11-25 (macOS 27.0): WebKit sets
 `com.apple.quarantine` on the saved file itself, and hands over a file name
 that is already one path component. A stopped download leaves its partial
-file, so `BrowserDownloads.stop` removes it. A Debug build saves to
-`WORTEL_DOWNLOADS_DIR` when that is set, for a test copy
-(`BrowserDownloadsFolder`, read in `main.swift` before the launch scrub
-removes every `WORTEL_` variable).
+file, so `BrowserDownloads.stop` removes it.
+
+A download is written as `report.zip.download` and renamed to `report.zip`
+in `downloadDidFinish`, so a quit, an update's restart or a crash leaves a
+file whose name says it is not whole; until 2026-11-27 it left a truncated
+`report.zip`. Measured off screen that day: the quarantine is on the file
+by `downloadDidFinish` and the rename keeps it. The rename is `renamex_np`
+with `RENAME_EXCL`, so it never replaces a file, and is numbered past a name
+taken meanwhile. A name counts as taken while a running download holds it,
+not only once it is on disk: WebKit makes the file a moment after it is
+given the name (not there 50 ms later) and fails when the destination
+exists, leaving that file alone. Two downloads of one name were both given
+it, the second failed, and its cleanup deleted the first's file. A held
+name is the download's and its `.download`'s, compared ignoring case as
+the disk does. A download's cleanup removes only the exact `.download`
+address it was given (`Item.partial`, `BrowserDownloadName.removePartial`),
+and a server's suggested name loses a `.download` ending
+(`BrowserDownloadName.cleaned`), so no download's own name can be another
+one's unfinished file.
+
+A Debug build saves to `WORTEL_DOWNLOADS_DIR` when that is set, for a test
+copy (`BrowserDownloadsFolder`, read in `main.swift` before the launch
+scrub removes every `WORTEL_` variable).
 
 **Where a thing opens when nothing says where** (`WorkspaceTabs.home(for:)`):
 a file in the main row, and everything else you look at beside your work in

@@ -278,8 +278,19 @@ final class SidebarBar: ChromeBarView {
 /// step with the sidebar.
 @MainActor
 final class WindowControls: NSView {
-    let toggle = HoverFillButton.glyph("sidebar.left", "Hide Sidebar (⌘B)")
+    /// Carries one still dot while the sidebar is hidden and a session in
+    /// this window is waiting (`waiting`), as a folded header does for its
+    /// rows. Still, like the Running badge beside it; a click only shows the
+    /// sidebar, and ⌘⌥] is what goes to the session.
+    let toggle = SidebarToggle()
     let history = HistoryButtons()
+
+    /// The loudest attention among this window's sessions
+    /// (`SessionManager.attentionBehindSidebar`).
+    var waiting: AttentionKind? {
+        didSet { if waiting != oldValue { updateToggle() } }
+    }
+    private var sidebarHidden = false
     private var historyLeading: NSLayoutConstraint!
 
     // The trailing end: what the session is running, and the session's "…"
@@ -360,12 +371,38 @@ final class WindowControls: NSView {
         let width = history.fittingSize.width
         let x = max(Self.restingX, edge - 8 - width)
         if abs(historyLeading.constant - x) > 0.01 { historyLeading.constant = x }
-        let label = collapsed ? "Show Sidebar (⌘B)" : "Hide Sidebar (⌘B)"
+        if sidebarHidden != collapsed {
+            sidebarHidden = collapsed
+            // `place` runs inside a layout pass, and a dot swaps the
+            // toggle's glyph and lays it out again: after the pass, not in it.
+            DispatchQueue.main.async { [weak self] in self?.updateToggle() }
+        }
+        return x + width
+    }
+
+    /// The toggle's dot and words, from whether the sidebar is hidden and
+    /// what is waiting. Only on a change: `place` runs every frame of a
+    /// collapse.
+    private func updateToggle() {
+        let dot = sidebarHidden ? waiting : nil
+        toggle.dotColor = dot.map(SessionStatusIndicator.attentionColor)
+        let label = !sidebarHidden ? "Hide Sidebar (⌘B)"
+            : dot.map { "Show Sidebar (⌘B), \(Self.says($0))" } ?? "Show Sidebar (⌘B)"
         if toggle.toolTip != label {
             toggle.toolTip = label
             toggle.setAccessibilityLabel(label)
         }
-        return x + width
+    }
+
+    /// What the toggle's words add for its dot: the kind, not one word for
+    /// all four, since a blue dot is news and not something waiting.
+    private static func says(_ kind: AttentionKind) -> String {
+        switch kind {
+        case .needsInput: return "a session needs you"
+        case .failed: return "a command failed"
+        case .turnDone: return "an agent is done"
+        case .finished: return "a command finished"
+        }
     }
 
     /// Only the buttons take clicks: the rest is the rows' under it, which
@@ -416,7 +453,8 @@ final class HistoryButtons: NSStackView {
 /// A dot on a glyph's top-right corner, as SF Symbols draw their own badges
 /// (`app.badge`): half out of the corner, with a ring of the glyph cut away
 /// around it so it reads as a badge and not as a blot on the lines. Used where
-/// no `.badge` variant of the symbol exists: the running list, the update icon.
+/// no `.badge` variant of the symbol exists: the running list, the update icon,
+/// the sidebar's toggle.
 enum GlyphBadge {
     static let dotSize: CGFloat = 6
     static let gap: CGFloat = 1.5
@@ -527,6 +565,26 @@ class BadgedGlyphButton: HoverFillButton {
     }
 }
 
+// MARK: - The sidebar's toggle
+
+/// The sidebar's toggle, with room for `WindowControls`' dot: there is no
+/// `sidebar.left.badge` to use.
+@MainActor
+final class SidebarToggle: BadgedGlyphButton {
+    convenience init() {
+        self.init(frame: .zero)
+        setGlyph(NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Sidebar")?
+            .withSymbolConfiguration(Chrome.glyph))
+        toolTip = "Hide Sidebar (⌘B)"
+        setAccessibilityLabel(toolTip)
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: Chrome.controlSize),
+            heightAnchor.constraint(equalToConstant: Chrome.controlSize),
+        ])
+    }
+}
+
 // MARK: - Running jobs
 
 /// What the session on screen is still running: a plain glyph, like the
@@ -599,6 +657,17 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         observeColumn()
         observeProcesses()
         observeHistory()
+        observeWaiting()
+    }
+
+    // MARK: The sidebar's toggle
+
+    private func observeWaiting() {
+        withObservationTracking {
+            windowControls.waiting = manager.attentionBehindSidebar(of: home)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeWaiting() }
+        }
     }
 
     // MARK: Back and Forward

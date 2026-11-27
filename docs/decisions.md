@@ -1794,6 +1794,20 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Pinned only, no longer by its folder too, and a header speaks only for its
   own window's sessions: folding is shared by every window, and the dot of a
   folder folded in two windows showed what the other window was hiding.
+- **2026-11-27. A hidden sidebar's toggle shows the loudest dot.**
+  With the sidebar hidden nothing in the window said a session was waiting:
+  the Dock badge and the menu bar item count the whole app. Now the toggle
+  carries one dot on its corner (the `GlyphBadge` the Running button has),
+  in the colour of the loudest attention among the window's sessions,
+  as a folded header does for its rows (`attentionBehindSidebar`), and its
+  tooltip names the kind. The selected session counts too: it was left out
+  as "on screen" at first, but its dot is cleared the moment you are in
+  front of it, so one it still has (a window behind another, or raised
+  while you were away) showed in no titlebar at all. No working dots: an
+  agent at work would light it nearly all the time. Still, not breathing, like the
+  badge beside it, and with no count, which the Dock has. A click only shows
+  the sidebar, where the row has its dot; ⌘⌥] is what goes to the session,
+  so the button does one thing whether it has a dot or not.
 - **2026-11-17. One sidebar toggle and one pair of arrows, over all the rows.**
   There were three sets (the sidebar's row, and the main area's or the
   column's once it was collapsed), swapped with `isHidden`: the arrows were

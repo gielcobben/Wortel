@@ -654,6 +654,8 @@ ictool="/Applications/Icon Composer.app/Contents/Executables/ictool"
 "$ictool" ../macos/Wortel/AppIcon.icon --export-image --output-file /tmp/icon.png --platform macOS --rendition Default --width 512 --height 512 --scale 2
 for n in 512 256 180 128 96 32; do sips -z $n $n /tmp/icon.png --out public/icon-$n.png; done
 mv public/icon-180.png public/apple-touch-icon.png; mv public/icon-96.png public/favicon-96.png; mv public/icon-32.png public/favicon-32.png
+# /favicon.ico: no page links it, but Bing and many tools ask for it by name
+magick public/icon-256.png -define icon:auto-resize=48,32,16 public/favicon.ico
 ```
 
 `public/og.png` (1200x630) is composed from the grid background, the cropped app

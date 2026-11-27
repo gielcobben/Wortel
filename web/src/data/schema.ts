@@ -74,6 +74,9 @@ export function homeSchema(LATEST: Release | null) {
     '@id': abs('/#website'),
     url: SITE.url,
     name: SITE.name,
+    // Google's site name falls back on these. "Wortel" alone is a common
+    // Dutch word, so give it the names a person would type to find this one.
+    alternateName: ['Wortel Terminal', 'wortel.sh'],
     description: SITE.description,
     inLanguage: 'en',
     publisher: { '@id': person['@id'] },

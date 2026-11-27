@@ -1913,7 +1913,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// is showing. It is apart from the looking, which the menu does every
     /// time it opens and which must change nothing.
     private func markupTarget() -> (session: MarkupSession, prepare: () -> Bool)? {
-        for tab in [focusedRegion(), .side, .main, .bottom].compactMap({ gitPanel.activeTab(in: $0) }) {
+        for tab in frontRegions.compactMap({ gitPanel.activeTab(in: $0) }) {
             if let path = tab.filePath {
                 let document = previewTabs.document(for: path).document
                 if let session = previewTabs.markup(for: path), session.isOn || document.markupPlace != nil {

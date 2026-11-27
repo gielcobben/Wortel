@@ -171,6 +171,11 @@ final class MarkupSessionTests: XCTestCase {
         // Cleared, there is nothing to keep.
         session.text.setAttributedString(NSAttributedString())
         XCTAssertFalse(session.hasUncopied)
+
+        // Words with no mark can't be copied (Copy needs a mark), so they
+        // hold no reload: "it reloads when you copy" would never come true.
+        session.text.append(NSAttributedString(string: "just words"))
+        XCTAssertFalse(session.hasUncopied)
     }
 
     func testWhatIsTypedWhileACopyIsMadeIsNotCountedAsCopied() {

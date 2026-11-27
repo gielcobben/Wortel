@@ -153,6 +153,59 @@ final class BrowserAddressTests: XCTestCase {
         XCTAssertTrue(elsewhere("file:///tmp/site/other.html", from: file))
     }
 
+    /// A load the page makes by itself waits while the note holds it: a dev
+    /// server's reload after an agent's edit dropped the note (2026-11-27).
+    /// What the person does, and what can't be sent again, goes through.
+    func testAPageLoadsByItselfOnlyOnceTheNoteLetsGo() {
+        let page = URL(string: "http://localhost:5173/app?x=1")!
+        func decide(_ to: String?, _ kind: BrowserAddress.LoadKind, holding: Bool = true, markingUp: Bool = true,
+                    acted: Bool = false, mainFrame: Bool = true, method: String? = "GET",
+                    current: URL? = page) -> BrowserAddress.PageLoad {
+            BrowserAddress.pageLoad(holding: holding, markingUp: markingUp, personActed: acted,
+                                    toMainFrame: mainFrame, kind: kind, method: method,
+                                    url: to.flatMap(URL.init(string:)), current: current)
+        }
+        let same = page.absoluteString
+        // `location.reload()`, `location.href = location.href`, a meta refresh.
+        XCTAssertEqual(decide(same, .reload), .reloadLater)
+        XCTAssertEqual(decide(same, .other), .reloadLater)
+        XCTAssertEqual(decide(same + "#top", .reload), .reloadLater, "a reload with a fragment still loads")
+        XCTAssertEqual(decide(same, .reload, markingUp: false), .reloadLater, "a note kept after Esc holds it too")
+        XCTAssertEqual(decide(same, .reload, method: nil), .reloadLater)
+        // Somewhere else the page sends itself: the edited page, a sign-in.
+        XCTAssertEqual(decide("http://localhost:5173/login", .other),
+                       .loadLater(URL(string: "http://localhost:5173/login")!))
+        XCTAssertEqual(decide("http://localhost:5173/app?x=2", .other),
+                       .loadLater(URL(string: "http://localhost:5173/app?x=2")!))
+        // A script's click while marking up: the person's clicks are the layer's.
+        XCTAssertEqual(decide("http://localhost:5173/next", .link),
+                       .loadLater(URL(string: "http://localhost:5173/next")!))
+        XCTAssertEqual(decide(same, .form), .reloadLater)
+        // A script's `history.back()`: Wortel's Back lets go first, the swipe is off.
+        XCTAssertEqual(decide("http://localhost:5173/", .backForward),
+                       .loadLater(URL(string: "http://localhost:5173/")!))
+        // A button's script, the person's click or not, while marking up.
+        XCTAssertEqual(decide("http://localhost:5173/next", .other, acted: true),
+                       .loadLater(URL(string: "http://localhost:5173/next")!))
+        // After Esc, a dev server's reload with nobody at the page still waits.
+        XCTAssertEqual(decide("http://localhost:5173/next", .other, markingUp: false),
+                       .loadLater(URL(string: "http://localhost:5173/next")!))
+        // Let through.
+        XCTAssertEqual(decide(same, .reload, holding: false), .allow, "nothing to keep")
+        XCTAssertEqual(decide(same, .reload, mainFrame: false), .allow, "a frame inside the page")
+        XCTAssertEqual(decide("http://localhost:5173/", .backForward, markingUp: false), .allow)
+        XCTAssertEqual(decide("http://localhost:5173/next", .link, markingUp: false), .allow,
+                       "the person's click after Esc")
+        XCTAssertEqual(decide(same, .form, markingUp: false), .allow)
+        XCTAssertEqual(decide("http://localhost:5173/next", .other, markingUp: false, acted: true), .allow,
+                       "a button's script after the person's click, after Esc")
+        XCTAssertEqual(decide(same, .reload, markingUp: false, acted: true), .allow)
+        XCTAssertEqual(decide(same, .other, method: "POST"), .allow, "sent twice if held")
+        XCTAssertEqual(decide(same + "#install", .other), .allow, "a new fragment scrolls, no load")
+        XCTAssertEqual(decide(same, .reload, current: nil), .allow, "nowhere yet")
+        XCTAssertEqual(decide(nil, .reload), .allow)
+    }
+
     /// Only files on this Mac are watched beside the page, each once.
     func testTheFilesAPageLoadedAreItsLocalOnes() {
         XCTAssertEqual(BrowserAddress.localFiles(in: [

@@ -102,6 +102,59 @@ enum BrowserAddress {
         return withoutFragment(new) != withoutFragment(old)
     }
 
+    /// What a navigation is, as WebKit says (`WKNavigationType`), without
+    /// WebKit: the rule below is tested on its own.
+    enum LoadKind {
+        case link, form, backForward, reload, other
+    }
+
+    /// What becomes of a load the page is about to make.
+    enum PageLoad: Equatable {
+        case allow
+        /// Not now: the page as it is, loaded again once the note lets go.
+        case reloadLater
+        /// Not now: where the page wanted to go, once the note lets go.
+        case loadLater(URL)
+    }
+
+    /// Whether a load waits for the note (`BrowserPage.holdsReload`: mark-up
+    /// is on, or its note was never copied). A dev server reloads the page
+    /// from a script in it when an agent edits a file (Vite, webpack, Next,
+    /// Parcel, live-server, Browsersync: `location.reload()`), and some go
+    /// to the page that was edited (`location.href`). A load ends mark-up and
+    /// drops the note (owner's report, 2026-11-27), so while it holds, a load
+    /// the page makes by itself waits, whatever made it and wherever it goes.
+    ///
+    /// What the person does is never held: Wortel's own loads (⌘R, Back,
+    /// the address field) let go of the note before they start. After Esc
+    /// the page is theirs again: a link, a form or a step through history
+    /// is theirs, and so is any load that follows their own click or key on
+    /// the page (`personActed`: a button whose script sets `location`,
+    /// which WebKit reports like a dev server's reload). While mark-up is
+    /// on the layer takes every click and the note every key, and the
+    /// swipe back is off, so a link, a form or a step back then is a
+    /// script's. A frame inside the page reloads as it likes. A POST goes
+    /// through: it can't be sent again later without sending it twice. Nor
+    /// a change of the fragment alone, which scrolls and is no load. A
+    /// server's redirect is asked about again with the kind of the load it
+    /// redirects (measured 2026-11-27: a link stays a link), so it goes
+    /// where that load went.
+    static func pageLoad(holding: Bool, markingUp: Bool, personActed: Bool = false, toMainFrame: Bool,
+                         kind: LoadKind, method: String?, url: URL?, current: URL?) -> PageLoad {
+        guard holding, toMainFrame, let url, let current else { return .allow }
+        if !markingUp {
+            if personActed { return .allow }
+            switch kind {
+            case .link, .form, .backForward: return .allow
+            case .reload, .other: break
+            }
+        }
+        if let method, method.uppercased() != "GET" { return .allow }
+        let same = withoutFragment(url) == withoutFragment(current)
+        if same, kind != .reload, url.fragment != nil { return .allow }
+        return same ? .reloadLater : .loadLater(url)
+    }
+
     private static func withoutFragment(_ url: URL) -> String {
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
         parts.fragment = nil

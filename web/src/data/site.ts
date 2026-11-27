@@ -487,13 +487,22 @@ export type FeaturePage = Beta & {
   more: { name: string; blurb: string; href: string }[];
 };
 
-/** What Return puts on the clipboard for the note the page's first film
- *  writes: the sentence with each mark as its name and its picture's path, an
- *  empty line, the page, the picture of the whole and the details file
- *  (macos/Wortel/Markup/MarkupNote.swift, copied). The folders are the ones a
- *  first note of a day gets, with the cache folder cut short. */
+/** The note the page's two tiles show, first in its bar and then as Return
+ *  puts it on the clipboard: what is typed, around the two marks the canvas
+ *  draws on the page (a link picked with a click, a box drawn round the
+ *  paragraph). It is the film's note with a second sentence, so the bar
+ *  stands as tall as the text it becomes. */
+export const MARKUP_NOTE = {
+  words: ['Make ', ' the accent colour, and ', ' needs more room above it. On a phone it runs to four lines and touches the button.'],
+  marks: ['link “Download for macOS”', 'box'],
+} as const;
+/** That note as it is copied: the sentence with each mark as its name and
+ *  its picture's path, an empty line, the page, the picture of the whole and
+ *  the details file (macos/Wortel/Markup/MarkupNote.swift, copied). The
+ *  folders are the ones a first note of a day gets, with the cache folder cut
+ *  short. */
 const MARKUP_COPIED = [
-  'Make link “Download for macOS” (~/Library/Caches/…/Markup/2026-11-27/1/1.png) the accent colour, and box (~/Library/Caches/…/Markup/2026-11-27/1/2.png) needs more room above it.',
+  MARKUP_NOTE.words.map((w, i) => (i ? `${MARKUP_NOTE.marks[i - 1]} (~/Library/Caches/…/Markup/2026-11-27/1/${i}.png)` : '') + w).join(''),
   '',
   'Page: http://localhost:4321/',
   'All marks: ~/Library/Caches/…/Markup/2026-11-27/1/whole.png',

@@ -5,13 +5,16 @@
 //   marks  how a mark is made: an element of a page picked with a click, and
 //          the rendered plan drawn on with a box, an arrow and a highlighter;
 //   note   what becomes of it: the note in its bar, and the same note as
-//          Return puts it on the clipboard (MARKUP_PAGE in data/site.ts).
+//          Return puts it on the clipboard (MARKUP_NOTE in data/site.ts).
+//          The two are one height: the bar is as tall as its sentence makes
+//          it, the text a size smaller, and whichever comes out shorter
+//          takes up the difference.
 // The pieces are lifted out of the canvas's two mark-up frames, which the
 // "marks" set renders once into a template for both.
 import AppContent from '../AppContent.astro';
 import MarkUpPage from '../../app/gen/MarkUpPage.astro';
 import MarkUp from '../../app/gen/MarkUp.astro';
-import { MARKUP_PAGE } from '../../data/site';
+import { MARKUP_PAGE, MARKUP_NOTE } from '../../data/site';
 interface Props { set: 'marks' | 'note' }
 const { set } = Astro.props;
 const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
@@ -33,7 +36,7 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
     <>
       <li class="tile bar">
         <p class="cap">The note, in its bar</p>
-        <div class="wapp hold" data-part="Note bar" inert aria-hidden="true" data-nosnippet></div>
+        <div class="wapp hold" data-part="Note bar" data-words={JSON.stringify(MARKUP_NOTE.words)} inert aria-hidden="true" data-nosnippet></div>
       </li>
       <li class="tile text">
         <p class="cap">{copied?.label}</p>
@@ -56,6 +59,11 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
       // The page is this site's own retake of the canvas's picture, as the
       // films have it (scripts/app.ts, retaken).
       retaken(part.querySelectorAll<HTMLImageElement>('img[data-name^="Web page"]'));
+      // The note in the bar is the page's own (MARKUP_NOTE in data/site.ts),
+      // typed around the canvas's two chips: its words go into the layers
+      // the canvas drew its sentence in, and the last layer is not needed.
+      const words: string[] = JSON.parse(holder.dataset.words || '[]');
+      if (words.length) part.querySelectorAll<HTMLElement>('[data-name^="Words "]').forEach((w, i) => { w.textContent = words[i] ?? ''; w.hidden = !words[i]; });
       holder.append(part);
     });
   }
@@ -98,24 +106,33 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
   .draw .part > :global([data-name="Markdown"]) { flex: 1 1 auto; min-height: 0; justify-content: flex-start; overflow: hidden; }
   .draw .part > :global([data-name="Markdown"] > :first-child) { flex: none; margin-top: -424px; }
 
-  /* The note bar by itself, as wide as the tile lets it be, where the app
-     pins it to the foot of a preview. */
-  .hold { position: relative; flex: 1; align-self: stretch; display: flex; align-items: center; text-align: left; }
-  .hold > :global([data-name="Note bar"]) { position: relative; inset: auto; flex: 1; margin: 0 8px 16px; }
+  /* The note bar by itself, where the app pins it to the foot of a preview,
+     beside the same note as text. The two boxes are one height. The bar's
+     tile is the narrower (4 to 7: measured from 920 wide to the full page,
+     the two then come out within 20 points of each other, 2 at best), so
+     its sentence runs to
+     about as many lines as the text beside it, and the row is as tall as the taller of the two; the
+     other takes up what is left, the bar in the room under its sentence, as
+     a text view does, and the text under its last line. */
+  .tiles.note { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); grid-auto-rows: auto; }
+  .hold { position: relative; flex: 1; align-self: stretch; display: flex; text-align: left; }
+  .hold > :global([data-name="Note bar"]) { position: relative; inset: auto; flex: 1; margin: 0; max-width: none; }
   .hold :global([data-name="Placeholder"]) { display: none; }
-  /* The same note as text: what is pasted, on the lines it is pasted on. The
-     two tiles are as tall as that text makes them. */
-  .tiles.note { grid-auto-rows: minmax(288px, auto); }
+  /* The sentence wraps as a text view's does, around its chips. */
+  .hold :global([data-name="Note"]) { display: block; flex: 1 0 auto; }
+  .hold :global([data-name="Note"] > [data-name^="Chip"]) { display: inline-flex; vertical-align: -5px; }
+  .hold :global([data-name="Note"] > [data-name="Caret"]) { display: inline-block; vertical-align: -4px; }
+  .hold :global([data-name="Note"] > span) { white-space: pre-wrap; }
+  /* The same note as text: what is pasted, on the lines it is pasted on. */
   .text { align-items: stretch; }
   .copied {
-    margin: 0; padding: 16px; border-radius: 12px; text-align: left;
+    margin: 0; flex: 1; padding: 16px; border-radius: 12px; text-align: left;
     background: var(--fog-1); border: 1px solid var(--line); color: var(--ink);
-    font: 500 13px/24px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
+    font: 500 12px/16px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
   }
 
   @media (max-width: 900px) {
     .tiles { grid-template-columns: minmax(0, 1fr); border-radius: 28px; }
-    .tiles.note { grid-auto-rows: auto; }
-    .tiles.note .bar { min-height: 216px; }
+    .tiles.note { grid-template-columns: minmax(0, 1fr); }
   }
 </style>

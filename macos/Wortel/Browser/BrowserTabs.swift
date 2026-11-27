@@ -344,7 +344,8 @@ final class BrowserPage: NSObject {
 
     /// Watch the file this tab is on, and the local files it loaded, so a
     /// change on disk reloads it. Asked after each load: the list is the
-    /// page's as it is now. Any `file:` address is watched, a page or not.
+    /// page's as it is now. Any `file:` address is watched, a page or not,
+    /// if it is a file or a folder (`BrowserPageWatch.mayWatch`).
     private func followFile() {
         guard let file = location, file.isFileURL else { return watch.stop() }
         webView.evaluateJavaScript(Self.loadedAddresses, in: nil, in: .defaultClient) { [weak self] result in

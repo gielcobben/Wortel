@@ -105,6 +105,17 @@ file in the folder did not, a change while the tab was behind another waited
 until it was shown, and the tab was restored and loaded after a relaunch.
 Not checked there: ⌥⌘U and the pill in a live window.
 
+What is watched (`BrowserPageWatch`) is the page's file and up to 32 of the
+local paths its markup names, each with its folder, and only what is a file
+or a folder or isn't there yet. A page can name a FIFO or a serial port
+(`<link rel=canonical href=/dev/tty.Bluetooth-Incoming-Port>`), and `open`
+on one never returns: until 2026-11-27 that froze the app, and again at
+every launch, since the tab's address is saved. `DirectoryWatcher` now
+stats first and opens with `O_NONBLOCK`. A folder deleted and made again
+(`rm -rf dist`, a rebuild) is waited for on the nearest folder above it
+that exists, and watched again when it is back; a reload makes again any
+watch that died.
+
 **Mark-up** (⇧⌘M, the last button in the header) is in `mark-up.md`: its
 layer lies over the web view inside `WebViewContainer`, it turns the swipe
 back off and holds the reload-on-change while it is on, and any navigation

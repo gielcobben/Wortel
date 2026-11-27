@@ -38,11 +38,22 @@ final class DirectoryWatcher {
     /// `onChange` receives `vanished: true` when the event was this directory
     /// being deleted or renamed rather than its contents moving — at which point
     /// this watcher is watching an inode nobody can reach and must be replaced.
+    ///
+    /// Only a directory or a regular file is watched. Anything else at the
+    /// path (a FIFO, a serial port like `/dev/tty.Bluetooth-Incoming-Port`)
+    /// gives nil: `open` on one of those waits for a writer or a carrier and,
+    /// measured 2026-11-27, never returned, on the main thread. A browser
+    /// tab watches whatever paths a local page names, so a page could freeze
+    /// the app by naming one. The stat says no to those; `O_NONBLOCK` covers
+    /// a path swapped for one between the stat and the open. It changes
+    /// nothing for a directory or a regular file, which is all any caller
+    /// watches.
     init?(path: String, onChange: @escaping (_ vanished: Bool) -> Void) {
+        guard Self.isWatchable(path) else { return nil }
         // O_EVTONLY: "I want events, not access" — it doesn't count as a use of
         // the file for unmount purposes, so a watched directory on an external
         // volume can't wedge its eject.
-        let fd = open(path, O_EVTONLY)
+        let fd = open(path, O_EVTONLY | O_NONBLOCK)
         guard fd >= 0 else { return nil }
         descriptor = fd
         source = DispatchSource.makeFileSystemObjectSource(
@@ -68,5 +79,14 @@ final class DirectoryWatcher {
 
     deinit {
         source.cancel()
+    }
+
+    /// A directory or a regular file, after symbolic links, as `open`
+    /// follows them. A `stat` never opens, so it can't wait on a device.
+    static func isWatchable(_ path: String) -> Bool {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return false }
+        let kind = info.st_mode & S_IFMT
+        return kind == S_IFDIR || kind == S_IFREG
     }
 }

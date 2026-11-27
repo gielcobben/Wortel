@@ -2599,6 +2599,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Not done: a store of its own without the tab's sign-ins, scripts off, or
   read access cut to the file's folder (a page then loses a stylesheet one
   folder up). The spike for phase 3 looks at a separate store anyway.
+- **2026-11-27. What a local page names is watched wherever it is, if it is
+  a file or a folder.** A page naming a FIFO or a serial port froze the app,
+  and again at each launch: `open` on one never returns. The fix is the
+  path's type (a stat first, and `O_NONBLOCK`), not a limit to the page's
+  own folder, which was weighed and left out: a page loads `../style.css`,
+  and its reload on a change there would be lost.
 - **2026-11-25. A page's source shows in the same tab, behind a Page ·
   Source switch**, chosen by the owner over a file tab opened beside it.
   Nothing moves but the content: no second tab, the switch is under the

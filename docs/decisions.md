@@ -2828,34 +2828,26 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   below is kept above the note bar. And a press on a pin brings its mark
   into view, as its chip's click does: a thing that points somewhere is
   pressed to go there.
-- **2026-11-26. The pen makes a rough shape a clean one on letting go.**
-  The owner used Preview's Sketch pen, which does this, and asked what
-  could be learned from it. Taken: one pen that does most things, so a
-  word is circled, a line is put under a row and an arrow is drawn with
-  no change of tool. Not taken: how sure it is. Preview replaces what it
-  recognises and offers the hand's line back in a palette after every
-  stroke, with no way to turn it off, and that palette is what people
-  complain of. Here a mark says "this", so a wrong guess changes what was
-  said. That holds for an open stroke, where a tick made a line is a
-  different mark, and the first version held a loop to it too: the owner
-  drew, almost none of his loops became an oval, and against real people's
-  strokes it took 61% of circles and 18% of leaning ones. A loop means
-  "this area" rough or clean, so a wrong oval costs nothing: a loop is
-  now read generously (94% of real circles, leaning or not) and an open
-  stroke strictly (8 of 9,227 real zigzags and squiggles became a shape).
-  Tuned against a program's strokes was the mistake; it is tuned against
-  people's now. Four shapes
-  (a line, an arrow, a box, an oval) and no star or speech bubble: a mark
-  points, it does not decorate. No palette: Option held keeps the hand's
-  line, and ⌘Z takes the mark back as it does any mark. ⌘Z giving the
-  hand's line back first was looked into and left out
-  (`macos/docs/architecture/mark-up.md`, "The tools": the note's undo
-  stack has no place for a step of its own beside a chip's insertion that
-  does not rest on timing). No oval kind: an oval is the pen's line
-  through the points of one, so nothing that draws, pictures, moves or
-  resizes a mark had to learn a shape. The other tools stay: a box drawn
-  with the box is exact where the pen's is a guess. Apple offers no API
-  for this (its forums say so), so the recogniser is our own geometry.
+- **2026-11-26. The pen does not make a rough shape a clean one. Tried and
+  taken out the same day.** Preview's Sketch pen turns a rough loop into a
+  clean oval on letting go, and the owner asked what could be learned
+  from it. Built: a recogniser of our own geometry (Apple has no API for
+  it), a line, an arrow, a box and an oval, kept as kinds there already
+  were. Tuned against strokes made by a program it took almost none of
+  the owner's loops; measured then against real people's single strokes
+  (Google's Quick, Draw! dataset) it took 61% of circles and 18% of
+  leaning ones, and retuned on those, 94% of circles, 87% of squares and
+  91% of lines, with 8 of 9,227 zigzags and squiggles wrongly made a
+  shape. The owner used that and wanted it gone: it does it sometimes and
+  not other times, and a tool that cannot be predicted is watched on
+  every stroke. That is the finding, and no threshold fixes it: 94% is
+  one loop in sixteen left rough for no reason a person can see. In
+  Preview the drawing is the product; here a mark points, and the agent
+  that reads it reads a rough loop as well as a clean one, so the clean
+  shape was looks only, at the price of 570 lines with 35 thresholds. The
+  box is in hand to begin with and is exact every time, and Shift makes a
+  line straight. The code is in the branch's history (`MarkSnap.swift`)
+  for anyone who finds a use where the shape is what is kept.
 - **2026-11-26. The mark-up adapters' protocol has no extension with
   defaults.** A default in an extension is what a call through
   `any MarkupSurface` runs whatever the adapter implements, which is how

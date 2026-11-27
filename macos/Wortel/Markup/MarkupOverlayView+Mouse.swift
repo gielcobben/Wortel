@@ -123,17 +123,7 @@ extension MarkupOverlayView {
         } else {
             let straight = event.modifierFlags.contains(.shift)
             let kept = pen == .pen || pen == .highlighter ? MarkStroke.thinned(points) : points
-            // The pen makes a rough box, arrow, line or oval a clean one
-            // on letting go, as the Sketch pen of Preview does. Only the
-            // pen: the other tools already say which shape is wanted, and
-            // Shift has made its line straight. Option keeps the hand's
-            // own line, which Preview has no way to ask for.
-            if pen == .pen, !straight, !event.modifierFlags.contains(.option),
-               let clean = MarkStroke.cleaned(kept) {
-                draw(clean.points, pen: clean.pen)
-            } else {
-                draw(MarkStroke.points(for: pen, drawn: kept, straight: straight), pen: pen)
-            }
+            draw(MarkStroke.points(for: pen, drawn: kept, straight: straight), pen: pen)
         }
     }
 

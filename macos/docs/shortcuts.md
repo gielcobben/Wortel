@@ -369,7 +369,6 @@ else, so the keyboard is never stuck in a page.
 | Drop the stroke being drawn, or stop and keep the note | Esc | |
 | Take back the last mark | ⌘Z | |
 | A straight line, a level highlight, an arrow in steps of 45° | hold ⇧ while drawing | every drawing app |
-| Keep the pen's line as drawn, not made a clean shape | hold ⌥ while letting go | |
 | Remove a mark | ⌫ on its chip | |
 
 ⇧⌘M reaches the page or file in front from anywhere, as ⌘F does: the area

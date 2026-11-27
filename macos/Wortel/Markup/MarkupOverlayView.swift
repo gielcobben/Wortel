@@ -304,7 +304,8 @@ final class MarkupOverlayView: NSView {
             guard let layer = markLayers[mark.number] else { continue }
             if let placement = surface.placement(of: mark.number) {
                 layer.isHidden = false
-                layer.place(live?.number == mark.number ? live ?? mark : mark, at: placement, above: noteBar.frame.minY)
+                layer.place(live?.number == mark.number ? live ?? mark : mark, at: placement, in: bounds,
+                            above: noteBar.frame.minY)
             } else {
                 // What it was on is gone. Its chip and its picture stay.
                 layer.isHidden = true

@@ -193,24 +193,40 @@ enum MarkBadge {
     }
 
     /// `corner` is where the badge belongs, `box` the mark, `clip` what the
-    /// mark may show in, all in one view's points. `floor` is where the
+    /// mark may show in, `view` what can be seen of the preview (the clip
+    /// when not given), all in one view's points. `floor` is where the
     /// note bar begins: a pin is kept above it, since the bar floats over
     /// the foot of the preview and a pin under it points at nothing anyone
     /// can see. A circle is not: it is on its mark, wherever that is.
-    static func spot(for corner: CGPoint, of box: CGRect, in clip: CGRect, above floor: CGFloat = .infinity) -> Spot {
+    ///
+    /// Where the clip is too small to hold the badge whole, the badge
+    /// stands in as much more of the view round the clip as it takes, and
+    /// the layer does not cut it off (`MarkLayer`). A mark in a box that
+    /// clips (a card on a page, the window drawn on wortel.sh) leaves with
+    /// its box, and what was left of the box at the top of the view was a
+    /// strip a few points tall: the pin showed its point and not its
+    /// number, and nothing at all once the box had gone (the owner,
+    /// 2026-11-26).
+    static func spot(for corner: CGPoint, of box: CGRect, in clip: CGRect, seen view: CGRect? = nil,
+                     above floor: CGFloat = .infinity) -> Spot {
+        let view = view ?? clip
         let shown = box.intersection(clip)
         // Any of the mark still showing: the badge on its corner, or as
         // near as the edge lets it, a circle as ever.
         if !shown.isNull, shown.width > 0.5, shown.height > 0.5 {
-            return Spot(centre: corner.held(in: clip, inset: MarkDrawing.badge / 2), toward: nil)
+            let room = clip.grown(to: MarkDrawing.badge, inside: view)
+            return Spot(centre: corner.held(in: room, inset: MarkDrawing.badge / 2), toward: nil)
         }
         // Far enough in for the point to show. Toward the nearest of the
         // mark and not its corner: a mark straight above is pointed
         // straight up at, however wide it is.
-        var room = clip
+        let least = (reach + margin) * 2
+        var room = clip, seen = view
         // Only where that leaves room for a pin at all: a box that scrolls
         // inside the page may be wholly under the bar.
-        if floor < room.maxY, floor - room.minY >= (reach + margin) * 2 { room.size.height = floor - room.minY }
+        if floor < room.maxY, floor - room.minY >= least { room.size.height = floor - room.minY }
+        if floor < seen.maxY, floor - seen.minY >= least { seen.size.height = floor - seen.minY }
+        room = room.grown(to: least, inside: seen)
         let centre = corner.held(in: room, inset: reach + margin)
         let nearest = centre.held(in: box)
         guard nearest != centre else { return Spot(centre: centre, toward: nil) }
@@ -253,6 +269,22 @@ enum MarkBadge {
         path.addCurve(to: right.from, control1: right.second, control2: right.first)
         path.closeSubpath()
         return path
+    }
+}
+
+private extension CGRect {
+    /// This rect made at least `side` long each way, about its middle, and
+    /// moved along each way it grew to lie inside `bounds` as far as it can.
+    /// A way it did not grow is left as it is: a box wholly under the note
+    /// bar keeps its pin in the box.
+    func grown(to side: CGFloat, inside bounds: CGRect) -> CGRect {
+        func along(_ start: CGFloat, _ length: CGFloat, _ low: CGFloat, _ high: CGFloat) -> (CGFloat, CGFloat) {
+            guard length < side else { return (start, length) }
+            return (max(min(start + length / 2 - side / 2, high - side), low), side)
+        }
+        let (x, width) = along(minX, width, bounds.minX, bounds.maxX)
+        let (y, height) = along(minY, height, bounds.minY, bounds.maxY)
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 

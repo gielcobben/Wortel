@@ -569,7 +569,20 @@ same `reveal` a chip's click asks for. So a drawing cannot begin on a pin.
 
 A pin for a mark below the view is kept above the note bar, which floats
 over the foot of the preview: under the bar it pointed at nothing anyone
-could see. And pins that would sit on one another are lined up side by
+could see. Only the ink is cut off where its content is (`MarkLayer`
+cuts a sublayer of its own); a badge is always whole. Where what the mark
+may show in is too small to hold it, 37pt each way for a pin and 20pt for
+a circle, the badge stands in as much of the view round it as it takes,
+above the bar where there is room (`MarkBadge.spot`, `seen`). A mark in a
+box that clips, a card or the window drawn on wortel.sh, leaves with its
+box: what was left of the box at the top of the view was a strip a few
+points tall, the pin in it showed its point and not its number, and once
+the box had gone there was no pin at all (the owner, 2026-11-26). Measured
+then over the built site and a fixture page, 900 by 700 and 1400 by 900,
+light and dark: a mark in the hero's window with the stage's last 8pt at
+the top, and with the stage gone, a pin cut to 0% before and whole after;
+a mark in a 180pt card that clips the same; marks on a fixed header, a
+sticky heading and the page itself unchanged. And pins that would sit on one another are lined up side by
 side along their edge, the lowest number keeping its place
 (`MarkupOverlayView.spreadPins`): marks drawn down one side of a page all
 leave by the same place, and a pile of pins shows one number.

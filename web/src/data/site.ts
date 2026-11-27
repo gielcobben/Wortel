@@ -484,6 +484,12 @@ export type FeaturePage = Beta & {
  *  draws on the page (a link picked with a click, a box drawn round the
  *  paragraph). It is the film's note with a second sentence, so the bar
  *  stands as tall as the text it becomes. */
+/** The labels of the tiles on /mark-up (components/markup/Tiles.astro). */
+export const MARKUP_TILES = {
+  pick: 'A click picks an element',
+  draw: 'A drag draws on anything',
+  bar: 'The note, in its bar',
+} as const;
 export const MARKUP_NOTE = {
   words: ['Make ', ' the accent colour, and ', ' needs more room above it. On a phone it runs to four lines and touches the button.'],
   marks: ['link “Download for macOS”', 'box'],

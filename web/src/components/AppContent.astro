@@ -16,12 +16,12 @@
 //     the canvas drew over the page is where it was. It is swapped in the
 //     markup, so the canvas's picture is never fetched.
 const html = await Astro.slots.render('default');
-/** The page's picture, 1074 by 3200 pixels, for the canvas's "Web page" and "Web page, dark". */
+/** The page's picture, 1074 by 3200 pixels, for the canvas's "Web page" and "Web page, dark" in its mark-up frames: only a capture 1074 wide, so the full-window browser's (Browser.astro, 2150 wide) is left alone. */
 const page = (tag: string, dark?: string) => tag
   .replace(/\bsrc="[^"]*"/, `src="/img/page-narrow-${dark ? 'dark' : 'light'}.webp"`)
   .replace(/\bheight="\d+"/, 'height="3200"');
 ---
 <Fragment set:html={html
   .replace(/<(\/?)h[1-6](?=[\s>])/g, '<$1div')
-  .replace(/<img data-name="Web page(, dark)?"[^>]*>/g, page)
+  .replace(/<img data-name="Web page(, dark)?"[^>]*\bwidth="1074"[^>]*>/g, page)
   .replace(/<img (?![^>]*\bloading=)/g, '<img loading="lazy" ')} />

@@ -159,9 +159,10 @@ export function initReview() {
       },
     ];
     return plays.map((play, i) => ({
-      // A chapter is held the same while after its last beat. The length of a
-      // scene does not depend on the screen, so it is worked out once.
-      hold: [1.6, 1.1, 1.1, 2.4][i] + HELD,
+      // A chapter is held the same while after its last beat. Preview's last
+      // beat lands 0.6 s later on a phone, where the film first pans back to
+      // the tree, so its hold is read when the chapter starts.
+      get hold() { return [1.6, 1.1, 1.1, phone.matches ? 3.0 : 2.4][i] + HELD; },
       enter: (animate: boolean) => {
         cut();
         // With no motion: how the chapter ends. Drawn before anyone is

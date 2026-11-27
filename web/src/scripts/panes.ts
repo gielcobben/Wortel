@@ -198,9 +198,11 @@ export function initPanes() {
   })();
 
   // The film has a fourth chapter where its stage has a fourth tab
-  // (films/PanesFilm.astro), unless the window is too narrow for a sidebar:
-  // there it is folded already, and the tab is not shown.
-  const ENDS = root.querySelectorAll('[data-chapter]').length > 3 && !matchMedia('(max-width: 1000px)').matches ? [TWO, THREE, BACK, BARE] : [TWO, THREE, BACK];
+  // (films/PanesFilm.astro). In a window too narrow for a sidebar it is
+  // folded already and the tab is hidden by CSS, so that chapter passes
+  // straight on to the first (see the film below): the count stays the same
+  // as the window is resized across the line.
+  const ENDS = root.querySelectorAll('[data-chapter]').length > 3 ? [TWO, THREE, BACK, BARE] : [TWO, THREE, BACK];
   const state: Layout = { ...LONE };
   const SIDEBAR = 234;
   // On a phone the stage shows one split's worth of this window at a time
@@ -576,6 +578,8 @@ export function initPanes() {
     // Every scene is held the same while after its last beat.
     hold: scene(i).length + HELD,
     enter: (animate) => {
+      // Sidebar, where there is no sidebar to fold: on to the first chapter.
+      if (i === 3 && tight.matches) { f.go(0); return; }
       stop();
       // With no motion: how the chapter ends, and for "Zoom" the zoom itself.
       if (reduced()) arrange(i === 2 ? ZOOMED : layout);
@@ -590,7 +594,10 @@ export function initPanes() {
   const settle = () => {
     stop();
     f.pause();
-    const i = same(ZOOMED) ? 2 : same(LONE) ? 0 : ENDS.findIndex(same);
+    // Two chapters can end the same way ("Drag a tab" and "Zoom"): the one
+    // the film is on wins.
+    const ends = ENDS.flatMap((l, k) => (same(l) ? [k] : []));
+    const i = same(ZOOMED) ? 2 : same(LONE) ? 0 : ends.includes(f.current) ? f.current : ends[0] ?? -1;
     if (i >= 0) f.mark(i); else f.own();
   };
   win.addEventListener('click', (e) => {

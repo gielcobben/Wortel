@@ -14,7 +14,7 @@
 import AppContent from '../AppContent.astro';
 import MarkUpPage from '../../app/gen/MarkUpPage.astro';
 import MarkUp from '../../app/gen/MarkUp.astro';
-import { MARKUP_PAGE, MARKUP_NOTE } from '../../data/site';
+import { MARKUP_PAGE, MARKUP_NOTE, MARKUP_TILES } from '../../data/site';
 interface Props { set: 'marks' | 'note' }
 const { set } = Astro.props;
 const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
@@ -23,11 +23,11 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
   {set === 'marks' && (
     <>
       <li class="tile pick">
-        <p class="cap">A click picks an element</p>
+        <p class="cap">{MARKUP_TILES.pick}</p>
         <div class="wapp part bg-background" data-part="Page" inert aria-hidden="true" data-nosnippet></div>
       </li>
       <li class="tile draw">
-        <p class="cap">A drag draws on anything</p>
+        <p class="cap">{MARKUP_TILES.draw}</p>
         <div class="wapp part bg-background" data-part="Markdown" inert aria-hidden="true" data-nosnippet></div>
       </li>
     </>
@@ -35,7 +35,7 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
   {set === 'note' && (
     <>
       <li class="tile bar">
-        <p class="cap">The note, in its bar</p>
+        <p class="cap">{MARKUP_TILES.bar}</p>
         <div class="wapp hold" data-part="Note bar" data-note="flow" data-words={JSON.stringify(MARKUP_NOTE.words)} inert aria-hidden="true" data-nosnippet></div>
       </li>
       <li class="tile text">

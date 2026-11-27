@@ -2,14 +2,10 @@ import CoreGraphics
 
 /// The clean shape a hand-drawn mark-up stroke was meant as.
 ///
-/// A wrong guess is worse than none: a stroke that turns into the wrong shape says something the
-/// person did not mean, and they have to notice it to take it back. So a stroke has to pass every
-/// test clearly, and anything in doubt is left exactly as drawn.
-///
-/// It is geometry and nothing else: the stroke is read at evenly spaced points, taken for a loop
-/// or an open line by how near its ends come, and tested for each shape in turn. The thresholds
-/// below were set against strokes made by a program (`MarkSnapTests`), each with what it keeps
-/// out. What it measured is in `docs/architecture/mark-up.md`.
+/// One closed loop means "this area" however rough it is, so a loop is read generously: nearly any
+/// single loop becomes an oval, and a squarish one a box. An open stroke is read strictly, since a wrong
+/// line or arrow says something the person did not mean: a tick, a wave or handwriting stays as drawn,
+/// and so does a scribble, a second loop or a figure eight.
 enum MarkSnap: Equatable {
     /// A straight line from where the stroke began to where it ended.
     case line(CGPoint, CGPoint)
@@ -17,8 +13,9 @@ enum MarkSnap: Equatable {
     case arrow(tail: CGPoint, tip: CGPoint)
     /// An upright rectangle.
     case box(CGRect)
-    /// An upright ellipse, by its box.
-    case oval(CGRect)
+    /// An ellipse: its box before it is turned by `tilt` radians about its centre, clockwise in a view
+    /// counted from the top. The tilt is 0 for an upright oval and for a near-circle.
+    case oval(CGRect, tilt: CGFloat)
 
     /// The clean shape a stroke was meant as, or nil when it is not clearly one.
     static func recognise(_ points: [CGPoint]) -> MarkSnap? {
@@ -26,8 +23,8 @@ enum MarkSnap: Equatable {
         let guess: MarkSnap?
         if let loop = stroke.loop() {
             guess = closedShape(loop)
-        } else if isStraight(stroke.samples), let first = points.first, let last = points.last {
-            guess = .line(first, last)
+        } else if let line = straightLine(stroke) {
+            guess = line
         } else {
             guess = arrow(stroke)
         }
@@ -49,12 +46,20 @@ private extension MarkSnap {
     static let loopGap: CGFloat = 0.15
     /// The share of the stroke searched at each end for where a loop closes, so an overshoot is cut off.
     static let loopTail: CGFloat = 0.2
-    /// A gap wider than this share of the shape's smaller side leaves a side open, as in a U.
+    /// A gap wider than this share of a box's smaller side leaves a side open, as in a U.
     static let loopGapOfSide: CGFloat = 0.5
     /// A straight line strays no further than this share of its length from its chord.
     static let lineBend: CGFloat = 0.05
     /// A straight line is no longer than this many chords; more is a wave or a sawtooth.
     static let lineDetour: CGFloat = 1.08
+    /// A flick this many samples long at either end of a line, as the pen lands or lifts, is left off it;
+    /// a tick's short leg or an arrow's head is longer.
+    static let hookSamples = 4
+    /// A line's direction may stray this far from its chord's before the stray counts as a swing.
+    static let waveLean: CGFloat = 16 * .pi / 180
+    /// A stroke whose direction swings from one side to the other this often is a wave, however shallow:
+    /// a hand's straight line drifts one way, or twice at most.
+    static let waveSwings = 4
     /// A head that comes back to the tip lands near it, not on it, so the shaft ends where the
     /// stroke first comes within this share of its farthest reach.
     static let tipSlack: CGFloat = 0.06
@@ -83,19 +88,28 @@ private extension MarkSnap {
     static let sideLean: CGFloat = 20 * .pi / 180
     /// A level or upright stretch shorter than this share of the loop is a wobble, not a side.
     static let shortestSide: CGFloat = 0.03
-    /// A side further than this from level or upright belongs to a tilted shape, not a box.
-    static let boxSkew: CGFloat = 12 * .pi / 180
+    /// A side further than this from level or upright belongs to a tilted shape, not a box. A hand's
+    /// square leans its sides by up to about 15 degrees.
+    static let boxSkew: CGFloat = 20 * .pi / 180
+    /// Facing sides of a box lean alike; legs that lean apart by more than this make a trapezoid.
+    static let boxParallel: CGFloat = 18 * .pi / 180
     /// A loop drawn straight along at least this share of every side, at some tilt, is square: a box
-    /// when upright, and never an oval. A hand's circle stays near a third.
+    /// when upright, and never an oval. People's circles stay near a third; their squares stay above a
+    /// half nineteen times in twenty.
     static let squareCover: CGFloat = 0.48
     /// A box's points miss its outline by no more than this share of its smaller side, on average.
     static let boxMeanMiss: CGFloat = 0.08
     /// No point of a box misses its outline by more than this share of its smaller side.
     static let boxWorstMiss: CGFloat = 0.25
-    /// An oval's points miss its outline by no more than this share of its radius, on average.
-    static let ovalMeanMiss: CGFloat = 0.08
+    /// An oval's points miss its outline by no more than this share of its radius, on average. A hand's
+    /// oval is an egg or a lemon, and a loop around something means the same however rough it is.
+    static let ovalMeanMiss: CGFloat = 0.1
     /// No point of an oval misses its outline by more than this share of its radius.
-    static let ovalWorstMiss: CGFloat = 0.2
+    static let ovalWorstMiss: CGFloat = 0.3
+    /// A tilt smaller than this is a hand that meant upright.
+    static let leastTilt: CGFloat = 5 * .pi / 180
+    /// A loop whose narrow spread is more than this share of its wide one is round, and shows no tilt.
+    static let roundSpread: CGFloat = 0.9
     /// An oval turns at least this far in all; less is a C or a figure eight.
     static let ovalLeastTurn: CGFloat = 1.7 * .pi
     /// An oval turns at most this far in all; more is a spiral or a second loop.
@@ -104,6 +118,9 @@ private extension MarkSnap {
     static let outlineMissFloor: CGFloat = 6
     /// The same check grows with the stroke, as this share of its size.
     static let outlineMiss: CGFloat = 0.08
+    /// A box's or an oval's points may wander this share of its size: a loop around something means
+    /// the area inside it, so a rough loop made clean says nothing new.
+    static let loopOutlineMiss: CGFloat = 0.2
 }
 
 // MARK: - The stroke
@@ -143,7 +160,12 @@ private extension MarkSnap {
 
         /// Whether every point as drawn lies near the clean shape, so a snap never hides part of a mark.
         func lies(on shape: MarkSnap) -> Bool {
-            let tolerance = max(MarkSnap.outlineMissFloor, MarkSnap.outlineMiss * size)
+            let share: CGFloat
+            switch shape {
+            case .box, .oval: share = MarkSnap.loopOutlineMiss
+            case .line, .arrow: share = MarkSnap.outlineMiss
+            }
+            let tolerance = max(MarkSnap.outlineMissFloor, share * size)
             return points.allSatisfy { MarkSnap.miss($0, shape) <= tolerance }
         }
     }
@@ -167,11 +189,49 @@ private extension MarkSnap {
 // MARK: - Open shapes
 
 private extension MarkSnap {
+    /// The stroke as a line, from where it began to where it ended, or without a hook at either end.
+    static func straightLine(_ stroke: Stroke) -> MarkSnap? {
+        let samples = stroke.samples
+        if isStraight(samples), let first = stroke.points.first, let last = stroke.points.last {
+            return .line(first, last)
+        }
+        for (front, back) in [(0, hookSamples), (hookSamples, 0), (hookSamples, hookSamples)] {
+            let middle = Array(samples[front..<(samples.count - back)])
+            if isStraight(middle), runsStraightToItsEnds(middle), let first = middle.first, let last = middle.last {
+                return .line(first, last)
+            }
+        }
+        return nil
+    }
+
+    /// Whether a line with a hook left off still runs along its chord right to where the hook was cut;
+    /// what is left of a barb turns away there.
+    static func runsStraightToItsEnds(_ path: [CGPoint]) -> Bool {
+        guard path.count > 2 * hookSamples, let start = path.first, let end = path.last else { return false }
+        let chord = end.minus(start), reach = hookSamples - 1
+        let ends = [path[reach].minus(start), end.minus(path[path.count - 1 - reach])]
+        return ends.allSatisfy { abs(atan2(chord.cross($0), chord.dot($0))) <= waveLean }
+    }
+
     static func isStraight(_ path: [CGPoint]) -> Bool {
         guard let start = path.first, let end = path.last else { return false }
         let chord = start.distance(to: end)
-        guard chord > 0, length(of: path) <= lineDetour * chord else { return false }
+        guard chord > 0, length(of: path) <= lineDetour * chord, swings(path) < waveSwings else { return false }
         return path.allSatisfy { $0.distance(toSegment: start, end) <= lineBend * chord }
+    }
+
+    /// How often a path's direction swings past its chord's, from one side to the other.
+    static func swings(_ path: [CGPoint]) -> Int {
+        guard let start = path.first, let end = path.last else { return 0 }
+        let chord = end.minus(start)
+        var side = 0, count = 0
+        for (point, next) in zip(path, path.dropFirst()) {
+            let step = next.minus(point), lean = atan2(chord.cross(step), chord.dot(step))
+            let now = lean > waveLean ? 1 : lean < -waveLean ? -1 : side
+            if now != side, side != 0 { count += 1 }
+            side = now
+        }
+        return count
     }
 
     static func arrow(_ stroke: Stroke) -> MarkSnap? {
@@ -229,9 +289,15 @@ private extension MarkSnap {
     /// A box or an oval, when the loop is clearly one and not the other, and closed enough to read as one.
     static func closedShape(_ loop: Loop) -> MarkSnap? {
         let box = boxFit(loop), oval = ovalFit(loop)
-        guard let rect = box ?? oval, (box == nil) != (oval == nil),
-              loop.gap <= loopGapOfSide * min(rect.width, rect.height) else { return nil }
-        return box == nil ? .oval(rect) : .box(rect)
+        switch (box, oval) {
+        case let (box?, nil):
+            // Only a box needs this: a U is no ellipse, and a wide oval's gap is wide along with it.
+            return loop.gap <= loopGapOfSide * min(box.width, box.height) ? .box(box) : nil
+        case let (nil, oval?):
+            return .oval(oval.rect, tilt: oval.tilt)
+        default:
+            return nil
+        }
     }
 
     static func boxFit(_ loop: Loop) -> CGRect? {
@@ -244,11 +310,13 @@ private extension MarkSnap {
 
     /// The upright rectangle through four sides drawn level, upright, level, upright.
     static func boxRect(_ sides: [Side], of loop: [CGPoint]) -> CGRect? {
-        let edges = sides.compactMap { side in
-            edge(points(of: side, in: loop)).flatMap { $0.isLevel == side.isLevel ? $0.at : nil }
+        let found = sides.compactMap { side in
+            edge(points(of: side, in: loop)).flatMap { $0.isLevel == side.isLevel ? $0 : nil }
         }
-        guard sides.count == 4, edges.count == 4 else { return nil }
         // The sides take turns, so the first and third face each other, as do the second and fourth.
+        guard sides.count == 4, found.count == 4, abs(found[0].lean - found[2].lean) <= boxParallel,
+              abs(found[1].lean - found[3].lean) <= boxParallel else { return nil }
+        let edges = found.map(\.at)
         let (levels, uprights) = sides[0].isLevel ? ((edges[0], edges[2]), (edges[1], edges[3]))
                                                   : ((edges[1], edges[3]), (edges[0], edges[2]))
         let rect = CGRect(x: min(uprights.0, uprights.1), y: min(levels.0, levels.1),
@@ -256,8 +324,8 @@ private extension MarkSnap {
         return rect.width > 0 && rect.height > 0 ? rect : nil
     }
 
-    /// Whether a run of points is level or upright, and where it sits across that direction.
-    static func edge(_ points: [CGPoint]) -> (isLevel: Bool, at: CGFloat)? {
+    /// Whether a run of points is level or upright, where it sits across that direction, and how far it leans.
+    static func edge(_ points: [CGPoint]) -> (isLevel: Bool, at: CGFloat, lean: CGFloat)? {
         let centre = points.reduce(CGPoint.zero) { $0.plus($1) }.scaled(1 / CGFloat(max(points.count, 1)))
         var xx: CGFloat = 0, yy: CGFloat = 0, xy: CGFloat = 0
         for point in points {
@@ -266,9 +334,11 @@ private extension MarkSnap {
             yy += offset.y * offset.y
             xy += offset.x * offset.y
         }
-        let angle = abs(0.5 * atan2(2 * xy, xx - yy))
-        if angle <= boxSkew { return (true, median(points.map(\.y))) }
-        if angle >= .pi / 2 - boxSkew { return (false, median(points.map(\.x))) }
+        let angle = 0.5 * atan2(2 * xy, xx - yy)
+        if abs(angle) <= boxSkew { return (true, median(points.map(\.y)), angle) }
+        if abs(angle) >= .pi / 2 - boxSkew {
+            return (false, median(points.map(\.x)), angle - (angle > 0 ? 1 : -1) * .pi / 2)
+        }
         return nil
     }
 
@@ -333,15 +403,39 @@ private extension MarkSnap {
         return cover(of: straightSides(turned), on: bounds(of: turned))
     }
 
-    /// The loop's own box holds the oval: the overshoot is already cut off, and a hand's oval is
-    /// what it encloses.
-    static func ovalFit(_ loop: Loop) -> CGRect? {
-        let turn = abs(turning(loop.points)), ellipse = bounds(of: loop.points)
-        guard turn >= ovalLeastTurn, turn <= ovalMostTurn, ellipse.width > 0, ellipse.height > 0 else { return nil }
-        let misses = loop.points.map { abs(radius(of: $0, on: ellipse) - 1) }
+    static func ovalFit(_ loop: Loop) -> (rect: CGRect, tilt: CGFloat)? {
+        let turn = abs(turning(loop.points))
+        guard turn >= ovalLeastTurn, turn <= ovalMostTurn,
+              let ellipse = ellipse(around: loop.points) else { return nil }
+        let misses = loop.points.map { abs(radius(of: $0, on: ellipse.rect, tilt: ellipse.tilt) - 1) }
         guard mean(misses) <= ovalMeanMiss, (misses.max() ?? 0) <= ovalWorstMiss,
               squarestCover(loop.points) < squareCover else { return nil }
         return ellipse
+    }
+
+    /// The ellipse a loop draws: turned along its long axis, and as large as what it encloses, since
+    /// the overshoot is already cut off and a loop around something means what is inside it.
+    static func ellipse(around loop: [CGPoint]) -> (rect: CGRect, tilt: CGFloat)? {
+        let centre = loop.reduce(CGPoint.zero) { $0.plus($1) }.scaled(1 / CGFloat(max(loop.count, 1)))
+        var xx: CGFloat = 0, yy: CGFloat = 0, xy: CGFloat = 0
+        for point in loop {
+            let offset = point.minus(centre)
+            xx += offset.x * offset.x
+            yy += offset.y * offset.y
+            xy += offset.x * offset.y
+        }
+        let half = (xx + yy) / 2, apart = (((xx - yy) / 2) * ((xx - yy) / 2) + xy * xy).squareRoot()
+        guard half + apart > 0 else { return nil }
+        // The long axis, folded to within 45 degrees of level, so a tall oval stays tall rather than lying turned.
+        var tilt = 0.5 * atan2(2 * xy, xx - yy)
+        if tilt > .pi / 4 { tilt -= .pi / 2 } else if tilt <= -.pi / 4 { tilt += .pi / 2 }
+        if abs(tilt) < leastTilt || ((half - apart) / (half + apart)).squareRoot() > roundSpread { tilt = 0 }
+        let frame = bounds(of: loop.map { $0.turned(by: -tilt, about: centre) })
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        let middle = CGPoint(x: frame.midX, y: frame.midY).turned(by: tilt, about: centre)
+        let rect = CGRect(x: middle.x - frame.width / 2, y: middle.y - frame.height / 2,
+                          width: frame.width, height: frame.height)
+        return (rect, tilt)
     }
 
     /// How far a loop turns in all, leaving out the step across its gap, which a hand did not draw.
@@ -367,8 +461,8 @@ private extension MarkSnap {
                 ? 0 : point.distance(toSegment: tail, tip)
         case let .box(rect):
             return rectMiss(point, rect)
-        case let .oval(rect):
-            let ratio = radius(of: point, on: rect)
+        case let .oval(rect, tilt):
+            let ratio = radius(of: point, on: rect, tilt: tilt)
             guard ratio > 0 else { return min(rect.width, rect.height) / 2 }
             return point.distance(to: CGPoint(x: rect.midX, y: rect.midY)) * abs(1 - 1 / ratio)
         }
@@ -382,8 +476,9 @@ private extension MarkSnap {
     }
 
     /// Where a point sits on an ellipse's own scale: 1 on the outline, 0 at the centre.
-    static func radius(of point: CGPoint, on ellipse: CGRect) -> CGFloat {
-        let u = (point.x - ellipse.midX) / (ellipse.width / 2), v = (point.y - ellipse.midY) / (ellipse.height / 2)
+    static func radius(of point: CGPoint, on ellipse: CGRect, tilt: CGFloat) -> CGFloat {
+        let centre = CGPoint(x: ellipse.midX, y: ellipse.midY), upright = point.turned(by: -tilt, about: centre)
+        let u = (upright.x - centre.x) / (ellipse.width / 2), v = (upright.y - centre.y) / (ellipse.height / 2)
         return (u * u + v * v).squareRoot()
     }
 
@@ -456,6 +551,13 @@ private extension CGPoint {
     func dot(_ other: CGPoint) -> CGFloat { x * other.x + y * other.y }
     func cross(_ other: CGPoint) -> CGFloat { x * other.y - y * other.x }
     func distance(to other: CGPoint) -> CGFloat { minus(other).length }
+
+    /// The point turned by an angle about a centre, clockwise in a view counted from the top.
+    func turned(by angle: CGFloat, about centre: CGPoint) -> CGPoint {
+        let offset = minus(centre), cosine = cos(angle), sine = sin(angle)
+        return CGPoint(x: centre.x + offset.x * cosine - offset.y * sine,
+                       y: centre.y + offset.x * sine + offset.y * cosine)
+    }
 
     func distance(toSegment start: CGPoint, _ end: CGPoint) -> CGFloat {
         let along = end.minus(start), squared = along.dot(along)

@@ -262,9 +262,26 @@ final class MarkupTests: XCTestCase {
         let line = MarkStroke.drawing(of: .line(CGPoint(x: 10, y: 10), CGPoint(x: 60, y: 50)))
         XCTAssertEqual(line.pen, .pen)
         XCTAssertEqual(line.points, [CGPoint(x: 10, y: 10), CGPoint(x: 60, y: 50)])
-        let oval = MarkStroke.drawing(of: .oval(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        let oval = MarkStroke.drawing(of: .oval(CGRect(x: 0, y: 0, width: 100, height: 60), tilt: 0.3))
         XCTAssertEqual(oval.pen, .pen)
-        XCTAssertEqual(oval.points, MarkStroke.oval(in: CGRect(x: 0, y: 0, width: 100, height: 60)))
+        XCTAssertEqual(oval.points, MarkStroke.oval(in: CGRect(x: 0, y: 0, width: 100, height: 60), tilt: 0.3))
+    }
+
+    func testAnOvalThatLeansIsTheSameOvalTurnedAboutItsMiddle() {
+        // A loop round a few words leans with the hand. Turned back by its
+        // tilt, every point is on the upright oval, and the middle has not
+        // moved.
+        let rect = CGRect(x: 40, y: 30, width: 300, height: 120)
+        let tilt = 20 * CGFloat.pi / 180
+        let back = CGAffineTransform(translationX: rect.midX, y: rect.midY).rotated(by: -tilt)
+            .translatedBy(x: -rect.midX, y: -rect.midY)
+        let points = MarkStroke.oval(in: rect, tilt: tilt)
+        XCTAssertEqual(points.count, MarkStroke.ovalPoints + 4)
+        for point in points { XCTAssertLessThan(off(point.applying(back), ovalIn: rect), 1e-9) }
+        // Clockwise in a view counted from the top: its right end is lower.
+        let right = points.max { $0.x < $1.x }
+        XCTAssertGreaterThan(right?.y ?? 0, rect.midY)
+        XCTAssertEqual(MarkStroke.oval(in: rect, tilt: 0), MarkStroke.oval(in: rect))
     }
 
     func testALineNearlyLevelOrUprightIsMadeSoAboutItsMiddle() {

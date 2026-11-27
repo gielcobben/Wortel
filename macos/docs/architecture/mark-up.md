@@ -633,31 +633,41 @@ comes back.
     model): nothing under 24pt or 8 points; the stroke is read at 64
     evenly spaced points, so the hand's speed does not count; ends that
     come within 15% of its length of each other make a loop, cut there so
-    an overshoot does not grow the shape. An open stroke is a line when it
-    strays no more than 5% of its length from its chord, or an arrow when
-    a straight shaft is followed by a head that turns back on itself with
-    a barb to each side. A loop is a box when it is four level and upright
-    stretches, or an oval when it turns once and lies on the ellipse of
-    its own box; both or neither, and it is left alone. Last, every point
-    as drawn must lie within 6pt, or 8% of the stroke's size, of the clean
-    shape. Apple offers no API for this (its developer forums say so).
-  - **Measured 2026-11-26 against strokes made by a program** (a hand's
-    wobble, uneven spacing, overshoot, rounded corners; 200 a case at
-    three amounts of wobble): a box was a box 197 to 199 times in 200, an
-    oval an oval 194 to 196, a line a line 200, an arrow an arrow 193 to
-    197, and the rest were left as drawn. None of 22 things that are not a
-    shape (a tick, a zigzag, a V, an L, a C, a spiral, a double loop,
-    handwriting, a question mark, a triangle, a tilted rectangle, a
-    scribble over a word and others) came back as one, at any wobble. The
-    slowest 300-point stroke took 0.39 ms in a Debug build. The tests run
-    80 a case, to keep the suite short.
-  - **Its limits, which a hand will find first**: these strokes are not a
-    person's, and the thresholds are not tuned against one until the owner
-    has drawn with it. A box drawn with very round corners came back an
-    oval about 15 times in 100, the likeliest wrong guess. A loop left
-    more than 15% open, a word circled twice, an arrow whose head is one
-    soft hook, and a long thin oval or box (61 to 89 in 100) are left as
-    drawn more often than a person would expect.
+    an overshoot does not grow the shape. **A loop is read generously and
+    an open stroke strictly.** One closed loop means "this area" however
+    rough it is, so nearly any single loop is an oval, leaning as the hand
+    leaned (its tilt is the loop's long axis, and none under 5 degrees or
+    for a near-circle), and a squarish one is a box. An open stroke is a
+    line only when it strays no more than 5% of its length from its chord
+    and does not wave, and an arrow only when a straight shaft is followed
+    by a head that turns back on itself with a barb to each side: a wrong
+    line or arrow says something the person did not mean. Last, every
+    point as drawn must lie near the clean shape. Apple offers no API for
+    this (its developer forums say so).
+  - **The first version was tuned against strokes made by a program, and
+    a hand found it out at once**: the owner drew, and almost none of his
+    loops became an oval (2026-11-26). It had been told that any wrong
+    guess is worse than none, and treated a loop as strictly as a tick.
+    Measured then against real people's single strokes (the first 12 MB of
+    six classes of Google's Quick, Draw! dataset, CC BY 4.0, by mouse,
+    trackpad and touch, thinned as the pen thins): 61% of 6,252 real
+    circles became an oval, and of the same circles stretched and turned
+    to stand for a loop round a few words, 18%. What refused them was how
+    far a hand's oval is from a true one, and that a leaning one had no
+    oval to become.
+  - **Measured 2026-11-26 after the retune, on the same real strokes**: a
+    circle is an oval 93.6% of the time and the stretched and turned ones
+    94.0%; a square is a box 87.3% (it was 63%) and an oval 0.28%; a line
+    is a line 90.9%. Of 9,227 real zigzags and squiggles 8 became a shape,
+    and 5 of those were a straight line or a closed blob in the data; of
+    5,261 triangles, 9. A hundred of these real strokes are in
+    `MarkSnapTests` beside the program's, with what each must become.
+  - **Still weak**: about 6 real circles in 100 are left as drawn, mostly
+    lumpy eggs and squarish loops; a box drawn with very round corners is
+    an oval about a quarter of the time; a word circled twice, and an
+    arrow whose head is one soft hook, are left as drawn. The stretched
+    circles stand in for circled words and are not circled words: whether
+    it holds on a page under the owner's hand is not verified.
 - **A mark is called by what it is**: "area 2", "box 3", "arrow 4",
   "highlight 5", on its chip and in what is copied, and `details.json`
   has it as `shape`. That is what it was drawn with, except that a box or

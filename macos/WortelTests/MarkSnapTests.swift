@@ -23,6 +23,44 @@ final class MarkSnapTests: XCTestCase {
         assertRecognised(.arrow, Draw.arrow)
     }
 
+    func testATiltedLongLoopIsAnOval() {
+        assertRecognised(.oval, Draw.tiltedLongOval)
+    }
+
+    func testATiltedOvalKeepsItsTilt() {
+        for seed in 0..<Self.seeds {
+            var hand = Hand(seed: UInt64(seed), noise: .low)
+            let tilt = hand.sign() * hand.degrees(10...40)
+            let width = hand.size(120...800), height = width / hand.value(2...4)
+            let outline = Ideal.ellipse(width: width, height: height)
+            let path = Ideal.trace(outline, from: hand.value(0...1), span: 1.05, backwards: hand.coin())
+            let stroke = hand.draw(Ideal.place(path, turnedBy: tilt, at: CGPoint(x: 600, y: 500)),
+                                   scale: (width * height).squareRoot())
+            guard case let .oval(rect, fitted)? = MarkSnap.recognise(stroke) else {
+                XCTFail("seed \(seed) is not an oval")
+                continue
+            }
+            XCTAssertEqual(fitted, tilt, accuracy: 4 * .pi / 180, "seed \(seed)")
+            XCTAssertEqual(rect.width, width, accuracy: 0.08 * width, "seed \(seed)")
+            XCTAssertEqual(rect.height, height, accuracy: 0.15 * height, "seed \(seed)")
+        }
+    }
+
+    func testAnUprightOvalOrANearCircleHasNoTilt() {
+        for seed in 0..<Self.seeds {
+            var hand = Hand(seed: UInt64(seed), noise: .low)
+            let width = hand.size(60...800), round = hand.coin()
+            let height = round ? width * hand.value(0.95...1) : width / hand.value(1.5...4)
+            let tilt = round ? hand.degrees(0...90) : hand.sign() * hand.degrees(0...3)
+            let outline = Ideal.ellipse(width: width, height: height)
+            let path = Ideal.trace(outline, from: hand.value(0...1), span: 1.05, backwards: hand.coin())
+            let stroke = hand.draw(Ideal.place(path, turnedBy: tilt, at: CGPoint(x: 600, y: 500)),
+                                   scale: (width * height).squareRoot())
+            guard case let .oval(_, fitted)? = MarkSnap.recognise(stroke) else { continue }
+            XCTAssertEqual(fitted, 0, "seed \(seed)")
+        }
+    }
+
     // MARK: - Marks that are left alone
 
     func testATickIsLeftAlone() { assertLeftAlone(Draw.tick) }
@@ -39,7 +77,6 @@ final class MarkSnapTests: XCTestCase {
     func testATriangleIsLeftAlone() { assertLeftAlone(Draw.triangle) }
     func testARectangleTiltedByAQuarterIsLeftAlone() { assertLeftAlone(Draw.tiltedRectangle) }
     func testAStronglyBowedLineIsLeftAlone() { assertLeftAlone(Draw.bowedLine) }
-    func testATiltedLongOvalIsLeftAlone() { assertLeftAlone(Draw.tiltedLongOval) }
     func testATinyCircleIsLeftAlone() { assertLeftAlone(Draw.tinyCircle) }
     func testAnArrowWithOneBarbIsLeftAlone() { assertLeftAlone(Draw.oneBarbArrow) }
     func testScribblingSomethingOutIsLeftAlone() { assertLeftAlone(Draw.backAndForth) }
@@ -100,7 +137,7 @@ final class MarkSnapTests: XCTestCase {
     func testHalfThePointsKeepsTheShapeAtThePensDensity() {
         var changed: [String] = [], wrong: [String] = [], counted = 0
         for (name, draw) in Draw.all {
-            let truth = Kind(rawValue: name) ?? .none
+            let truth = Draw.truth(of: name)
             for seed in 0..<Self.seeds {
                 var hand = Hand(seed: UInt64(seed), noise: .middle)
                 let stroke = draw(&hand), thinned = halved(stroke)
@@ -171,7 +208,7 @@ final class MarkSnapTests: XCTestCase {
             let path = Ideal.trace(outline, from: hand.value(0...1), span: 1.15, backwards: hand.coin())
             let stroke = hand.draw(Ideal.place(path, turnedBy: 0, at: CGPoint(x: truth.midX, y: truth.midY)),
                                    scale: 180)
-            guard case let .oval(rect)? = MarkSnap.recognise(stroke) else { return XCTFail("seed \(seed)") }
+            guard case let .oval(rect, _)? = MarkSnap.recognise(stroke) else { return XCTFail("seed \(seed)") }
             XCTAssertLessThan(difference(rect, truth), 0.03 * truth.width, "seed \(seed): \(rect)")
         }
     }
@@ -214,6 +251,45 @@ final class MarkSnapTests: XCTestCase {
             }
             print(table)
         }
+    }
+
+    // MARK: - Real strokes
+
+    /// Real people drawing, from Google's Quick, Draw! dataset (CC BY 4.0): single strokes by mouse,
+    /// trackpad and touch, thinned to 2 units as the app does. Each must become what it was meant as,
+    /// which for a scribble, a wave or a C is nothing.
+    func testRealStrokesBecomeWhatTheyWereMeantAs() {
+        var wrong: [String] = []
+        let entries = Self.realStrokes.split(separator: "\n")
+        for (number, entry) in entries.enumerated() {
+            let fields = entry.split(separator: " ")
+            guard fields.count == 3, let expected = Kind(rawValue: String(fields[1])) else {
+                XCTFail("entry \(number) does not read")
+                continue
+            }
+            let found = Kind(MarkSnap.recognise(Self.decoded(fields[2])))
+            if found != expected { wrong.append("#\(number) \(fields[0]): \(found), meant \(expected)") }
+        }
+        XCTAssertEqual(entries.count, 100)
+        XCTAssertEqual(wrong, [])
+    }
+
+    /// A stroke written as where it starts, then one step for each pair of letters: each letter moves
+    /// -32 to 31 units, first along x then along y, counted along the base 64 alphabet.
+    private static func decoded(_ text: Substring) -> [CGPoint] {
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+        let parts = text.split(separator: ":")
+        let start = parts.first?.split(separator: ",").compactMap { Double($0) } ?? []
+        guard start.count == 2 else { return [] }
+        var point = CGPoint(x: start[0], y: start[1]), points = [point]
+        let steps = parts.count > 1 ? Array(parts[1]) : []
+        for index in stride(from: 0, to: steps.count - 1, by: 2) {
+            guard let across = alphabet.firstIndex(of: steps[index]),
+                  let down = alphabet.firstIndex(of: steps[index + 1]) else { continue }
+            point = CGPoint(x: point.x + CGFloat(across - 32), y: point.y + CGFloat(down - 32))
+            points.append(point)
+        }
+        return points
     }
 
     // MARK: - Helpers
@@ -278,7 +354,7 @@ final class MarkSnapTests: XCTestCase {
 
     private func rect(of snap: MarkSnap?) -> CGRect? {
         switch snap {
-        case let .box(rect)?, let .oval(rect)?: return rect
+        case let .box(rect)?, let .oval(rect, _)?: return rect
         default: return nil
         }
     }
@@ -477,8 +553,19 @@ extension MarkSnapTests {
     fileprivate enum Draw {
         static var shapes: [(String, Drawing)] {
             [
-                ("box", box), ("oval", oval), ("line", line), ("arrow", arrow),
+                ("box", box), ("oval", oval), ("line", line), ("arrow", arrow), ("tilted long oval", tiltedLongOval),
             ]
+        }
+
+        /// What a drawing should come back as.
+        static func truth(of name: String) -> Kind {
+            switch name {
+            case "box": return .box
+            case "oval", "tilted long oval": return .oval
+            case "line": return .line
+            case "arrow": return .arrow
+            default: return .none
+            }
         }
 
         static var leftAlone: [(String, Drawing)] {
@@ -486,7 +573,7 @@ extension MarkSnapTests {
                 ("tick", tick), ("zigzag", zigzag), ("sawtooth", sawtooth), ("L elbow", elbow), ("V", vee),
                 ("C, 30% gap", openC), ("spiral", spiral), ("double loop", doubleLoop), ("figure eight", figureEight),
                 ("handwriting", scribble), ("question mark", questionMark), ("triangle", triangle),
-                ("box tilted 25°", tiltedRectangle), ("bowed line", bowedLine), ("tilted long oval", tiltedLongOval),
+                ("box tilted 25°", tiltedRectangle), ("bowed line", bowedLine),
                 ("tiny circle", tinyCircle), ("one-barb arrow", oneBarbArrow), ("scribble-out", backAndForth),
                 ("line with a curl", curl), ("trapezoid", trapezoid), ("T", crossbar),
                 ("U, a side open", openBox),
@@ -794,4 +881,233 @@ extension MarkSnapTests {
     static func leftPadded(_ text: String, _ width: Int) -> String {
         String(repeating: " ", count: max(width - text.count, 0)) + text
     }
+}
+
+// MARK: - Real strokes, as drawn
+
+extension MarkSnapTests {
+    /// What was asked for, what it should become, and the stroke.
+    fileprivate static let realStrokes = """
+        circle oval 707,80:VdVfSgPjQiRkQlRmTnUnTpUpWpZpaqbrdufsitjwlvlwqysytwuvvvzuzs3s2p2o4m3g4e1e2b0ayZyXvVtVrUpTm\
+        UkSiTgReRaPYPXPUOSQRRQRPTNULVKYMaLbJdMgKfQhSjRi
+        circle oval 473,529:VfHaHbPaNXNXOQPPUEVFcCdDjLkLjLrLrLrL4C5C2R1S2R1X2X1X+c/d8j7j0u0uv4v4p7p7k5j5g6g5X6X5O2P2\
+        I0HzEwFwCqDrCnBnIgJhMcNbRX
+        circle oval 484,192:YZUcXdVcUeTgQfOgKjMlOmQoQpOsLwLwOwQuR0TzU3U+V6Z6b3g1g4kzr3s1uxvvwpzn7l6h3g6gwcwd/Zxcxbwb\
+        wb9V8Q2O0LvLrKpJqGpHlLhNhOgOaQZUbXdZcYcXbXaXYYYYZaabZdadXbTZUcYeXeZg
+        circle oval 940,300:bebgbgbgafbgagagYgZgWhYhZhaiZhbhbiZhaibkYjbiZkalblbkblclcmbncncncpeneleognglgmglgoglioil\
+        imimkljnlnjllkklllmmpmomlimjnkojnininioinhniphnhlgmglglgpglgmgogneoeleleleldmeqbpcocmbnakbkbjaiajZjYiYiYhZgY\
+        gYgbdYdYebebeadbdadZdadbcbcabbbabbcbabbcbcbcbcbdbebdbebfbgbgeg
+        circle oval 262,162:lblglendre9e0g4k8p5r7v8w7x2y000yw1s0t1o0p3n4l4k6h5h5g2c1a0YzXwUtSrRoQoRoPmTlPmTjRkTjTjVi\
+        WhVgUgUbRYRWSVRVTVQTTTQTTTTUUUYWWUWSZWaUbWcWcWcWdXeWdVfVeVfWgXgXgXgYgXgVgWgVgYgWgXhXhWhXiWiZiZkXiakalViblXoY\
+        oanbmboaleleleodndlflflgoflegW
+        circle oval 444,347:XcbdcbaZdbbYbWbXeVcWeYcZeZfWeYgafagagZgagXgZiajZjZkXlYtJoTlYkbnamepbpcpbrcuascscpepeofpg\
+        lgmgmhohqipiqimhnkmjlknolmlnnnnomolplolqjqiqhpgogphqgqgqgrgtgtewZsapaoanamXnYnYlZlXlSnToVlVkYjXiZjYiZhZgZgZg\
+        YgYgagbebeabcabbabacYbYbacbbbd
+        circle oval 1002,194:bYcbacadWdXfUhTiUiTmPoWlUpUrUrXsWrYtZrbsZubtbzesevfugvh0i2htj2jylzlwq4oupvrustssvuurtpw\
+        pvpvk5nrjzizixdzd2dtdzbscwawYvWsXsVqWqVpTqOkYlTjUiTiTgOfSdOeTcMdTXJcVaQZSYSWQVSUQWXUUUVSURXTYRZQZQbQdJaUgLfd\
+        g
+        circle oval 696,304:agbgbhbiajbibibkbjbkblcldlcmelemflfmgmglgngohohohlimjljljmlnlnklkllllmlklklkmkmisjlhmglg\
+        lgmglfleldlbjbkalbkbjbibhbibhbiahbhbhbgahbgbgbgbgbgbgbfbdbebebdbebcabbcbbcbcbcbdbdbebebfbebgagbgbgcg
+        circle oval 625,341:eWgVgTiSkTqTsR0U4T5Y4c6gwiwi5m6r7u5w2wzzvyqumvmxjsgpbrYrQtOqGqCmQiQiOgNfOeNdQcPbFULWQWWX\
+        VYYXZXcYeagYia
+        circle oval 509,318:ZdYebeYdVbcebebdbebcYcXYbcabcaYXcacXdbbYeaeagbgbgWgagZmWjYicibmZlYoZmaobncpbmeodsfsemglg\
+        lgngpiogninilipmnkmlnnknmmkmikiljojnhmjngniognglglgogrglcmememdmdmambjbkZiajbiaiaiahbhagbgbdbfagbgZgZkbhch
+        circle oval 387,243:jRlTwO4N5P8V7Z5d5g4j3u2w0002v7s7m8i6d+U6P4I0FzBtQlQlBlEiQgPgEbGVKUMQSRVLZMcIgIgHiKmLoPsP\
+        uS2R0W5Z6c
+        circle oval 466,143:NoQmWlclaocmcwfngpgpglgnivjzjoillllnlklpomlioimjlglglgndpckZlgrNiYgagbgTfbfadWgacbdbYSga\
+        dadbeaeYebdbaaWfbgbgce
+        circle oval 219,157:caYdafagbgZhYjYkXkXlWnYmXpapbqdpeqgthqkqlroqqqroumvkuiugsgsdqZoWoTlVkSkRgSgScQbWWSUVSYOZ\
+        Gf
+        circle oval 205,96:WbWgUgTjVjWkWkYlXmYpZqbscveyf0hyizkvkuktmqnopnulujsgtgrdqfscscuZrZpZnXkXjVhVgUgTgVgVfXgWe\
+        XfZeYdYcZbZbbZaYcXcYcYfZfYecg
+        circle oval 202,53:agYgafbfagbfagagbhahZhahZjZiYkJvYnambocneofohqjrlsmtntotnqoponnmmlmjmimhngmgnfogneofodqco\
+        cpbobobnbmblZjYjXhVhWfWfWfWfXeYfZeZebdadbccacZbZdDa
+        circle oval 688,147:SgYgagWiYkaiaiakYmakcoYocococqaoeqeoememgmgmgqgsiuiqioioioimkmmkooomqmmkmimgqgqeqeqeoeoe\
+        ococmemcoememcmakamckYkaiamagaiYgagYgYgacagacYeaeacaeagacaeacacaaacaaaacaeacaeagag
+        circle oval 216,109:ZfbgZgYgYgbgbgbgZiUmblekbncmcodndmflfofrfpflgofngpgnhmjmlmmnljlkljlkmimilhmhmglhmgmglgmg\
+        mgkflencmbkakaibiajWkUjWhShTfUfZgZeceaccZaceaebebfabZdcgbgcgeg
+        circle oval 565,281:TePgJmHwK0P2W3e1i3vy2u9oxgxhxfxf9V0TsToQkNgLWIPOLRLUOTUZYcbfdh
+        circle oval 683,251:ahUjKnOjXjbhbjahajTlWoamdlcldlcleldncwb6dxgqhqhpiljlmos0kolmljojqinilglgrgxfqfqflglg9dwe\
+        ofmepalclemaoZjbpCpBiVibhbgZfZfbebeTfVfbaZbdadbbcadbbaaZUSbcbdahaibibjbibkajbi
+        circle oval 349,60:UiUoRuUyV4bwbxdwdxgzgzh2h3k4j4nynx17528w+swixiwgxg+YwYwZ/HuQtQsQrPqQpPmOlPmBgQgPbCUEPKLPI\
+        SFTFUFYDcDgIjLmRlTk
+        circle oval 114,87:ZpZoaqasbvdzh0lypwvv0q2n4j4d0WvSoQiOdMbNVJVLXQUVUbRfNkPnQt
+        circle oval 140,52:ajUtbnZselepfogljonlmiohngoblapUlZoShagWgbfVbeXcZebebgTr
+        circle oval 945,228:bYZbDZCZDaCZDZIlImIlLtLtZqWpZuR+R9cuepe6e6m7n7m7t3t3004t3tymvi1g2g+gwfxf8bxcxc4X5Y4XrYqV\
+        sNrNjVkXnMjUlPhWgZfTaTMDLDbZMKaZcbbbVaccbbebXceg
+        circle oval 493,95:biYjYjbjbkZmZmamaododmenenfmflgmglhnhmjljmlknlplmkliqjnhnhmhlglgnfpfnflfmfmbldlblclZkXibh\
+        ZgbfbgZeZgbfbfbgbfbcbbcbcbccbbbbbbdbdbebfbebfcg
+        circle oval 556,176:WeYeWeVfSgTfSgSgSgShTjUlUkSmTpUqUrWrWsXuZtZubvcwewfvg0hxkvmvntpsppqqonpmqlpkqjrjrishsish\
+        siqg4gsgtdsaqbrYrVqUpTmVlVjSjUiTiRgSgRgSgSgTgTbJeWcVXNcYbZbabcUabeWdWecg
+        circle oval 927,255:bbbbbZcbbabbZcbeaebeafbfYeagWeYgYfZgZfXgUfXgWgYgVgSgQkVjVkXlVlWoWoZqZqcpbncoeneqfsfqgogl\
+        glglgmgqgmgmglhmhmhoklmmjmjlmonlqlminjlipnlkmkommkmjlkliljljnhnhlgmgngnhlgnglgpgodndobsbldmcnbmboYnbmclblclZ\
+        ibkalZhblXjZjamYjakbjahbiZhbhYhagbgagZgbgZgZgZgafbfbeZdbcaaZcadbdbgacbaebcfe
+        circle oval 538,315:gbgahaibjblbleocnfmgpgpgogogqgogpgngogmgogqgogogqhohnhmhlhplnmppmmmmklnqimknioilhmhmhnio\
+        gmgoglgpglgmfogmcmdoclanXnajYjZjXjYlXkXlZlYkZjbkZjZkZibhbgbgWgYgYdXdWbXcWbXabcadYZbaZWcbdZdZdYfZeZfWgafagagZ\
+        gbgYgbgbgZiaiZiaibhbkbibhc
+        circle oval 205,103:ccZcYgYiUmToToVnXoYmancncmcmdnemglgkhlhlhmjnknt2ptllkllklllkmklililhlgmglglglflflflfmfle\
+        memdlclbkbnUjZiZhYiQhZhXgagZgZgZfagZfafbfbfaebbZXbUdZfYfZfZgZgVgchbh
+        circle oval 562,241:bgWiZgbjajXoYlZlZmYlXoZlZmblbogofogqgmgojmtltgmg/g2doboanamZlbjblWkamSgbgbgbcaaaOY
+        circle oval 566,164:YYSYQbGcOgPgOkPkQpQpE4I8YwXwaybzgyfzizhzoyoy79ysxtzqzr0mzmzizhygygwcxc7S5IqQqPmMmMkKjKhI\
+        hIeIdJYLYLVNVNSPTPQVQVPaPZ
+        circle oval 458,149:WuZsbyducye0g2k6k0k1q2oxtyruuuvrztwnym0lwi4fvb5YuY4TvV0QwSvMsQtNnRmNlSjReRdRdWaSUUSUXYMT\
+        QaNXLYNcKaOaKbLdNfKgNfNhNhQkLqaj
+        circle oval 720,419:lgnhlhtkmiqjmjoiljljnlimilimhmhlgnhmiqgogqglglglbqcnclZkbkbgYhbgQgWgXgWgYgVgYeWdCXWdaeYb\
+        dbgagbgZgagahbjYhbjbkYibjamYmZnbldmcnclcmclclelgmgmg
+        circle oval 751,183:ZgVgUjLnTlXkYlbhZiaibkdlcnW3YzXzU9ayerfngmhmhmhmjlklnmmlnlqmslqkpjrjsjuixjuhrgpgmgnflemd\
+        qYmcnbmcoZlakajaiajaibibhagbgaeYfTgXfZfafafbeZfYdZcbbebcbbbbacbcZaZYYZbbbcabcabbbdbfbgfg
+        circle oval 752,209:aibiZjXmYlVnWoWnWoXqXpYqWsYrZqZrbrbtdveteufufugtguhuktltnsosoropqnonpjojqhqgsgvgwg1d3d8d\
+        7a7Y3Z8U0WxVuUvUqWoTmWkWiVhXhYgWgYgYfYfZeaeZeacZcZcacZbYaZXXXYWYTWTZQWQXQZPXOYPZOaQbSbVdWeZfbfaebgbkbmdlcmcm\
+        ei
+        circle nil 849,247:gZjYgZfbdbbZVaaeYeYgWgVhRjTkSkOpPpTqSrUtVsapWtdmdndqeogojqkrmtrtsrmjpluntlvntksktiuhwgvev\
+        exbwawXuWrVpWnVqMkXjXiVhThUftgGdScQWQVTUZWcVdVe
+        circle nil 887,319:ZdadZfbeXgbgbgagXgXhXjbhQlKlLmKlNnRlQlGrZkWnbkblbobsbsgmeofngpgngpgqjyinjpkpv8mpuwlmmlpn0\
+        m0mqh6jugzgzgxgtgtfrdqeobwZncmboanamajalShTiVhagbhYhZiYgagTgYgIgYgXgXgZgXfafZeUdVfZdUgZcWbbbdYgafXgagXgYgelr\
+        nnhmh
+        circle nil 147,28:hokvimhmhmglYiZdbggZhZmcmflkiqglbiagbgdnfmdqc0b1bwbqcnbnhYsHnRmUlTkWlamYmeokqtqwmtmujpjnin\
+        hj
+        circle nil 1178,110:bdadSbOdMgMfMiNhIjJjMmLnDsDsJrIqJrKyJxGwFvGwWyWzK2K2M4M4Q2P2U4V3U4V5d4d4e0d0e0f1i0j0k0j0\
+        kylzqzpzpwpwuytyy79+8zwqwr8t9u/s+l0k1kxkxjyixhwixiyi2iyizh4gsg2e3fwexd
+        circle nil 270,126:ZWZcZcUcVdTdSeReQgQhRmRoRpTrUqVsVtXuXuZwbvcqesgrgtgtnvlrnsqupssruqtqxnzmykyiyiwgxfwZvVwOq\
+        QpPmTlO
+        circle nil 568,129:RZOcOfJgBoByQuQuSxTxV0V1a2b2i0h1ryryywyx0u1u
+        wide-circle oval 145,74:XkbjZjZiWlZlYmZmYnYqbnaqbubtYvb0evgsgqksjplonpkmmoponlnjrjqjoi0hpeneoeoe7UmdpboarXna\
+        mbrakcqYmboaqXoVjZkZjYjXhYkYiZhZhYgYhXfZgYfXeafacadZcadcbcdcbcadbdXcVdWfVeXhUiWhTjYjQlSnbiWkdh
+        wide-circle oval 697,183:bacZdZYZWYWYOZPZKaJcEdQfPfKgLgOhOhLkLjKlJlIoInKpLpJsJsMtNtMuNvMxMxQvQvL8R6b4i0l3t12\
+        w+xwnxnzmzl2k2k2j2j4g4h5e5f6c6d6a5b5a5a2a2Zwaxb+T1YyXuWwUwTtSqVqTrQnRmQkTjRfTfSgTdUdUeXaVaWWWVVYWWYYaTZKa
+        wide-circle oval 553,264:RlUnUmXmWoXmWnXmZlemZnhmgmhmgmhmgljlllhmjmhmolglglrlqlrkqlrksitjvgthxhthtfvfvgvfsex\
+        evbvdubvbsbxYuZvbsZsavbuZvbpZqapalanZmZlakalakbianagbgafbgbfaYbdaWbVbWbObTdWcQcUgTdOdTfRfTeUgRgRhOiUhRhUiTiP\
+        iUkRkUkUkRkUjTjSlTjXnWmelSmdi
+        wide-circle oval -3,173:eYeYbZeZeZeYhYhYhYlVnZtZwawbwdvdye2f1hyh1hyh1j7k9kzlzlzmzm6owmwn0pwponmnhpfniqerfoZn\
+        WoWmUjWkNlKlHjRgRgFfFeIeFdIeJcLdIdRdSbbaaaYaPaRdSb
+        wide-circle oval 359,76:bkfmfkdqenlqxwuvuxuv32rt1wvq3q+rwmxl0m1l+o+p2m2l8m7n2k3j8k8j+e2e/YtZuUtNjRlPcSYYXYUY\
+        NXMXCVGWCVQaPbQbPbBXObNbFZCXIaMcLcLdHdLeLeOgOfHdEfOeHfOeShik
+        wide-circle oval 838,200:fZXXXWUUUUUUOOMQJPMTBMFOOXOXOWPXQYQYOXOXOXOXKWLWGUHVBVBVBUBVBVHXGYHXJZJYJZIYIYIYLYK\
+        ZLYJZIYJZDYDXFYFYLbLaLbKcLdKcCaBbFcEdFcGeHfGeDfDgDfDfEgDfDgCgDgGjFkGjJkIjJkKuLtM5K9aybxjyjyw4v4575758574z3z4\
+        z/3/2/36x6x5w6x6x/z/z/y/z/z9w8v9w9v9w8v9w9w8w9v8w9w9v8w9w+u/t+u/t+u/t+u/t+u9t9s9t9t8s9t9t9s9t+s+r9s+r+s9s+r+\
+        s8r8s8r9r8r8s8r9s9s9s+s9s9s9s/t/s+t/t/s/t+r+r+s+r5p5p5o5p5p4m3n3n4m4l4k4l5j5jxgxh9byW2V8TxYxXwZwZyayayV/V8Sv\
+        TmSmSjRYKXNSNWQNPOONQJONRIPNSIQNQMSMSLTJRBMFOBMBOFOBOEPPWPVOWPWEQOWPXQWQXOWPXEQQYQXEQMULULUISKUPVLVOXPVLULVE\
+        ROWPWOWPWPVDPDODPLVPWPVOWTX
+        square box 371,133:ogmgwh1h1h5i5h6i+g9h6g2g2gygxhsiqhlgjtiwi3g2gwgxe6c/fzfze/f5f2gyhygwgqdlZkbffbbdbgZeUfTeP\
+        eQeNdOdRePgPgQhOkQmQkTjUiVgWgXgYfaeaeYcbdfbdVfUeSfRgTfReTeRdOeReRfRfQgTgTgUhViShTiUhUiVhWiYiYiZiZiZhbgi
+        square box 370,107:lfsgwg6f8g/gxgxgyixhxgxgygxhwgwh8h6h1gvgrgmghpgrguhzi1i5g8g8g5f6e5d2d2d0cwbubrboZkYkUjPgN\
+        gKgHeHcGeFeHeLfKfNgQgTgWgYgagYdZZaWeVeRfLgLgKgIfIfHeIdJeKdLfMfPfQgSgWgZhbii
+        square box 350,230:enfnescseqdvevfyf1f5f5g5g2h1htirimjllgngrgwfzfyf1f0g5g2g4gzgzgvgtgmflehbgVgXgUhQhPhMhOhMg\
+        LeMcNdPbRcTcTdXdZcaaZaebgXhZhXhThWgUgUhXgUgXgXgXhYiYhZiZiYhZhZhYgZgagXgZfcd
+        square box 91,132:rohoiphsgugxevcxeteqgnglljlgododtdweye0e4fygygsfqgnflgibfbdWgUgSgRhSiUjVhXhYgZgbVZVfRgPgOg\
+        MhMhNhOhUgTgWgZh
+        square box 786,126:bgbgbgbgYgbhbgbgbgbhagbgbgagbgbgagagbgbgbgagagbgbfbfbfbfbgbgbgfnhmgninhmhngnhnhmhngnhlglg\
+        pgmgoglglgngmfmfpfngnfpgnglflfnglglmhnilimhmgsilimgrimgqhlhogmgrhogmhngnhsgmgqhmgmglilijbgaiYhbgagYgXgVgbgbg\
+        agagagafbgbfafYfVgbgUfYgYgagafbfbgbfbfafbfbgbgbbcafafYgWfbfbfXf
+        square box 100,307:lhpgngogxeydoexcoexcpe8czeqg0eqgqf0f9g+h0hqhphphognhnhnhlhlgmilhdohoglgmhwgygygzgyfzgogpf\
+        pgzgpgpgphyg7gpgogogogogohsgpfnfkbgZdafXfbfafZgSfXfYfYgPfXgXfXgWgWfXgNeNfNdYfXfXePdXfQeYfSeUfPfZgYgahagZhagb\
+        XgYhagZjQiOhXlEiWlEhXhWhWhXhXgYgPgQgYgQhYgYhSgahYgb
+        square box 697,99:ZeXfVfRfOfNgDgDgOgNhQgPgPgPgDhFiIhMiQgVgZgbgfmglgogrguhtgygyg4g5g8g6f5e4d1d1fxewfvgsfofngn\
+        ncofvfyg3f3f7f+f/gygxgxgxfxgxgygxgwgwh6i4hzhuhogmgbdfaeZfXcRdScNbOdMdKdJeHeHfJeHfJeKfOeNeRbJfafafe
+        square box 560,550:YCfYdEeYfWeWeWfUeWfWfWfUfWfWgYfWgYfagafagafYfagaicmalgpelgneogpepeqgpeqereqergqereqgqeqep\
+        gqepgogognengmglgoimgmikogohmgmgmgqhohsgqhshuhuhshuiuiuisisjsisiqioioiohmhohkgmhofmembkZgaeXebeagagZgYgXgXgX\
+        gWgWgWgWgWgWgXgWgYgYgXeZgagaebgbgZebgeg
+        square box 330,272:gqhngrgvgugtgwgvgzhthzgugvgvgogmfmmhngoiqhtgrhugqhuhtitisjujrisirirhriqgsiqhqhpinhnglgmgg\
+        ZfYfXgZgXgTiUgSiRhOiOgShQgRgSgTgTfTfVfXeXfaebfbbgZhVhYhXhUiXhShUiUiSiTiUiVgUgVgThXgVhWgYgXgZgZfagbgbg
+        square box 71,124:hkhmhohpirhshthuhshqhohmglhlglqiqgufwfvgwguhththrhqhphohlglgibgcfagYeXeXfYeZeXeWeWfXfZfYfY\
+        gYgagZfbfZfbZeagahVhUjTiShTiUhWhWhViVhWhXhYhahbgch
+        square box 288,343:fVgUfJfGfHdJdKbJcNbMcTeTdXdbZbafKjJjJmNkJjJiQjThYhbgaiflfnfsfxg0g5j6j2jxixktiskpkplnmmnjr\
+        iugxgyd4e5f7e5c5budqene
+        square box 806,339:gmgogngpg0gmgqgrgpgwgoglgmgpgmglglhmmjxgtgrgsgygugmgnfpfqemfogufsfogpfsfmgmglgmgldgXgZgag\
+        bgOgWgWgXgWgWgXeYgZfbfZfafXfbfbfZgaeZZfXgVgXgagYgWgXjaiZhZiYhahSjXhZhYhVhZjbibhaiZhZkZhZjaibi
+        square box 581,243:ilinilhmglgmhmgngmglglhmgmgqgmmkmgpgmgngpgnglglgoglglflglflfgaeXfbeaeadYeagbfbfbgbfbfagaf\
+        WgbgbgbWgbhYhbgbgZgZgagZgbgbkbjci
+        square box 107,137:mfogqgueuewewfvfvfqfnfjofofqfrfrfufteufufufugsfqgogladXfXeWfTeUfUfVeWeXfYeagafbfbgbgaghbg\
+        bgbiaiYjYiaiXhbhZhZhaiZhahZhahbgbhbhbhYhahd
+        square box 786,241:OfQgZgYgZgXhCkDlahagahbhYhagbhfmhmgpflemfnenenfmenelflelelfmemfmgnfmfmfmgoflmhpgmhnhpiqhq\
+        hrhrgsgrgrgrhsgrhqhphohnhmglgohlgbbdafZgWgZgXiXhWhVhVhUhVgUgVgWfXfYfafafaef
+        square box 293,186:clcqasZuaxZ1Y5X6Z8a7Z7c4c0evfrgomjqauewf0e1g3g3g3g6g6g3i5i7j4i4k2k1k0kxkwlsjrjnhnhiagWkRl\
+        LlNmMkLlMjLkJlIkJjMjMiMjMjMjQjRiVhWiagbbcYiYiZhYhbgXgbgafXeFbGgGhUjZiXjbgYeUdTdUfWfYgZgZfZfYeXgZfZfZfZgVfWfa\
+        fbfagbfbgYfZgYfZgZgagagbjbjZmYoUuWwXyZxcverfnglbj
+        square box 387,124:hpgnhmgoiqhqirhthshththrhrgrhrgqhqgohoilknqkrhriwiwhxgzgyhzgygzgygxgwgththvhshwhvgqgpZjYi\
+        ZhbgZgadacZdacYcTfWeQfRfVdTdWdXbYbWbXbVbUdUdWdVeYdYdXcbYcbfYgXfUgWgUgUgViVjViXiYiWiYhYiXhYiWiYhXhXiYhYiYhYha\
+        hagbhYgbgahflhvhviohk
+        square nil 419,205:frfmfqeoeqdqdreqdrgrfqfreognengmeqfmfrfmfnfmglfmgqgmgoglgmgmgngmoioeqfrfsgtgqgtgrgpgngngl\
+        glgngogmgmgrjnhnhlilgohnhlhmhphqhnhrhmhnhoh
+        square nil 505,230:mgmglglgngpgrgrgqgtgrgsgsgshohpgnhmibkglglglgogrg1g5g+g/g5g3g1hvgshndbaebeZgZfTfUfTgTgPfQ\
+        gVgTgXgQgVdVeafZelckc
+        square nil 1056,125:fvh0i9j3j7i6i7i9i+i8h6g4f3e5e4g1gzgugqgnglYfWfUgRgNhLhHiGhEgEgQgQgQgQgQgPfOfPfOgPfQfPfCd\
+        CeEeHgLgNiRgWhYgcgaggagUgWfUgVgUgTfRePePfOfMdLeLdLeMeMeOeQdRdGfUfYfbgZlanZnckdndjZmdhbfh
+        squiggle nil 453,282:lizrojrlnjlgmbnalbmbnblbnclblimjlknjqklilhlgocodmdlemelfmdldldobldogpipisjpimjlinhxglgm\
+        gngmglfndpgthqjnipjlhpkrjmhogngoclfmdmfofmfoengmhmilkpkljlilhmgnfleldleqfpdlfle
+        squiggle nil 786,419:lcldldlelelelelelgljlililjljlilililglgmglglelcldlelelglflglhlhlilikljlljlhlglglglelflen\
+        elflglglglhlhlglhlhlglhlhlhlhlhlglglglglflglflelflelflflglglglilkljlklklhlglflelflelf
+        squiggle nil 377,211:tmrgnenZmboVqmnmlmllmhlimgngodlfnglgmlpklglfocqbqnrk1gwg1ilgtmogwg2gmgngmflklkzhngugrgl\
+        eogtlqhphmgqgrgmgpfndnonlminiminipgrgogngmjllllmmlkmjmhlgmgjg
+        squiggle nil 493,319:TgdTqE3D9J+S9g4su3o2ithlgPZEYMVXVfPlLwN0KzKnKYSIdCkQjPtQtPyQzQ4Q3R6W6W1c1c7hrrg5U/U0T0O\
+        3P3N0NzNpNpJgXclEsOtP1M1M6N7N8S8T4Y4YwexeuggtVyVyO5P5K8K7HyHxIoInMeNfJLdCmQlPwOwP3S3R6U5T7Y7Y2e3fwkwjwwh0ZxZ\
+        xQyQzK0K1IyHyJsJrCnWgmO6DzQzQ3S3S3V3V2Y2ZwfwfxhlrawawQ0Q0K6K5H6H5HzHzKoLoHhXSkNjNsMsMyOzO2S3S1Y1Xwdwd2jnwcwb\
+        xRyRyIyHyIyJpIoJpQkQkLnCqHlSeaNiMjNqMqLvMvL0QzPyZzZ3imqa8J+OvPvKuJuIrJrLmLnChOabDhGhHqDqDvEvEzIzI0N1N2S3R
+        squiggle nil 459,151:YsQvMxLyWqbpfntmvhxgwg3g8Z0c1b0azZwYwZ8W4XtZZdWgZiapfsgzs6z6yuzt1p2o1p1l1k1l7i7ixgxgwWn\
+        WhRgNXQSOGQCYCYCYKfLeKfJiIiJiCoCoDnCoCoCxCxM0L1a+a+sztz/41n2n1n1k1j1k7g6h7g6h7g2e3fyYzZvUmTiRfQPGPGKKNTPbFdU\
+        nWwbzg3h4h5t6z80w7kxgxgygyg1g1g2awZwZxUsVlahbgogpgmgogk
+        squiggle nil 119,57:UeTjSqTwY1ezmwus4j5jwVrPlOeVbdSkOuQzW0fxmp0j4YzRtPjUbbLkDwJ2S3g0su7j1ZvTpOhRdaWhQwR+b8kx\
+        vo5c3SxNpOjXXsT+V7dxhlrfzUzPvQpTjXbbReSlWse3vr4g0RyCjMjNdDdUbdVjSxX1fqncrJiPjPiDeTbdUrQzY3grlkudxSuIpDfBdSZc\
+        TiQsS0aygomhzXpZ
+        squiggle nil 125,76:RpQuM6O+X/g6mxuswpzi1e5V8P/M5KwNaSWVPfNmJwI4O9X6gzoppovkxk1f3e4c2guflZkYbTZRWYYeXmXyW3d6\
+        i3ptrpqjresZvOzLvMqMhTfYebcc
+        squiggle nil 332,174:blXrczczx06g5f5f6g7V8V7W8V7V8Q8R8R8Q4MhYfaERPePfDkElDkGsGtMuLuO2ez02020t1t8m8n8m8n8m5i6\
+        i5i4g4g4gUjFmGmFmCoCnHoHoGrgl8g4g4f4f4g9b9b9a+b9b9b9a9b9b+b9a9b9b9Z9Z9Y9Z+Z9Y9Z9Z/Y/Y/Y/Y/Y/Y/YgIgIgIgIgQCQI\
+        dJeIdGfGfGgGfGkFkGlFkGkDlEmDlDlElDmElDlDlEmDlCqBrCqBrCqErErFqErJrKrJrUuhm9l9l8a7amcabbg2wxkxl8l9l9l9k9l9l9k9\
+        l1rkoWvQvQvGzFzC2C2C3C2C2YrioskphnegVGOGNCWCWCVCWCWGaGaGbGaDcDdCdDcFcFbFcFcFcFbFcEYFYOXPXSPfXZbwhyfzf6c7d6c+\
+        X9X+X+X+X9X+W+X9X+X+X+X9X+X/U/U+U/U5S5T6S5T5SiYYYBWEgEfEfEgEgEfEmDnEnEmDmEnEnEmDmEnGqGpGpFqGqGpFrGrFqGrFrY6Y\
+        6X6Y6g0g0gyty1q2p1q6j7j/a/Z/Z/a/a/Z/Z/a5W5W5W+h+h+h+h+h+h+h+i+h+h+h+h+h+h+h+h+h+h+h+h+h+h+i+h+h+h+h+h+h+hMWN\
+        VQYQYLYLXLaLaGeGdGdGeLgKgLgLhKhLhDmDmEmDmrg7a7a6a7a7a7a4Y4Z4Y2Y3Z2Y6X5X0WzVVdIiJiOmOlGoFpVoMaCbCbCbCbIfIgIfG\
+        gHgEgagpe6Z2a2a1a1b0YZdNjMmNlDwDwDwgptp0kzl8h8h
+        squiggle nil 91,104:mXoanengnklohpgofmbkrXodnfogmqixgvanXlbhjUpZobodmfmgmgjpgmlimemgogmhkmimhlfoZoaljYlcmelj\
+        hpgqbralakogmglglrgqboXlXlbimhhmerXpSoQlPjVhZgbYgWlXmamcmfngiqdmXlWjUjThVhZgbgmWlelfUiUgXcZWeXgZ
+        squiggle nil 272,182:mlWeMSLTJSJSPWPXObaij0pxpxqypyo0guYsHrIsPrTuYuarXtOt
+        zigzag nil 538,418:ialalZkakbmbkbmcmanZlckbjbldlghljmimjojmjlhlkniljlilhmimilimlhhbjbkbnakalamdlcmblalelblcm\
+        bmcimjmjmhmilhliljmjmjljmiljljmjlhljlklnckalZkblamakbkbldlcldlcldldlekmiljmjliljmiljljmjmjmij
+        zigzag nil 185,377:kblclbmboYoUpSpNqMqLpOmQlSkWiblmjpiqjrjsjukukvluktkrkrjojmknlgpRmPoMpHnInMnSmXmbljimioiqi\
+        qjrkqjplrlqmtlpkojnjmnomhmakSlOmOnOpPoQoRmVmYnclqhphsgsivjviwjxjsjqjmnkpcmUmQnPmMnMpOoRnUmaofiqhvhwhyjwkxkuk\
+        rknmirUoUpQnPoMnMlRmUmYmclflhhn
+        zigzag nil 47,304:jagZjQjRkPkQiYhbmilnnsqupuoqmnkmmkhbgQgPhOkQkWkYjbkbnup0q6p+r4oumnkYeKeEgFjHoPsTnYlcldjrkr\
+        kynxmzmxoumrlokllXhShGhOhVhYhZiaiblhjpkukyjzjxjsipimhlig
+        zigzag nil 137,206:lbqZtZsbqcoelflggoYuWtXtandlqisftfsepfnfmemelgasXtXuYrZrcmpfrctbvarbpcneledocnZqZqZpbncnq\
+        cqararbqbndlehldlbmapapcodmemfg
+        zigzag nil 82,856:2Y3Y4d8c9b+awcwbxbxb/W+W5W1XvaqcmebfYgXgYgWgVgWfSdVdUdVdXdSbETNZQaQZNXEQPXKURXUZSYXaZcaavb\
+        1cwcwdwaxbyZzZ1X1X2T2T0UzUwUxU7OzQxWtVsWpZkZbYbgRhTiIjGiGiBhDiFgHgHdMdKeNeOdRcWcZddP9O9P+VyaxazazbyazZyZxZwX\
+        wX9Q1QzRrToWjWdSOcNbIfEgQgQhCkHlHlIlHlBmKiJjSgVgbelNuT8S9RyayZ7X8W7X0Y1Z2Y3Z2Y3VtambLaFgIlJmIlOmNnIpIqIpPmPm\
+        FqFqTjbh/L9S+V+V/V+V1a1Zyayb2Y1ZmfQmPnFsFtFsItJtFxEwFxD5Mza2zgzg5d5d/b/b/b/b+d+d+e+d
+        zigzag nil 97,501:fXgZgUkNlMoGpIsKpSoXmejojwq4q9r+r9o3mrqgmYuOxJ1BsPrPsOtOsOtN0C0MuYpflhhngrg2gwhwgxgxeydzcy\
+        dxa6esglmeoYnXqTsLwFrNrNsNtNuOuO7D1Qteohjrhyh3gwfwY9W5ZxbselkZkWtNxKxH0H0GzJyQuWpcmginhuj5k9gwgxgwgwc+Z4bvdp\
+        lYnTsLuHzDxDtMoUlZjngxk7m8m7k4jwhqgliahXkSkRkVjXibkllhlfldpZlbmZmYlbldliisjxl0j1hvgpgl
+        zigzag nil 306,31:ckdndkcmcmbmbmboaoanbnbmdldkamZnZmajlinismwlxltkpjljknkkZkZiWiVjTiUjRiSlTlVkVlXlXjYiaiahlh\
+        nhwizmxmvmvloklikjglblVqStUqWpaldlamahaeTdNcMdBbVdae
+        zigzag nil 62,274:hckWkRlKnLmOoQlWmXmbkfppqspxmxmxlwmulokkqYoQnMlLjMjRiYrjoqoyp3m2l0lwocnOnI
+        zigzag nil 608,115:wk0k0gwkwkxixiwiwiyiyi6kyisgqgogmgmgcoUmOoOoOoNnNnNoNoImImNlNlPlPlCsCuUmWkcmqm8m1j1j2j2j+\
+        p+p1l2k1l+o+o8o8o5o5o+iskqgig
+        zigzag nil 544,100:vfugvgugohngmhngsjlhmipinjmipllkljglcoanXoblbkZlZmanYmananclclojohtiwjxltj0mmiljliljklbpU\
+        sVoNpPmOkNkUkbibi2hugwh1m1muxmonynzklcmZlVmbjWoUrcncmcmblrkogohsiniliklMlRiOiOhWiTkbibjclcl
+        line line 40,204:metc9WyZyZ0Y1Y0W1X7Q3SwXrYldlfdg
+        line line 700,255:bhbiZhYiWgYgYhYhWhVhWiTgEkOkOiPjPiOjOiLiNgRiPhPhNgShMhQgLgLgLgLgGgHgHgIgLgNgKgYfZgZeeg
+        line line 203,71:pfugyf1i3i5h4g7f5d4d2ezfvgnigg
+        line line 212,264:ngogoiuizj2i1j6g7g3g3g3g+h9h+h6g5g5g6g9g9g9g9g5g6g5g6g5g/g/g/g/g+g+g/g+g5g5g5g5g5g7g7g6g7g\
+        1g
+        line line 590,69:gqgqgsgwgxg2g2g4g5h5g4gyhyg+h+g+g+g2g4g5g0g1hxh8guh0gugmhngl
+        line line 73,300:oize+d+cyexdyexdzezdzezd0ezfzezfzfzfygzfygxgygxgygygygxgxgxgygyh0izh0hzh0g1h0i0h0izhzgzhwhw\
+        h7i0ithogRg
+        line nil 927,66:ZodobqarYsVuUvRvOuLwKvIzJzKvOsUqTpZmamblaoZlbiaj
+        line nil 334,115:euf2a+dwdxeyfyfyfzfyfyeyeycwdwazZzYyZyS7Yvaqemmi
+        triangle nil 434,612:nisjui8k3l6j3k3jyg8eudwdpfldbXZTYUSEUJaMbMdQdPcHbHeEgMgLgIgIgJgLhHjOjOjRjPiWiWgZelenZsc\
+        rYuZsYrP2VwI9VxM8YwQ9XwS1YrWuapYrbnarenbpardncsdperfneognglimhlhlhlilljplqknihi
+        triangle nil 596,525:kYkYqUkasMkamWyGoSuNuNmUmWpQpQmWsGkWmOiamWoguomiwqommmysmmyyqooo68ssz1z1suw1w1suosuxuxq\
+        ommuwkmomimWmSmYiWiOkOkQkDlDlIkKgHhIiHhGgGgGgGgCgEgFdEcFdCcGdGcGdCcGcCcCcQeNeNeYgEeYgWeme
+        triangle nil 637,413:lglfpgtgvgxgygvgvgrgqenflgmeldlelfoflfnenfpgmgoflelgkZfYebebdbdYdXbWbWZVZSWPWOVOUNTOTQV\
+        PXSYSZUZVbYcadbeZfbcYeZcaeZdbblfnfnepfqerdtcuduetdudrerfqenfnelflgoglglgnglgmilglglhnhngnglhlgngpglgoglflfle\
+        nenfnfoelflelelfl
+        triangle nil 515,203:gndmdldmdlbraocobrbtYyZwX0YyZyYybtdseqdpdneoemflfmdngmcnfmememfnningpftgsgtgvgvg3g5g5g5\
+        g8g5g5gxgugsgsgqgogmfpelfndldkbgahagadYebdYcYbUaUZRXPQMSRPOPRLOJOJQCNHNEPHRLUSXOXUZWcZdbebehg
+        triangle nil 155,106:gngofqfpepeodndndncmdmdlflfmlimilhlhngngogngmflgpemflcibfcdbcabaaZZacYebZWdbdcccdadaecg\
+        f
+        triangle nil 767,684:lWoWmXkYpWnSmTmYiWmUlUvQpPlQqOpLtPqOpQqPtOoWmStSmTnWoYkXoWkVoYjajZmakYkZlanbjqlrjqjsmsn\
+        wpxquo1q1otozmyowo0mvtxoylwmylpnwkqkpmqjmlqilmoiommiljmmllnikZiXgUgUgTgLgOgIgMgGgTgTgSiWjXhWiViVjYjZiYjXhbga\
+        gZgVgbgPgTdQgObTfPdTbWeVfXeZebgcfbgge
+        """
 }

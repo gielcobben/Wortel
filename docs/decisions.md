@@ -2864,8 +2864,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   recognises and offers the hand's line back in a palette after every
   stroke, with no way to turn it off, and that palette is what people
   complain of. Here a mark says "this", so a wrong guess changes what was
-  said: the recogniser answers only when every point of the stroke lies
-  near the clean shape, and otherwise the hand's line stays. Four shapes
+  said. That holds for an open stroke, where a tick made a line is a
+  different mark, and the first version held a loop to it too: the owner
+  drew, almost none of his loops became an oval, and against real people's
+  strokes it took 61% of circles and 18% of leaning ones. A loop means
+  "this area" rough or clean, so a wrong oval costs nothing: a loop is
+  now read generously (94% of real circles, leaning or not) and an open
+  stroke strictly (8 of 9,227 real zigzags and squiggles became a shape).
+  Tuned against a program's strokes was the mistake; it is tuned against
+  people's now. Four shapes
   (a line, an arrow, a box, an oval) and no star or speech bubble: a mark
   points, it does not decorate. No palette: Option held keeps the hand's
   line, and ⌘Z takes the mark back as it does any mark. ⌘Z giving the
@@ -2876,9 +2883,7 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   through the points of one, so nothing that draws, pictures, moves or
   resizes a mark had to learn a shape. The other tools stay: a box drawn
   with the box is exact where the pen's is a guess. Apple offers no API
-  for this (its forums say so), so the recogniser is our own geometry, and
-  its thresholds are untuned against a hand until the owner has drawn
-  with it.
+  for this (its forums say so), so the recogniser is our own geometry.
 - **2026-11-26. The mark-up adapters' protocol has no extension with
   defaults.** A default in an extension is what a call through
   `any MarkupSurface` runs whatever the adapter implements, which is how

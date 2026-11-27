@@ -40,7 +40,13 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     /// Mark-up went on or off: what its owner does about it (a page stops
     /// taking the swipe back, and reloads what it put off).
     @ObservationIgnored var onChange: () -> Void = {}
+    /// The layer the marks are drawn on, and tied and pictured through.
+    /// A file's note can be on screen more than once (two windows, or two
+    /// splits, showing the file), and then this is the layer last shown
+    /// or used (`MarkupOverlayView.claim`).
     @ObservationIgnored weak var overlay: MarkupOverlayView?
+    /// Every layer on the note now, `overlay` among them.
+    @ObservationIgnored let layers = NSHashTable<MarkupOverlayView>.weakObjects()
     /// Where the pictures go and where the note is copied to: the app's
     /// own, unless something trying this out says otherwise.
     @ObservationIgnored var store = MarkupStore.shared
@@ -49,13 +55,23 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     /// The tool in hand. Kept with the note: what you were drawing with is
     /// what you draw with when the tab comes back.
     @ObservationIgnored var tool = MarkupTool.box {
-        didSet { if tool != oldValue { overlay?.toolChanged() } }
+        didSet { if tool != oldValue { everyLayer { $0.toolChanged() } } }
+    }
+
+    /// Tell every layer on the note, the one in use last.
+    private func everyLayer(_ tell: (MarkupOverlayView) -> Void) {
+        for layer in layers.allObjects where layer !== overlay { tell(layer) }
+        if let overlay { tell(overlay) }
     }
 
     /// Every mark made for this note, those whose chip was deleted too: an
     /// undo brings a chip back, and its mark with it.
     @ObservationIgnored private var known: [Int: Mark] = [:]
     @ObservationIgnored private var nextNumber = 1
+    /// The count is starting over at 1 with no mark made yet: every chip
+    /// was taken out, and a number was taken for a mark on its way. What
+    /// the next number would have been, for when no mark comes of it.
+    @ObservationIgnored private var restarting: Int?
     @ObservationIgnored private var folder: URL?
     @ObservationIgnored private var copies = 0
     @ObservationIgnored private var copiedFlash: DispatchWorkItem?
@@ -126,6 +142,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         copyNumber += 1
         known = [:]
         nextNumber = 1
+        restarting = nil
         copies = 0
         tool = .box
         if let folder { Self.open.remove(folder.path) }
@@ -136,22 +153,23 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         edits = 0
         editsCopied = 0
         marks = []
-        overlay?.marksChanged()
+        everyLayer { $0.marksChanged() }
         surface?.deactivate(forgetting: true)
         if wasOn { onChange() }
     }
 
     // MARK: - Marks
 
-    /// The number the next mark takes. Starting over at 1 waits until a
-    /// mark is made with none left in the note: until then an undo can
-    /// still bring the cleared ones back.
+    /// The number the next mark takes. With no chip left in the note the
+    /// count starts over at 1, but the cleared marks are let go only once
+    /// a mark is made (`add`): until then an undo can still bring them
+    /// back. Letting go here, before the preview had said whether a click
+    /// made anything, meant one click on nothing after Clear took the
+    /// note's whole undo with it (found in review, 2026-11-27).
     func takeNumber() -> Int {
-        if marks.isEmpty, !known.isEmpty {
-            for number in known.keys { surface?.forget(number) }
-            known = [:]
+        if marks.isEmpty, !known.isEmpty, restarting == nil {
+            restarting = nextNumber
             nextNumber = 1
-            undo.removeAllActions()
         }
         defer { nextNumber += 1 }
         return nextNumber
@@ -159,16 +177,37 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
 
     /// The number the next mark will take, without taking it: what colour
     /// a stroke is while it is still being drawn.
-    var upcomingNumber: Int { marks.isEmpty && !known.isEmpty ? 1 : nextNumber }
+    var upcomingNumber: Int { marks.isEmpty && !known.isEmpty && restarting == nil ? 1 : nextNumber }
 
     /// A number taken for a mark that was not made after all (a click on
     /// nothing): given back, so the marks that are made count 1, 2, 3.
     func giveBack(_ number: Int) {
+        if let was = restarting {
+            // Every mark in `known` is from before the count started over.
+            if number == nextNumber - 1 { nextNumber = number }
+            // Nothing taken since is still on its way: the count goes on
+            // where it was, as if it had never started over.
+            if nextNumber == 1 {
+                nextNumber = was
+                restarting = nil
+            }
+            return
+        }
         if number == nextNumber - 1, known[number] == nil { nextNumber = number }
     }
 
     /// A mark was made: its chip goes into the note where the cursor is.
     func add(_ mark: Mark) {
+        if restarting != nil {
+            // The first mark since the count started over: the cleared ones
+            // cannot come back now, or there would be two of a number. One
+            // taken again since is a new mark's on the preview, tied over
+            // the old one; those not taken again are let go.
+            for number in known.keys where number >= nextNumber { surface?.forget(number) }
+            known = [:]
+            restarting = nil
+            undo.removeAllActions()
+        }
         known[mark.number] = mark
         if let overlay {
             overlay.insertChip(for: mark)
@@ -189,7 +228,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         known[mark.number] = moved
         edits += 1
         if let index = marks.firstIndex(where: { $0.number == mark.number }) { marks[index] = moved }
-        overlay?.marksChanged()
+        everyLayer { $0.marksChanged() }
     }
 
     /// A mark's picture, taken when it is made and written at once: what
@@ -230,7 +269,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
             let now = known.values.filter { present.contains($0.number) }.sorted { $0.number < $1.number }
             guard now != marks else { return }
             marks = now
-            overlay?.marksChanged()
+            everyLayer { $0.marksChanged() }
         }
     }
 

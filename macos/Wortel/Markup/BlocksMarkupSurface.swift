@@ -71,7 +71,12 @@ final class BlocksMarkupSurface: MarkupSurface {
 
     // MARK: - On and off
 
-    func attach(to layer: NSView) { self.layer = layer }
+    /// The layer, and with it which of the file's previews the marks are
+    /// on, where the file is shown more than once (`MarkupViews`).
+    func attach(to layer: NSView) {
+        self.layer = layer
+        views.layer = layer
+    }
 
     func activate(moved: @escaping () -> Void) {
         self.moved = moved
@@ -149,8 +154,12 @@ final class BlocksMarkupSurface: MarkupSurface {
     func pick(_ number: Int, at point: CGPoint, unless picked: [Int], reply: @escaping (MarkPick?) -> Void) { reply(nil) }
 
     func tie(_ number: Int, to box: CGRect, reply: @escaping (MarkTie?) -> Void) {
-        guard let corner = fromLayer(box.origin), !views.blockFrames.isEmpty else { return reply(nil) }
-        // The block the area starts in, or the nearest to where it starts.
+        guard let corner = fromLayer(MarkStroke.inkCorner(of: box)), !views.blockFrames.isEmpty else {
+            return reply(nil)
+        }
+        // The block the ink starts in, or the nearest to where it starts:
+        // `box` is the area, with room around it, and in a tight list the
+        // room alone reaches the item above.
         func distance(_ frame: CGRect) -> CGFloat {
             corner.y < frame.minY ? frame.minY - corner.y : corner.y > frame.maxY ? corner.y - frame.maxY : 0
         }

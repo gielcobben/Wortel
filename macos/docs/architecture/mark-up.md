@@ -296,6 +296,26 @@ and the views sign in to `MarkupViews` as they are made: `DiffView` its
 table, `MarkdownView` the view that stands for its stack, `ImagePreview`
 its image view. Weak, all of it.
 
+A file's session is one per path, app-wide (`PreviewTabs`), so the same
+file in two windows, or in two splits of one, is one note with a layer
+over each preview. Each preview signs in its own views, and what the
+adapter reads is the one under the layer the marks are on now
+(`MarkupViews.layer`, set by `attach`): in that layer's window, the one
+most of the layer lies over. The adapter has one layer to place and tie
+through, so one layer has the marks (`session.overlay`): the one last
+shown or used. A press, a scroll, a chip's click or the window coming to
+the front hands them over (`MarkupOverlayView.claim`). The other layer
+keeps its note bar on the same note and draws no marks, since placed
+through the other preview they would be wrong there; when the layer with
+the marks goes, the other takes them (`hide`). Before, the views were one
+slot each, which the last preview to update took, and the last layer
+shown took the adapter: a mark drawn in one window was tied through the
+other's table, to whatever line was at that height there, and when the
+newer layer went it let the adapter go, so the one left drew no new mark
+and stopped following its scroll. Found in review, shown in
+`MarkupFileTests` (two windows, one table each) and `MarkupOverlayTests`
+(two layers on one note), 2026-11-27.
+
 - **Source and Diff** (`LinesMarkupSurface`). A mark is tied to a row, and
   the row's height is its unit, so ⌘+ scales it with the text. The clip
   view's bounds notification moves the marks in the frame the rows move.
@@ -358,6 +378,17 @@ is back where it was; an image's mark is in the picture's points and its
 picture in its pixels. And against the real `MarkdownView` in a clear
 window: frames for the 9 built blocks of 129, a mark tied to its block,
 moved by a scroll in the same call, a picture with the text in it.
+
+A drawn mark is tied to the row or the block its ink starts on
+(`MarkStroke.inkCorner`), not to the corner of its area. The area has
+9.5pt of room around the ink (15 for the highlighter), half a 19pt row,
+so a box drawn tight around a line from its upper half, or the
+highlighter along one, was tied to the line above, and so was a box
+around an item of a tight list. The mark was drawn where it was drawn,
+but it followed the wrong line from then on: rewrite that line and the
+mark lost its place or went with it. The tests had
+handed the adapters boxes with no room. Found in review and shown in
+`MarkupFileTests` with the areas the layer really makes, 2026-11-27.
 
 ## Off, something changes, on again
 
@@ -464,7 +495,14 @@ layer comes and goes with the tab, the session stays.
 **The note's text says which marks exist.** A mark is a chip in the text
 (`MarkChipAttachment`), so deleting the chip removes the mark and undoing
 that brings both back (`textStorage(_:didProcessEditing:…)`), with nothing
-kept in step by hand. A number is never reused while a note lives.
+kept in step by hand. A number is never reused while its chip can come
+back. With every chip taken out (Clear, or ⌫ on the last one) the count
+starts over at 1, and only when the next mark is made: that is when the
+cleared marks are let go, with the undo that could have brought them
+back. It started over at the press, before the preview had said whether
+anything was under it, so one click on nothing after Clear took the
+note's whole undo (found in review, shown in `MarkupOverlayTests`,
+2026-11-27).
 
 **What the bar is made of.** One card (`MarkupNoteBar.card`): the
 `.popover` material, over it a ground of the page's raised colour at 86%,
@@ -690,6 +728,11 @@ inside a box that scrolls sideways is pointed at sideways.
 
 A press on a pin brings its mark into view, with any tool in hand: the
 same `reveal` a chip's click asks for. So a drawing cannot begin on a pin.
+Only on a pin that is drawn: a mark whose content is gone is hidden, and
+its pin stayed where it last was, invisible, taking presses (and over
+Markdown scrolling back to where the block had been). `pinned(at:)` asks
+only the marks that are shown (found in review, shown in
+`MarkupOverlayTests`, 2026-11-27).
 
 A pin for a mark below the view is kept above the note bar, which floats
 over the foot of the preview: under the bar it pointed at nothing anyone
@@ -975,5 +1018,8 @@ looked at.
   sideways inside a Markdown document, and a paragraph rewrapped by a
   narrower window moves under its mark.
 - A file open in two sessions has one note between them, as it has one
-  find. With both in view at once (two windows) only the newer layer is
-  kept up to date.
+  find. With both in view at once (two windows, or two splits) the marks
+  are drawn over one of them, the one last used, and the other shows the
+  note with no marks until it is pressed, scrolled or brought to the
+  front. Not tried by hand in the app: the tests drive two layers and two
+  tables in windows that are never shown.

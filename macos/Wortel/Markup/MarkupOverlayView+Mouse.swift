@@ -25,6 +25,8 @@ extension MarkupOverlayView {
     /// cursors.
     func cursor(at point: CGPoint) -> NSCursor {
         guard session.tool == .move else { return .crosshair }
+        // The marks are on another layer on the note: nothing here to take.
+        guard hasMarks else { return .arrow }
         if let resizing { return resizeCursor(resizing.handle, points: resizing.points) }
         if moving != nil { return .closedHand }
         if let (_, handle, points) = handleHit(at: point) { return resizeCursor(handle, points: points) }
@@ -97,6 +99,9 @@ extension MarkupOverlayView {
 
     override func mouseDown(with event: NSEvent) {
         guard !isLeaving else { return }
+        // The note on screen in another window or split had the marks:
+        // what is made here is tied through this preview.
+        claim()
         // The keyboard back to the note, if it wandered to the header.
         if window?.firstResponder !== noteBar.textView { noteBar.focus() }
         showHover(nil)

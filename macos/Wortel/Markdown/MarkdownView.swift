@@ -118,7 +118,7 @@ struct MarkdownView: View {
                     // its block is built, and an easing scroll went on past
                     // that and left the mark 130pt lower, half under the
                     // note bar (measured 2026-11-25).
-                    markup?.revealBlock = { id in proxy.scrollTo(id, anchor: .center) }
+                    scrollView.revealBlock = { id in proxy.scrollTo(id, anchor: .center) }
                 }
         }
     }
@@ -283,17 +283,15 @@ struct MarkdownView: View {
             reportTopBlock(offsets)
         }
         .onPreferenceChange(BlockFrames.self) { frames in
-            guard let markup else { return }
+            guard let markup, let stack = scrollView.view else { return }
             // The view that stands for the stack, the frames measured in
             // it, and what each block holds, for a mark to know its own by.
-            markup.stack = scrollView.view
-            markup.blockFrames = frames
-            markup.blockScale = scale
-            let blocks = blocks
-            markup.blockKey = { id in
-                blocks.indices.contains(id) ? blocks[id].text.hashValue : nil
-            }
-            markup.changed()
+            // Signed in as this document's own: the file may be shown in
+            // another window too, with its blocks elsewhere.
+            let blocks = blocks, box = scrollView
+            markup.sign(stack: stack, frames: frames, scale: scale,
+                        key: { id in blocks.indices.contains(id) ? blocks[id].text.hashValue : nil },
+                        reveal: { id in box.revealBlock(id) })
         }
     }
 
@@ -983,6 +981,9 @@ private extension View {
 @MainActor
 final class EnclosingScrollView {
     weak var view: NSView?
+    /// Mark-up's way to bring a block of this document into view, which
+    /// only its scroll reader can (`MarkupViews`).
+    var revealBlock: (Int) -> Void = { _ in }
 
     struct Marker: NSViewRepresentable {
         let box: EnclosingScrollView

@@ -3532,3 +3532,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   misses, so `use-cache: false`. The Ghostty cache was checked first: it
   restores in 4 s and the build step then takes 1 s, so CI does not rebuild
   Ghostty per commit.
+- **2026-11-27. A note on screen twice draws its marks once.** A file's
+  mark-up session is one per path, app-wide, so the file in two windows or
+  two splits is one note with a layer over each. Marks drawn over both would
+  need an adapter per layer with the ties shared between them: every file
+  adapter split in two, for a case that is rare. So one layer has the marks,
+  the one last shown or used (a press, a scroll, a chip, its window to the
+  front), and the other keeps the note and draws none until it is used.
+  What was there before was wrong, not just limited: a mark drawn in one
+  window was tied through the other's table, and closing the newer layer
+  left the older one making no marks (`macos/docs/architecture/mark-up.md`).

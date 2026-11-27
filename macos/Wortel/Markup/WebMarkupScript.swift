@@ -485,10 +485,20 @@ enum WebMarkupScript {
 
       // Tying a mark to an element.
 
+      // An element is no longer watched for its size once no other mark
+      // is on it. Two can share one: two areas over one paragraph, or an
+      // area and the element picked under it.
+      function release(el, number) {
+        if (!sizes || !el.isConnected || isRoot(el)) { return; }
+        var shared = false;
+        marks.forEach(function (other, n) { if (n !== number && other.el === el) { shared = true; } });
+        if (!shared) { sizes.unobserve(el); }
+      }
+
       function keep(number, el) {
         // Tied again (a drawing that was moved): let go of what it was on.
         var was = marks.get(number);
-        if (was && sizes && was.el.isConnected && was.el !== el && !isRoot(was.el)) { sizes.unobserve(was.el); }
+        if (was && was.el !== el) { release(was.el, number); }
         var around = chainOf(el);
         var mark = {el: el, chain: around.chain, fixed: around.fixed,
                     selector: el.ownerDocument === document ? selectorOf(el) : null};
@@ -558,7 +568,7 @@ enum WebMarkupScript {
 
       function forget(number) {
         var mark = marks.get(number);
-        if (mark && sizes && mark.el.isConnected && !isRoot(mark.el)) { sizes.unobserve(mark.el); }
+        if (mark) { release(mark.el, number); }
         marks.delete(number);
         return 1;
       }

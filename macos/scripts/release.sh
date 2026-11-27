@@ -42,6 +42,10 @@
 #   ./scripts/release.sh --publish --no-tests     skip WortelTests and the
 #                                         updates/ tests that run before the
 #                                         build. Emergencies only.
+#   ./scripts/release.sh --publish --allow-branch publish from a branch other
+#                                         than main. Emergencies only: a fix
+#                                         that must ship before what is on
+#                                         main can.
 #
 # Publishing requires a release note: web/src/content/releases/<version>.md, one
 # Markdown file whose name is the version. It is checked before anything is
@@ -97,6 +101,7 @@ INSTALL=1
 NOTES=1
 REPUBLISH=0
 ALLOW_DIRTY=0
+ALLOW_BRANCH=0
 RUN_TESTS=1
 BETA=0
 VERSION=""
@@ -110,6 +115,7 @@ for arg in "$@"; do
     --no-notes) NOTES=0 ;;
     --republish) REPUBLISH=1 ;;
     --allow-dirty) ALLOW_DIRTY=1 ;;
+    --allow-branch) ALLOW_BRANCH=1 ;;
     --no-tests) RUN_TESTS=0 ;;
     --beta) BETA=1 ;;
     *) ARGS+=("$arg") ;;
@@ -133,6 +139,16 @@ case "${1:-}" in
     if [ "$ALLOW_DIRTY" = 0 ] && [ -n "$(git -C "$ROOT/.." status --porcelain)" ]; then
       echo "✗ Uncommitted changes. Commit them (the release note included), or pass --allow-dirty." >&2
       git -C "$ROOT/.." status --short >&2
+      exit 1
+    fi
+    # Releases and betas are cut from main. A beta cut from a branch is taken
+    # away from its testers by the next regular release, which is cut from
+    # main without it; a release from a branch ships what nobody reviewed for
+    # main. A detached HEAD has no branch and is refused too.
+    BRANCH=$(git -C "$ROOT/.." symbolic-ref --quiet --short HEAD || true)
+    if [ "$ALLOW_BRANCH" = 0 ] && [ "$BRANCH" != "main" ]; then
+      echo "✗ On ${BRANCH:-a detached HEAD}, not main. Releases and betas are cut from main." >&2
+      echo "  For an emergency fix that must ship from here: $0 --publish --allow-branch" >&2
       exit 1
     fi
     # The uploader is needed at the very end, after notarization. Find out

@@ -13,8 +13,10 @@ All commands run from `macos/`.
 
 ## Before
 
-1. **On `main`, nothing uncommitted.** `--publish` refuses a dirty tree. Don't
-   reach for `--allow-dirty`: the release is then not rebuildable.
+1. **On `main`, nothing uncommitted.** `--publish` refuses a dirty tree and
+   any branch but `main`. Don't reach for `--allow-dirty`: the release is then
+   not rebuildable. `--allow-branch` is for an emergency fix that must ship
+   before what is on `main` can, and only when the owner says so.
 2. **There is a release note** at `web/src/content/releases/<version>.md`. The
    version is `<ISO year>.<ISO week>.<nth release that week>` and the script
    derives it from the live feed, so work out which one is next before writing
@@ -80,7 +82,12 @@ DMG.
 
 For a change that can't be taken back once it is out (a keeper protocol
 change, saving and resume, anything that big), when the maintainer wants a few
-testers on it first. Same checks as above, same version sequence. What differs:
+testers on it first. Same checks as above, same version sequence, and cut from
+`main` like any release: the change has merged first. A beta cut from a branch
+is taken away from its testers by the next regular release. **While a beta is
+out, no regular release goes out** until it has been promoted: one cut from
+`main` would carry the beta's change to everyone before the testers have had
+it. What differs:
 
 - The note's frontmatter has `beta: true` after `summary`. The script refuses a
   beta without it, and a regular release with it (any spelling but `true` or

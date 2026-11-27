@@ -48,7 +48,6 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
 {set === 'marks' && <template data-tiles-src><AppContent><MarkUpPage /></AppContent><AppContent><MarkUp /></AppContent></template>}
 
 <script>
-  import { retaken } from '../../scripts/app';
   // Each holder gets a clone of the named part, out of the frames in the
   // page's template.
   const src = document.querySelector<HTMLTemplateElement>('template[data-tiles-src]')?.content;
@@ -56,9 +55,6 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
     document.querySelectorAll<HTMLElement>('[data-tiles] [data-part]').forEach((holder) => {
       const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`)?.cloneNode(true) as HTMLElement | undefined;
       if (!part) return;
-      // The page is this site's own retake of the canvas's picture, as the
-      // films have it (scripts/app.ts, retaken).
-      retaken(part.querySelectorAll<HTMLImageElement>('img[data-name^="Web page"]'));
       // The note in the bar is the page's own (MARKUP_NOTE in data/site.ts),
       // typed around the canvas's two chips: its words go into the layers
       // the canvas drew its sentence in, and the last layer is not needed.

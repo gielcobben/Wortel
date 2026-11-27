@@ -4,6 +4,9 @@ For coding agents working on the landing page. The repo-wide rules in the root
 `AGENTS.md` still apply. Paths and commands here are relative to `web/`.
 
 An Astro site, fully static, served by a Cloudflare Worker as static assets.
+The Worker (`worker/`) runs only for paths with no file behind them: `/ph/*`,
+the analytics proxy, and the letter's `/letter/join`, `/letter/confirm` and
+`/letter/leave` (`README.md`, The letter).
 `README.md` is the long form: structure, motion, the canvas, SEO, photos. Where
 it and this file disagree about layout, this file and the header of
 `src/styles/site.css` are current.

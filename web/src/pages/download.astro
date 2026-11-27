@@ -16,7 +16,8 @@
 // requirements and file locations live on /updates and /docs; this page
 // only gets the app onto the Mac.
 import Layout from '../layouts/Layout.astro';
-import { SITE, INSTALL_STEPS } from '../data/site';
+import LetterForm from '../components/LetterForm.astro';
+import { SITE, INSTALL_STEPS, LETTER } from '../data/site';
 import { latestRelease } from '../data/release';
 import { photo } from '../data/photo';
 
@@ -49,6 +50,9 @@ const schema = [{
       <span data-busy hidden>Downloading{latest && ` Wortel ${latest.version}`}. Nothing yet? <a class="link" href={SITE.download}>Try again</a>.</span>
       <span data-away hidden>Wortel runs on a Mac. Open this page there, or <a class="link" href={SITE.download} data-ph="download_clicked" data-ph-location="download-phone" data-ph-version={latest?.version}>download it here anyway</a>.</span>
     </p>
+    {/* The letter, offered while the download runs: shown with "Downloading",
+        never before the click and never on a phone. */}
+    <div class="letter-after" data-after hidden><LetterForm source="download" intro={LETTER.whileDownloading} /></div>
   </header>
 
   <div class="page">
@@ -76,9 +80,11 @@ const schema = [{
   const get = document.querySelector<HTMLAnchorElement>('[data-get]');
   const idle = document.querySelector<HTMLElement>('[data-idle]');
   const busy = document.querySelector<HTMLElement>('[data-busy]');
+  const after = document.querySelector<HTMLElement>('[data-after]');
   get?.addEventListener('click', () => {
     if (idle) idle.hidden = true;
     if (busy) busy.hidden = false;
+    if (after) after.hidden = false;
     document.documentElement.dataset.downloading = '';
   });
 
@@ -136,7 +142,8 @@ const schema = [{
   .icon { display: block; width: 96px; height: 96px; margin-bottom: 32px; }
   .ctas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
   .phead .label { margin-top: 16px; }
-  .phead .label [hidden], .ctas [hidden] { display: none; }
+  .phead .label [hidden], .ctas [hidden], .letter-after[hidden] { display: none; }
+  .letter-after { margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--line); max-width: 560px; }
   .phead .label { max-width: 560px; }
   button.btn { appearance: none; border: 0; cursor: pointer; }
 

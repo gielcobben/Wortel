@@ -1,0 +1,41 @@
+---
+// The pages the letter's requests end on: /letter/sent, /letter/joined,
+// /letter/left, /letter/expired, /letter/sorry, and the two with a button,
+// /letter/confirming and /letter/leaving. Words in data/site.ts
+// (LETTER.states), requests in worker/letter-routes.ts.
+//
+// The two with a button are what the Worker serves at /letter/confirm?t= and
+// /letter/leave?t=, with the token from the link put into the hidden field
+// below, so the button works with no JavaScript. They carry no analytics,
+// because a page view would send the address, token and all, to PostHog.
+// None of these pages is for a search engine.
+import Layout from '../../layouts/Layout.astro';
+import LetterForm from '../../components/LetterForm.astro';
+import { SITE, LETTER, type LetterState } from '../../data/site';
+
+export function getStaticPaths() {
+  return (Object.keys(LETTER.states) as LetterState[]).map((state) => ({ params: { state } }));
+}
+
+const state = Astro.params.state as LetterState;
+const page: { title: string; lead: string; form?: boolean; button?: string; action?: string } = LETTER.states[state];
+---
+<Layout title={`${page.title}: ${SITE.name}`} description={LETTER.line} path={`/letter/${state}`} noindex noAnalytics={!!page.button} bare>
+  <header class="page phead">
+    <h1 class="display">{page.title}</h1>
+    <p class="lead">{page.lead}</p>
+    {page.button && (
+      <form class="act" method="post" action={page.action}>
+        <input type="hidden" name="t" value="" />
+        <button class="btn" type="submit">{page.button}</button>
+      </form>
+    )}
+    {page.form && <div class="form"><LetterForm source="letter" /></div>}
+    {!page.button && !page.form && <p class="back"><a class="link" href="/">Back to wortel.sh</a></p>}
+  </header>
+</Layout>
+
+<style>
+  .act, .form, .back { margin-top: 32px; }
+  .act .btn { appearance: none; border: 0; cursor: pointer; }
+</style>

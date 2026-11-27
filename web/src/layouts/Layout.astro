@@ -24,6 +24,9 @@ interface Props {
   markdown?: string;
   /** The day a dated page (a release) came out, YYYY-MM-DD: makes the card an article. */
   published?: string;
+  /** Leave out analytics: a page whose address carries a secret (the letter's
+      confirm and leave links), which a page view would send to PostHog. */
+  noAnalytics?: boolean;
 }
 
 const {
@@ -36,6 +39,7 @@ const {
   ogImage: ogPath = '/og.png',
   markdown,
   published,
+  noAnalytics = false,
 } = Astro.props;
 
 // Built off the configured `site` rather than Astro.url, so a preview host or a
@@ -109,7 +113,7 @@ const ogAlt = ogPath === '/og.png' ? `${SITE.name}: ${SITE.tagline}` : title;
     <script is:inline>document.documentElement.classList.add('js')</script>
 
     <slot name="head" />
-    <Analytics />
+    {!noAnalytics && <Analytics />}
   </head>
   <body>
     <a class="skip" href="#top">Skip to content</a>

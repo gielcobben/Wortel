@@ -21,8 +21,8 @@ npm run deploy     # astro build && wrangler deploy → wortel.sh
 npm run cf-preview # build + `wrangler dev` (serve dist through the Worker locally)
 ```
 
-Deploy config is in `wrangler.jsonc` (assets-only Worker, `name: wortel-web`,
-custom domain `wortel.sh`). The account/zone is shared with the app's Sparkle
+Deploy config is in `wrangler.jsonc` (assets first, `name: wortel-web`,
+custom domain `wortel.sh`; the Worker runs only for `/ph/*` and the letter). The account/zone is shared with the app's Sparkle
 feed at `updates.wortel.sh`. See the repo root `AGENTS.md`.
 
 ## Structure
@@ -390,6 +390,59 @@ The version line under the button and `softwareVersion` in the
 structured data are read from `updates.wortel.sh/appcast.xml`, and the size
 (`fileSize`) from a HEAD of the DMG, both **at build time**. They refresh on
 redeploy, not on their own.
+
+## The letter
+
+An email when something big ships, a few times a year, to the people who ask
+for it. For now the site only collects: how letters are sent is decided when
+there is one to send (`docs/decisions.md`, 2026-11-26). What is kept is on
+`/privacy`, and changes there before it changes here.
+
+```
+worker/letter.ts           the decisions: what an address is, the form, the token, the mail
+worker/letter-routes.ts    POST /letter/join, GET+POST /letter/confirm and /letter/leave
+worker/letter.test.ts      `npm test`
+migrations/                the D1 schema (database `wortel-letter`, EU jurisdiction)
+components/LetterForm.astro  the form: a real POST, sent in place with JS
+pages/letter.astro, pages/letter/[state].astro   /letter and the pages the requests end on
+```
+
+The words are `LETTER` in `src/data/site.ts`. The confirm and leave links
+open a page with a button rather than doing the thing, because mail scanners
+open every link. Those two pages carry no analytics: their address holds the
+token.
+
+**Setup, once** (an account change, so only when asked): the Workers Paid
+plan, `npx wrangler email sending enable wortel.sh`, then
+`npx wrangler d1 create wortel-letter --jurisdiction eu`, its id into
+`wrangler.jsonc`, and `npx wrangler d1 migrations apply wortel-letter --remote`.
+The database was created and migrated on 2026-11-27. Email Sending for
+wortel.sh was not enabled then: until it is, a site deploy puts up a form
+whose confirmation mail fails, and every join answers "sorry".
+
+**Try it locally:**
+
+```sh
+npx wrangler d1 migrations apply wortel-letter --local
+npm run build && npx wrangler dev --local
+```
+
+The confirmation mail is not sent from `wrangler dev`: it is written under
+`.wrangler/tmp/email/` and the path is printed in the log. Its link says
+`https://wortel.sh`, because `wrangler dev` hands the Worker the route's host:
+open it with `localhost:8787` in its place.
+
+**The list:**
+
+```sh
+npx wrangler d1 execute wortel-letter --remote --json \
+  --command "select email, token from subscribers where confirmed_at is not null"
+```
+
+A letter that goes out must link to `https://wortel.sh/letter/leave?t=<token>`
+for each address, and should send `List-Unsubscribe` with that address and
+`List-Unsubscribe-Post: List-Unsubscribe=One-Click`, which the same route
+answers.
 
 ## The app window, in two looks
 

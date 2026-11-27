@@ -1,11 +1,13 @@
 // ==========================================================================
 // The wortel.sh Worker.
 //
-// It exists for one reason: to put PostHog on the site's own origin. Everything
-// else on this domain is a static file, and static files are still served
-// without this code ever running (Cloudflare matches an asset first and only
-// falls through to the Worker when nothing matches). So the landing page costs
-// exactly what it cost before; the Worker is reached by /ph/* and nothing else.
+// It does two things: it puts PostHog on the site's own origin (/ph/*, this
+// file), and it answers the letter's signup, confirm and leave requests
+// (/letter/*, letter-routes.ts). Everything else on this domain is a static
+// file, and static files are still served without this code ever running
+// (Cloudflare matches an asset first and only falls through to the Worker when
+// nothing matches, which is why the letter's routes have no file behind them).
+// So the landing page costs exactly what it cost before.
 //
 // WHY PROXY AT ALL. Wortel's audience is developers, which is the audience most
 // likely to block a request to a third-party analytics host. A same-origin
@@ -24,6 +26,8 @@
 // match what it expects.
 // ==========================================================================
 
+import { letter, type LetterEnv } from './letter-routes.ts';
+
 const PREFIX = '/ph';
 
 // EU region, matching the project. If the project ever moves to US cloud these
@@ -31,9 +35,7 @@ const PREFIX = '/ph';
 const API_HOST = 'eu.i.posthog.com';
 const ASSET_HOST = 'eu-assets.i.posthog.com';
 
-interface Env {
-  ASSETS: { fetch(request: Request): Promise<Response> };
-}
+type Env = LetterEnv;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -41,6 +43,11 @@ export default {
 
     if (url.pathname === PREFIX || url.pathname.startsWith(`${PREFIX}/`)) {
       return proxy(request, url);
+    }
+
+    if (url.pathname.startsWith('/letter/')) {
+      const answer = await letter(request, url, env);
+      if (answer) return answer;
     }
 
     // Not an asset (or we would not be running) and not ours: hand it back so

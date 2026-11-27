@@ -21,7 +21,7 @@ const closing: Record<string, [string, string, number]> = {
 const [photo, at, zoom] = closing[here] ?? closing['/' + here.split('/')[1]] ?? closing['/'];
 const cols: [string, [string, string][]][] = [
   ['Wortel', [['Download', '/download'], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
-  ['More', [['About', '/about'], ['GitHub', SITE.repo], ['Changelog feed', '/feed.xml'], ['llms.txt', '/llms.txt']]],
+  ['More', [['About', '/about'], ['GitHub', SITE.repo], ['Changelog feed', '/feed.xml'], ['Newsletter', '/letter'], ['llms.txt', '/llms.txt']]],
   ['Legal', [['Privacy', '/privacy'], ['Terms', '/terms']]],
 ];
 ---

@@ -73,6 +73,36 @@ export const INSTALL_STEPS: [string, string][] = [
   ['Start an agent', 'Wortel does not come with one. Install Claude Code, Codex or Pi, then type its name in a session.'],
 ];
 
+// ---- the letter: an email when something big ships ------------------------
+// The form (components/LetterForm.astro) is on /download after the click, at
+// the foot of /updates, and on /letter. The requests behind it are
+// worker/letter-routes.ts; what is kept is written up in privacy.md.
+export const LETTER = {
+  name: 'By email',
+  line: 'An email when something big ships, a few times a year. Nothing else, and every one has a link to leave.',
+  /** On /download, under "Downloading", while the reader waits. */
+  whileDownloading: 'While it downloads: an email when something big ships, a few times a year?',
+  field: 'Email address',
+  placeholder: 'you@example.com',
+  button: 'Subscribe',
+  /** The form, answered in place. */
+  sent: 'Check your inbox and press Confirm in the mail. Until then the address is not on the list.',
+  sorry: 'That didn’t go through. Check the address, or try again in a minute.',
+  feed: 'Rather not give an address? The changelog is also a feed.',
+  kept: 'Only the address, the day you joined and which form you used. Unconfirmed addresses are forgotten after a week, and leaving deletes the address.',
+  /** The pages the requests end on (pages/letter/[state].astro). `form` puts the form under the words; `button` is a page whose form the Worker fills with the token from the link. */
+  states: {
+    sent: { title: 'Check your inbox', lead: 'A mail is on its way. Press Confirm in it and you’re on the list. Nothing there after a few minutes? Look in spam, or check the address and send it again.', form: true },
+    confirming: { title: 'One more press', lead: 'Press Confirm for an email when something big ships, a few times a year.', button: 'Confirm', action: '/letter/confirm' },
+    joined: { title: 'You’re on the list', lead: 'The next letter comes when something big ships. Every one has a link to leave.' },
+    leaving: { title: 'Leave the letter', lead: 'Press Leave and the address is deleted, not just switched off.', button: 'Leave', action: '/letter/leave' },
+    left: { title: 'You’re off the list', lead: 'The address is deleted, and nothing else about you was kept.' },
+    expired: { title: 'This link has expired', lead: 'A link is good for a week. After that an unconfirmed address is forgotten, so send it again here.', form: true },
+    sorry: { title: 'That didn’t go through', lead: 'Check the address, or try again in a minute.', form: true },
+  },
+} as const;
+export type LetterState = keyof typeof LETTER.states;
+
 // ---- the five-line summary in the hero's left column ----------------------
 // Short enough to sit in a 96px/1fr grid; these are the deck, not the article.
 export const FEATURES: [string, string][] = [

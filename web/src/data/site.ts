@@ -84,7 +84,7 @@ export const LETTER = {
   whileDownloading: 'While it downloads: an email when something big ships, a few times a year?',
   field: 'Email address',
   placeholder: 'you@example.com',
-  button: 'Keep Me Posted',
+  button: 'Subscribe',
   /** The form, answered in place. */
   sent: 'Check your inbox and press Confirm in the mail. Until then the address is not on the list.',
   sorry: 'That didn’t go through. Check the address, or try again in a minute.',

@@ -24,10 +24,10 @@ const id = `letter-${source}`;
   <div class="trap" aria-hidden="true">
     <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
   </div>
-  <div class="row">
+  <div class="field">
     <label class="sr" for={id}>{LETTER.field}</label>
-    <input class="field" id={id} type="email" name="email" required maxlength="254" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder={LETTER.placeholder} />
-    <button class="btn" type="submit">{LETTER.button}</button>
+    <input id={id} type="email" name="email" required maxlength="254" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder={LETTER.placeholder} />
+    <button class="btn sm" type="submit">{LETTER.button}</button>
   </div>
   <p class="label note" data-note aria-live="polite" hidden></p>
 </form>
@@ -68,14 +68,11 @@ const id = `letter-${source}`;
 <style>
   .letter { max-width: 560px; }
   .intro { margin-bottom: 16px; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; }
-  .field { flex: 1 1 240px; min-width: 0; max-width: 320px; }
-  .row .btn { appearance: none; border: 0; cursor: pointer; }
-  .row .btn:disabled { opacity: 0.6; cursor: default; }
+  .field { max-width: 400px; }
+  .field .btn:disabled { opacity: 0.6; cursor: default; }
   .note { margin-top: 16px; }
   .letter > [hidden] { display: none; }
   /* Answered: the line is all that is left, so it reads at the size of the words around it. */
   .note.done { margin-top: 0; font-size: 15px; line-height: 24px; color: var(--ink); }
   .trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
-  @media (max-width: 640px) { .field { max-width: none; } }
 </style>

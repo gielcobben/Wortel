@@ -82,8 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Housekeeping, well off the launch path.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()
-            // And the pictures of mark-up notes nothing was written to for
-            // a week (`MarkupStore`).
+        }
+        // And the pictures of mark-up notes nothing was written to for a
+        // week, on the queue everything there goes through (`MarkupStore`):
+        // one sweep at a time, in order with the pictures being written.
+        MarkupStore.queue.asyncAfter(deadline: .now() + 5, qos: .utility) {
             MarkupStore.shared.sweep()
         }
 

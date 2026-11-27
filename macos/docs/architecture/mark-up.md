@@ -361,6 +361,9 @@ by itself, which nothing could lock anyway.
 Esc and a copy only turn it off (`turnOff`): the note is kept, and turning
 mark-up on again finds it. ⌘A then ⌫ in the note clears it.
 
+A copy still being made when mark-up ends lands nowhere, even once a
+newer copy has started: each copy takes a number and `end` moves it on.
+
 ## The note
 
 `MarkupSession` is one per preview, beside its find. It holds no view: the
@@ -690,6 +693,9 @@ Details: /…/details.json
   name, picture and place, and for a page's element its tag, text,
   selector, key styles and HTML; for an area, what lies inside it.
 - A second copy of the same note writes `whole-2.png` and `details-2.json`.
+- A picture's name is never used twice in a note's folder: a drawing moved
+  is pictured again as `3-2.png`, and so is a mark that is 1 again after
+  every chip was deleted. A path once copied shows what it showed.
 
 `MarkupStore` puts them in `~/Library/Caches/<bundle id>/Markup/<day>/<n>/`:
 no space in the path, no folder macOS asks permission for, and none it
@@ -697,7 +703,10 @@ empties by itself. A test copy has a bundle id of its own, so a folder of
 its own. A note's folder is removed seven days after its last write, at
 launch (with the pasted images) and whenever a new note's folder is made;
 the folders of notes still open are skipped. Removed, not moved to the
-Trash.
+Trash. Every sweep runs on `MarkupStore.queue`, the one the pictures are
+written on. A note's folder is made on the main thread, and makes its
+day's folder again on every try, since a sweep removes a day it finds
+empty and a day just made is empty until its first note is in it.
 
 Both of those last two come from the first note an agent read, the
 owner's, pasted into the session that built this (2026-11-25). The agent

@@ -531,6 +531,16 @@ targets:
       - path: Wortel/Markup/LinesMarkupSurface.swift
       - path: Wortel/Markup/ImageMarkupSurface.swift
       - path: Wortel/Markup/BlocksMarkupSurface.swift
+      - path: Wortel/Markup/MarkupSession.swift
+      - path: Wortel/Markup/MarkChip.swift
+      - path: Wortel/Markup/MarkupOverlayView.swift
+      - path: Wortel/Markup/MarkupOverlayView+Marking.swift
+      - path: Wortel/Markup/MarkupOverlayView+Mouse.swift
+      - path: Wortel/Markup/MarkupOverlayView+Move.swift
+      - path: Wortel/Markup/MarkupNoteBar.swift
+      - path: Wortel/Markup/NoteTextView.swift
+      - path: Wortel/Markup/MarkLayer.swift
+      - path: Wortel/Markup/MarkSelectionLayer.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
       # ⌘P's files: the index, the ranking (pinned against real paths, since
       # "the one I meant was third" fails nothing else), the walk's limits

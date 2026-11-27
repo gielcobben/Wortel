@@ -127,7 +127,11 @@ picture, and everything in view went down by the difference. Measured
 scrolling up, none scrolling down, none with the pictures missing. So a
 picture's size is read from its file's header the first time it is seen
 (`MarkdownImageView.size(of:)`) and kept, and until the pixels arrive its
-block holds that room; the same scroll then measured no jumps. What the
+block holds that room; the same scroll then measured no jumps. A file that is
+there and is not a picture when read (rewritten as something else) gets its
+alt-text chip, and its kept size becomes nothing so the next build is the
+chip at once: the room alone stayed an empty box for good (fixed
+2026-11-26, checked in a harness with the real view). What the
 lazy stack still does: blocks below the view have guessed heights, so on a
 long first scroll down the document grows (`docs/decisions.md`: 20,193pt to
 58,844pt in ten steps) and the scroller's knob shrinks and steps back. The

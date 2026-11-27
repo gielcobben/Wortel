@@ -490,8 +490,16 @@ The views:
   first every tab behind the one in front, the session's pinned tab aside,
   gives up the room it keeps after its title for a close button
   (`SideTabView.canHug`, `huggingWidth`, `isHugging`). Such a tab ends 6pt
-  after its title, and its close button shows over its glyph while the
-  pointer is on it, as Safari's does. Then the tabs that still can shrink
+  after its title and shows no close button, pointer over it or not
+  (`applyState` hides it while `isHugging`), and its glyph is never hidden.
+  A close button is at a tab's trailing end or nowhere. It is closed by
+  coming forward first, by ⌘W, by a middle click, or by Close Tab in its
+  menu. For a few hours the button showed over the glyph on hover: two
+  places for one button, and a click on the glyph, meant to pick the tab,
+  closed it. The probe's `hover-tabs` step reads each tab as it looks under
+  the pointer, and a close button on a tab that gave up its room (it would
+  lie over the title), one at a tab's start, or a tab without its glyph, is
+  a fault. Then the tabs that still can shrink
   together, down to 130pt or their title, whichever is less. Only then does
   the row scroll, with "+" pinned past the visible end. The first step is
   from 2026-11-26: it is what lets Changes and Files both keep their names

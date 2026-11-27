@@ -157,6 +157,24 @@ enum SplitProbe {
                 entry["landed"] = "\n      " + samples.joined(separator: "\n      ")
                 trail.append(entry)
                 continue
+            case "hover-tabs":
+                // Each tab of the row you're in, as it looks with the pointer
+                // over it. A close button anywhere but at a tab's end, or a
+                // tab without its glyph, is a fault.
+                let region = git.lastRegion
+                let strip = controller.split.mainArea?.rows.first { $0.region == region }?.strip
+                let tabs = strip?.tabsUnderPointer ?? []
+                var entry = state(manager, controller)
+                entry["step"] = step
+                // The one most likely to come back: a tab that gave up its
+                // button's room showing a button anyway, over its title.
+                let wrong = tabs.contains {
+                    $0.contains("START") || $0.contains("NO glyph") || $0.contains("OVER the title")
+                        || ($0.hasPrefix("hug:") && !$0.contains("no close"))
+                }
+                entry["landed"] = (wrong ? "FAULT " : "") + (tabs.isEmpty ? "FAULT no row" : tabs.joined(separator: " | "))
+                trail.append(entry)
+                continue
             case "hover-split":
                 // The row's Split Right with its hover lit, clicked: the
                 // click moves the button, and no pointer is over it here, so

@@ -457,7 +457,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   split shows. And a row short of room first has the tabs behind the front
   one give up the room each keeps for its close button, which shows in
   place of the tab's glyph on hover instead, as Safari's does, before any
-  title is cut or the row scrolls (`SideTabStrip.plan`). The row clears
+  title is cut or the row scrolls (`SideTabStrip.plan`). (The button over
+  the glyph went later that day: "A tab's close button has one place", at
+  the end. Such a tab has no close button now.) The row clears
   the buttons, 8pt to the window's edge and 4pt before its own "+"
   (`WindowControls.trailingWidth`). A press on the window's controls still
   counts as going nowhere. Verified (2026-11-26, throwaway copies): the
@@ -610,7 +612,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the room every tab keeps for its close button. The owner: "if it is what
   it is, all good." The other way is the close button over the glyph on
   every tab, where a click meant to pick a tab closes it, and that is done
-  only when a row is short of room. **Owed at the release:** the site's
+  only when a row is short of room. (Not even then, since later that day:
+  "A tab's close button has one place", at the end.) **Owed at the
+  release:** the site's
   list of shortcuts (`web/`) still has the old keys, as it describes the
   released app. Verified (2026-11-26, throwaway copies): WortelTests, 1938
   tests, 0 failures, run before the two tab-row fixes, which are in a view
@@ -809,8 +813,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   title arrives. A closed tab's view goes at once, with no fade. In a row
   short of room a tab behind the front one shows its close button over
   its glyph on hover, which the owner found confusing ("the user should
-  have one place where the close lives") and has not yet decided to
-  change. And the website is owed at the release: its shortcut list and
+  have one place where the close lives"). Undecided when this was written,
+  and decided since: "A tab's close button has one place", at the end. And the website is owed at the release: its shortcut list and
   its "no splits" copy (`web/src/app/gen/Browser.astro`, `Code.astro`,
   `FileMain.astro`, `Terminal.astro`, `web/src/components/home/Panes.astro`,
   `web/src/data/site.ts`, `web/src/scripts/panes.ts`). Verified
@@ -923,7 +927,31 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   of three 160pt rows, each a tab and a "+" where they belong. Not
   verified: anything with a pointer, VoiceOver, the stuck divider on
   screen (its test passes), and the fade, of which no sample was taken
-  after the fix.
+  after the fix. **A tab's close button has one place.** The owner, earlier
+  that day: "Why is the (X) close on the other side of the icon when it's
+  not active? it's confusing, the user should have one place where the
+  close lives". It only happened in a row short of room, where a tab
+  behind the front one gives up the room kept for its close button and,
+  for a few hours, showed the button over its glyph while the pointer was
+  on it, as Safari does with narrow tabs. Two things were wrong with
+  that. One button had two places. And a click on a tab's glyph, meant to
+  pick the tab, closed it. Told that, and offered no button there at all,
+  the owner said: "yes do the × change". So such a tab still gives up the
+  room, and shows no close button, pointer over it or not. Its glyph is
+  never hidden. The close button is at a tab's trailing end or nowhere. A
+  tab without one is closed by coming forward first (then its button is
+  there), by ⌘W, by a middle click, or by Close Tab in its right-click
+  menu. The cost: in a narrow split, closing a tab behind the front one
+  with the mouse is two clicks or a middle click. Verified (2026-11-26, a
+  throwaway copy): the app builds. `tab tab hover-tabs right right tab tab
+  hover-tabs`: in the roomy main row "pinned: no close | back: close at
+  end | front: close at end"; in a 160pt split with three tabs "hug: no
+  close | hug: no close | front: close at end"; 0 faults. WortelTests
+  1944 tests, 0 failures. A reviewer read the commit and found no defect,
+  and that the step as first written could not catch the fault it is for
+  (the button back on a tab that gave up its room): it now can, checked by
+  taking the rule out of `applyState`, which gives "hug: close at end OVER
+  the title" and a fault. Not verified: with a real pointer.
 - **2026-11-26. "No splits" was reversed: the main area splits into columns
   and rows.** Built on the branch `flexible-panes` and on `main` since it
   was merged. Not in a release yet: the released app and the site still have

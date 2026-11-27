@@ -256,6 +256,11 @@ and ⇧⌘T act in whichever split you're in.
 | Move the tab in front to the split on its left / right | ⌃⌘← / ⌃⌘→ | |
 | Move it to the split below / above | ⌃⌘↓ / ⌃⌘↑ | |
 
+In a split too narrow for its tabs, a tab behind the one in front has no
+close button: there is no room kept for it, and it never shows anywhere but
+at a tab's end. Click the tab and its button is there, or use ⌘W, a middle
+click, or Close Tab in its right-click menu.
+
 ⌘W closes what you're in. With your session's own terminal in front, that is the
 session, the same as closing a tab in any other terminal ends its shell.
 

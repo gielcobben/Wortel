@@ -244,9 +244,9 @@ final class SideTabStrip: NSView {
         var natural = tabViews.map { min(ceil($0.fittingWidth), Self.maxTabWidth) }
         let available = max(0, room - gaps)
         // Short of room, the tabs behind the one in front first give up the
-        // room each keeps for its close button (it shows in place of their
-        // glyph on hover instead, as Safari's does): two named tabs fit where
-        // one and a half did, before any title is cut or the row scrolls.
+        // room each keeps for its close button, and show none: two named
+        // tabs fit where one and a half did, before any title is cut or the
+        // row scrolls.
         var hugging = tabViews.map { _ in false }
         if natural.reduce(0, +) > available {
             for (index, view) in tabViews.enumerated() where view.canHug {
@@ -376,8 +376,10 @@ final class SideTabStrip: NSView {
 
     // MARK: Scrolling
 
-    /// Scroll so the tab in front is in view, with a little room beside it.
     #if DEBUG
+    /// For `SplitProbe`: what each tab shows with the pointer over it.
+    var tabsUnderPointer: [String] { tabViews.map { $0.probeUnderPointer() } }
+
     /// For `SplitProbe`: where the row's parts are drawn right now, in the
     /// middle of an animation included (the presentation layers).
     var motionSample: String {
@@ -562,8 +564,15 @@ private final class SideTabView: NSControl, TabTitleProviding {
         didSet { if hovering != oldValue { applyState() } }
     }
     /// Set by the row when it is short of room: no room is kept after the
-    /// title, and the close button shows where the glyph is while the
-    /// pointer is over the tab.
+    /// title, and the tab shows no close button, as a narrow tab behind the
+    /// front one has none in Safari or Chrome. It is closed by coming
+    /// forward first, by ⌘W, a middle click, or its menu.
+    ///
+    /// For a few hours it showed the button over its glyph while the pointer
+    /// was on it. The owner: "Why is the (X) close on the other side of the
+    /// icon when it's not active? ... the user should have one place where
+    /// the close lives". And a click on a tab's glyph, meant to pick the
+    /// tab, closed it. The button is at a tab's end or nowhere.
     var isHugging = false {
         didSet {
             guard isHugging != oldValue else { return }
@@ -697,9 +706,7 @@ private final class SideTabView: NSControl, TabTitleProviding {
         super.layout()
         let h = bounds.height
         icon.frame = NSRect(x: Self.inset, y: (h - 18) / 2, width: Self.glyph, height: 18)
-        // Over the glyph when the tab keeps no room for it at its end.
-        let closeX = isHugging ? Self.inset - (Self.closeSize - Self.glyph) / 2
-            : bounds.width - Self.endInset - Self.closeSize
+        let closeX = bounds.width - Self.endInset - Self.closeSize
         closeButton.frame = NSRect(x: closeX, y: (h - Self.closeSize) / 2,
                                    width: Self.closeSize, height: Self.closeSize)
         let labelX = Self.inset + Self.glyph + Self.glyphGap
@@ -709,9 +716,28 @@ private final class SideTabView: NSControl, TabTitleProviding {
         divider.frame = NSRect(x: bounds.width + 1.5, y: (h - 14) / 2, width: 1, height: 14)
     }
 
+    #if DEBUG
+    /// For `SplitProbe`: what the tab shows with the pointer over it. Its
+    /// state as it is ("front", "back", "hug", "pinned"), then whether a
+    /// close button shows and where, whether it lies over the title, and
+    /// whether the glyph shows.
+    func probeUnderPointer() -> String {
+        let was = hovering
+        hovering = true
+        defer { hovering = was }
+        let kind = pinned ? "pinned" : isActive ? "front" : isHugging ? "hug" : "back"
+        var close = closeButton.isHidden ? "no close"
+            : closeButton.frame.midX > bounds.midX ? "close at end" : "close at START"
+        // Laid out as it would be shown: a button over the end of the title
+        // is what a hugging tab's would be, since its title runs to the end.
+        layoutSubtreeIfNeeded()
+        if !closeButton.isHidden, closeButton.frame.minX < label.frame.maxX { close += " OVER the title" }
+        return "\(kind): \(close)\(icon.isHidden ? ", NO glyph" : "")"
+    }
+    #endif
+
     private func applyState() {
-        closeButton.isHidden = pinned || !(isActive || hovering)
-        icon.isHidden = isHugging && !closeButton.isHidden
+        closeButton.isHidden = pinned || isHugging || !(isActive || hovering)
         let strong = isActive && isKeyRow()
         label.textColor = strong ? .labelColor : .secondaryLabelColor
         icon.contentTintColor = strong ? .labelColor : .secondaryLabelColor

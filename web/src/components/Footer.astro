@@ -1,7 +1,7 @@
 ---
 // The close of every page: a photo with the icon and the download on it,
 // then the links, on the same container and grid as everything above.
-import { SITE } from '../data/site';
+import { SITE, FEATURE_PAGES } from '../data/site';
 import GitHubMark from './GitHubMark.astro';
 import { photo as crop } from '../data/photo';
 interface Props { bare?: boolean }
@@ -16,11 +16,13 @@ const closing: Record<string, [string, string, number]> = {
   '/docs': ['haze', '50% 70%', 1],
   '/compare': ['hills', '0% 0%', 1.3],
   '/about': ['haze', '0% 45%', 1.6],
+  '/mark-up': ['skye', '50% 60%', 1],
+  '/layouts': ['haze', '50% 70%', 1],
 };
 // A release's page closes like the changelog it belongs to.
 const [photo, at, zoom] = closing[here] ?? closing['/' + here.split('/')[1]] ?? closing['/'];
 const cols: [string, [string, string][]][] = [
-  ['Wortel', [['Download', '/download'], ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
+  ['Wortel', [['Download', '/download'], ...FEATURE_PAGES.map((p): [string, string] => [p.name, p.path]), ['Changelog', '/updates'], ['Docs', '/docs'], ['Compare', '/compare']]],
   ['More', [['About', '/about'], ['GitHub', SITE.repo], ['Changelog feed', '/feed.xml'], ['Newsletter', '/letter'], ['llms.txt', '/llms.txt']]],
   ['Legal', [['Privacy', '/privacy'], ['Terms', '/terms']]],
 ];

@@ -139,6 +139,8 @@ export type Block =
   /** A small heading inside a section, where it holds more than one subject. */
   | { h: string }
   | { list: string[] }
+  /** Something as it is typed or pasted, on lines of its own. */
+  | { code: string }
   | {
       table: {
         head: [string, string];
@@ -153,6 +155,9 @@ export type Section = Beta & {
   id: string;
   title: string;
   lead?: string;
+  /** The feature's own page (/layouts, /mark-up), linked under the section's
+   *  name on /docs and after its lead in the Markdown. */
+  page?: readonly [text: string, href: string];
   blocks: Block[];
 };
 
@@ -243,7 +248,7 @@ export const SECTIONS: Section[] = [
         p: '`⌘D` splits the split you are in to the right and `⇧⌘D` splits it down, each with a new terminal. A tab let go on the edge of a split makes a new one there, and let go on its middle moves into it. The + in a row opens a tab that asks what it should be: a terminal, a browser, Changes, History or Files.',
       },
       {
-        p: 'Wortel opens the first two for you, where they have always been: Changes and Files beside the terminal (`⌥⌘B`) and a second shell under it (`⌘J`). So the window is useful before you arrange anything, and arranging it is never a setting. `⇧⌘↩` zooms the split you are in to the whole window and back.',
+        p: 'Wortel opens the first two for you, where they have always been: `⌥⌘B` opens Changes and Files beside the terminal and `⌘J` a second shell under it. So the window is useful before you arrange anything, and arranging it is never a setting. `⇧⌘↩` zooms the split you are in to the whole window and back.',
       },
     ],
   },
@@ -255,7 +260,7 @@ export const SECTIONS: Section[] = [
     lead: 'Point at what a preview shows, say something about it, and paste it to an agent.',
     blocks: [
       {
-        p: 'Mark Up (`⇧⌘M`) works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',
+        p: 'Mark Up `⇧⌘M` works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',
       },
       {
         p: 'Your note goes in a bar at the bottom of the preview, with each mark in it as a chip, so the sentence is written around them. Return copies it as plain text, with a picture of each mark and the page or file it was about. Paste it to the agent in this session or another. Nothing is typed or sent for you.',
@@ -315,47 +320,41 @@ export const SECTIONS: Section[] = [
         p: 'This is the feature. A terminal you can spend an afternoon tuning is a terminal you will. Wortel chooses the font, the theme, the keybinds and the scrollback once, and treats them as finished. Font size is the one thing about the look you can change.',
       },
       {
-        p: 'Settings (⌘,) is two short tabs: what a new session starts with, whether Source Control shows its commit box, where a local server opens, automatic updates, and anonymous usage data. A setting is only added for something you decide once and that really differs from one person to the next.',
+        p: 'Settings `⌘,` is two short tabs: what a new session starts with, whether Source Control shows its commit box, where a local server opens, automatic updates, and anonymous usage data. A setting is only added for something you decide once and that really differs from one person to the next.',
       },
     ],
   },
 ];
 
-// ---- the bento: Wortel at a glance -------------------------------------------
-// One poster of what Wortel is, built the way Apple closes a keynote section
-// (studied from its 2025 slides): the product itself in the middle, tiles of
-// very different sizes around it, and on each tile ONE piece of the product
-// and a label of a few words. Almost no tile is only type: on Apple's macOS
-// slide one in fourteen is. No sentences on the poster: `body` is the
-// sentence a screen reader and a crawler get instead. `big` is for the rare
-// tile whose picture is its own word or number.
-// The same facts are SPECS below, which the Markdown pages render as a table.
+// ---- the bento: what is around the terminal ---------------------------------
+// One calm poster under "Everything around the terminal": ten tiles, each ONE
+// piece of the product and a label of a few words, in the order they are
+// read (components/home/Bento.astro places them). No sentences on the
+// poster: `body` is the sentence a screen reader and a crawler get instead.
+//
+// It is not the list of features. What has a section of its own on the
+// homepage has no tile (any agent as a command, who needs you, the diff, a
+// rendered plan, the browser), and neither do the two facts the paragraph
+// over the poster states (five settings, free). All of it is in SECTIONS
+// above, DOCS_SECTIONS and SPECS below, which the Markdown pages print.
 export type Tile = {
-  scene:
-    | 'worktree' | 'agents' | 'send' | 'diff' | 'plan' | 'hero' | 'palette' | 'quit' | 'status'
-    | 'browser' | 'settings' | 'free' | 'looks';
+  scene: 'hero' | 'worktree' | 'palette' | 'splits' | 'markup' | 'history' | 'files' | 'send' | 'looks' | 'quit';
   label: string;
-  big?: string;
   body: string;
 };
 
 export const BENTO: { tiles: Tile[] } = {
   tiles: [
-    { scene: 'worktree', label: 'A worktree per agent', body: 'A session on a branch gets its own directory and files, so several agents share one repository without colliding.' },
-    // The commands, as you would type them: a few of the agents Wortel
-    // recognises by name. Any other command runs the same way.
-    { scene: 'agents', label: 'Whichever agent you use', body: 'Claude Code, Codex, Gemini, opencode, Pi, Amp, Goose, Aider: an agent is one more command in a real terminal, so whichever you use runs as it is.' },
-    { scene: 'send', label: 'Agents that work together', body: 'Every session has the wortel command on its PATH. One agent can hand another a task, wait for it, and read what it said.' },
-    { scene: 'diff', label: 'Every change, beside it', body: 'The working tree file by file, with syntax-highlighted diffs and somewhere to write the commit.' },
-    { scene: 'plan', label: 'Plans, rendered', body: 'A file opens in a tab of its own: source, the diff, or rendered Markdown.' },
     { scene: 'hero', label: 'Ghostty’s engine, in every session', body: 'Every session is a real terminal on Ghostty’s engine, unmodified. An agent is one more command in it.' },
+    { scene: 'worktree', label: 'A worktree per agent', body: 'A session on a branch gets its own directory and files, so several agents share one repository without colliding.' },
     { scene: 'palette', label: 'Every command on ⇧⌘P', body: 'A command palette on ⇧⌘P runs any command, and ⌘P goes to any session by name, or any file in its project.' },
+    { scene: 'splits', label: 'Splits, each with its own tabs', body: 'Everything beside the sidebar is made of splits, and every split has its own row of tabs: a terminal, a browser, a file, your changes.' },
+    { scene: 'markup', label: 'Mark up what you see', body: 'Mark Up draws on a page, a diff, source, rendered Markdown or an image, and copies your note as text an agent can read.' },
+    { scene: 'history', label: 'The branch graph', body: 'History is the commit list with its branch graph, in a tab beside the terminal.' },
+    { scene: 'files', label: 'The project tree', body: 'Files is the project as a tree. Drag a row into the terminal and its path lands at your prompt.' },
     { scene: 'quit', label: 'Outlives the app', body: 'Shells run outside the app. After a quit, an update or a crash, each session is as you left it.' },
-    { scene: 'status', label: 'Who needs you', body: 'Agents report whether they are working, waiting on you, done or failed, and the sidebar shows it.' },
-    { scene: 'browser', label: 'A browser in the window', body: 'A browser tab beside the terminal, to preview the site an agent is building.' },
-    { scene: 'settings', big: '5', label: 'settings', body: 'The font, the theme and the keybinds were chosen once. Settings is five rows long.' },
-    { scene: 'free', big: 'Free', label: 'No account', body: 'Wortel is free, and has no account.' },
     { scene: 'looks', label: 'Follows light and dark', body: 'Every terminal follows the system between light and dark, at once.' },
+    { scene: 'send', label: 'Agents that work together', body: 'Every session has the wortel command on its PATH. One agent can hand another a task, wait for it, and read what it said.' },
   ],
 };
 
@@ -371,6 +370,8 @@ export type Head = Beta & {
   title: string;
   tone?: string;
   body?: string;
+  /** Where it goes further, under the heading: the feature's own page
+   *  (/layouts, /mark-up), or a part of /docs. */
   link?: readonly [text: string, href: string];
 };
 
@@ -392,11 +393,21 @@ export const HOME = {
     body: 'Claude Code, Codex, Pi, opencode and others report when they are working, waiting on you, done or failed. A dot in the sidebar, a notification for a session out of sight, and `⌥⇧⌘↓` takes you there.',
     link: ['How the agents report', '/docs#agent-detection'],
   },
+  // This entry, the section that reads it (components/home/Review.astro) and
+  // its line in pages/index.astro go together. The keys it names are the
+  // beta's, so it carries the flag.
+  review: {
+    title: 'See what it did',
+    tone: 'The diff, the commits, the files',
+    body: 'When an agent says it is done, its work is one key away. `⇧⌘C` opens Changes beside the terminal, `⇧⌘H` the commits with their graph and `⇧⌘F` the project as a tree. Pick a file and it opens in a preview tab: its source, its diff or rendered Markdown.',
+    link: ['The keys for each', '/docs#shortcuts'],
+    beta: true,
+  },
   window: {
     title: 'Split it anywhere',
     tone: 'Every split has its own tabs',
     body: '`⌘D` splits where you are and `⇧⌘D` splits it down. Drag a tab to the edge of any split and it makes a new one there. Every split has its own row of tabs: a terminal, a browser, a file, your changes. `⇧⌘↩` gives one the whole window.',
-    link: ['How splits and tabs work', '/docs#splits'],
+    link: ['Everything a layout does', '/layouts'],
     beta: true,
   },
   // This entry, the section that reads it (components/home/Markup.astro) and
@@ -404,8 +415,8 @@ export const HOME = {
   markup: {
     title: 'Show it what you mean',
     tone: 'Point at it, say it, paste it',
-    body: 'Mark Up (`⇧⌘M`) works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
-    link: ['How mark-up works', '/docs#mark-up'],
+    body: 'Mark Up `⇧⌘M` works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
+    link: ['Everything mark-up does', '/mark-up'],
     beta: true,
   },
   glance: {
@@ -420,6 +431,253 @@ export const HOME = {
     link: ['Read the docs', '/docs'],
   },
 } as const satisfies { hero: Required<Pick<Head, 'title' | 'tone' | 'body'>> } & Record<string, Head>;
+
+// ==========================================================================
+// The feature pages: one feature, in depth. /mark-up and /layouts.
+//
+// A feature page sits between the homepage, which makes the point once, and
+// /docs, which states it exactly: it shows everything the feature does, a
+// part at a time. components/FeaturePage.astro lays one out from a
+// FeaturePage, and data/markdown.ts writes its Markdown from the same object:
+//   heading, tone, lead   the page's opening lines, over its first film
+//   parts                 one section each, opening with the homepage's row
+//                         (a two-line heading, one short paragraph, a link)
+//                         over what the page file puts in the slot named for
+//                         the part's id, with short facts under it
+//   reference             rows to read, as /docs has them: keys, the exact
+//                         behaviour
+//   more                  where to go from here: the other feature pages and
+//                         the reference
+// To add a page: write its FeaturePage here, add it to FEATURE_PAGES, and
+// give it a file in pages/ that fills the slots (pages/mark-up.astro), a
+// Markdown twin (pages/mark-up.md.ts) and a line in pages/sitemap.xml.ts.
+// ==========================================================================
+export type FeaturePart = Head & {
+  id: string;
+  /** Short points under what the part shows: a few words, then a sentence. */
+  facts?: [string, string][];
+  /** Something the part shows as text (what is on the clipboard): the page
+   *  file places it, and the Markdown prints it under the paragraph. */
+  code?: { label: string; text: string };
+};
+export type FeaturePage = Beta & {
+  path: string;
+  /** The link to it, where another page lists it, and the sentence beside it. */
+  name: string;
+  blurb: string;
+  /** Under about 60 characters, and about 150. */
+  title: string;
+  description: string;
+  heading: string;
+  tone: string;
+  lead: string;
+  /** The quiet button beside Download: the part of /docs that goes further. */
+  docs: readonly [text: string, href: string];
+  parts: FeaturePart[];
+  reference: Section[];
+  /** Where to go from here, after the other feature pages. */
+  more: { name: string; blurb: string; href: string }[];
+};
+
+/** The note the page's two tiles show, first in its bar and then as Return
+ *  puts it on the clipboard: what is typed, around the two marks the canvas
+ *  draws on the page (a link picked with a click, a box drawn round the
+ *  paragraph). It is the film's note with a second sentence, so the bar
+ *  stands as tall as the text it becomes. */
+/** The labels of the tiles on /mark-up (components/markup/Tiles.astro). */
+export const MARKUP_TILES = {
+  pick: 'A click picks an element',
+  draw: 'A drag draws on anything',
+  bar: 'The note, in its bar',
+} as const;
+export const MARKUP_NOTE = {
+  words: ['Make ', ' the accent colour, and ', ' needs more room above it. On a phone it runs to four lines and touches the button.'],
+  marks: ['link “Download for macOS”', 'box'],
+} as const;
+/** That note as it is copied: the sentence with each mark as its name and
+ *  its picture's path, an empty line, the page, the picture of the whole and
+ *  the details file (macos/Wortel/Markup/MarkupNote.swift, copied). The
+ *  folders are the ones a first note of a day gets, with the cache folder cut
+ *  short. */
+const MARKUP_COPIED = [
+  MARKUP_NOTE.words.map((w, i) => (i ? `${MARKUP_NOTE.marks[i - 1]} (~/Library/Caches/…/Markup/2026-11-27/1/${i}.png)` : '') + w).join(''),
+  '',
+  'Page: http://localhost:4321/',
+  'All marks: ~/Library/Caches/…/Markup/2026-11-27/1/whole.png',
+  'Details: ~/Library/Caches/…/Markup/2026-11-27/1/details.json',
+].join('\n');
+
+export const MARKUP_PAGE: FeaturePage = {
+  path: '/mark-up',
+  name: 'Mark-up',
+  blurb: 'Point at what a preview shows, write one sentence around the marks, and paste it to an agent.',
+  /** 46 chars. */
+  title: 'Mark-up in Wortel: show an agent what you mean',
+  /** 152 chars. */
+  description:
+    'Mark Up draws on a page, a diff, source, rendered Markdown or an image in Wortel, and copies your note as plain text with pictures, for any coding agent.',
+  heading: 'Mark up what you see',
+  tone: 'Then paste it to an agent',
+  lead: 'Mark Up `⇧⌘M` draws on what a preview shows: a page, a file, its diff, an image. You write one sentence around the marks, and Return copies it as text any agent can read.',
+  docs: ['Mark-up in the docs', '/docs#mark-up'],
+  beta: true,
+  parts: [
+    {
+      id: 'surfaces',
+      title: 'On whatever is in front',
+      tone: 'A page, a file, its diff, an image',
+      body: 'Mark Up is a button in every preview’s header. It works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image, in a tab or in a preview window. Not over a PDF, or anything else Quick Look shows.',
+      link: ['The browser tab', '/docs#browser'],
+    },
+    {
+      id: 'marks',
+      title: 'Click it, or draw on it',
+      tone: 'Each mark gets a colour and a number',
+      body: 'A click picks an element of a page. A drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark lands in your note as a chip with its number, and deleting the chip removes the mark.',
+    },
+    {
+      id: 'note',
+      title: 'Write around the marks',
+      tone: 'Return copies it as plain text',
+      body: 'A bar at the bottom of the preview holds your note, with each mark in it as a chip. Return copies it and turns mark-up off. Paste it to the agent in this session or another. Nothing is typed into a terminal and nothing is sent.',
+      link: ['Exactly what is copied', '/docs#mark-up'],
+      code: { label: 'On the clipboard', text: MARKUP_COPIED },
+    },
+  ],
+  reference: [
+    {
+      id: 'keys',
+      title: 'The keys',
+      blocks: [
+        {
+          table: {
+            head: ['Action', 'Shortcut'],
+            mono: 'last',
+            rows: [
+              ['Mark up the page or file in front, and stop', '⇧⌘M'],
+              ['Copy the note, and stop', 'Return'],
+              ['Stop, and keep the note', 'Esc'],
+            ],
+          },
+        },
+        { p: 'Mark Up is also a button in a preview’s header, and View ▸ Mark Up.' },
+      ],
+    },
+    {
+      id: 'kept',
+      title: 'What is kept',
+      blocks: [
+        { p: 'Esc stops and keeps the note. The note is dropped when the preview goes elsewhere: another address, a reload, a file switched between Diff, Source and Rendered, a closed tab.' },
+        { p: 'The pictures stay on your Mac, in Wortel’s cache folder, and are removed after seven days.' },
+      ],
+    },
+  ],
+  more: [
+    { name: 'The reference', blurb: 'Every shortcut and command, and the parts worth knowing exactly.', href: '/docs' },
+    { name: 'Everything around the terminal', blurb: 'Worktrees, the command palette, a browser, and sessions that outlive the app.', href: '/#more' },
+  ],
+};
+
+export const LAYOUTS_PAGE: FeaturePage = {
+  path: '/layouts',
+  name: 'Layouts',
+  blurb: 'Splits, tabs, zoom and windows: how the window bends to the work.',
+  /** 49 chars. */
+  title: 'Layouts in Wortel: splits, tabs, zoom and windows',
+  /** 151 chars. */
+  description:
+    'Split a Wortel window anywhere with ⌘D or by dragging a tab. Every split has its own tabs, ⇧⌘↩ gives one the whole window, and ⇧⌘N opens another window.',
+  heading: 'Arrange it as you go',
+  tone: 'Splits, tabs, zoom and windows',
+  lead: 'Everything beside the sidebar is made of splits. `⌘D` splits where you are and `⇧⌘D` splits it down, a dragged tab makes a split where you let it go, and `⇧⌘↩` gives one the whole window.',
+  docs: ['Splits in the docs', '/docs#splits'],
+  beta: true,
+  parts: [
+    {
+      id: 'tabs',
+      title: 'Every split has its own tabs',
+      tone: 'A terminal, a browser, a file, your changes',
+      body: 'A split holds a row of tabs, and a tab is a terminal, a browser, a file or one of the git panes: Changes, History, Files. So the diff can sit beside the agent that made it, with the plan in front of its terminal. A split is there while it holds a tab, and gone when its last one closes.',
+      link: ['Splits and tabs', '/docs#splits'],
+      facts: [
+        ['A new tab asks', 'The + in a split’s row, or `⌥⌘T`, opens an empty tab that lists what it can become. Click one, or press its first letter.'],
+        ['Or skip the list', '`⌘T` is a terminal, `⇧⌘B` a browser, `⇧⌘C` Changes, `⇧⌘H` History and `⇧⌘F` Files.'],
+        ['A file is a tab too', 'A file you pick in Changes or Files opens in a preview tab, and the next one you pick takes its place. Double-click it to keep it.'],
+      ],
+    },
+    {
+      id: 'windows',
+      title: 'More than one window',
+      tone: 'Each with a sidebar of its own',
+      body: 'Window ▸ New Window `⇧⌘N` opens another window with its own sidebar. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all.',
+      link: ['More than one window', '/docs#windows'],
+      facts: [
+        ['From a session’s menu', 'Move to New Window and Move to Window do the same without a drag.'],
+        ['Back to one', 'Window ▸ Merge All Windows puts every session back in one window.'],
+        ['Closing asks first', 'Closing a window closes its sessions, and asks first if something is still running in them.'],
+      ],
+    },
+  ],
+  reference: [
+    {
+      id: 'start',
+      title: 'Where it starts',
+      blocks: [
+        { p: 'A session starts with one split, its terminal, and Wortel opens two more where they have always been: `⌥⌘B` opens Changes and Files in a split at the right edge and closes them again, and `⌘J` takes you to a terminal under the main one, making it if there is none. So there is no layout to build before the window is useful.' },
+        { p: 'Nothing is hidden with its tabs kept. When the splits have got away from you, View ▸ Reset Layout puts every tab back where a session starts with it, and closes nothing.' },
+      ],
+    },
+    {
+      id: 'keys',
+      title: 'The keys',
+      blocks: [
+        {
+          table: {
+            head: ['Action', 'Shortcut'],
+            mono: 'last',
+            rows: [
+              ['Split right, with a new terminal', '⌘D'],
+              ['Split down, with a new terminal', '⇧⌘D'],
+              ['New tab that asks what it should be', '⌥⌘T'],
+              ['Focus the next / previous split', '⌘] / ⌘['],
+              ['Focus the split to the left / right / above / below', '⌃⌥⌘ ← → ↑ ↓'],
+              ['Move the tab in front to the split on that side', '⌃⌘ ← → ↑ ↓'],
+              ['Zoom the split you are in, and show all of them again', '⇧⌘↩'],
+              ['Make the splits equal', '⌃⌘='],
+              ['Show or hide the sidebar', '⌘B'],
+              ['New window', '⇧⌘N'],
+            ],
+          },
+        },
+        { p: 'The two buttons at the end of a split’s row split it the same two ways, with an empty tab that asks what goes there. The line between two splits drags.' },
+      ],
+    },
+    {
+      id: 'command',
+      title: 'From a command',
+      blocks: [
+        { p: 'An agent, a hook or a script can split the window too, with the `wortel` command every session has on its `PATH`.' },
+        {
+          table: {
+            head: ['Command', 'What it does'],
+            mono: 'first',
+            rows: [
+              ['wortel split', 'A new terminal in a split beside the session’s own. The keyboard stays where it is'],
+              ['wortel split down -- <command>', 'The same under it, running a command: a dev server, a log'],
+            ],
+          },
+        },
+      ],
+    },
+  ],
+  more: [
+    { name: 'The reference', blurb: 'Every shortcut and command, and the parts worth knowing exactly.', href: '/docs' },
+    { name: 'Everything around the terminal', blurb: 'Worktrees, the command palette, a browser, and sessions that outlive the app.', href: '/#more' },
+  ],
+};
+
+/** Every feature page, in the order another page lists them. */
+export const FEATURE_PAGES: FeaturePage[] = [LAYOUTS_PAGE, MARKUP_PAGE];
 
 // ==========================================================================
 // /docs: the reference the homepage stopped being.
@@ -563,10 +821,10 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Starting an agent in every new session',
     blocks: [
       {
-        p: 'In Settings (`⌘,`), “New sessions start with” takes any command. Type one, like `claude` or `codex`, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: `⌘N`, `⌥⌘N`, `⌥⇧⌘N`, `⌘O`, a folder’s + and a folder dropped on the sidebar.',
+        p: 'In Settings `⌘,`, “New sessions start with” takes any command. Type one, like `claude` or `codex`, or pick one of the agents Wortel finds on your Mac from the menu beside it, and every new session starts with it: `⌘N`, `⌥⌘N`, `⌥⇧⌘N`, `⌘O`, a folder’s + and a folder dropped on the sidebar.',
       },
       {
-        p: 'Session ▸ New Terminal (`⌃⌘N`) opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. `wortel new` and the sessions brought back at launch never use it.',
+        p: 'Session ▸ New Terminal `⌃⌘N` opens one without it, and only exists while the field is filled. Left empty, a new session is a plain terminal. `wortel new` and the sessions brought back at launch never use it.',
       },
       { h: 'A folder of its own' },
       {
@@ -621,6 +879,7 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Splits and tabs',
     beta: true,
     lead: 'Everything beside the sidebar is made of splits, and each split has a row of tabs of its own.',
+    page: ['Layouts, shown step by step', '/layouts'],
     blocks: [
       {
         p: 'A session starts with one split, its terminal, and Wortel opens two more where they have always been: `⌥⌘B` opens Changes and Files in a split at the right edge and closes them again, and `⌘J` takes you to a terminal under the main one, making it if there is none. So there is no layout to build before the window is useful.',
@@ -647,7 +906,7 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'More than one window',
     blocks: [
       {
-        p: 'Window ▸ New Window (`⇧⌘N`) opens another window with a sidebar of its own. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all. A session’s menu has Move to New Window and Move to Window, and Window ▸ Merge All Windows puts everything back in one.',
+        p: 'Window ▸ New Window `⇧⌘N` opens another window with a sidebar of its own. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all. A session’s menu has Move to New Window and Move to Window, and Window ▸ Merge All Windows puts everything back in one.',
       },
       {
         p: 'Closing a window closes its sessions, and asks first if something is still running in them. New Worktree Session is `⌥⇧⌘N`, since `⇧⌘N` opens a window.',
@@ -679,6 +938,7 @@ export const DOCS_SECTIONS: Section[] = [
     title: 'Marking up a preview',
     beta: true,
     lead: 'Point at what a preview shows and say something about it, for an agent to read.',
+    page: ['Mark-up, shown step by step', '/mark-up'],
     blocks: [
       {
         p: 'Mark Up is a button in a preview’s header, View ▸ Mark Up, and `⇧⌘M`. It works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image, in a tab or a preview window. Not over a PDF or anything else Quick Look shows. A click picks an element of a page, and a drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark gets a colour and a number.',
@@ -752,7 +1012,7 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'How is Wortel different from Ghostty?',
-    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it. Ghostty gives you tabs, splits and a large configuration file. Wortel has tabs and splits too, on the same keys (`⌘T`, `⌘D`, `⇧⌘D`), and adds a sidebar of named sessions that persist across restarts, a git worktree per session, shells that keep running after the app quits, a built-in git and files inspector, coding-agent activity detection, and next to nothing to configure.',
+    a: 'Wortel runs Ghostty’s engine, so terminal behaviour, throughput and latency are the same. The difference is the app around it. Ghostty gives you tabs, splits and a large configuration file. Wortel has tabs and splits too, on the same keys, `⌘T`, `⌘D` and `⇧⌘D`, and adds a sidebar of named sessions that persist across restarts, a git worktree per session, shells that keep running after the app quits, a built-in git and files inspector, coding-agent activity detection, and next to nothing to configure.',
   },
   {
     q: 'How is Wortel different from iTerm2, Warp, Kitty or Alacritty?',
@@ -768,11 +1028,11 @@ const FAQ_AUTHORED: { q: string; a: string }[] = [
   },
   {
     q: 'Does Wortel have tabs or split panes?',
-    a: 'Both. Everything beside the sidebar is made of splits, each with its own row of tabs, and a tab is a terminal, a browser, a file or one of the git panes. `⌘D` splits where you are to the right and `⇧⌘D` down, and a tab dragged to the edge of a split makes a new one there. Wortel opens two for you where they have always been, Changes and Files beside the terminal (`⌥⌘B`) and a second terminal under it (`⌘J`), so there is no layout to build first. A file tab can also be dragged out of the window into a preview window of its own, and back. Switching work is still the sidebar’s job: a split holds tabs, never another session, and `⌘P` finds any session by name.',
+    a: 'Both. Everything beside the sidebar is made of splits, each with its own row of tabs, and a tab is a terminal, a browser, a file or one of the git panes. `⌘D` splits where you are to the right and `⇧⌘D` down, and a tab dragged to the edge of a split makes a new one there. Wortel opens two for you where they have always been, Changes and Files beside the terminal on `⌥⌘B` and a second terminal under it on `⌘J`, so there is no layout to build first. A file tab can also be dragged out of the window into a preview window of its own, and back. Switching work is still the sidebar’s job: a split holds tabs, never another session, and `⌘P` finds any session by name.',
   },
   {
     q: 'Can I configure Wortel’s fonts, colours and keybinds?',
-    a: 'Only font size, which is adjustable per session with `⌘+` and `⌘−`. Everything else about how the terminal looks and types is fixed: its whole configuration is a read-only file inside the app bundle, and your `~/.config/ghostty` is never read. Settings (`⌘,`) holds five things that differ per person, such as what a new session starts with, and none of them is about the look. Next to nothing to configure is the design goal, not a missing feature.',
+    a: 'Only font size, which is adjustable per session with `⌘+` and `⌘−`. Everything else about how the terminal looks and types is fixed: its whole configuration is a read-only file inside the app bundle, and your `~/.config/ghostty` is never read. Settings `⌘,` holds five things that differ per person, such as what a new session starts with, and none of them is about the look. Next to nothing to configure is the design goal, not a missing feature.',
   },
   {
     q: 'How does Wortel know when a coding agent is waiting for me?',

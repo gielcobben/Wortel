@@ -1,0 +1,169 @@
+---
+// Tiles on /mark-up, built as the homepage's poster is (home/Bento.astro):
+// light tiles on the site's one grey, a label of a few words on each, and one
+// piece of the real app at its own size, cut by the tile. Two sets:
+//   marks  how a mark is made: an element of a page picked with a click, and
+//          the rendered plan drawn on with a box, an arrow and a highlighter;
+//   note   what becomes of it: the note in its bar, and the same note as
+//          Return puts it on the clipboard (MARKUP_NOTE in data/site.ts).
+//          The two are one height: the bar is as tall as its sentence makes
+//          it, the text a size smaller, and whichever comes out shorter
+//          takes up the difference.
+// The pieces are lifted out of the canvas's two mark-up frames, which the
+// "marks" set renders once into a template for both.
+import AppContent from '../AppContent.astro';
+import MarkUpPage from '../../app/gen/MarkUpPage.astro';
+import MarkUp from '../../app/gen/MarkUp.astro';
+import { MARKUP_PAGE, MARKUP_NOTE, MARKUP_TILES } from '../../data/site';
+interface Props { set: 'marks' | 'note' }
+const { set } = Astro.props;
+const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
+---
+<ul class:list={['tiles', set]} data-tiles data-reveal>
+  {set === 'marks' && (
+    <>
+      <li class="tile pick">
+        <p class="cap">{MARKUP_TILES.pick}</p>
+        <div class="wapp part bg-background" data-part="Page" inert aria-hidden="true" data-nosnippet></div>
+      </li>
+      <li class="tile draw">
+        <p class="cap">{MARKUP_TILES.draw}</p>
+        <div class="wapp part bg-background" data-part="Markdown" inert aria-hidden="true" data-nosnippet></div>
+      </li>
+    </>
+  )}
+  {set === 'note' && (
+    <>
+      <li class="tile bar">
+        <p class="cap">{MARKUP_TILES.bar}</p>
+        <div class="wapp hold" data-part="Note bar" data-note="flow" data-words={JSON.stringify(MARKUP_NOTE.words)} inert aria-hidden="true" data-nosnippet></div>
+      </li>
+      <li class="tile text">
+        <p class="cap">{copied?.label}</p>
+        <pre class="copied" data-nosnippet>{copied?.text}</pre>
+      </li>
+    </>
+  )}
+</ul>
+{set === 'marks' && <template data-tiles-src><AppContent><MarkUpPage /></AppContent><AppContent><MarkUp /></AppContent></template>}
+
+<script>
+  import { planMarks, phrase } from '../../scripts/plan';
+  // Each holder gets a clone of the named part, out of the frames in the
+  // page's template.
+  const src = document.querySelector<HTMLTemplateElement>('template[data-tiles-src]')?.content;
+  /** The page, as wide as its tile shows it: what the canvas drew over it is
+   *  placed in the page's own points (537 wide), so each mark says where it
+   *  is in those and the styles below scale them with the page. */
+  const page = (part: HTMLElement) => {
+    part.querySelectorAll<HTMLElement>(':scope > [data-name^="Mark "]').forEach((mark) => {
+      const cs = getComputedStyle(mark);
+      for (const [k, v] of [['--l', cs.left], ['--t', cs.top], ['--w', cs.width], ['--h', cs.height]]) mark.style.setProperty(k, String(parseFloat(v)));
+      mark.dataset.scaled = '';
+    });
+  };
+  /** The plan, as wide as its tile shows it, from "Steps" down: its marks are
+   *  put over the same words again when it wraps (scripts/plan.ts). */
+  const plan = (doc: HTMLElement) => {
+    const { column, place } = planMarks(doc);
+    const fit = () => {
+      const from = Array.from(column.children).find((el) => el.textContent?.trim() === 'Steps') as HTMLElement | undefined;
+      // The heading at the top, and the paragraph over it out of sight whole.
+      column.style.marginTop = from ? `${-from.offsetTop}px` : '';
+      place();
+    };
+    fit();
+    new ResizeObserver(fit).observe(doc);
+    document.fonts?.ready.then(fit);
+  };
+  if (src) {
+    document.querySelectorAll<HTMLElement>('[data-tiles] [data-part]').forEach((holder) => {
+      const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`)?.cloneNode(true) as HTMLElement | undefined;
+      if (!part) return;
+      // The note in the bar is the page's own (MARKUP_NOTE in data/site.ts),
+      // typed around the canvas's two chips: its words go into the layers
+      // the canvas drew its sentence in, and the last layer is not needed.
+      const words: string[] = JSON.parse(holder.dataset.words || '[]');
+      if (words.length) part.querySelectorAll<HTMLElement>('[data-name^="Words "]').forEach((w, i) => { w.textContent = words[i] ?? ''; w.hidden = !words[i]; });
+      holder.append(part);
+      if (holder.dataset.part === 'Page') page(part);
+      if (holder.dataset.part === 'Markdown') plan(part);
+    });
+  }
+</script>
+
+<style>
+  .tiles {
+    --gap: 16px;
+    list-style: none; margin: 0; padding: var(--gap); border-radius: 32px;
+    display: grid; gap: var(--gap); grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 288px;
+    background: var(--btn-2);
+  }
+  .tile {
+    position: relative; overflow: hidden; isolation: isolate; min-width: 0; border-radius: 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px 16px; text-align: center;
+    background: var(--fog-0); color: var(--ink);
+  }
+  .cap { position: relative; z-index: 2; margin: 0; flex: none; font: 500 17px/24px var(--font-display); letter-spacing: -0.012em; text-wrap: balance; color: var(--ink); }
+  /* The panel does not move when it arrives; it fades in whole. */
+  :global(.js) .tiles[data-reveal] { translate: none; filter: none; }
+
+  /* A part lifted out of a frame: a page of the app with one corner showing. */
+  .part {
+    position: absolute; left: 24px; top: 64px; bottom: 0; display: flex; flex-direction: column; overflow: hidden; text-align: left;
+    border-radius: 12px 0 0 0; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.1);
+  }
+  /* Both parts run to their tile's right edge, whatever its width: a part of
+     a fixed width stopped short of it in a wide tile (one column, under 900)
+     and left a blank strip beside a square edge. */
+  .pick .part, .draw .part { right: 0; width: auto; }
+  /* The page fills its part's width, as a page fills a browser split, and is
+     shown from just above the paragraph down: the box drawn around the
+     paragraph and the button a click picked, then the hero's stage. What the
+     canvas drew over it is in the page's own points, 537 wide, so it is
+     scaled with it: --u is one of those points (the script gives each mark
+     its place in them). Nothing else of mark-up is in this picture. */
+  .pick .part { container-type: inline-size; }
+  .pick .part > :global([data-name="Page"]) { --u: calc(100cqw / 537); flex: none; margin-top: calc(-192 * var(--u)); }
+  .pick .part :global([data-name="Page"] > img) { position: relative; inset: auto; width: 100%; height: auto; object-fit: fill; }
+  .pick .part :global([data-name="Page"] > [data-scaled]) { left: calc(var(--l) * var(--u)); top: calc(var(--t) * var(--u)); width: calc(var(--w) * var(--u)); height: calc(var(--h) * var(--u)); }
+  .pick .part :global(:is([data-name="Note bar"], [data-name="Hover outline"])) { display: none; }
+  /* The rendered plan, as wide as its part, from "Steps" down (the script
+     moves it up to there): a heading, a list with the box around two of its
+     steps, a code block, and "Checks" with the arrow, the highlight and the
+     ticks. At 650 and up it is the canvas's plan as drawn; narrower it wraps,
+     and its marks are put over the same words again (scripts/plan.ts). The
+     tiles are tall enough for all of it at the page's full width. */
+  .tiles.marks { grid-auto-rows: 512px; }
+  .draw .part { left: 16px; }
+  .draw .part > :global([data-name="Markdown"]) { flex: 1 1 auto; min-height: 0; justify-content: flex-start; overflow: hidden; }
+  .draw .part > :global([data-name="Markdown"] > :first-child) { flex: none; }
+
+  /* The note bar by itself, where the app pins it to the foot of a preview,
+     beside the same note as text. The two boxes are one height. The bar's
+     tile is the narrower (4 to 7: measured from 920 wide to the full page,
+     the two then come out within 20 points of each other, 2 at best), so
+     its sentence runs to
+     about as many lines as the text beside it, and the row is as tall as the taller of the two; the
+     other takes up what is left, the bar in the room under its sentence, as
+     a text view does, and the text under its last line. */
+  .tiles.note { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); grid-auto-rows: auto; }
+  .hold { position: relative; flex: 1; align-self: stretch; display: flex; text-align: left; }
+  .hold > :global([data-name="Note bar"]) { position: relative; inset: auto; flex: 1; margin: 0; max-width: none; }
+  .hold :global([data-name="Placeholder"]) { display: none; }
+  /* The sentence wraps as a text view's does, around its chips
+     (data-note="flow", styles/app.css), and has the room the bar gains. */
+  .hold :global([data-name="Note"]) { flex: 1 0 auto; }
+  /* The same note as text: what is pasted, on the lines it is pasted on. */
+  .text { align-items: stretch; }
+  .copied {
+    margin: 0; flex: 1; padding: 16px; border-radius: 12px; text-align: left;
+    background: var(--fog-1); border: 1px solid var(--line); color: var(--ink);
+    font: 500 12px/16px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 900px) {
+    .tiles { grid-template-columns: minmax(0, 1fr); border-radius: 28px; }
+    .tiles.note { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>

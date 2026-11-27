@@ -1,0 +1,20 @@
+---
+// /layouts: everything a window's layout does, built as /mark-up is. The
+// words are LAYOUTS_PAGE in data/site.ts and the layout is
+// components/FeaturePage.astro; this file brings what each part shows:
+//   hero     the splits film (the homepage's), with a fourth chapter here:
+//            ⇧⌘D, a dragged tab, zoom, and ⌘B hiding the sidebar
+//   tabs     the review film (the homepage's): Changes, History and Files as
+//            tabs in a split beside the terminal, and a file in a preview tab
+//   windows  two windows, each with a sidebar of its own
+import FeaturePage from '../components/FeaturePage.astro';
+import PanesFilm from '../components/films/PanesFilm.astro';
+import ReviewFilm from '../components/films/ReviewFilm.astro';
+import Windows from '../components/layouts/Windows.astro';
+import { LAYOUTS_PAGE } from '../data/site';
+---
+<FeaturePage page={LAYOUTS_PAGE}>
+  <PanesFilm slot="hero" sidebar eager />
+  <ReviewFilm slot="tabs" photo="lake" at="80% 40%" zoom={1.6} />
+  <Windows slot="windows" />
+</FeaturePage>

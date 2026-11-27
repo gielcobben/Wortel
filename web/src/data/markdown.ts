@@ -15,7 +15,7 @@
 // and "not published" has to read as itself rather than as a quiet no.
 import { getCollection } from 'astro:content';
 import { compareVersions, publicRelease } from '../content.config';
-import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, betaNote as beta, type Block } from './site';
+import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, FEATURE_PAGES, betaNote as beta, type Block, type FeaturePage } from './site';
 import { COMPARE, APPS, AXES, GROUPS, type Verdict } from './compare';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
@@ -24,6 +24,7 @@ export const renderBlock = (b: Block): string => {
   if ('p' in b) return b.p;
   if ('h' in b) return `**${b.h}**`;
   if ('list' in b) return b.list.map((li) => `- ${li}`).join('\n');
+  if ('code' in b) return ['```', b.code, '```'].join('\n');
   const { head, rows, mono } = b.table;
   // In a table of commands "(beta)" goes with what the command does, where it
   // cannot be read as part of the command.
@@ -79,6 +80,8 @@ export const docsSections = (level: number): string[] => {
   for (const section of DOCS_SECTIONS) {
     out.push('', `${hashes(level)} ${section.title}${beta(section)}`, '');
     if (section.lead) out.push(section.lead, '');
+    // The feature's own page, where the section has one.
+    if (section.page) out.push(`[${section.page[0]}](${abs(section.page[1])})`, '');
     out.push(section.blocks.map(renderBlock).join('\n\n'));
   }
   return out;
@@ -108,6 +111,23 @@ export const compareTables = (level: number): string[] => {
   return out;
 };
 
+/** A feature page's parts and its reference rows, their headings at `level`. */
+export const featureSections = (page: FeaturePage, level: number): string[] => {
+  const out: string[] = [];
+  for (const part of page.parts) {
+    out.push('', `${hashes(level)} ${part.title}${part.tone ? `: ${part.tone}` : ''}`, '');
+    if (part.body) out.push(part.body);
+    if (part.code) out.push('', `${part.code.label}:`, '', '```', part.code.text, '```');
+    if (part.facts) out.push('', part.facts.map(([k, v]) => `- **${k}.** ${v}`).join('\n'));
+  }
+  for (const section of page.reference) {
+    out.push('', `${hashes(level)} ${section.title}${beta(section)}`, '');
+    if (section.lead) out.push(section.lead, '');
+    out.push(section.blocks.map(renderBlock).join('\n\n'));
+  }
+  return out;
+};
+
 // ---- the pages --------------------------------------------------------------
 
 export const llmsFull = (): string => [
@@ -125,6 +145,11 @@ export const llmsFull = (): string => [
   // that sends a model off to guess.
   '', `## ${DOCS.heading}: ${DOCS.lead}`, '', `Source: ${abs('/docs')}`, '',
   ...docsSections(3),
+  // Each feature page, in full: what the homepage's section says once, a part at a time.
+  ...FEATURE_PAGES.flatMap((page) => [
+    '', `## ${page.heading}: ${page.tone}${beta(page)}`, '', page.lead, '', `Source: ${abs(page.path)}`,
+    ...featureSections(page, 3),
+  ]),
   ...faq(),
   ...compareTables(2),
   ...specs(),
@@ -159,6 +184,24 @@ export const docsMd = (): string => [
   '',
   '---',
   ...docsSections(2),
+  ...footer(),
+].join('\n');
+
+/** A feature page (/mark-up, /layouts) as Markdown. */
+export const featureMd = (page: FeaturePage): string => [
+  `# ${page.heading}: ${page.tone}${beta(page)}`,
+  '',
+  `> ${page.lead}`,
+  '',
+  `Source: ${abs(page.path)}`,
+  ...facts(),
+  `Reference: ${abs('/docs.md')}`,
+  '',
+  '---',
+  ...featureSections(page, 2),
+  '', '## More', '',
+  [...FEATURE_PAGES.filter((other) => other !== page).map((other) => `- [${other.name}](${abs(other.path)}): ${other.blurb}`),
+    ...page.more.map((m) => `- [${m.name}](${abs(m.href)}): ${m.blurb}`)].join('\n'),
   ...footer(),
 ].join('\n');
 

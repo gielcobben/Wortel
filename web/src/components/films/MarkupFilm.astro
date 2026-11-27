@@ -1,0 +1,128 @@
+---
+// The mark-up film: showing the agent what you mean. One window, the agent's
+// terminal on the left and a browser split on the right, on the page the
+// agent is building. Cause in one split, effect in the other: the page is
+// pointed at and a sentence written around the marks (the browser), and the
+// note lands in the agent (the terminal). scripts/markup.ts plays it.
+//
+// The homepage's section (components/home/Markup.astro) and the /mark-up
+// page (pages/mark-up.astro) both show it. One to a page: the script finds
+// the film by its name.
+import Stage from '../Stage.astro';
+import Window from '../Window.astro';
+import AppContent from '../AppContent.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import NotePasted from '../../app/gen/NotePasted.astro';
+import MarkUpPage from '../../app/gen/MarkUpPage.astro';
+interface Props {
+  /** In the first screen: its photo comes with the page (Stage.astro). */
+  eager?: boolean;
+  /** With the sidebar hidden from the start, as /mark-up has it: the two
+      splits have the whole window and the browser is the larger one. Wide
+      enough, it shows the page as captured at a wide split
+      (public/img/page-wide-*.webp), with the marks placed for that picture
+      (scripts/markup.ts). */
+  bare?: boolean;
+}
+const { eager = false, bare = false } = Astro.props;
+const chapters = ['Point', 'Say it', 'Copy', 'Paste'];
+---
+<Stage film="markup" chapters={chapters} photo="haze" at="100% 40%" zoom={1.8} fold eager={eager}>
+    <Window data-mwin data-narrow data-bare={bare ? '' : undefined}>
+      <div class="mk-slot mk-sb"><Sidebar /></div>
+      <div class="mk-div mk-sbdiv"></div>
+      <div class="mk-slot mk-term" data-split="terminal"><NotePasted /></div>
+      <div class="mk-div"></div>
+      <!-- The rightmost row along the top: it clears the window's corner. -->
+      <div class="mk-slot mk-web" data-split="browser" data-end><AppContent><MarkUpPage /></AppContent></div>
+    </Window>
+    <div class="keys glass" data-keys="markup" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd></div>
+    <div class="keys glass" data-keys="copy" aria-hidden="true"><kbd>⏎</kbd></div>
+    <!-- The button's checkmark is small: what it says, said where the key was. -->
+    <div class="keys glass said" data-keys="copied" aria-hidden="true"><span>Copied</span></div>
+    <div class="keys glass" data-keys="paste" aria-hidden="true"><kbd>⌘</kbd><kbd>V</kbd></div>
+    <div class="keys glass" data-keys="send" aria-hidden="true"><kbd>⏎</kbd></div>
+</Stage>
+
+<script>
+  import { initMarkup } from '../../scripts/markup';
+  initMarkup();
+</script>
+
+<style>
+  /* The splits: the sidebar at the canvas's 234, the browser at the 537 its
+     page was captured at, and the agent's terminal the rest. A window this
+     size has 331 left for the terminal: the canvas's two 537s and the
+     sidebar would be 1310, wider than any stage. */
+  .mk-slot { display: flex; min-width: 0; min-height: 0; }
+  .mk-slot > :global(*) { flex: 1; }
+  .mk-sb { width: 234px; flex: none; }
+  .mk-term { flex: 1; }
+  .mk-web { width: 537px; flex: none; }
+  .mk-div { width: 1px; flex: none; align-self: stretch; background: var(--sidebar-border); }
+
+  /* The page is as wide as its split and as tall as that makes it, cut off
+     at the bottom: at 537 that is the canvas's picture exactly. Narrower, it
+     is the same picture smaller, and the marks follow it
+     (scripts/markup.ts). Covering the height instead cut its sides off on a
+     small phone, and half the paragraph with them. */
+  .mk-web :global([data-name="Page"] > img) { height: auto; object-fit: fill; }
+  /* The placeholder is one line: in a bar narrower than it, it ends in an
+     ellipsis rather than at the bar's edge. */
+  .mk-web :global([data-name="Placeholder"]) { right: 16px; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Narrower than the stage's full width the sidebar folds, as the panes
+     film's does, and the browser gives up a little width before the
+     terminal is left a strip: 537 while the terminal keeps 331, then never
+     under 60% of the window. The window gains what the app gives a window
+     with no sidebar (app.ts, foldable), as a phone's does (site.css). */
+  @media (max-width: 1263px) {
+    .mk-sb, .mk-sbdiv { display: none; }
+    .mk-web { width: min(537px, max(60%, calc(100% - 331px))); }
+    :global([data-film="markup"] .win [data-narrow-only]) { display: flex; }
+    :global([data-film="markup"] .win [data-narrow-only][data-lead]) { display: contents; }
+    :global([data-film="markup"] .win [data-lead] [data-name="Back and Forward"]) { display: none; }
+    .mk-term :global(header[data-name="Main bar"]) { padding-left: 78px; }
+  }
+
+  /* With the sidebar hidden from the start (bare): the terminal keeps 360
+     and the browser has the rest. Where a split is taller than the page's
+     picture, the page's own ground goes on under it. On a phone the two
+     splits are as below, as they are with a sidebar. */
+  @media (min-width: 761px) {
+    [data-bare] .mk-sb, [data-bare] .mk-sbdiv { display: none; }
+    [data-bare] .mk-term { flex: none; width: min(360px, 40%); }
+    [data-bare] .mk-web { flex: 1; width: auto; }
+    [data-bare] .mk-term :global(header[data-name="Main bar"]) { padding-left: 78px; }
+    :global([data-film="markup"] .win[data-bare] [data-narrow-only]) { display: flex; }
+    :global([data-film="markup"] .win[data-bare] [data-narrow-only][data-lead]) { display: contents; }
+    :global([data-film="markup"] .win[data-bare] [data-lead] [data-name="Back and Forward"]) { display: none; }
+  }
+  [data-bare] .mk-web :global([data-name="Page"]) { background: var(--fog-0); }
+  /* Of the page's two pictures, the one for the split's width (data-wide,
+     scripts/markup.ts). */
+  .mk-web :global([data-name="Page"][data-wide] > img:not([data-wide])),
+  .mk-web :global([data-name="Page"]:not([data-wide]) > img[data-wide]) { display: none; }
+
+  /* On a phone the stage shows one split at a time, each as wide as the
+     stage: the browser while the page is pointed at, the terminal once the
+     note is pasted. The film pans between them (scripts/markup.ts). */
+  @media (max-width: 760px) {
+    :global([data-film="markup"] .stage .win) { width: calc(200% + 1px); }
+    .mk-web { width: calc((100% - 1px) / 2); }
+    /* The window's corner is over the browser's row, not the terminal's. */
+    :global([data-film="markup"] .win[data-narrow] header[data-name="Main bar"]) { padding-right: 8px; }
+  }
+  /* On the narrowest phones the bar's row is wider than the bar: Move, the
+     divider before it and Clear Note give way, so the pens and Copy stay
+     whole. A liberty: the app's bar is never this narrow. */
+  @media (max-width: 359px) {
+    :global([data-film="markup"] .win [data-narrow-only][data-lead]) { display: none; }
+    .mk-web :global([data-name="Tool row"] :is([data-name="Move"], [data-name="Divider"], [data-name="Clear Note"])) { display: none; }
+  }
+
+  /* Keys float over the split they are pressed in (scripts/markup.ts sets
+     where). */
+  .keys { translate: -50% 0; }
+  .said span { height: 40px; padding: 0 8px; font: 500 15px/40px var(--font-sans); color: var(--ink); }
+</style>

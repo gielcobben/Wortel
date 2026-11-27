@@ -5,8 +5,23 @@
 //     reading them would find three h1s on the homepage, two of them the name
 //     of a made-up plan. They are drawn by their classes, not by their tag, so
 //     here they become plain blocks and look exactly the same.
-//   - its pictures (the web page in the browser pane is 250 KB): they are
-//     marked lazy, and scripts/reveal.ts fetches them when their stage nears.
+//   - its pictures: they are marked lazy, and scripts/reveal.ts fetches them
+//     when their stage nears.
+//   - the page a browser split shows. The canvas's picture of this site was
+//     taken before the hero's stage had arrived (an empty box under the
+//     buttons) and is 740 points tall, which a tall or narrow split runs out
+//     of. Here it becomes this site's own picture of the same page at the
+//     same 537 points, 1600 tall (public/img/page-narrow-*.webp, made by
+//     scripts/pages/capture.mjs): the same layout to the point, so whatever
+//     the canvas drew over the page is where it was. It is swapped in the
+//     markup, so the canvas's picture is never fetched.
 const html = await Astro.slots.render('default');
+/** The page's picture, 1074 by 3200 pixels, for the canvas's "Web page" and "Web page, dark" in its mark-up frames: only a capture 1074 wide, so the full-window browser's (Browser.astro, 2150 wide) is left alone. */
+const page = (tag: string, dark?: string) => tag
+  .replace(/\bsrc="[^"]*"/, `src="/img/page-narrow-${dark ? 'dark' : 'light'}.webp"`)
+  .replace(/\bheight="\d+"/, 'height="3200"');
 ---
-<Fragment set:html={html.replace(/<(\/?)h[1-6](?=[\s>])/g, '<$1div').replace(/<img (?![^>]*\bloading=)/g, '<img loading="lazy" ')} />
+<Fragment set:html={html
+  .replace(/<(\/?)h[1-6](?=[\s>])/g, '<$1div')
+  .replace(/<img data-name="Web page(, dark)?"[^>]*\bwidth="1074"[^>]*>/g, page)
+  .replace(/<img (?![^>]*\bloading=)/g, '<img loading="lazy" ')} />

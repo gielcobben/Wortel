@@ -43,12 +43,18 @@ src/
   pages/feed.xml.ts        /feed.xml the changelog as an Atom feed, linked from every page's <head>
   pages/compare.astro      /compare Wortel against nine named apps
   pages/docs.astro         /docs    commands, shortcuts, behaviour
+  pages/mark-up.astro      /mark-up one feature in depth (see Feature pages)
+  pages/layouts.astro      /layouts the same for splits, tabs, zoom and windows
+  components/FeaturePage.astro  the layout of a feature page, from a FeaturePage in data/site.ts
+  components/films/        a film more than one page shows: PanesFilm (the homepage's splits and /layouts), MarkupFilm (the homepage's section and /mark-up), ReviewFilm (the homepage's "See what it did" and /layouts)
+  components/layouts/      what only /layouts shows: Windows (two windows on one stage)
+  components/markup/       what /mark-up shows: Surfaces (mark-up over Markdown, source and a diff) and Tiles
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms*.txt.ts       maps for language models
-  pages/*.md.ts            /index.md, /docs.md, /compare.md, /updates.md: pages as Markdown
+  pages/*.md.ts            /index.md, /docs.md, /compare.md, /mark-up.md, /layouts.md, /updates.md: pages as Markdown
   data/markdown.ts         the renderers behind those and llms-full.txt
   pages/404.astro          the not-found page (dist/404.html)
-  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ, in the right column beside its heading)
+  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Markup and Review (each a section's words over a film in components/films/), Bento (what is around the terminal: one calm poster of ten pieces of the real app, on a regular grid of two tile sizes and a small one), Glance (the FAQ, in the right column beside its heading)
   components/AppContent.astro  wraps a piece of the app that shows a document: its headings become plain blocks, so the page keeps one h1
   components/GitHubMark.astro  GitHub's mark, for the buttons to the source (SITE.repo) in the nav and the closing call; they open in a new tab
   components/Section.astro a section: the row it opens with (a hairline, a two-line heading at the left,
@@ -61,7 +67,11 @@ src/
   scripts/hero.ts          the landing sequence (one GSAP timeline)
   scripts/panes.ts         the splits scene: one story in three chapters, each a scene (its beats, and how it ends)
   scripts/scenes.ts        the agents scene and the terminal-first scene
-  scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes
+  scripts/markup.ts        the mark-up scene: point, say it, copy, paste
+  scripts/review.ts        the review scene: Changes, History, Files and a preview, in one session
+  scripts/plan.ts          the canvas's marks on its rendered plan, kept on their words at any width
+  scripts/surfaces.ts      /mark-up's second scene: the marks drawn and the note written over three previews
+  scripts/bento.ts         puts the real app into the bento's ten tiles: parts cloned out of the generated panes (a preview being marked up, the commits, the file tree) and two windows (a terminal, one in splits)
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/
@@ -71,6 +81,7 @@ public/
 scripts/opmaak/            regen.sh: the canvas -> src/app/gen (through jsx2astro.mjs);
                            drift.sh and synced: how far the app is ahead of the canvas
 scripts/og/                render.mjs: the inner pages' social cards -> public/og
+scripts/pages/             capture.mjs: the pictures of this site the browser splits show -> public/img/page-*.webp
 ```
 
 ### The app window is live HTML, not a screenshot
@@ -113,9 +124,11 @@ text the row is `.row12.read`: the name is smaller (20 / 28) in columns 1 to
 3, and the text has columns 4 to 11.
 
 - **On the homepage** a section is `components/Section.astro`. The name is a
-  heading in two lines, the claim in ink and its other half in grey; the right
-  column is one short paragraph and a link to the part of `/docs` that goes
-  further. Under the row, at full width, comes what the section shows: a
+  heading in two lines, the claim in ink and its other half in grey; under it
+  is the section's link, to the feature's own page (`/layouts`, `/mark-up`)
+  or to the part of `/docs` that goes further; the right column is one short
+  paragraph. A section that only the beta has says "Beta" over its heading,
+  as the feature pages do over their name. Under the row, at full width, comes what the section shows: a
   `Stage` (a part of the foggy lake with the chapter tabs and a round
   play/pause button over the app window at its natural proportions) or the
   bento. The questions are the exception: they are a column themselves, so
@@ -144,6 +157,133 @@ current chapter's caption, and the reader had to chase it.
 
 Don't name a site class after a Tailwind utility (`block`, `grid`, `flex`…):
 the app's generated markup uses those.
+
+### Feature pages
+
+A feature page shows one feature in depth: `/mark-up` and `/layouts`. It sits between the
+homepage, which makes the point once, and `/docs`, which states it exactly.
+It keeps the homepage's layout (the opening, then sections that open with
+`.row12` over a stage or tiles) and ends in rows to read, as `/docs` does.
+
+- **The words** are a `FeaturePage` in `data/site.ts` (`MARKUP_PAGE`,
+  `LAYOUTS_PAGE`): the
+  opening lines, the parts (a two-line heading, one paragraph, a link, and
+  short facts), the reference rows, and where to go next. `FEATURE_PAGES`
+  lists the pages: the footer, `llms.txt`, `llms-full.txt` and each page's
+  "More" row read it.
+- **The layout** is `components/FeaturePage.astro`. It renders the opening
+  with the film in the slot `hero`, then one `Section` per part with whatever
+  is in the slot named for the part's id, its facts under that (`.facts`),
+  the reference rows (`.row12.read`) and "More".
+- **The page file** (`pages/mark-up.astro`) only fills the slots. Its
+  Markdown twin is `pages/mark-up.md.ts` (`featureMd` in `data/markdown.ts`).
+
+To add one: write its `FeaturePage`, add it to `FEATURE_PAGES`, copy the two
+page files, and give it a line in `pages/sitemap.xml.ts` and a closing photo
+in `components/Footer.astro`. A film two pages show goes in
+`components/films/`, one to a page: a scene finds its film by name.
+
+How a page is paced was taken from reading other products' feature pages
+(Framer's, mostly): a short opening with the product itself as the picture, a
+handful of parts with one visual each, a link to the manual from a part,
+never the same kind of block three times running (film, film, tiles, tiles,
+rows), and a close that leads to the other feature pages before the download.
+A part may carry a second tier of one-sentence facts (`facts`). `/mark-up`
+had two such lists and lost them, since they repeated the paragraph beside
+the film and the tile that shows the copied text; `/layouts` keeps its two,
+which say what no picture on the page does.
+
+**/mark-up** opens with the homepage's mark-up film (a page in a browser
+tab), with its sidebar hidden from the start (`bare`): the terminal keeps 360
+and the browser has the rest. From 640 wide the browser shows the page as
+captured at a wide split (`public/img/page-wide-*.webp`, the splits film's),
+and the marks are placed for that layout, from the paragraph and the button
+as measured on the site at 1074 (`scripts/markup.ts`). Narrower, it shows the
+narrow picture every film shows (The page in a browser split, below). Its
+second film, `scripts/surfaces.ts`, does the same over three
+previews in one tab's place: rendered Markdown, source, a diff. In each,
+⇧⌘M turns Mark Up on, the pointer draws the marks (a box is dragged out from
+its corner, a whole rectangle all the way; an arrow and a highlight are
+uncovered along their length) and the sentence is typed around the chips. The Markdown chapter is the canvas's
+"Mark-up, a plan" as drawn. The canvas has no frame for mark-up over source
+or a diff, so those two are put together from frames it has: the source tab,
+the diff out of the Changes pane, and the plan's marks, note bar, Mark Up
+button and mode switch, cloned and placed over lines the script measures. A
+frame of each on the canvas would replace that, and one of an image would add
+the chapter that is missing. On a phone the plan wraps and its marks are
+placed over the same words again, the plan moves down to a mark drawn above
+what shows, and code scrolls sideways or up to a mark that would be out of
+sight. The two rows of tiles lift their pieces out of the same two frames. In the
+first row each piece runs to its tile's right edge at any width. The page
+fills its piece as a page fills a browser split, and what the canvas drew
+over it is scaled with it: each mark carries its place in the page's own 537
+points, and one of those points is a share of the piece's width. The plan is
+as wide as its piece and starts at "Steps"; narrower than 650 it wraps, and
+`scripts/plan.ts` puts its marks over the same words again (the second film
+uses the same). Both were pieces of a fixed width, which stopped short of a
+wide tile and were cut by a narrow one. The
+second row's note is `MARKUP_NOTE` in `data/site.ts`: the bar shows it, and
+the text beside it is written from it the way the app copies one, so the two
+cannot disagree. Their boxes are one height: the bar's tile is the narrower
+(4 to 7) so the sentence runs to about as many lines as the text, set a size
+smaller (12 / 16), and whichever comes out shorter takes up the difference.
+
+**/layouts** is made of the homepage's films. It opens with the splits film
+(`films/PanesFilm.astro`), which has a fourth chapter there (`sidebar`): ⌘B
+folds the sidebar away and the leftmost row gains its buttons. A window too
+narrow for a sidebar has it folded already, so at 1000px and under that
+chapter and its tab are left out. "Every split has its own tabs" is the
+review film. "More than one window" is `components/layouts/Windows.astro`:
+two windows on one stage, each with its own sidebar and sessions, nothing
+playing; the one behind is not the key window, so its traffic lights are
+grey. Dragging a session between windows is not shown.
+
+### The page in a browser split
+
+A browser split in a film shows a picture of this site's homepage, from its
+top, with the landing sequence held at its end (`/?t=30`). There are two, each
+in light and dark, at 2x:
+
+| File | Points | Shown |
+|---|---|---|
+| `public/img/page-narrow-*.webp` | 537 by 1600 | in a split beside a terminal, on a phone, and in the "A click picks an element" tile |
+| `public/img/page-wide-*.webp` | 1074 by 1600 | where the browser has most of the window: the agent's split in the splits film, and /mark-up's opening film from 640 wide |
+
+The narrow one stands in for the canvas's own picture of the page, at the
+same width, so whatever the canvas drew over the page is where it was. The
+canvas's was taken before the hero's stage had arrived (an empty box under
+the buttons) and was 740 points tall. `components/AppContent.astro` swaps it
+in the generated markup at build time, so the canvas's is never fetched. The
+wide one is another layout of the same page: the marks /mark-up's film draws
+on it are placed from the paragraph and the button as measured on the site
+at 1074 (`scripts/markup.ts`).
+
+A split draws the page at its own width, from the top, and cuts it off at
+its foot (`height: auto`, never `object-fit: cover`: covering a tall split
+cut the page's sides off). So a picture has to be at least the split's height
+times the picture's width over the split's width, or the page's ground shows
+under it. 1600 points is that with room to spare. Measured in headless
+Chromium (2026-11-27) at 1440, 1280, 1000, 760, 430, 390 and 320 wide, in
+the edge column, the agent's split, zoomed, with the sidebar hidden, and in
+both mark-up films: the most any split asked for was 909 points of the wide
+picture (/mark-up's film at 1440) and 919 of the narrow one (a phone 320
+wide), and the least a picture ran past its split's foot was 325 points.
+Worked out for the widths between, the worst is a zoomed split in a window
+601 wide (a 761 wide screen): 1124 of the wide picture.
+
+To retake all four, with the dev server running:
+
+```sh
+node scripts/pages/capture.mjs                  # the site on http://localhost:4340
+SITE=http://localhost:4350 node scripts/pages/capture.mjs wide   # another port, one width
+```
+
+It drives the Chrome on the Mac headless, on a temporary profile, and needs
+`cwebp` (`brew install webp`). Retake them when the homepage's first two
+screens change, then check the marks in both mark-up films still sit on the
+paragraph and the Download button. They are fetched like every picture in a
+window below the first screen: when their stage nears, and the wide one only
+once a film shows it.
 
 ### Motion and interaction
 
@@ -175,17 +315,20 @@ before ended; only the loop back to the first is a cut. `scene(i)` in
 when) and its length, so a chapter's hold is never a number kept beside the
 script. The session is the one building the landing page ("Landing page
 hero", in `web`), the same one the mark-up film after it picks up.
-- **⌘D**: the agent's terminal alone. ⌘D is pressed and the window is two
-  splits, the new one a shell in the session's folder; `npm run dev` is
-  typed into it and the server's output arrives. 3 s.
+- **⇧⌘D**: the agent's terminal alone. ⇧⌘D is pressed and the window is
+  two splits, the new one under it a shell in the session's folder (240 of
+  the window's 704 tall, as a divider dragged down leaves it: at half, most
+  of it was empty); `npm
+  run dev` is typed into it and the server's output arrives. 3 s.
 - **Drag a tab**: ⌘ and a click on the address the server printed opens the
   page where a browser opens by itself, in a column that slides in at the
-  outer edge. Its tab is picked up and carried to the bottom edge of the
-  shell's split, the split lights where the tab would land, and let go it
-  makes a split there, with the page in it. 3.7 s.
-- **Zoom**: a click back in the agent's terminal, ⇧⌘↩ gives it everything
-  beside the sidebar with Show All Splits lit in its row, and ⇧⌘↩ again
-  shows all three. 3.9 s.
+  outer edge, half the window. Its tab is picked up and carried over the
+  middle of the agent's split, which lights all over, and let go it joins
+  that split's tabs in front of the agent's. The page there is the picture
+  taken at that width (The page in a browser split, below). 3.7 s.
+- **Zoom**: the page has the keyboard where it was dropped. ⇧⌘↩ gives it
+  everything beside the sidebar with Show All Splits lit in its row, and
+  ⇧⌘↩ again shows both splits. 2.6 s.
 
 Keys are shown the way the other films show them (`pressKeys`), but over the
 split that has the keyboard, in the largest gap in what its terminal shows,
@@ -194,9 +337,28 @@ agent's terminal keeps five rows clear under its last line for them
 (`data-reserve`, which `fitTerminal()` in `scripts/app.ts` honours). What is
 done with the mouse is done by the film's pointer (`Pointer` in
 `scripts/app.ts`: 0.7 s of travel), typing is 55 ms a character. With reduced
-motion the film is still on "Drag a tab" as it ends, all three splits, and
+motion the film is still on "Drag a tab" as it ends, both splits, and
 each chapter shows how it ends (Zoom: the zoom). Anything the visitor presses
 stops a scene where it is.
+
+**The review film** (`scripts/review.ts`, "See what it did", after the
+agents) is the same kind of story in the session whose agent has just said it
+is done, "Quicker panes": the canvas's terminal, diff, commits, tree and plan
+are all that session's. Four chapters, each starting where the one before
+ended, held 2.4 s on how it ends so there is time to read a pane:
+- **Changes**: ⇧⌘C, and the column slides in at the outer edge (384 wide)
+  with the working tree and the diff.
+- **History**: ⇧⌘H puts the commits and their graph in front there. The
+  column's row of tabs is a tab longer in each chapter, as the canvas draws
+  the three panes.
+- **Files**: ⇧⌘F, the project as a tree.
+- **Preview**: the pointer picks `plan.md` in the tree and Space opens it in
+  a preview tab in front of the terminal, its title in italics.
+
+Its keys show over the terminal, in the room it keeps clear above its prompt
+(`data-reserve`). On a phone the stage shows the session's split or the
+column, each as wide as the stage, and pans between them; the tree scrolls to
+the plan's row first. With reduced motion it is still on Preview.
 
 Rules for motion, so a new piece moves like the rest:
 - Curves are `--ease-out` (anything answering the reader) and `--ease-in-out`
@@ -352,12 +514,12 @@ clear of the traffic lights.
 
 Two films are about more than one part of the window, and a phone shows one
 part at a time. Their windows are wider than the stage and the film pans:
-the splits film between the agent's terminal, the column beside it and,
-while the browser is there, the column at the edge, each exactly as wide as
-the stage, to whichever has the keyboard. What is off the stage is not
+the splits film between the agent's column (its split, and the shell under
+it) and, while the browser is there, the column at the edge, each exactly as
+wide as the stage, to whichever has the keyboard. What is off the stage is not
 drawn, so no strip of the split next door shows in the stage's own margin.
-So in "⌘D" the film goes to the new shell; in "Drag a tab" to the page, and
-back with the tab as it is carried, to where it lands; and a zoomed split
+So in "Drag a tab" the film goes to the page, and back with the tab as it is
+carried, to where it lands; and a zoomed split
 is the whole window, at the stage's width, with Show Sidebar and the "+"
 left out of its row so the session's name and Show All Splits have the
 room. The agents film pans between
@@ -678,7 +840,7 @@ version numbers, no release counts): social networks cache a card for days.
 
 Besides `/llms.txt` and `/llms-full.txt`, the main pages exist as Markdown at
 the same path plus `.md`: `/index.md`, `/docs.md`, `/compare.md`,
-`/updates.md`. Each page's `<head>` points at its own with
+`/mark-up.md`, `/layouts.md`, `/updates.md`. Each page's `<head>` points at its own with
 `rel="alternate" type="text/markdown"` (the `markdown` prop on `Layout`). All of
 them, and `llms-full.txt`, render from `src/data/markdown.ts`.
 

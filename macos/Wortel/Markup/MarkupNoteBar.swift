@@ -70,7 +70,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     private var tools: [(tool: MarkupTool, button: HoverFillButton)] = []
     private let divider = ToolbarDivider()
     private let clear = HoverFillButton.glyph("trash", "Clear Note")
-    private let button = NSButton(title: "Copy", target: nil, action: nil)
+    private let button = CopyButton(title: "Copy", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
     /// The bar grew or shrank a line: whoever places it lays out again.
     var onHeightChange: () -> Void = {}
@@ -362,6 +362,20 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
             card.layer?.borderColor = Self.edge.cgColor
         }
     }
+}
+
+/// Copy: drawn as the default button, and never pressed by a key.
+///
+/// The look is Return's: a push button is the default one while Return is
+/// its key equivalent. The key itself is the note's (`NoteTextView` copies
+/// on Return, and leaves ⇧Return, ⌥Return and an input method's Return to
+/// the text). Left to the button, Return anywhere in the window copied: the
+/// key window offers every key to its views before the first responder,
+/// and a key that climbs the responder chain to the window presses its
+/// default button, so the address field, the find field and a terminal in
+/// another split lost their Return to a copy.
+private final class CopyButton: NSButton {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool { false }
 }
 
 /// A view that counts from its top-left, to lay the bar's parts out in.

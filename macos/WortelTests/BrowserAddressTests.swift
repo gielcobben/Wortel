@@ -272,4 +272,22 @@ final class BrowserDownloadNameTests: XCTestCase {
         XCTAssertFalse(saves(main: false, frame: "", page: ""), "a sandboxed frame has no host")
         XCTAssertFalse(saves(main: false, frame: nil, page: nil))
     }
+
+    /// Open in Your Browser on a tab showing `run.command` handed it to
+    /// NSWorkspace, which opened it in Terminal, which ran it. A file goes to
+    /// the browser by name.
+    func testOpenInYourBrowserNeverHandsAFileToItsOwnApp() {
+        let safari = URL(fileURLWithPath: "/Applications/Safari.app")
+        let script = URL(fileURLWithPath: "/tmp/site/run.command")
+        let page = URL(string: "https://example.com/docs")!
+        func decide(_ url: URL, browser: URL? = safari, id: String? = "com.apple.Safari") -> BrowserOpenElsewhere {
+            BrowserOpenElsewhere.decide(url, browser: browser, browserID: id, ownID: "sh.wortel.app")
+        }
+        XCTAssertEqual(decide(page), .open(page))
+        XCTAssertEqual(decide(script), .openWith(script, app: safari))
+        XCTAssertEqual(decide(script, browser: nil, id: nil), .showInFinder(script), "no browser to name")
+        XCTAssertEqual(decide(script, browser: URL(fileURLWithPath: "/Applications/Wortel.app"), id: "sh.wortel.app"),
+                       .showInFinder(script), "never Wortel itself")
+        XCTAssertEqual(decide(URL(string: "about:blank")!), .nothing)
+    }
 }

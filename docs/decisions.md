@@ -2580,6 +2580,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+  **2026-11-27:** the header's Open in Your Browser had the same hole, on a
+  tab showing a file (a tab follows a page's link to `./run.command`). A
+  file now goes to the default browser named as the app to open it with,
+  and to the Finder when there is none or it is Wortel.
 - **2026-11-25. An `.html` file opens as the page it makes, in a browser
   tab**, from `wortel open` and a ⌘-clicked path, and loads again when the
   file changes on disk. A browser tab and not a Rendered mode of the file

@@ -182,6 +182,38 @@ enum BrowserExternalLink: Equatable {
     }
 }
 
+/// Where Open in Your Browser sends the tab's address.
+///
+/// A web address goes to whatever opens web addresses. A file goes to that
+/// same browser, named, never to the file's own app: `NSWorkspace.open` on a
+/// `.command` or `.tool` file hands it to Terminal, which runs it, and a tab
+/// follows links between local files, so a page linking to `./run.command`
+/// puts the tab there (shown as text). A browser shows a file or saves it;
+/// it never runs one. With no browser to name, or Wortel named as it, the
+/// file is shown in the Finder.
+enum BrowserOpenElsewhere: Equatable {
+    /// A web address, to the default browser.
+    case open(URL)
+    /// A file, to the default browser by name.
+    case openWith(URL, app: URL)
+    case showInFinder(URL)
+    case nothing
+
+    /// `browser`: the app that opens `https` addresses, and its bundle id.
+    static func decide(_ location: URL, browser: URL?, browserID: String?,
+                       ownID: String?) -> BrowserOpenElsewhere {
+        switch location.scheme?.lowercased() {
+        case "http", "https":
+            return .open(location)
+        case "file":
+            guard let browser, browserID == nil || browserID != ownID else { return .showInFinder(location) }
+            return .openWith(location, app: browser)
+        default:
+            return .nothing
+        }
+    }
+}
+
 /// The name a download is saved under, in the Downloads folder.
 ///
 /// WebKit has already made the server's name one path component (measured

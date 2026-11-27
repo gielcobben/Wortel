@@ -393,8 +393,24 @@ final class BrowserPage: NSObject {
 
     func stop() { webView.stopLoading() }
 
+    /// A file goes to the default browser by name, never to its own app,
+    /// which for a `.command` is Terminal, running it (`BrowserOpenElsewhere`).
     func openInBrowser() {
-        if let location { NSWorkspace.shared.open(location) }
+        guard let location else { return }
+        let workspace = NSWorkspace.shared
+        let browser = URL(string: "https://example.com").flatMap { workspace.urlForApplication(toOpen: $0) }
+        switch BrowserOpenElsewhere.decide(location, browser: browser,
+                                           browserID: browser.flatMap { Bundle(url: $0)?.bundleIdentifier },
+                                           ownID: Bundle.main.bundleIdentifier) {
+        case .open(let url):
+            workspace.open(url)
+        case .openWith(let url, let app):
+            workspace.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        case .showInFinder(let url):
+            workspace.activateFileViewerSelecting([url])
+        case .nothing:
+            break
+        }
     }
 
     func focusAddress() { addressFocusRequest += 1 }

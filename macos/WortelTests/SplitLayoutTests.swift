@@ -693,6 +693,35 @@ final class SplitLayoutTests: XCTestCase {
         assertWellFormed(layout)
     }
 
+    /// A part with no room that a drag does not move does not hold the
+    /// others still. Three panes in too little room for their minimums, the
+    /// first left a sliver by an earlier drag, rounds to nothing once the
+    /// window narrows: 0.3, 149.85 and 149.85 points come to 0, 150 and 150.
+    /// The divider between the other two still moves, and so does a resize,
+    /// and the first keeps the weight it had rather than a zero.
+    func testASliverRoundedToNothingDoesNotStickTheOtherDividers() {
+        var layout = row([(.main, 0.001), (a, 0.4995), (b, 0.4995)])
+        let narrow = CGRect(x: 0, y: 0, width: 302, height: 300)
+        var frames = layout.frames(in: narrow)
+        XCTAssertEqual(frames.leaves[.main]?.width, 0)
+        XCTAssertEqual(frames.leaves[a]?.width, 150)
+        XCTAssertEqual(frames.leaves[b]?.width, 150)
+
+        XCTAssertTrue(layout.moveDivider(at: [], index: 1, to: 101, in: narrow))
+        frames = layout.frames(in: narrow)
+        XCTAssertEqual(frames.leaves[a]?.width, 100)
+        XCTAssertEqual(frames.leaves[b]?.width, 200)
+        XCTAssertEqual(parts(of: layout).first?.weight ?? 0, 0.001, accuracy: 1e-9)
+        assertWellFormed(layout)
+
+        XCTAssertTrue(layout.resize(a, to: 120, in: narrow))
+        frames = layout.frames(in: narrow)
+        XCTAssertEqual(frames.leaves[a]?.width, 120)
+        XCTAssertEqual(frames.leaves[b]?.width, 180)
+        XCTAssertEqual(parts(of: layout).first?.weight ?? 0, 0.001, accuracy: 1e-9)
+        assertWellFormed(layout)
+    }
+
     // MARK: - Neighbours
 
     /// Main | a over b | c: every direction from every pane.

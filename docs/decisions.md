@@ -763,7 +763,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   on an empty split, or a pane closed from under you, sent the keyboard two
   splits back, because two places each refocused: one does now. A shell
   that exited in another split moved the keyboard: it moves on a close
-  only when you were in the split the tab closed in. ⌥⌘B behind a zoom
+  only when you were in the split the tab closed in. (A click on a tab's
+  close button in another split is a click in that split, so it does put
+  you there: the second reading, below, corrected a comment that said
+  otherwise.) ⌥⌘B behind a zoom
   closed Changes and Files unseen: it shows them. *Views.* The main row's
   and the strip's pages still took their minimum size from SwiftUI as
   required constraints, against frames now set by hand, so a page taller
@@ -855,7 +858,72 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   blank-down type:escape right down zoom zoom strip resize:900x560
   key:shift+cmd+c close close reset next next --relaunch`: 0 faults. The
   unit tests were not run again: the change is in views only. Not
-  verified: a click on a row's split button.
+  verified: a click on a row's split button. **A hover that stayed lit**
+  (`6d403fd`). The owner, of a row's Split Right: "if i click on this one
+  in the main window, the hover hangs. the background stays visible." A
+  view that moves out from under a pointer standing still is sent no
+  mouse-exited, and that button moves itself: the click halves its split
+  and the row's end goes with it. Every button of the kind now checks its
+  hover against where the pointer really is, after its own action and when
+  its tracking areas are rebuilt. **Read a second time, on main.** The
+  owner: "commit and push this branch. then merge into main, and do a code
+  review." Three reviewers read what had changed since the first review:
+  that review's own fixes, which agents had written without building and
+  nobody had read, the tab row's close fix, each row's own split buttons,
+  and the hover fix. A fourth agent ran every check on the merged tree. No
+  finding was severe. Fixed. *Keyboard.* The trail of splits you were in
+  crossed a session switch, so closing a split in one session could send
+  the keyboard to that session's Changes list instead of the terminal you
+  were in. A switch empties the trail now. A split that has gone is not
+  pushed onto it either: pushed as the main row, it would have broken the
+  very case the trail was made for, ⌘D three times then ⌘W three times.
+  ⌘W on an empty tab, or on a pane whose list had the keyboard, in a split
+  that kept other tabs, left the keyboard nowhere, while Escape on the
+  same page worked: a close hands the keyboard on for those two as well,
+  still once. And a side split or strip that had gone was not read as gone,
+  so ⌘W after its only tab was dragged to another window gave nobody the
+  keyboard. *Layout.* The first review's "never store a weight of zero"
+  refused a move whenever any part of a split was laid out at 0pt, so in a
+  row squeezed under its minimums one part rounding to nothing stuck the
+  divider between the other two. A part the move does not change keeps its
+  weight, and only the parts it changes need room. *Tabs.* After a close
+  that made a row fit, its trailing fade stayed for the length of the
+  slide. *Views.* A tab dropped on the edge of a zoomed split was checked
+  for room against the zoomed size: the first review had fixed ⌘D and
+  missed the drag. And a row with nothing at its end (under 240pt, not
+  zoomed) had no constraint deciding where its tabs stopped. *Tests.*
+  Restore's oldest migration, a file from before the column had tabs, had
+  no test, and has two. **Read and found right**, so nobody reads them
+  again for nothing. Restore through `PersistedSession.restoredTabs` is
+  step for step what the inline code did. A parked split hides its
+  terminal and hands the keyboard back exactly once. The slide's hold on
+  resizes is released exactly once on every path. The probe gate's order
+  of evaluation holds. **Found and left.** The probe gate reads "the
+  variable was present at launch", and a contributor's own Debug Wortel
+  puts `WORTEL_DATA_DIR` into every shell it starts, so a Debug build
+  started from one of those shells gets the probes. That is narrower than
+  before the first review, and does not happen on a Mac where Debug builds
+  share the installed app's folder. `closeOthers` refocuses the kept tab
+  more than once. During a slide in which a row grows, the fade's mask is
+  already at the final width. Verified (2026-11-26, throwaway copies). On
+  the merged tree before these fixes, by the checks agent: a Debug build;
+  WortelTests, 1941 tests, 0 failures; a Release build with no probe in
+  it; every probe tour; `try-switch.sh --side --widths`, 0 of 72 wrong;
+  `try-appearance.sh`, passed; `check.sh macos`, ok; and
+  `check-terminals.sh` but for its two window-resize cases, which need an
+  Accessibility permission that session had not got and were not run.
+  After the fixes: the app builds. WortelTests, 1944 tests, 0 failures,
+  three new. `right right right close close close` goes back through the
+  splits in order. `next key:shift+cmd+c focus-left next next column right
+  next right close` ends in the main row of the session on screen (by the
+  reviewer's reading it ended in that session's Changes before; it was not
+  run before the fix). `blank close` and `right tab blank close` keep the
+  keyboard in the split. `resize:900x600 column tab zoom drop:0.right`
+  gives 337, 170 and 170. A tour with a relaunch, 0 faults, and a render
+  of three 160pt rows, each a tab and a "+" where they belong. Not
+  verified: anything with a pointer, VoiceOver, the stuck divider on
+  screen (its test passes), and the fade, of which no sample was taken
+  after the fix.
 - **2026-11-26. "No splits" was reversed: the main area splits into columns
   and rows.** Built on the branch `flexible-panes` and on `main` since it
   was merged. Not in a release yet: the released app and the site still have

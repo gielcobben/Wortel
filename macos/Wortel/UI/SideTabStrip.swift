@@ -334,6 +334,11 @@ final class SideTabStrip: NSView {
         let plan = plan()
         settledContentWidth = max(plan.contentWidth, plan.visibleWidth)
         content.frame.size.width = max(settledContentWidth, content.frame.width)
+        // The fade, for the row the slide is going to. Nothing else asks
+        // before the layout that follows the slide: the scroll view's frame
+        // changing is no bounds change of its clip view, and a row that has
+        // come to fit after a close has nothing to scroll.
+        updateFade(width: plan.visibleWidth)
         for (view, frame) in zip(tabViews, plan.tabs) where inserted.contains(where: { $0 === view }) {
             view.frame = frame
             view.alphaValue = 0
@@ -430,16 +435,29 @@ final class SideTabStrip: NSView {
 
     /// Fade the edge the row continues past, so a cut-off tab reads as "more
     /// this way" rather than as a tab drawn wrong.
-    private func updateFade() {
-        let clip = scroll.contentView.bounds
+    ///
+    /// `width` is how wide the visible part is going to be, when that is not
+    /// what it is right now: its width at the end of a slide in progress. The
+    /// row is then judged as it will be, scrolled no further than the
+    /// settled content lets it, so a tab added to a row that fits does not
+    /// fade the trailing edge for the slide while the visible part is still
+    /// as narrow as it was.
+    private func updateFade(width: CGFloat? = nil) {
+        var clip = scroll.contentView.bounds
+        var visible = scroll.bounds
+        if let width {
+            clip.size.width = width
+            clip.origin.x = min(clip.origin.x, max(0, settledContentWidth - width))
+            visible.size.width = width
+        }
         let hiddenLeading = clip.minX > 0.5
         let hiddenTrailing = clip.maxX < settledContentWidth - 0.5
-        guard hiddenLeading || hiddenTrailing, scroll.bounds.width > Self.fade * 2 else {
+        guard hiddenLeading || hiddenTrailing, visible.width > Self.fade * 2 else {
             scroll.layer?.mask = nil
             return
         }
         let mask = (scroll.layer?.mask as? CAGradientLayer) ?? CAGradientLayer()
-        let edge = Self.fade / scroll.bounds.width
+        let edge = Self.fade / visible.width
         let solid = NSColor.black.cgColor, clear = NSColor.clear.cgColor
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -447,7 +465,7 @@ final class SideTabStrip: NSView {
         mask.endPoint = CGPoint(x: 1, y: 0.5)
         mask.colors = [hiddenLeading ? clear : solid, solid, solid, hiddenTrailing ? clear : solid]
         mask.locations = [0, NSNumber(value: Double(edge)), NSNumber(value: Double(1 - edge)), 1]
-        mask.frame = scroll.bounds
+        mask.frame = visible
         scroll.layer?.mask = mask
         CATransaction.commit()
     }

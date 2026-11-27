@@ -705,6 +705,43 @@ final class PersistedSessionTests: XCTestCase {
         XCTAssertEqual(tabs.bottom, [shell])
     }
 
+    /// A file from before the column kept its own tabs (no `sideTabs` key)
+    /// with the column up: a column of one tab, the pane the entry names or,
+    /// naming none, the default one, on screen and with its leaf where the
+    /// column opens.
+    func testAnOlderFilesOpenColumnBecomesOneTab() throws {
+        let entry = try decode(#"{"id":"\#(UUID())","gitPanelVisible":true}"#)
+        XCTAssertNil(entry.sideTabs)
+        let tabs = entry.restoredTabs(panelVisible: true, defaultPane: .history)
+        XCTAssertEqual(tabs.side, [.pane(.history)])
+        XCTAssertEqual(tabs.activeSide, .pane(.history))
+        XCTAssertTrue(tabs.sideVisible)
+        XCTAssertTrue(tabs.layout.contains(.side))
+        XCTAssertEqual(tabs.layout.leaves, [.main, .side])
+        XCTAssertEqual(tabs.unsized, [.side], "sized by the window, at the session's width")
+        XCTAssertTrue(tabs.hiddenLeaves.isEmpty)
+
+        // The pane the entry names wins over the default.
+        let named = try decode(#"{"id":"\#(UUID())","gitPanelVisible":true,"inspectorPane":"files"}"#)
+        let files = named.restoredTabs(panelVisible: true, defaultPane: .history)
+        XCTAssertEqual(files.side, [.pane(.files)])
+        XCTAssertEqual(files.activeSide, .pane(.files))
+    }
+
+    /// The same file with the column down: no column at all, whatever pane
+    /// it names, and nothing in the tree but the main row.
+    func testAnOlderFilesClosedColumnHasNoTabs() throws {
+        let entry = try decode(#"{"id":"\#(UUID())","gitPanelVisible":false,"inspectorPane":"history"}"#)
+        XCTAssertNil(entry.sideTabs)
+        let tabs = entry.restoredTabs(panelVisible: false, defaultPane: .history)
+        XCTAssertTrue(tabs.side.isEmpty)
+        XCTAssertNil(tabs.activeSide)
+        XCTAssertFalse(tabs.sideVisible)
+        XCTAssertFalse(tabs.layout.contains(.side))
+        XCTAssertEqual(tabs.layout, SplitLayout())
+        XCTAssertTrue(tabs.unsized.isEmpty)
+    }
+
     /// A tree from this branch before the column was a leaf of it: panes
     /// only. The panes keep their places, and the column is put beside all
     /// of them.

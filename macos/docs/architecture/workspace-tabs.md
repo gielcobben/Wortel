@@ -406,9 +406,16 @@ The model:
   which `SessionManager` and the tests both call: a test of restore that
   builds its own steps can assert a state restore never makes, and two did.
   And a divider's drag never stores a weight of zero
-  (`SplitLayout.moveDivider`, `setWeights`): a part with no room at all is
-  not written, since a zero is what `tidied` reads as a damaged file and
-  turns into equal shares.
+  (`SplitLayout.moveDivider`, `resize`, `setWeights(of:shown:from:laidOut:)`):
+  a part the move changes that would get no room at all is not written,
+  since a zero is what `tidied` reads as a damaged file and turns into
+  equal shares. The other half matters as much: a part the move does not
+  change, laid out at 0pt, keeps the weight it had, and the rest share what
+  is left. Its 0pt is only rounding, in a row squeezed under its minimums.
+  The first form of this rule refused a move whenever any part of the
+  split was at 0pt, and one sliver rounded to nothing stuck the divider
+  between the other two until the window grew
+  (`testASliverRoundedToNothingDoesNotStickTheOtherDividers`).
   A file with no tree, or a tree without the column's or the strip's leaf,
   gets each put where it opens, `unsized`, so it comes up at the session's
   saved width.
@@ -447,7 +454,10 @@ The views:
   `splitDownward`: `GitPanelModel.split(region, on:, with: .blank)`), not
   the one with the keyboard, and the split they make holds an empty tab.
   They show only while the row has 240pt of its own, after the clearances
-  it gives the window's controls (`fitSplitButtons`,
+  it gives the window's controls. With all three hidden the stack is empty
+  and has no width of its own, which left the strip's end undecided: a
+  low-priority width of 0 decides it, and any visible button's own width
+  wins over that (`fitSplitButtons`,
   `roomForSplitButtons`, checked when the row's size or either clearance
   changes): in a narrower split the tabs have the row. The "+" (`PaneBar.addTab`)
   opens an empty tab in that row (`GitPanelModel.openBlank`). It has no
@@ -527,7 +537,13 @@ The views:
   the plan reads nothing it writes, a reveal measures against the visible
   width the row is going to, and a scroll limit against the content width
   it is going to. `trace-close` and `select:<n>` are the probe steps for
-  it.
+  it. The fade follows the same rule since the second review:
+  `slideIntoPlace` asks for the fade of the row it is going to
+  (`updateFade(width:)`), because nothing else asks before the layout that
+  follows the slide. Without it a row that came to fit after a close kept
+  its trailing fade for the length of the slide. One case is left as it
+  is: during a slide in which the row grows, the fade's mask is already at
+  the final width.
 - **The empty tab** (`SideTab.blank(id)`, `Wortel/UI/NewTabPage.swift`,
   since 2026-11-26). A tab that is nothing yet, titled "New Tab". A row's
   "+" opens one at the end of its row, in front (`openBlank`), and a row
@@ -709,7 +725,11 @@ Making one, and dropping on one:
   room is measured in the layout without its zoom, which is the one the
   split is made in, since a split made by a key ends the zoom. Measured on
   screen, a zoomed split was the whole area and always had room, and ⌘D in
-  a zoomed side split 300pt wide made two of about 145. A
+  a zoomed side split 300pt wide made two of about 145. A tab dropped on
+  the edge of a zoomed split is measured the same way
+  (`MainAreaController.hasRoom(toSplit:on:)`): the key and the drag read
+  one helper, `unzoomedFrame(of:)`. The first review fixed the key and
+  missed the drag. A
   leaf that is two minimums and a gap wide (or high) is halved. One that is
   not takes the new split's room from the whole row or column it is in, an
   equal share from every part (`SplitLayout.insertSpreading`): ⌘D in a side
@@ -787,13 +807,35 @@ The keyboard:
   that was: a made split, the column when Changes and Files are put away or
   its last tab closes, the strip. Until 2026-11-26 all of those went to the
   main row, so ⌘D three times and then ⌘W put you two splits away from
-  where you had just been. Two rules keep it honest (`close`, `putAway`).
-  The keyboard moves on a close only when you were in the split the tab
-  closed in: a shell that exits in another split, or a × clicked there,
-  leaves it where it is. And there is one refocus per close, in `close`.
-  `putAway` refocuses only a split that is still there. When both did it,
-  the first rewrote the trail the second read, and Escape on an empty tab
-  put you two splits back.
+  where you had just been. Four rules keep it honest.
+  - The keyboard moves on a close only when you were in the split the tab
+    closed in. A shell that exits by itself in another split leaves it
+    where it is. A click on a tab's close button in another split is not
+    that case: the click has already put you in that split (a mouse-down in
+    a split makes it the one you're in), so the keyboard goes to what comes
+    forward there, or back along the trail if the split went.
+  - One refocus per close. `close` hands the keyboard on when the split
+    stays, for anything that can hold it: a terminal, a browser's page, an
+    empty tab's page, a pane's list. (The last two were left out at first,
+    and ⌘W on either left the keyboard with nobody, while Escape on the
+    same empty tab worked.) `putAway` and `fill` focus the split
+    themselves, so they pass `focusesSplit: false`. When two places
+    refocused, the first rewrote the trail the second read, and Escape on
+    an empty tab put you two splits back.
+  - The trail is one session's. `focus(session:)` empties it on a switch and
+    stores the row of that session's own terminal. Kept across a switch,
+    the next move pushed the other session's split, and closing a split in
+    session B could send the keyboard to B's Changes list, a split you had
+    never been in there.
+  - A split that has gone is nobody's place (`isGone`: a made split with no
+    tabs here, the column or the strip out of the tree). `lastRegion` reads
+    one as the main row, or as what is zoomed. Only a made split was read
+    that way at first, so after the column's only tab was dragged to
+    another window ⌘W closed a tab and gave nobody the keyboard. The setter
+    compares against what the getter answers, and does not push a stored
+    split that has gone onto the trail. Pushed as the main row it would
+    bury the split before it: after ⌘D three times, the second ⌘W would go
+    to the main row and not to the first ⌘D split.
 - Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the
   titlebar), the tree view gives one leaf the whole area and hides the rest.
   ⇧⌘↩ from the column or the strip zooms that one. The hidden rows answer

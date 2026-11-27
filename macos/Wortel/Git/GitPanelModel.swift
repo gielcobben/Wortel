@@ -55,24 +55,43 @@ final class GitPanelModel {
     /// the keyboard itself isn't in a row: a file tab never takes it, and
     /// picking one in the column still means you're in the column.
     ///
-    /// Never a pane that has gone (closed, or another session's): then it is
-    /// the main area. And never a leaf that a zoom is hiding, the column
-    /// and the strip among them: then it is the leaf that is zoomed.
+    /// Never a split that has gone (a pane closed or another session's, the
+    /// column or the strip out of the tree): then it is the main area. And
+    /// never a leaf that a zoom is hiding, the column and the strip among
+    /// them: then it is the leaf that is zoomed.
+    ///
+    /// The column and the strip used to be answered as they were, gone or
+    /// not. Dragged out of their last tab to another window (`handOver`
+    /// moves no keyboard), they stayed "the split you're in": ⌘W read them
+    /// as the main row (`AppDelegate.focusedRegion`) and closed its tab,
+    /// but `close` saw that you were not in the main row and gave the tab
+    /// that came forward no keyboard.
     var lastRegion: TabRegion {
         get {
             let region = storedRegion
-            if case .pane(let id) = region, session?.paneTabs[id] == nil {
-                return session?.zoomedRegion ?? .main
-            }
+            if isGone(region) { return session?.zoomedRegion ?? .main }
             if let zoomed = session?.zoomedRegion, zoomed != region { return zoomed }
             return region
         }
         set {
-            if storedRegion != newValue {
-                // Where you were, for when the split you are going to closes.
-                regionTrail.removeAll { $0 == storedRegion || $0 == newValue }
-                regionTrail.append(storedRegion)
-                if regionTrail.count > 12 { regionTrail.removeFirst() }
+            // Compared as the getter answers it, not as stored: a stored
+            // split that has gone is the main row (or the zoom) to everyone
+            // who reads this, and a move there is no move.
+            let current = lastRegion
+            if current != newValue {
+                regionTrail.removeAll { $0 == newValue }
+                // Where you were, for when the split you are going to
+                // closes. Not when the stored split has gone (it closed
+                // under you, or it was the last session's): it can't be
+                // gone back to, and the main row it reads as is not where
+                // you were. Pushed as the main row, it would bury the split
+                // before it: after ⌘D three times, the second ⌘W would go
+                // to the main row, not to the first ⌘D split.
+                if !isGone(storedRegion) {
+                    regionTrail.removeAll { $0 == current }
+                    regionTrail.append(current)
+                    if regionTrail.count > 12 { regionTrail.removeFirst() }
+                }
             }
             storedRegion = newValue
             // Only when it moves: this is written on every key typed.
@@ -80,6 +99,18 @@ final class GitPanelModel {
         }
     }
     @ObservationIgnored private var storedRegion: TabRegion = .main
+
+    /// Whether `region` is no longer a split of the session on screen: a
+    /// pane closed (or another session's), the column or the strip out of
+    /// the tree with their last tab. Read on every key typed, through
+    /// `lastRegion`: a dictionary lookup, or a walk of a tree of a few leaves.
+    private func isGone(_ region: TabRegion) -> Bool {
+        switch region {
+        case .main: return false
+        case .pane(let id): return session?.paneTabs[id] == nil
+        case .side, .bottom: return session?.splitLayout.contains(region.leaf) != true
+        }
+    }
     /// The splits you were in before this one, the latest last.
     @ObservationIgnored private var regionTrail: [TabRegion] = []
 
@@ -705,7 +736,19 @@ final class GitPanelModel {
     /// changes and whenever the selected session's cwd moves. No git work runs
     /// while no repo view is on screen (`needsRepo`).
     func focus(session: Session?) {
+        let switched = session !== self.session
         self.session = session
+        // Another session on screen: you are in its own terminal's row (or
+        // what it has zoomed, which the getter answers), and the splits you
+        // were in were the last session's. Kept, the trail sent ⌘W in a new
+        // split to a split of this session you had never been in (the last
+        // session's column pushed, its pane skipped), and the stored pane,
+        // read as the main row, was what the next move pushed.
+        if switched {
+            regionTrail.removeAll()
+            storedRegion = session?.workspace.region(of: .session) ?? .main
+            if areaInFocus != storedRegion { areaInFocus = storedRegion }
+        }
         // Pinned to a worktree that has since gone (removed while you were in
         // another session): the session's own checkout, not a stale pane.
         // Only a `stat`, and only while pinned.
@@ -811,9 +854,14 @@ final class GitPanelModel {
     /// one before that. Escape on an empty tab in a split made beside a ⌘D
     /// split put you in the main row, not in the ⌘D split, and the window's
     /// edge blinked twice.
+    ///
+    /// The closes are told not to refocus a split that stays
+    /// (`focusesSplit`): since ⌘W on a pane or an empty tab hands the
+    /// keyboard on, each close here would have done it too, once per pane
+    /// put away, before the `focus` below did it again.
     private func putAway(_ tabs: [SideTab], from region: TabRegion) {
         let wasThere = lastRegion == region
-        for tab in tabs { close(tab) }
+        for tab in tabs { close(tab, focusesSplit: false) }
         resolveCurrent()
         if wasThere, isShowing(region) { focus(region) }
     }
@@ -970,7 +1018,12 @@ final class GitPanelModel {
     ///
     /// `target` is for a tab closing in a session that isn't the focused one,
     /// which is what a side shell exiting in the background looks like.
-    func close(_ tab: SideTab, in target: Session? = nil) {
+    ///
+    /// `focusesSplit` false is for a caller that gives the keyboard to the
+    /// split itself when the split is still there (`putAway`, `fill`), so it
+    /// is given once: a close that takes the split away still sends the
+    /// keyboard back, which those callers count on.
+    func close(_ tab: SideTab, in target: Session? = nil, focusesSplit: Bool = true) {
         // Where you are, as the keyboard commands mean it: a split a zoom is
         // hiding is not it (`lastRegion`).
         let wasIn = lastRegion
@@ -986,16 +1039,26 @@ final class GitPanelModel {
         mirror(owner, animated: false)
         resolveCurrent()
         // The keyboard moves only when you were in the split the tab closed
-        // in. A tab that closed anywhere else (its shell exited, a × clicked
-        // in another split) leaves it where it is. Only the branch for a
-        // made split used to ask: when the column's or the strip's last
-        // terminal exited by itself, the keyboard went to `regionBefore`,
-        // which never holds the split you are in now, so it jumped out of
-        // the terminal you were typing in.
+        // in. A tab whose shell exited in another split leaves it where it
+        // is. A × clicked in another split does not count as one: the click
+        // has already put you in that split (a mouse-down in an area makes
+        // it the one you're in, `AppDelegate`'s monitor), so the keyboard
+        // goes to what comes forward there, or back along the trail if the
+        // split went. Only the branch for a made split used to ask: when the
+        // column's or the strip's last terminal exited by itself, the
+        // keyboard went to `regionBefore`, which never holds the split you
+        // are in now, so it jumped out of the terminal you were typing in.
         guard wasIn == region else { return }
         if isShowing(region) {
-            // Only what can hold the keyboard: a terminal, or a browser's page.
-            guard tab.terminalID != nil || tab.browserID != nil else { return }
+            guard focusesSplit else { return }
+            // Only what can hold the keyboard: a terminal, a browser's page,
+            // an empty tab's page or a pane's list. A file never had it.
+            // The empty tab and the pane used to be left out: ⌘W on either,
+            // in a split that kept other tabs, left the keyboard with
+            // nobody, while Escape on the same empty tab (`putAway`) gave
+            // it to the tab that came forward.
+            guard tab.terminalID != nil || tab.browserID != nil || tab.isBlank || tab.pane != nil
+            else { return }
             // The row is still there: you're still in it, so the next ⌘W
             // closes its next tab rather than, from the main area, the session.
             // (A terminal that took the tab's place takes the keyboard.)
@@ -1144,7 +1207,8 @@ final class GitPanelModel {
         case .browser: openBrowser(at: nil, in: region)
         case .pane(let pane): open(.pane(pane), in: region)
         }
-        close(blank)
+        // The keyboard is given below, once (`focusesSplit`).
+        close(blank, focusesSplit: false)
         focusFront(of: region)
     }
 

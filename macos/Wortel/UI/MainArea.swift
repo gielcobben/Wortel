@@ -428,9 +428,19 @@ final class MainAreaController: NSViewController {
     /// `edge`, each half keeping the least a split is laid out at. Out of
     /// sight (zoomed away, or hidden), there is nothing to measure and it
     /// may.
+    ///
+    /// Measured in the layout without its zoom, as `room(toSplit:on:)` does,
+    /// since a drop on a zoomed split ends the zoom and halves the split at
+    /// the size it has then, not at the whole area it fills now.
     func hasRoom(toSplit region: TabRegion, on edge: SplitLayout.Edge) -> Bool {
-        guard let frame = tree.frame(of: region.leaf) else { return true }
+        guard let frame = unzoomedFrame(of: region) else { return true }
         return hasRoom(toSplit: frame, on: edge)
+    }
+
+    /// Where `region` is in the layout without its zoom, with the splits
+    /// that are hidden left out; nil when it is not in it.
+    private func unzoomedFrame(of region: TabRegion) -> NSRect? {
+        git.splitLayout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves[region.leaf]
     }
 
     /// Where a split asked of `region` on `edge` finds its room: in the
@@ -447,7 +457,7 @@ final class MainAreaController: NSViewController {
     func room(toSplit region: TabRegion, on edge: SplitLayout.Edge) -> GitPanelModel.SplitRoom {
         let before = git.splitLayout.frames(in: tree.bounds, metrics: tree.metrics, hidden: git.hiddenLeaves).leaves
         // Not in the layout: nothing to measure, and it may.
-        guard let here = before[region.leaf] else { return .halves }
+        guard let here = unzoomedFrame(of: region) else { return .halves }
         if hasRoom(toSplit: here, on: edge) { return .halves }
         var layout = git.splitLayout
         let standIn = SplitLayout.Leaf.pane(UUID())

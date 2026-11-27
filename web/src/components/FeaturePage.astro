@@ -6,7 +6,8 @@
 // part's id, and the first film in the slot "hero".
 //
 // Top to bottom, with the homepage's own layout (styles/site.css):
-//   the opening    the page's one large line in two tones, a sentence, the
+//   the opening    "Beta" over it while the feature is the beta's, then
+//                  the page's one large line in two tones, a sentence, the
 //                  download and the part of /docs that goes further, and the
 //                  first film on its stage, as the homepage's landing has it;
 //   the parts      each a Section: the row (a two-line heading, one short
@@ -43,8 +44,8 @@ const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true
   <section class="opening">
     <div class="page">
       <header class="top" data-reveal-group>
-        <h1 class="display" data-reveal>{page.heading} <span class="tone">{page.tone}</span></h1>
         {page.beta && <p class="flag" data-reveal><Beta /></p>}
+        <h1 class="display" data-reveal>{page.heading} <span class="tone">{page.tone}</span></h1>
         <p class="lead" data-reveal set:html={inline(page.lead)} />
         <div class="ctas" data-reveal>
           <a class="btn" href={`/download#${page.path.slice(1)}`}>Download for macOS<Fragment set:html={chevron} /></a>
@@ -102,7 +103,8 @@ const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true
   .opening { padding-top: 144px; }
   .top { margin-bottom: 64px; }
   .top .lead { max-width: 560px; margin-top: 24px; }
-  .flag { margin: 16px 0 0; }
+  /* What only the beta has says so over the page's name, not under it. */
+  .flag { margin: 0 0 16px; }
   .ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 8px; margin-top: 32px; }
   .ctas .btn:not(.ghost) :global(svg) { margin-left: 2px; }
   @media (max-width: 900px) { .opening { padding-top: 104px; } .top { margin-bottom: 48px; } }

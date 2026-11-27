@@ -62,15 +62,56 @@ export function initMarkup() {
   // The canvas places the marks in the page's points at 537. A narrower split
   // shows the same page smaller (MarkupFilm.astro), so they are placed at its
   // scale; at 537 that is where the canvas has them.
-  const shapes = new Map([outline, mark1, mark2].map((el) => {
+  type Box = { l: number; t: number; w: number; h: number };
+  const drawn = new Map<HTMLElement, Box>([outline, mark1, mark2].map((el) => {
     const cs = getComputedStyle(el);
     return [el, { l: parseFloat(cs.left), t: parseFloat(cs.top), w: parseFloat(cs.width), h: parseFloat(cs.height) }] as const;
   }));
-  const scale = () => (page.clientWidth || PAGE) / PAGE;
+  // With the sidebar hidden from the start (MarkupFilm.astro, bare) the
+  // browser is the larger split, and from 640 wide it shows the page as it
+  // was captured at a wide split, 1074 points (public/img/page-wide-*.webp).
+  // That is another layout of the same page, so the same two things are
+  // somewhere else in it: the paragraph and the button, measured on the site
+  // at that width (2026-11-27) and given the room the canvas gives them (8
+  // around the paragraph, 2 around the button, 1 for the hover outline).
+  // Retake the picture and these go with it.
+  const WIDE = 1074;
+  const wider = new Map<HTMLElement, Box>([
+    [outline, { l: 31, t: 383, w: 204, h: 42 }],
+    [mark1, { l: 30, t: 382, w: 206, h: 44 }],
+    [mark2, { l: 24, t: 288, w: 576, h: 72 }],
+  ]);
+  // There the narrow picture is a retake too. The canvas's was taken before
+  // the hero's stage had arrived, so under the buttons it shows an empty box
+  // where the window on the lake is. The retake is this site at the same 537
+  // with the hero held (public/img/page-narrow-*.webp): the same layout to
+  // the point, so the canvas's marks are where they were.
+  const dark = matchMedia('(prefers-color-scheme: dark)');
+  const wides = !win.hasAttribute('data-bare') ? [] : Array.from(page.querySelectorAll<HTMLImageElement>(':scope > img')).map((narrow) => {
+    const retake = `/img/page-narrow-${narrow.classList.contains('dark:block') ? 'dark' : 'light'}.webp`;
+    // schemePictures keeps the address of the one not in use in data-src.
+    if (narrow.dataset.src) narrow.dataset.src = retake; else narrow.src = retake;
+    const img = narrow.cloneNode(false) as HTMLImageElement;
+    img.removeAttribute('src');
+    delete img.dataset.src;
+    img.dataset.wide = img.classList.contains('dark:block') ? 'dark' : 'light';
+    narrow.after(img);
+    return img;
+  });
+  const wide = () => wides.length > 0 && page.clientWidth >= 640;
+  const shapes = () => (wide() ? wider : drawn);
+  const scale = () => (page.clientWidth || PAGE) / (wide() ? WIDE : PAGE);
+  // Of the wide picture's two, only the one the colour scheme shows is fetched.
+  const picture = () => {
+    page.toggleAttribute('data-wide', wide());
+    if (wide()) wides.forEach((img) => { if (!img.src && (img.dataset.wide === 'dark') === dark.matches) img.src = `/img/page-wide-${img.dataset.wide}.webp`; });
+  };
+  dark.addEventListener('change', picture);
   const drag = { p: 1 };
   const place = () => {
+    picture();
     const s = scale();
-    for (const [el, r] of shapes) {
+    for (const [el, r] of shapes()) {
       const p = el === mark2 ? drag.p : 1;
       Object.assign(el.style, { left: `${r.l * s}px`, top: `${r.t * s}px`, width: `${r.w * s * p}px`, height: `${r.h * s * p}px` });
     }
@@ -201,7 +242,10 @@ export function initMarkup() {
   const overPage = (k: HTMLElement) => {
     const b = box.getBoundingClientRect(), p = page.getBoundingClientRect(), s = scale();
     const h = k.offsetHeight || 56;
-    const photo = p.top - b.top + 420 * s, below = p.top - b.top + 384 * s;
+    // The buttons end 10 over where the keys may start, and the photo
+    // starts 36 under that.
+    const link = shapes().get(mark1)!;
+    const below = p.top - b.top + (link.t + link.h + 10) * s, photo = below + 36 * s;
     const above = bar.getBoundingClientRect().top - b.top + 8;
     k.style.left = `${p.left - b.left + p.width / 2}px`;
     k.style.top = `${Math.round(Math.max(below, Math.min((photo + above) / 2, above) - h / 2))}px`;
@@ -274,7 +318,7 @@ export function initMarkup() {
         gsap.fromTo(bar, { autoAlpha: 0, y: 16 }, { autoAlpha: 1, y: 0, duration: 0.35, ease: 'expo.out', clearProps: 'transform' });
       }, 0.4);
       // Over the link, its outline follows the pointer; a click marks it.
-      at(() => travel(on(117, 352), 0.7), 0.7);
+      at(() => { const r = shapes().get(mark1)!; travel(on(r.l + r.w / 2, r.t + r.h / 2), 0.7); }, 0.7);
       at(() => { outline.hidden = false; }, 1.25);
       at(() => {
         down(true);
@@ -285,7 +329,7 @@ export function initMarkup() {
       }, 1.8);
       at(() => down(false), 1.88);
       // A drag around the paragraph draws a box with it.
-      at(() => travel(on(8, 207), 0.6), 2.4);
+      at(() => { const r = shapes().get(mark2)!; travel(on(r.l, r.t), 0.6); }, 2.4);
       at(() => {
         down(true);
         drag.p = 0.02;
@@ -293,7 +337,7 @@ export function initMarkup() {
         mark2.hidden = false;
         place();
         gsap.to(drag, { p: 1, duration: 0.9, ease: 'power2.inOut', onUpdate: place });
-        const end = on(482, 308);
+        const r = shapes().get(mark2)!, end = on(r.l + r.w, r.t + r.h);
         gsap.to(hand, { x: end.x, y: end.y, duration: 0.9, ease: 'power2.inOut' });
       }, 3.1);
       at(() => {

@@ -177,6 +177,18 @@
    radius the canvas gave it. */
 .wapp :is([data-name="Glass"], .win > [class*="backdrop-blur"]) { border-radius: 18px; }
 
+/* ---- a ticked task in rendered Markdown --------------------------------------
+   The canvas exports the ticked box as a picture, the accent square with its
+   white tick, and the generated markup uses that picture as a mask over the
+   accent colour. A mask only keeps the picture's shape, and the tick is as
+   solid as the square around it, so every ticked box came out a plain blue
+   square with no tick. Here the picture is drawn as itself. The open box is
+   an outline, which a mask draws right. */
+.wapp [data-name="Done"] {
+  -webkit-mask-image: none; mask-image: none;
+  background: url(/app/2f2e32224e12aeef57e9e11823641d6f.png) center / 100% 100% no-repeat;
+}
+
 /* ---- a Claude Code session, as it is laid out now ----------------------------
    The transcript runs down from the session's header; the prompt box and the
    mode line are pinned to the bottom of the terminal, with the status line

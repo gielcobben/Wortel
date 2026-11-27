@@ -508,7 +508,7 @@ export const MARKUP_PAGE: FeaturePage = {
     'Mark Up draws on a page, a diff, source, rendered Markdown or an image in Wortel, and copies your note as plain text with pictures, for any coding agent.',
   heading: 'Mark up what you see',
   tone: 'Then paste it to an agent',
-  lead: 'Mark Up (`⇧⌘M`) draws on what a preview shows: a page, a file, its diff, an image. You write one sentence around the marks, and Return copies it as text any agent can read.',
+  lead: 'Mark Up `⇧⌘M` draws on what a preview shows: a page, a file, its diff, an image. You write one sentence around the marks, and Return copies it as text any agent can read.',
   docs: ['Mark-up in the docs', '/docs#mark-up'],
   beta: true,
   parts: [
@@ -518,11 +518,6 @@ export const MARKUP_PAGE: FeaturePage = {
       tone: 'A page, a file, its diff, an image',
       body: 'Mark Up is a button in every preview’s header. It works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image, in a tab or in a preview window. Not over a PDF, or anything else Quick Look shows.',
       link: ['The browser tab', '/docs#browser'],
-      facts: [
-        ['A page', 'In a browser tab: the site an agent is building, or an `.html` file opened as the page it makes.'],
-        ['A file', 'Its source, its diff or the Markdown it renders to, whichever the preview is on.'],
-        ['An image', 'A picture opened in a tab or a preview window is drawn on the same way.'],
-      ],
     },
     {
       id: 'marks',
@@ -537,12 +532,6 @@ export const MARKUP_PAGE: FeaturePage = {
       body: 'A bar at the bottom of the preview holds your note, with each mark in it as a chip. Return copies it and turns mark-up off. Paste it to the agent in this session or another. Nothing is typed into a terminal and nothing is sent.',
       link: ['Exactly what is copied', '/docs#mark-up'],
       code: { label: 'On the clipboard', text: MARKUP_COPIED },
-      facts: [
-        ['The sentence', 'Each chip written out as what it points at, in words a person can read.'],
-        ['A picture of each mark', 'Its path sits beside the mark’s name, so an agent that can read your disk opens it.'],
-        ['The page or file', 'The address, or the file’s path and which view of it was marked up.'],
-        ['The whole, and the details', 'A picture of the whole with every mark on it, and a file of details.'],
-      ],
     },
   ],
   reference: [
@@ -610,7 +599,7 @@ export const LAYOUTS_PAGE: FeaturePage = {
       id: 'windows',
       title: 'More than one window',
       tone: 'Each with a sidebar of its own',
-      body: 'Window ▸ New Window (`⇧⌘N`) opens another window with its own sidebar. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all.',
+      body: 'Window ▸ New Window `⇧⌘N` opens another window with its own sidebar. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all.',
       link: ['More than one window', '/docs#windows'],
       facts: [
         ['From a session’s menu', 'Move to New Window and Move to Window do the same without a drag.'],

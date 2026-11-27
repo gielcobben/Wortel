@@ -150,6 +150,9 @@ export function initSurfaces() {
   // around steps 2 and 3, the arrow at the end of "Checks", the highlight on
   // "without a stutter".
   const doc = named(plan, 'Markdown')!;
+  // The column the plan is set in, which its marks are placed against: found
+  // once, while the marks are drawn (a hidden one has no offset parent).
+  const column = (rendered.marks[0].el.offsetParent ?? doc.firstElementChild) as HTMLElement;
   const phrase = (root: Element, words: string) => {
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
@@ -167,7 +170,7 @@ export function initSurfaces() {
     const inks = [named(glow, 'Ink')!];
     for (const el of [boxed, arrow, glow, ...inks]) for (const k of ['left', 'top', 'width', 'height'] as const) el.style[k] = '';
     if (!doc.clientWidth || doc.clientWidth >= 650) return;
-    const o = boxed.offsetParent!.getBoundingClientRect();
+    const o = column.getBoundingClientRect();
     const items = Array.from(doc.querySelectorAll<HTMLElement>('[data-name="Item"]')).slice(1, 3).map((el) => el.getBoundingClientRect());
     const heading = phrase(doc, 'Checks'), words = phrase(doc, 'without a stutter');
     if (items.length === 2) Object.assign(boxed.style, { left: `${items[0].left - o.left - 7.5}px`, top: `${items[0].top - o.top - 4.5}px`, width: `${Math.max(items[0].width, items[1].width) + 15}px`, height: `${items[1].bottom - items[0].top + 9}px` });
@@ -208,6 +211,9 @@ export function initSurfaces() {
     s.caret.parentElement!.append(s.caret);
   };
   const ink = (m: Mark) => named(m.el, 'Ink')!, badge = (m: Mark) => named(m.el, 'Badge')!;
+  /** A box being dragged out, and the size it has when it is whole again. */
+  const strokes: gsap.core.Tween[] = [];
+  const whole = (m: Mark) => { m.el.style.width = m.el.style.height = ''; };
   /** Put a preview in a state at once: untouched, or marked up with its note written. */
   const show = (s: Surface, done: boolean) => {
     lit(s, done);
@@ -216,7 +222,9 @@ export function initSurfaces() {
     for (const m of s.marks) {
       m.el.hidden = !done;
       gsap.set([m.el, ink(m), badge(m)], { clearProps: 'clipPath,opacity,scale,transformOrigin' });
+      whole(m);
     }
+    place();
     setNote(s, done ? s.chips.length : 0, done ? s.said : []);
   };
   let front = -1;
@@ -240,7 +248,6 @@ export function initSurfaces() {
   // The plan is read from its foot, so in a short window its steps are above
   // what shows: the plan moves down to the mark being drawn there, as a
   // preview scrolled up would, and back.
-  const column = rendered.marks[0].el.offsetParent as HTMLElement;
   const look = (s: Surface, el: Element | null, animate: boolean) => {
     const lines = scroller(s);
     if (!lines) {
@@ -283,6 +290,7 @@ export function initSurfaces() {
   };
 
   const cut = () => {
+    strokes.splice(0).forEach((t) => t.kill());
     gsap.killTweensOf([hand, keys, ...all.flatMap((s) => [s.bar, ...s.marks.flatMap((m) => [m.el, ink(m), badge(m)])])]);
     gsap.set(keys, { opacity: 0 });
     gsap.set(keys.querySelectorAll('kbd'), { y: 0 });
@@ -311,16 +319,25 @@ export function initSurfaces() {
         at(() => { m.el.hidden = false; gsap.set(m.el, { opacity: 0 }); look(s, m.el, true); }, starts[k] - 0.5);
         at(() => pointer.move(spot(m.el, x0, y0), TRAVEL), starts[k]);
         at(() => {
-          // The stroke: a box opens from its corner, an arrow and a
-          // highlight are uncovered along their length, and the mark's
-          // number arrives as the button comes up.
+          // The stroke, and the mark's number as the button comes up. A box
+          // is dragged out from its corner: a whole rectangle all the way,
+          // its far corner under the pointer. (It was first uncovered from
+          // behind a clip instead, which showed two of its sides growing and
+          // the other two only as the stroke ended.) An arrow and a
+          // highlight are uncovered along their length.
           gsap.set(m.el, { opacity: 1 });
           gsap.set(badge(m), { opacity: 0 });
           gsap.to(hand, { scale: 0.86, duration: 0.08, transformOrigin: '10% 6%' });
           const to = spot(m.el, x1, y1);
           gsap.to(hand, { x: to.x, y: to.y, duration: DRAW, ease: 'power2.inOut' });
-          const from = m.kind === 'box' ? 'inset(0 98% 98% 0)' : m.kind === 'arrow' ? 'inset(0 0 0 100%)' : 'inset(0 100% 0 0)';
-          gsap.fromTo(m.kind === 'box' ? m.el : ink(m), { clipPath: from }, { clipPath: 'inset(0 0% 0% 0%)', duration: DRAW, ease: 'power2.inOut', clearProps: 'clipPath' });
+          if (m.kind === 'box') {
+            const w = m.el.offsetWidth, h = m.el.offsetHeight, grown = { p: 0.02 };
+            const size = () => Object.assign(m.el.style, { width: `${w * grown.p}px`, height: `${h * grown.p}px` });
+            size();
+            strokes.push(gsap.to(grown, { p: 1, duration: DRAW, ease: 'power2.inOut', onUpdate: size, onComplete: () => { whole(m); place(); } }));
+          } else {
+            gsap.fromTo(ink(m), { clipPath: m.kind === 'arrow' ? 'inset(0% 0% 0% 100%)' : 'inset(0% 100% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: DRAW, ease: 'power2.inOut', clearProps: 'clipPath' });
+          }
         }, starts[k] + TRAVEL);
         at(() => {
           gsap.to(hand, { scale: 1, duration: 0.08 });

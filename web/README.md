@@ -400,8 +400,8 @@ there is one to send (`docs/decisions.md`, 2026-11-26). What is kept is on
 
 ```
 worker/letter.ts           the decisions: what an address is, the form, the token, the mail
-worker/letter-routes.ts    POST /letter/join, GET+POST /letter/confirm and /letter/leave
-worker/letter.test.ts      `npm test`
+worker/letter-routes.ts    POST /letter/join, GET+POST /letter/confirm and /letter/leave, the sweep
+worker/letter*.test.ts     `npm test` (letter-routes.test.ts on node:sqlite with the real schema)
 migrations/                the D1 schema (database `wortel-letter`, EU jurisdiction)
 components/LetterForm.astro  the form: a real POST, sent in place with JS
 pages/letter.astro, pages/letter/[state].astro   /letter and the pages the requests end on
@@ -426,6 +426,10 @@ whose confirmation mail fails, and every join answers "sorry".
 npx wrangler d1 migrations apply wortel-letter --local
 npm run build && npx wrangler dev --local
 ```
+
+Addresses not confirmed within a week are deleted once a day by the cron in
+`wrangler.jsonc`, and on every join. To run the sweep by hand under `wrangler
+dev`: `curl "localhost:8787/cdn-cgi/handler/scheduled?cron=17+3+*+*+*"`.
 
 The confirmation mail is not sent from `wrangler dev`: it is written under
 `.wrangler/tmp/email/` and the path is printed in the log. Its link says

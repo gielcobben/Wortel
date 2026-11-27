@@ -3,7 +3,8 @@
 //
 // It does two things: it puts PostHog on the site's own origin (/ph/*, this
 // file), and it answers the letter's signup, confirm and leave requests
-// (/letter/*, letter-routes.ts). Everything else on this domain is a static
+// (/letter/*, letter-routes.ts). Once a day, by the cron in wrangler.jsonc, it
+// also deletes the letter's addresses that were never confirmed. Everything else on this domain is a static
 // file, and static files are still served without this code ever running
 // (Cloudflare matches an asset first and only falls through to the Worker when
 // nothing matches, which is why the letter's routes have no file behind them).
@@ -26,7 +27,7 @@
 // match what it expects.
 // ==========================================================================
 
-import { letter, type LetterEnv } from './letter-routes.ts';
+import { forgetUnconfirmed, letter, type LetterEnv } from './letter-routes.ts';
 
 const PREFIX = '/ph';
 
@@ -53,6 +54,14 @@ export default {
     // Not an asset (or we would not be running) and not ours: hand it back so
     // the assets layer produces the 404 rather than inventing one here.
     return env.ASSETS.fetch(request);
+  },
+
+  // The cron: /privacy says an address not confirmed within a week is
+  // deleted, and that has to be true on a week when nobody signs up.
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const gone = await forgetUnconfirmed(env.DB, Math.floor(Date.now() / 1000));
+    // A count only: never an address.
+    if (gone) console.log(`letter: forgot ${gone} unconfirmed`);
   },
 };
 

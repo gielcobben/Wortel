@@ -26,6 +26,9 @@
 // small: the hidden field bots fill in, a per-IP rate limit (the binding
 // counts in memory and stores nothing), and one mail per address per day.
 // There is no Turnstile, because that is a third-party script on the page.
+//
+// WHAT IS FORGOTTEN. An address not confirmed within a week of its last mail
+// is deleted by forgetUnconfirmed(), once a day by a cron and on every join.
 // ==========================================================================
 
 import { confirmationMail, isToken, MAIL_COOLDOWN, newToken, parseJoin, PENDING_TTL } from './letter.ts';
@@ -75,10 +78,10 @@ async function join(request: Request, url: URL, env: LetterEnv): Promise<Respons
   if (asked.kind === 'invalid') return answer(false, 400);
 
   const now = Math.floor(Date.now() / 1000);
-  // Unconfirmed addresses older than a week are forgotten here rather than by
-  // a cron: the table only grows through this request, so this is enough.
-  await env.DB.prepare('DELETE FROM subscribers WHERE confirmed_at IS NULL AND created_at < ?')
-    .bind(now - PENDING_TTL).run();
+  // The daily sweep is what keeps the week. This one is so that an address
+  // past its week, not swept yet, starts again below with a new token rather
+  // than having its old mail's link brought back to life.
+  await forgetUnconfirmed(env.DB, now);
 
   // Whether to mail is decided by this one statement, and only it, so two
   // posts of the same address at once cannot both decide to (a SELECT, then a
@@ -124,6 +127,19 @@ async function join(request: Request, url: URL, env: LetterEnv): Promise<Respons
 }
 
 /**
+ * Deletes every address that was not confirmed within a week of its last
+ * confirmation mail. Run once a day by the cron in wrangler.jsonc
+ * (index.ts, `scheduled`), so the week /privacy promises holds when nobody
+ * signs up, and on every join. confirm() already treats a row past its week as
+ * gone, so the hours until the next sweep change nothing anyone can see.
+ */
+export async function forgetUnconfirmed(db: D1Database, now: number): Promise<number> {
+  const gone = await db.prepare('DELETE FROM subscribers WHERE confirmed_at IS NULL AND created_at < ?')
+    .bind(now - PENDING_TTL).run();
+  return gone.meta.changes;
+}
+
+/**
  * The confirm or leave page, with the token from the link put into its form.
  * The page itself is a static file (/letter/confirming or /letter/leaving,
  * src/pages/letter/[state].astro), deliberately at another address: a path
@@ -158,7 +174,7 @@ async function confirm(request: Request, url: URL, env: LetterEnv): Promise<Resp
   const t = (await readForm(request))?.get('t');
   if (!isToken(t)) return see(url, '/letter/expired');
   const now = Math.floor(Date.now() / 1000);
-  // Pending past its week counts as gone, even if no join has swept it yet.
+  // Pending past its week counts as gone, even before the daily sweep has run.
   const done = await env.DB.prepare(
     'UPDATE subscribers SET confirmed_at = COALESCE(confirmed_at, ?) WHERE token = ? AND (confirmed_at IS NOT NULL OR created_at >= ?)',
   ).bind(now, t, now - PENDING_TTL).run();

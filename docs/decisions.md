@@ -3415,6 +3415,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `run_worker_first` list (see the entry above). A file is still served
   without the Worker; only misses wake it. The 404 page drops its query
   before analytics starts, so a mangled link's token is not reported.
+- **2026-11-27. The letter's unconfirmed addresses are swept by a daily
+  cron, not only on a join.** The 2026-11-26 entry above swept on the next
+  join, on the thought that the table only grows through one; but on a week
+  with no join, nothing ran, and an unconfirmed address stayed past the week
+  `/privacy` promises. A cron (`17 3 * * *`, `scheduled` in
+  `web/worker/index.ts`) runs the same delete once a day; a join still runs
+  it too, so an address past its week starts again with a new token.
 
 ## Contributing
 

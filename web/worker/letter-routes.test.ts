@@ -12,8 +12,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join as path } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { letter, type LetterEnv } from './letter-routes.ts';
-import { MAIL_COOLDOWN } from './letter.ts';
+import { forgetUnconfirmed, letter, type LetterEnv } from './letter-routes.ts';
+import { MAIL_COOLDOWN, PENDING_TTL } from './letter.ts';
 
 type Value = string | number | null;
 
@@ -152,4 +152,23 @@ test('a mail that fails leaves a waiting address free to be mailed again', async
   await join(env, 'you@example.com');
   assert.equal(rows(db)[0].mailed_at, 0);
   assert.equal(rows(db)[0].token, TOKEN);
+});
+
+test('the sweep forgets addresses not confirmed within a week, and nothing else', async () => {
+  const { db, env } = setup();
+  const now = nowSeconds();
+  put(db, { email: 'old@example.com', token: 'a'.repeat(43), created_at: now - PENDING_TTL - 1, mailed_at: now - PENDING_TTL - 1 });
+  put(db, { email: 'week@example.com', token: 'b'.repeat(43), created_at: now - PENDING_TTL, mailed_at: now - PENDING_TTL });
+  put(db, { email: 'on@example.com', token: 'c'.repeat(43), created_at: 1, confirmed_at: 2, mailed_at: 1 });
+  assert.equal(await forgetUnconfirmed(env.DB, now), 1);
+  assert.deepEqual(rows(db).map((r) => r.email), ['on@example.com', 'week@example.com']);
+});
+
+test('an address past its week starts again with a new token', async () => {
+  const { db, env, mails } = setup();
+  const then = nowSeconds() - PENDING_TTL - 60;
+  put(db, { email: 'you@example.com', created_at: then, mailed_at: then });
+  await join(env, 'you@example.com');
+  assert.equal(mails.length, 1);
+  assert.notEqual(rows(db)[0].token, TOKEN);
 });

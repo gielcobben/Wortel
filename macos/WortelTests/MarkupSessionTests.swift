@@ -141,4 +141,48 @@ final class MarkupSessionTests: XCTestCase {
         XCTAssertFalse(copied.contains("the older note"), copied)
         XCTAssertFalse(session.isCopying)
     }
+
+    func testANoteHasNothingUncopiedOnceCopiedUntilItChanges() {
+        let session = session()
+        XCTAssertFalse(session.hasUncopied)
+        session.turnOn()
+        session.add(mark(session.takeNumber()))
+        session.text.append(NSAttributedString(string: " bigger"))
+        XCTAssertTrue(session.hasUncopied)
+
+        session.copyNote()
+        settle()
+        XCTAssertNotNil(pasteboard.string(forType: .string))
+        XCTAssertFalse(session.isOn)
+        XCTAssertFalse(session.hasUncopied)
+
+        // Added to after the copy: that part has not been copied.
+        session.turnOn()
+        session.text.append(NSAttributedString(string: " please"))
+        XCTAssertTrue(session.hasUncopied)
+        session.copyNote()
+        settle()
+        XCTAssertFalse(session.hasUncopied)
+
+        // A drawing moved is a change to the note.
+        session.replace(mark(1))
+        XCTAssertTrue(session.hasUncopied)
+
+        // Cleared, there is nothing to keep.
+        session.text.setAttributedString(NSAttributedString())
+        XCTAssertFalse(session.hasUncopied)
+    }
+
+    func testWhatIsTypedWhileACopyIsMadeIsNotCountedAsCopied() {
+        let session = session()
+        let surface = HeldSurface()
+        session.surface = surface
+        session.turnOn()
+        session.add(mark(session.takeNumber()))
+        session.copyNote()
+        session.text.append(NSAttributedString(string: " and this"))
+        surface.replies[0](nil)
+        settle()
+        XCTAssertTrue(session.hasUncopied)
+    }
 }

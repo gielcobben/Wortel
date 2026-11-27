@@ -59,6 +59,14 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     @ObservationIgnored private var folder: URL?
     @ObservationIgnored private var copies = 0
     @ObservationIgnored private var copiedFlash: DispatchWorkItem?
+    /// The pictures' file names used in the note's folder. None is used
+    /// twice: a path once copied may be pasted days later, and must still
+    /// show what it showed.
+    @ObservationIgnored private var pictureNames: Set<String> = []
+    /// Which copy is the one that counts. `end` moves it on, so a copy
+    /// still being made for a note that is gone lands nowhere, even after a
+    /// newer copy has started.
+    @ObservationIgnored private var copyNumber = 0
 
     /// The folders of notes that are still open, which the sweep leaves.
     private static var open: Set<String> = []
@@ -108,12 +116,14 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         guard wasOn || hasNote || !known.isEmpty else { return }
         isOn = false
         isCopying = false
+        copyNumber += 1
         known = [:]
         nextNumber = 1
         copies = 0
         tool = .box
         if let folder { Self.open.remove(folder.path) }
         folder = nil
+        pictureNames = []
         undo.removeAllActions()
         text.setAttributedString(NSAttributedString())
         marks = []
@@ -176,7 +186,12 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     /// a note holds while it waits is a path, not a bitmap.
     func keep(_ picture: CGImage, for number: Int) {
         guard known[number] != nil, let folder = noteFolder() else { return }
-        let name = "\(number).png"
+        var name = "\(number).png", again = 1
+        while pictureNames.contains(name) {
+            again += 1
+            name = "\(number)-\(again).png"
+        }
+        pictureNames.insert(name)
         let url = folder.appendingPathComponent(name)
         MarkupStore.queue.async { MarkupStore.write(picture, to: url) }
         known[number]?.picture = name
@@ -216,6 +231,8 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     func copyNote() {
         guard isOn, !isCopying, !marks.isEmpty else { return }
         isCopying = true
+        copyNumber += 1
+        let number = copyNumber
         let marks = marks
         let pieces = MarkChip.pieces(in: text)
         let subject = subject()
@@ -264,15 +281,16 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
                 }
                 let copied = MarkupNote.copied(pieces: pieces, marks: references, subject: subject,
                                                whole: wholePicture, details: detailsPath)
-                DispatchQueue.main.async { self?.finishCopy(copied, marks: marks) }
+                DispatchQueue.main.async { self?.finishCopy(copied, marks: marks, number: number) }
             }
         }
         if let surface { surface.whole(marks, reply: finish) } else { finish(nil) }
     }
 
-    private func finishCopy(_ copied: String, marks: [Mark]) {
-        // Ended while the pictures were written: there is no note to copy.
-        guard isCopying else { return }
+    private func finishCopy(_ copied: String, marks: [Mark], number: Int) {
+        // Ended while the pictures were written: there is no note to copy,
+        // and the clipboard may hold a newer one by now.
+        guard isCopying, number == copyNumber else { return }
         isCopying = false
         pasteboard.clearContents()
         pasteboard.setString(copied, forType: .string)

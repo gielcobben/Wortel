@@ -8,7 +8,8 @@
 // tab is dragged from there into the agent's split, where it joins the
 // agent's tab. Then ⇧⌘↩ gives the page everything beside the sidebar, and
 // ⇧⌘↩ again shows both splits. The window only ever goes forward: each
-// chapter starts where the one before it ended.
+// chapter starts where the one before it ended. On /layouts a fourth
+// chapter follows: ⌘B hides the sidebar.
 //
 // It moves the way the app does. A tab opened beside the terminal slides its
 // column in; a split somebody makes, a tab dropped on an edge and a zoom land
@@ -44,7 +45,8 @@ const LONE: Layout = { session: HERO, sidebar: 'sidebar', side: false, web: 'non
 const TWO: Layout = { ...LONE, side: true, shell: 'dev', focus: 'side' };
 const THREE: Layout = { ...TWO, web: 'tab', focus: 'main' };
 const BACK: Layout = { ...THREE, focus: 'main' };
-const ENDS = [TWO, THREE, BACK];
+// The fourth chapter, on the page about layouts: the sidebar hidden.
+const BARE: Layout = { ...BACK, sidebar: 'hidden' };
 // What "Zoom" is about, for a visitor who gets no motion: the still.
 const ZOOMED: Layout = { ...BACK, zoom: true };
 
@@ -157,7 +159,7 @@ export function initPanes() {
   // Of the page's two captures, light and dark, only the one in use is fetched.
   schemePictures(pane('page'));
   // Once the browser has the agent's split it is as wide as the window gives
-  // it, and the page is the capture made at that width (Panes.astro). Those
+  // it, and the page is the capture made at that width (PanesFilm.astro). Those
   // are fetched the first time they are shown, the scheme in use only.
   const dark = matchMedia('(prefers-color-scheme: dark)');
   const wide = Array.from(named(pane('page'), 'Page')!.querySelectorAll<HTMLImageElement>(':scope > img')).map((narrow) => {
@@ -195,10 +197,14 @@ export function initPanes() {
     return { t, label };
   })();
 
+  // The film has a fourth chapter where its stage has a fourth tab
+  // (films/PanesFilm.astro), unless the window is too narrow for a sidebar:
+  // there it is folded already, and the tab is not shown.
+  const ENDS = root.querySelectorAll('[data-chapter]').length > 3 && !matchMedia('(max-width: 1000px)').matches ? [TWO, THREE, BACK, BARE] : [TWO, THREE, BACK];
   const state: Layout = { ...LONE };
   const SIDEBAR = 234;
   // On a phone the stage shows one split's worth of this window at a time
-  // (Panes.astro). Between a phone and a wide screen (a tablet, a narrow
+  // (PanesFilm.astro). Between a phone and a wide screen (a tablet, a narrow
   // browser window) the window is whole but has no room for the sidebar and
   // three splits: there the sidebar is folded.
   const phone = matchMedia('(max-width: 760px)');
@@ -382,7 +388,7 @@ export function initPanes() {
   // ---- on a phone, the window pans to the column that has the keyboard ---------
   // The stage shows one column of the window: the agent's split with the
   // shell under it, or the column at the edge while the browser is there.
-  // What is off the stage is not drawn (data-view, Panes.astro), so no strip
+  // What is off the stage is not drawn (data-view, PanesFilm.astro), so no strip
   // of it shows in the stage's own margin.
   function pan(animate: boolean) {
     if (!phone.matches) { gsap.set(win!, { x: 0 }); win!.removeAttribute('data-view'); return; }
@@ -543,6 +549,11 @@ export function initPanes() {
       step(() => { carried?.remove(); carried = null; landing.hidden = true; tabOfPage.style.opacity = ''; drop(); last = THREE; }, let_go);
       step(() => pointer.hide(), let_go + 0.4);
       return { start: TWO, beats, length: let_go + 0.2 };
+    }
+    if (i === 3) {
+      // Sidebar: ⌘B folds it away, and the leftmost row gains its buttons.
+      const t = chord('sidebar', 'main', 0.5, () => { sidebar('hidden'); last = BARE; });
+      return { start: BACK, beats, length: t + 0.6 };
     }
     // Zoom: the page has the keyboard where it was dropped, ⇧⌘↩ gives it
     // everything beside the sidebar, and ⇧⌘↩ again shows both splits.

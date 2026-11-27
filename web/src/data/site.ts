@@ -412,7 +412,7 @@ export const HOME = {
     title: 'Split it anywhere',
     tone: 'Every split has its own tabs',
     body: '`⌘D` splits where you are and `⇧⌘D` splits it down. Drag a tab to the edge of any split and it makes a new one there. Every split has its own row of tabs: a terminal, a browser, a file, your changes. `⇧⌘↩` gives one the whole window.',
-    link: ['How splits and tabs work', '/docs#splits'],
+    link: ['Everything a layout does', '/layouts'],
     beta: true,
   },
   // This entry, the section that reads it (components/home/Markup.astro) and
@@ -438,7 +438,7 @@ export const HOME = {
 } as const satisfies { hero: Required<Pick<Head, 'title' | 'tone' | 'body'>> } & Record<string, Head>;
 
 // ==========================================================================
-// The feature pages: one feature, in depth. /mark-up is the first.
+// The feature pages: one feature, in depth. /mark-up and /layouts.
 //
 // A feature page sits between the homepage, which makes the point once, and
 // /docs, which states it exactly: it shows everything the feature does, a
@@ -579,8 +579,106 @@ export const MARKUP_PAGE: FeaturePage = {
   ],
 };
 
+export const LAYOUTS_PAGE: FeaturePage = {
+  path: '/layouts',
+  name: 'Layouts',
+  blurb: 'Splits, tabs, zoom and windows: how the window bends to the work.',
+  /** 49 chars. */
+  title: 'Layouts in Wortel: splits, tabs, zoom and windows',
+  /** 151 chars. */
+  description:
+    'Split a Wortel window anywhere with ⌘D or by dragging a tab. Every split has its own tabs, ⇧⌘↩ gives one the whole window, and ⇧⌘N opens another window.',
+  heading: 'Arrange it as you go',
+  tone: 'Splits, tabs, zoom and windows',
+  lead: 'Everything beside the sidebar is made of splits. `⌘D` splits where you are and `⇧⌘D` splits it down, a dragged tab makes a split where you let it go, and `⇧⌘↩` gives one the whole window.',
+  docs: ['Splits in the docs', '/docs#splits'],
+  beta: true,
+  parts: [
+    {
+      id: 'tabs',
+      title: 'Every split has its own tabs',
+      tone: 'A terminal, a browser, a file, your changes',
+      body: 'A split holds a row of tabs, and a tab is a terminal, a browser, a file or one of the git panes: Changes, History, Files. So the diff can sit beside the agent that made it, with the plan in front of its terminal. A split is there while it holds a tab, and gone when its last one closes.',
+      link: ['Splits and tabs', '/docs#splits'],
+      facts: [
+        ['A new tab asks', 'The + in a split’s row, or `⌥⌘T`, opens an empty tab that lists what it can become. Click one, or press its first letter.'],
+        ['Or skip the list', '`⌘T` is a terminal, `⇧⌘B` a browser, `⇧⌘C` Changes, `⇧⌘H` History and `⇧⌘F` Files.'],
+        ['A file is a tab too', 'A file you pick in Changes or Files opens in a preview tab, and the next one you pick takes its place. Double-click it to keep it.'],
+      ],
+    },
+    {
+      id: 'windows',
+      title: 'More than one window',
+      tone: 'Each with a sidebar of its own',
+      body: 'Window ▸ New Window (`⇧⌘N`) opens another window with its own sidebar. Drag a session onto another window’s sidebar to move it there, or out of the window to give it one of its own. It keeps running as it is, agent and all.',
+      link: ['More than one window', '/docs#windows'],
+      facts: [
+        ['From a session’s menu', 'Move to New Window and Move to Window do the same without a drag.'],
+        ['Back to one', 'Window ▸ Merge All Windows puts every session back in one window.'],
+        ['Closing asks first', 'Closing a window closes its sessions, and asks first if something is still running in them.'],
+      ],
+    },
+  ],
+  reference: [
+    {
+      id: 'start',
+      title: 'Where it starts',
+      blocks: [
+        { p: 'A session starts with one split, its terminal, and Wortel opens two more where they have always been: `⌥⌘B` opens Changes and Files in a split at the right edge and closes them again, and `⌘J` takes you to a terminal under the main one, making it if there is none. So there is no layout to build before the window is useful.' },
+        { p: 'Nothing is hidden with its tabs kept. When the splits have got away from you, View ▸ Reset Layout puts every tab back where a session starts with it, and closes nothing.' },
+      ],
+    },
+    {
+      id: 'keys',
+      title: 'The keys',
+      blocks: [
+        {
+          table: {
+            head: ['Action', 'Shortcut'],
+            mono: 'last',
+            rows: [
+              ['Split right, with a new terminal', '⌘D'],
+              ['Split down, with a new terminal', '⇧⌘D'],
+              ['New tab that asks what it should be', '⌥⌘T'],
+              ['Focus the next / previous split', '⌘] / ⌘['],
+              ['Focus the split to the left / right / above / below', '⌃⌥⌘ ← → ↑ ↓'],
+              ['Move the tab in front to the split on that side', '⌃⌘ ← → ↑ ↓'],
+              ['Zoom the split you are in, and show all of them again', '⇧⌘↩'],
+              ['Make the splits equal', '⌃⌘='],
+              ['Show or hide the sidebar', '⌘B'],
+              ['New window', '⇧⌘N'],
+            ],
+          },
+        },
+        { p: 'The two buttons at the end of a split’s row split it the same two ways, with an empty tab that asks what goes there. The line between two splits drags.' },
+      ],
+    },
+    {
+      id: 'command',
+      title: 'From a command',
+      blocks: [
+        { p: 'An agent, a hook or a script can split the window too, with the `wortel` command every session has on its `PATH`.' },
+        {
+          table: {
+            head: ['Command', 'What it does'],
+            mono: 'first',
+            rows: [
+              ['wortel split', 'A new terminal in a split beside the session’s own. The keyboard stays where it is'],
+              ['wortel split down -- <command>', 'The same under it, running a command: a dev server, a log'],
+            ],
+          },
+        },
+      ],
+    },
+  ],
+  more: [
+    { name: 'The reference', blurb: 'Every shortcut and command, and the parts worth knowing exactly.', href: '/docs' },
+    { name: 'Everything around the terminal', blurb: 'Worktrees, the command palette, a browser, and sessions that outlive the app.', href: '/#more' },
+  ],
+};
+
 /** Every feature page, in the order another page lists them. */
-export const FEATURE_PAGES: FeaturePage[] = [MARKUP_PAGE];
+export const FEATURE_PAGES: FeaturePage[] = [LAYOUTS_PAGE, MARKUP_PAGE];
 
 // ==========================================================================
 // /docs: the reference the homepage stopped being.

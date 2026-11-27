@@ -1,0 +1,90 @@
+---
+// More than one window, on /layouts: two of them on one stage, each with a
+// sidebar of its own and its own sessions in it. Nothing plays: it is a
+// picture of the two, the one in front lying over the other, built from the
+// canvas's sidebar and two of its terminals like every window on the site.
+// The window behind is not the key window, so its traffic lights are grey,
+// as macOS draws them.
+import Stage from '../Stage.astro';
+import Window from '../Window.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import Terminal from '../../app/gen/Terminal.astro';
+import NotePasted from '../../app/gen/NotePasted.astro';
+---
+<Stage film="windows" photo="hills" at="30% 70%" zoom={1.3} fold>
+  <div class="two">
+    <Window class="behind" data-narrow data-wwin="behind" style="--w:800px;--h:520px">
+      <div class="ww-slot ww-sb"><Sidebar /></div>
+      <div class="ww-div"></div>
+      <div class="ww-slot ww-main" data-end><Terminal /></div>
+    </Window>
+    <Window class="ahead" data-narrow data-wwin="ahead" style="--w:800px;--h:520px">
+      <div class="ww-slot ww-sb"><Sidebar /></div>
+      <div class="ww-div"></div>
+      <div class="ww-slot ww-main" data-end><NotePasted /></div>
+    </Window>
+  </div>
+</Stage>
+
+<script>
+  import { Sidebar, Terminal, foldable, named, wholeRows } from '../../scripts/app';
+  const root = document.querySelector<HTMLElement>('[data-film="windows"]');
+  const lead = root?.querySelector<HTMLTemplateElement>('template[data-tpl="lead"]')?.content;
+  // Each window has its own sessions: the folder a project's are in, and the
+  // one selected there.
+  const SHOWS: Record<string, [session: string, rows: string[]]> = {
+    behind: ['Quicker panes', ['Section Sessions', 'Quicker panes', 'Marketing screenshots', 'Open Graph image refresh']],
+    ahead: ['Landing page hero', ['Section web', 'Landing page hero', 'Changelog typography', 'Pricing FAQ copy']],
+  };
+  root?.querySelectorAll<HTMLElement>('[data-wwin]').forEach((win) => {
+    const [session, rows] = SHOWS[win.dataset.wwin!];
+    const sb = new Sidebar(named(win, 'Sidebar')!);
+    sb.show(rows);
+    sb.select(session);
+    named(win, 'Title')!.textContent = session;
+    // The canvas draws this terminal with a note pasted at its prompt, for
+    // the mark-up film. Here nothing has been pasted.
+    const term = new Terminal(named(win, 'Terminal')!);
+    while (term.prompt.firstElementChild?.nextSibling) term.prompt.firstElementChild.nextSibling.remove();
+    foldable(win, lead);
+    wholeRows(win);
+  });
+</script>
+
+<style>
+  /* Two windows of 800 by 520, the one in front 304 right of and 120 under
+     the other: together as wide as a stage's one window. */
+  .two { position: relative; width: min(1104px, 100%); height: 640px; }
+  .two :global(.win) { position: absolute; }
+  .two :global(.behind) { left: 0; top: 0; }
+  .two :global(.ahead) { right: 0; bottom: 0; }
+  .ww-slot { display: flex; min-width: 0; min-height: 0; }
+  .ww-slot > :global(*) { flex: 1; }
+  .ww-sb { width: 234px; flex: none; }
+  .ww-main { flex: 1; }
+  .ww-div { width: 1px; flex: none; align-self: stretch; background: var(--sidebar-border); }
+  /* Not the key window: its lights are grey. */
+  .two :global(.behind [data-name="Traffic lights"] > *) { background: rgb(0 0 0 / 0.14); border-color: transparent; box-shadow: none; }
+  @media (prefers-color-scheme: dark) {
+    .two :global(.behind [data-name="Traffic lights"] > *) { background: rgb(255 255 255 / 0.2); }
+  }
+
+  /* Narrower than both fit side by side with their sidebars, the sidebars
+     fold, as the other stages' do (app.ts, foldable). */
+  @media (max-width: 1263px) {
+    .ww-sb, .ww-div { display: none; }
+    .two :global(.win [data-narrow-only]) { display: flex; }
+    .two :global(.win [data-narrow-only][data-lead]) { display: contents; }
+    .two :global(.win [data-lead] [data-name="Back and Forward"]) { display: none; }
+    .ww-main :global(header[data-name="Main bar"]) { padding-left: 78px; }
+    .two :global(.win) { width: min(800px, 80%); }
+  }
+  /* On a phone the window in front is as wide as the stage, and the one
+     behind shows its top over it. */
+  @media (max-width: 760px) {
+    .two { height: 560px; }
+    .two :global(.win) { width: 100%; }
+    .two :global(.behind) { height: 240px; width: calc(100% - 32px); }
+    .two :global(.ahead) { height: 512px; }
+  }
+</style>

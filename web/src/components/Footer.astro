@@ -17,6 +17,7 @@ const closing: Record<string, [string, string, number]> = {
   '/compare': ['hills', '0% 0%', 1.3],
   '/about': ['haze', '0% 45%', 1.6],
   '/mark-up': ['skye', '50% 60%', 1],
+  '/layouts': ['haze', '50% 70%', 1],
 };
 // A release's page closes like the changelog it belongs to.
 const [photo, at, zoom] = closing[here] ?? closing['/' + here.split('/')[1]] ?? closing['/'];

@@ -1,8 +1,10 @@
 ---
 // The homepage tells one story, top to bottom, and every part of it has the
 // same shape (see styles/site.css, and components/Section.astro): what
-// Wortel is, a terminal first, the agents in it, the window around them,
-// everything else at a glance, and the questions.
+// Wortel is, the window and how it splits, showing an agent what you mean,
+// a terminal first, the agents in it, everything else at a glance, and the
+// questions. Splits and mark-up come straight after the landing: they are
+// what sets Wortel apart, and mark-up picks up where splits ends.
 import Layout from '../layouts/Layout.astro';
 import Hero from '../components/home/Hero.astro';
 import Start from '../components/home/Start.astro';
@@ -27,10 +29,10 @@ const schema = homeSchema(await latestRelease());
     <link rel="preload" as="image" href="/img/lake-1600.webp" type="image/webp" fetchpriority="high" media="(max-width: 900px)" />
   </Fragment>
   <Hero />
-  <Start />
-  <Agents />
   <Panes />
   <Markup />
+  <Start />
+  <Agents />
   <Bento />
   <Glance />
 </Layout>

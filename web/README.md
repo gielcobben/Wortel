@@ -175,17 +175,19 @@ before ended; only the loop back to the first is a cut. `scene(i)` in
 when) and its length, so a chapter's hold is never a number kept beside the
 script. The session is the one building the landing page ("Landing page
 hero", in `web`), the same one the mark-up film after it picks up.
-- **⌘D**: the agent's terminal alone. ⌘D is pressed and the window is two
-  splits, the new one a shell in the session's folder; `npm run dev` is
-  typed into it and the server's output arrives. 3 s.
+- **⇧⌘D**: the agent's terminal alone. ⇧⌘D is pressed and the window is
+  two splits, the new one under it a shell in the session's folder; `npm
+  run dev` is typed into it and the server's output arrives. 3 s.
 - **Drag a tab**: ⌘ and a click on the address the server printed opens the
   page where a browser opens by itself, in a column that slides in at the
-  outer edge. Its tab is picked up and carried to the bottom edge of the
-  shell's split, the split lights where the tab would land, and let go it
-  makes a split there, with the page in it. 3.7 s.
-- **Zoom**: a click back in the agent's terminal, ⇧⌘↩ gives it everything
-  beside the sidebar with Show All Splits lit in its row, and ⇧⌘↩ again
-  shows all three. 3.9 s.
+  outer edge, half the window. Its tab is picked up and carried over the
+  middle of the agent's split, which lights all over, and let go it joins
+  that split's tabs in front of the agent's. The page there is a capture at
+  that width (`public/img/page-wide-*.webp`, 1074 by 740 points at 2x, taken
+  of this site with the hero held): retake it when the hero changes. 3.7 s.
+- **Zoom**: the page has the keyboard where it was dropped. ⇧⌘↩ gives it
+  everything beside the sidebar with Show All Splits lit in its row, and
+  ⇧⌘↩ again shows both splits. 2.6 s.
 
 Keys are shown the way the other films show them (`pressKeys`), but over the
 split that has the keyboard, in the largest gap in what its terminal shows,
@@ -194,7 +196,7 @@ agent's terminal keeps five rows clear under its last line for them
 (`data-reserve`, which `fitTerminal()` in `scripts/app.ts` honours). What is
 done with the mouse is done by the film's pointer (`Pointer` in
 `scripts/app.ts`: 0.7 s of travel), typing is 55 ms a character. With reduced
-motion the film is still on "Drag a tab" as it ends, all three splits, and
+motion the film is still on "Drag a tab" as it ends, both splits, and
 each chapter shows how it ends (Zoom: the zoom). Anything the visitor presses
 stops a scene where it is.
 
@@ -352,12 +354,12 @@ clear of the traffic lights.
 
 Two films are about more than one part of the window, and a phone shows one
 part at a time. Their windows are wider than the stage and the film pans:
-the splits film between the agent's terminal, the column beside it and,
-while the browser is there, the column at the edge, each exactly as wide as
-the stage, to whichever has the keyboard. What is off the stage is not
+the splits film between the agent's column (its split, and the shell under
+it) and, while the browser is there, the column at the edge, each exactly as
+wide as the stage, to whichever has the keyboard. What is off the stage is not
 drawn, so no strip of the split next door shows in the stage's own margin.
-So in "⌘D" the film goes to the new shell; in "Drag a tab" to the page, and
-back with the tab as it is carried, to where it lands; and a zoomed split
+So in "Drag a tab" the film goes to the page, and back with the tab as it is
+carried, to where it lands; and a zoomed split
 is the whole window, at the stage's width, with Show Sidebar and the "+"
 left out of its row so the session's name and Show All Splits have the
 room. The agents film pans between

@@ -201,7 +201,11 @@ actor TelemetryClient {
         let bundle = Bundle.main
         let os = ProcessInfo.processInfo.operatingSystemVersion
         return [
-            "app_version": bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            // The bundle version: the same as the shown one for a release,
+            // and `2026.48.4b1` for a beta (shown "2026.48.4 beta 1"), the
+            // spelling the crash and hang events and the updates Worker use,
+            // so one build is one row.
+            "app_version": bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
             // Major.minor only. The patch level is a detail that never changes
             // a decision and narrows the field of machines this could be.
             "macos": "\(os.majorVersion).\(os.minorVersion)",

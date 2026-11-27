@@ -1974,6 +1974,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func sendFeedback(_ sender: Any?) {
         let device = TelemetryClient.deviceProperties()
         let chip = device["arch"] == "arm64" ? "Apple Silicon" : "Intel"
+        // The version as About shows it ("2026.48.4 beta 1"), not telemetry's
+        // bundle version: this is read by a person, first by the one sending.
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? device["app_version"] ?? "unknown"
         var mail = URLComponents()
         mail.scheme = "mailto"
         mail.path = "hello@wortel.sh"
@@ -1983,7 +1987,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 
 
-                \(AppName.shown) \(device["app_version"] ?? "unknown"), macOS \(device["macos"] ?? "unknown"), \(chip)
+                \(AppName.shown) \(version), macOS \(device["macos"] ?? "unknown"), \(chip)
                 """),
         ]
         if let url = mail.url { NSWorkspace.shared.open(url) }

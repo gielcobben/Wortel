@@ -115,9 +115,10 @@ enum HangReport {
         }
         guard header["Event"] == "hang", header["Command"] == executable else { return nil }
         if let bundleID, let identifier = header["Identifier"], identifier != bundleID { return nil }
-        // `2026.47.4 (2026.47.4)`: the marketing version, then the build.
-        guard let version = CalVer(header["Version"]?.split(separator: " ").first.map(String.init))
-        else { return nil }
+        // `2026.47.4 (2026.47.4)`: the marketing version, then the build. The
+        // build, because a beta's marketing version has spaces in it:
+        // `2026.48.4 beta 1 (2026.48.4b1)`.
+        guard let version = CalVer(Self.build(of: header["Version"])) else { return nil }
 
         let process = processFields(lines, executable: executable, pid: header["PID"])
         if let owner = process["UID"], owner != String(uid) { return nil }
@@ -223,6 +224,15 @@ enum HangReport {
         guard let start = header["Date/Time"].flatMap(date(from:)),
               let end = header["End time"].flatMap(date(from:)), end >= start else { return nil }
         return DurationBucket(seconds: end.timeIntervalSince(start))
+    }
+
+    /// The build in `2026.48.4 beta 1 (2026.48.4b1)`, or the whole line when
+    /// there is no build in brackets: its first word alone would turn the
+    /// beta "2026.48.4 beta 1" into the release 2026.48.4.
+    static func build(of version: String?) -> String? {
+        guard let version else { return nil }
+        if let match = version.firstMatch(of: #/\(([^()\s]+)\)\s*$/#) { return String(match.1) }
+        return version.trimmingCharacters(in: .whitespaces)
     }
 
     /// `Key:      value` (spindump pads to a column). nil for anything else.

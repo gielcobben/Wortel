@@ -292,13 +292,19 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// The first launch of a new version checks again soon.
     private func noteVersionChange() {
         let defaults = UserDefaults.standard
-        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        // The bundle version, compared the way Sparkle compares it: a beta's
+        // shown version is "2026.48.4 beta 1", which a plain numeric compare
+        // ranks above the release 2026.48.4 that replaces it. Until
+        // 2026.48.4 this key held the shown version, which for every release
+        // before it is the same string.
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         let last = defaults.string(forKey: Self.lastRunVersionKey)
         defaults.set(current, forKey: Self.lastRunVersionKey)
         // An update moves the version forward; a debug build next to a
         // release, or the first launch ever, doesn't count.
         guard let current, let last, current != last,
-              current.compare(last, options: .numeric) == .orderedDescending else { return }
+              SUStandardVersionComparator.default.compareVersion(current, toVersion: last) == .orderedDescending
+        else { return }
         // While the last one waited, Sparkle checked for nothing newer: look
         // now rather than at the next interval, so a release that came out in
         // the meantime follows in minutes.

@@ -3172,6 +3172,8 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   links the zip (and its steps) until a HEAD finds the DMG, so a deploy before
   the first release that uploads one can't put a 404 behind the button.
 - **2026-11-26. A beta channel, cut by hand, for changes that can't be taken
+  **Changed 2026-11-27:** a beta no longer takes the next number in the
+  week; it is named for the release it leads up to (`2026.48.4b1`); below.
   back.** Regular releases stay fast and go to everyone; a keeper protocol
   change or anything as risky goes to a few testers first, with
   `release.sh --publish --beta`. One feed: the beta's `<item>` is tagged
@@ -3252,6 +3254,45 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   release. A renamed `.app` shows its file name, as macOS intends. Whether
   the next regular release puts "Wortel" back in a tester's Dock and Finder
   at once, or only once their caches refresh, is not yet seen.
+- **2026-11-27. A beta is named for the release it leads up to:
+  `2026.48.4b1`, read as "2026.48.4 beta 1".** This reverses one sentence
+  of the 2026-11-26 beta-channel entry above, "A beta takes the next number
+  in the week like any release". The first two betas took regular numbers
+  (2026.48.2, .3), which left the public changelog jumping from 2026.48.1
+  to 2026.48.4 with nothing to say why. Now a beta is the next release's
+  number with `b1`, `b2`… after it (1 to 99), and the release itself is that
+  number: it is newer than every beta of it, so Sparkle replaces the beta on
+  a tester's Mac with it whether their betas are on or off, and the regular
+  numbers have no gaps. Two spellings, because Sparkle compares
+  `CFBundleVersion` with `SUStandardVersionComparator` (read in 2.9.4 and
+  run): it stops reading at a `-`, so `2026.48.4-beta.1` equals `2026.48.4`
+  and the release would never be offered over it; a space is a separator, so
+  `2026.48.4 beta 1` ranks *above* `2026.48.4`. A letter run ranks below the
+  bare version and the number after it counts. So `CFBundleVersion`, the
+  zip, the DMG, `releases/BUILD` and the note's filename say `2026.48.4b1`,
+  and `CFBundleShortVersionString`, which Sparkle's dialog, About,
+  `wortel --version` and Send Feedback show, says "2026.48.4 beta 1". The
+  arithmetic is `macos/scripts/version.sh`, not `sort -V` (which puts `b1`
+  after the release); `scripts/test-version.sh` holds it to Sparkle's own
+  comparator in `check.sh`, before every publish, and again, required,
+  against the Sparkle.framework the release build links. A publish refuses
+  to count when neither the feed nor `releases/BUILD` names a version it can
+  read, rather than restart the week at .1 over one already out.
+  `scripts/try-beta-updates.sh` runs real Sparkle in throwaway copies
+  against a local feed (19 checks passed on 2026-11-27 with Sparkle 2.9.4:
+  who is offered what, and the release installed over a beta comes back as
+  Wortel, regular icon, no channel). `generate_appcast` keeps three versions
+  a channel, as it always has, and of the betas a release has passed keeps
+  only the newest: measured, a run of betas never pushes a regular release
+  out of the feed. A week that ends during a beta moves on: a beta of
+  2026.48.4 promoted in week 49 ships as 2026.49.1, ranked above it all the
+  same. Crash and hang reports read a beta in either spelling and send it as
+  `2026.48.4b1`, the name of its dSYM folder; a beta's spaced version would
+  otherwise have dropped its crash reports. Every event's `app_version` is
+  `CFBundleVersion` now, the same string as before for a release, so a beta
+  is one row in PostHog, not two. The updates Worker reads a beta's agent
+  ("Wortel Beta/2026.48.4 beta 1 Sparkle/…"), which it had missed since
+  betas took the Wortel Beta name.
 
 ## Telemetry and privacy
 

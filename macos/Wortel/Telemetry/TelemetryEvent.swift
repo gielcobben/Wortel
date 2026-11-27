@@ -670,21 +670,35 @@ struct CrashSignature: Equatable {
     }
 }
 
-/// A Wortel version (`2026.46.4`), rebuilt from three integers rather than
-/// passed through, so a report whose version field holds anything else
-/// produces nothing rather than that text.
+/// A Wortel version (`2026.46.4`, or a beta's `2026.48.4b1`), rebuilt from
+/// integers rather than passed through, so a report whose version field holds
+/// anything else produces nothing rather than that text.
+///
+/// A beta is read in either spelling (`macos/scripts/version.sh`): the
+/// bundle version `2026.48.4b1` or the one people read, `2026.48.4 beta 1`,
+/// which is what a crash report's `app_version` holds. It is sent as
+/// `2026.48.4b1`, the name of its dSYM folder (`scripts/symbolicate.sh`).
 struct CalVer: Equatable {
     let year: Int, week: Int, release: Int
+    /// The beta's number, nil for a release.
+    let beta: Int?
 
     init?(_ text: String?) {
-        guard let parts = text?.split(separator: ".", omittingEmptySubsequences: false), parts.count == 3,
+        guard var text else { return nil }
+        var beta: Int?
+        if let match = text.wholeMatch(of: #/([0-9.]+)(?: beta |b)([0-9]+)/#) {
+            guard let number = Int(match.2), (1...99).contains(number) else { return nil }
+            (text, beta) = (String(match.1), number)
+        }
+        let parts = text.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3,
               let year = Int(parts[0]), let week = Int(parts[1]), let release = Int(parts[2]),
               (2000...2999).contains(year), (1...53).contains(week), (1...99).contains(release)
         else { return nil }
-        (self.year, self.week, self.release) = (year, week, release)
+        (self.year, self.week, self.release, self.beta) = (year, week, release, beta)
     }
 
-    var rawValue: String { "\(year).\(week).\(release)" }
+    var rawValue: String { "\(year).\(week).\(release)" + (beta.map { "b\($0)" } ?? "") }
 }
 
 /// Mirrors `Permissions.State` for notifications.

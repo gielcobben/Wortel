@@ -14,6 +14,7 @@
 // should look like it.
 import type { APIRoute, GetStaticPaths } from 'astro';
 import { getCollection } from 'astro:content';
+import { displayVersion } from '../../content.config';
 
 const STYLE = `
   :root { color-scheme: light dark; }
@@ -59,7 +60,7 @@ export const GET: APIRoute = ({ props }) => {
   const date = entry.data.date.toISOString().slice(0, 10);
   const body = `<style>${STYLE}</style>
 <h1>${entry.data.title}</h1>
-<p class="date">Wortel ${entry.id} &middot; ${date}</p>
+<p class="date">Wortel ${displayVersion(entry.id)} &middot; ${date}</p>
 ${html}`;
 
   return new Response(body, {

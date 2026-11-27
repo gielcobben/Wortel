@@ -425,7 +425,14 @@ layer comes and goes with the tab, the session stays.
 **The note's text says which marks exist.** A mark is a chip in the text
 (`MarkChipAttachment`), so deleting the chip removes the mark and undoing
 that brings both back (`textStorage(_:didProcessEditing:…)`), with nothing
-kept in step by hand. A number is never reused while a note lives.
+kept in step by hand. A number is never reused while its chip can come
+back. With every chip taken out (Clear, or ⌫ on the last one) the count
+starts over at 1, and only when the next mark is made: that is when the
+cleared marks are let go, with the undo that could have brought them
+back. It started over at the press, before the preview had said whether
+anything was under it, so one click on nothing after Clear took the
+note's whole undo (found in review, shown in `MarkupOverlayTests`,
+2026-11-27).
 
 **What the bar is made of.** One card (`MarkupNoteBar.card`): the
 `.popover` material, over it a ground of the page's raised colour at 86%,

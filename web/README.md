@@ -124,7 +124,10 @@ text the row is `.row12.read`: the name is smaller (20 / 28) in columns 1 to
 - **On the homepage** a section is `components/Section.astro`. The name is a
   heading in two lines, the claim in ink and its other half in grey; the right
   column is one short paragraph and a link to the part of `/docs` that goes
-  further. Under the row, at full width, comes what the section shows: a
+  further. A section whose feature has a page of its own (`page` in `HOME`:
+  splits, mark-up) links to it under the heading instead, and one that only
+  the beta has says "Beta" over its heading, as the feature pages do over
+  their name. Under the row, at full width, comes what the section shows: a
   `Stage` (a part of the foggy lake with the chapter tabs and a round
   play/pause button over the app window at its natural proportions) or the
   bento. The questions are the exception: they are a column themselves, so
@@ -194,14 +197,15 @@ tab), with its sidebar hidden from the start (`bare`): the terminal keeps 360
 and the browser has the rest. From 640 wide the browser shows the page as
 captured at a wide split (`public/img/page-wide-*.webp`, the splits film's),
 and the marks are placed for that layout, from the paragraph and the button
-as measured on the site at 1074 (`scripts/markup.ts`). Narrower, it shows a
-retake of the canvas's own picture, `public/img/page-narrow-*.webp`: this
-site at 537 by 740 points, 2x, with the hero held (`/?t=30`). The canvas's
-was taken before the hero's stage had arrived and shows an empty box under
-the buttons; the layout is the same to the point, so the canvas's marks are
-where they were. The "A click picks an element" tile uses the retake too.
-Retake all four when the hero changes. The homepage's films still show the
-canvas's picture. Its second film, `scripts/surfaces.ts`, does the same over three
+as measured on the site at 1074 (`scripts/markup.ts`). Narrower, it shows the
+narrow picture every film shows. That one is a retake of the canvas's own,
+`public/img/page-narrow-*.webp`: this site at 537 by 740 points, 2x, with
+the hero held (`/?t=30`). The canvas's was taken before the hero's stage had
+arrived and shows an empty box under the buttons; the layout is the same to
+the point, so the canvas's marks are where they were. `retaken()` in
+`scripts/app.ts` swaps it in, for the mark-up film on both pages, the splits
+film's browser column, and the "A click picks an element" tile. Retake all
+four pictures when the hero changes. Its second film, `scripts/surfaces.ts`, does the same over three
 previews in one tab's place: rendered Markdown, source, a diff. In each,
 ⇧⌘M turns Mark Up on, the pointer draws the marks (a box is dragged out from
 its corner, a whole rectangle all the way; an arrow and a highlight are

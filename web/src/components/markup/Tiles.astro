@@ -45,6 +45,7 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
 {set === 'marks' && <template data-tiles-src><AppContent><MarkUpPage /></AppContent><AppContent><MarkUp /></AppContent></template>}
 
 <script>
+  import { retaken } from '../../scripts/app';
   // Each holder gets a clone of the named part, out of the frames in the
   // page's template.
   const src = document.querySelector<HTMLTemplateElement>('template[data-tiles-src]')?.content;
@@ -53,9 +54,8 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
       const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`)?.cloneNode(true) as HTMLElement | undefined;
       if (!part) return;
       // The page is this site's own retake of the canvas's picture, as the
-      // film this page opens with has it (scripts/markup.ts): in the canvas's
-      // the hero's stage had not arrived, and shows as an empty box.
-      part.querySelectorAll<HTMLImageElement>('img[data-name^="Web page"]').forEach((img) => { img.src = `/img/page-narrow-${img.classList.contains('dark:block') ? 'dark' : 'light'}.webp`; });
+      // films have it (scripts/app.ts, retaken).
+      retaken(part.querySelectorAll<HTMLImageElement>('img[data-name^="Web page"]'));
       holder.append(part);
     });
   }

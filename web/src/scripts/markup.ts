@@ -13,7 +13,7 @@
 //
 // components/films/MarkupFilm.astro is the window it plays in.
 import { gsap } from 'gsap';
-import { Pointer, Sidebar, Terminal, foldable, named, pressKeys, reduced, schemePictures, wholeRows } from './app';
+import { Pointer, Sidebar, Terminal, foldable, named, pressKeys, reduced, retaken, schemePictures, wholeRows } from './app';
 import { film } from './film';
 
 const HERO = 'Landing page hero';
@@ -81,16 +81,11 @@ export function initMarkup() {
     [mark1, { l: 30, t: 382, w: 206, h: 44 }],
     [mark2, { l: 24, t: 288, w: 576, h: 72 }],
   ]);
-  // There the narrow picture is a retake too. The canvas's was taken before
-  // the hero's stage had arrived, so under the buttons it shows an empty box
-  // where the window on the lake is. The retake is this site at the same 537
-  // with the hero held (public/img/page-narrow-*.webp): the same layout to
-  // the point, so the canvas's marks are where they were.
+  // The narrow picture is a retake as well (app.ts, retaken).
   const dark = matchMedia('(prefers-color-scheme: dark)');
-  const wides = !win.hasAttribute('data-bare') ? [] : Array.from(page.querySelectorAll<HTMLImageElement>(':scope > img')).map((narrow) => {
-    const retake = `/img/page-narrow-${narrow.classList.contains('dark:block') ? 'dark' : 'light'}.webp`;
-    // schemePictures keeps the address of the one not in use in data-src.
-    if (narrow.dataset.src) narrow.dataset.src = retake; else narrow.src = retake;
+  const narrows = Array.from(page.querySelectorAll<HTMLImageElement>(':scope > img'));
+  retaken(narrows);
+  const wides = !win.hasAttribute('data-bare') ? [] : narrows.map((narrow) => {
     const img = narrow.cloneNode(false) as HTMLImageElement;
     img.removeAttribute('src');
     delete img.dataset.src;

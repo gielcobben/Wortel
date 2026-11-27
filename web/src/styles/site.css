@@ -161,8 +161,10 @@ kbd {
    The flags are `beta: true` in data/site.ts and come off when the beta
    becomes a regular release; this class stays for the next one. The
    changelog's "Latest" pill in the quiet grey, since it is a note and not a
-   call to anything: under a section's heading as "Latest" is under its
-   version, and after the words in a table row (.beta-hold keeps it with the
+   call to anything. On the homepage and the feature pages it goes over a
+   heading (components/Section.astro, FeaturePage.astro), on /docs under a
+   section's name as "Latest" is under its version, and after the words in a
+   table row (.beta-hold keeps it with the
    last word), on the row's own line box so it never makes the row taller. */
 .beta {
   display: inline-block; padding: 4px 8px; border-radius: 999px;

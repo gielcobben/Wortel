@@ -4,7 +4,7 @@
 // Built the way Apple closes a keynote section, studied from its 2025 slides
 // (iPhone 17 Pro, iPhone Air, Watch Ultra, macOS, iPadOS):
 //   - the product itself in the middle, larger than anything else;
-//   - tiles of very different sizes on one tight grid: 14 columns, 6 rows;
+//   - tiles of very different sizes on one tight grid: 14 columns, 8 rows;
 //   - ONE piece of the product per tile and a label of a few words. No
 //     sentences, and almost no tile that is only type: on the macOS slide
 //     one in fourteen is, and here two small ones are;
@@ -20,8 +20,10 @@
 //
 // Everything drawn is the real app, generated from the canvas, 1:1 and never
 // scaled. The panes are rendered once into a <template>, and scripts/bento.ts
-// lifts the named part each tile shows out of them (the diff, the commits,
-// the rendered Markdown, the browser page), so nothing is redrawn here.
+// lifts the named part each tile shows out of them (the diff, the rendered
+// Markdown, a preview being marked up, the commits, the file tree), so
+// nothing is redrawn here. The three windows are built from the canvas's
+// panes the same way a stage's is.
 // What macOS draws is drawn as macOS does (the Dock icon). Cursors stand
 // still, as the app's does. The tiles' copy is BENTO in data/site.ts (a
 // tile's sentence is there for screen readers and is not shown), and the
@@ -39,20 +41,23 @@ import FileMain from '../../app/gen/FileMain.astro';
 import AppContent from '../AppContent.astro';
 import Browser from '../../app/gen/Browser.astro';
 import MarkUp from '../../app/gen/MarkUp.astro';
+import History from '../../app/gen/History.astro';
+import Files from '../../app/gen/Files.astro';
+import SplitTerminal from '../../app/gen/SplitTerminal.astro';
+import ZoomedSplit from '../../app/gen/ZoomedSplit.astro';
+import NewTab from '../../app/gen/NewTab.astro';
 
-// The order the tiles arrive in: the terminal first, then outwards from it.
-const ARRIVE = ['hero', 'agents', 'browser', 'plan', 'palette', 'worktree', 'diff', 'status', 'settings', 'quit', 'free', 'send', 'looks'];
+// The order the tiles arrive in: the terminal first, then outwards from it,
+// and the two rows under the poster's first six after that, left to right.
+const ARRIVE = ['hero', 'agents', 'browser', 'plan', 'palette', 'worktree', 'diff', 'status', 'settings', 'quit', 'free', 'send', 'looks', 'markup', 'splits', 'history', 'files'];
 // The commands on the agents tile, as typed. Nine of the agents Wortel knows
 // by name; anything else runs the same.
 const AGENTS = ['claude', 'codex', 'gemini', 'opencode', 'pi', 'amp', 'goose', 'aider', 'crush'];
 const delay = (scene: string) => `--d:${ARRIVE.indexOf(scene) * 50}ms`;
-// The plan tile shows Mark Up over the rendered plan: the bottom of the
-// preview, with the note bar and two of its marks. Mark Up is on a branch that
-// may ship later than the rest; false brings back the plain rendered plan
-// (and its words in BENTO, data/site.ts: "Plans, rendered").
-const MARK_UP = false;
 // A tile that shows a part lifted out of a pane: which part, by its name.
-const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' : 'Markdown' };
+// The mark-up tile's is the foot of a preview with Mark Up on: the note bar
+// the app pins to its bottom, and two of the marks above it.
+const PART: Record<string, string> = { diff: 'Diff', plan: 'Markdown', markup: 'Preview', history: 'Commits', files: 'File tree' };
 ---
 <Section id="more" {...HOME.glance}>
   <Fragment slot="anchors">
@@ -74,6 +79,19 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
           {t.scene === 'browser' && (
             <Window data-win="browser" style="--w:720px;--h:400px">
               <div class="flex min-h-0 min-w-[80px] flex-1 self-stretch"><AppContent><Browser /></AppContent></div>
+              <Lights slot="over" />
+            </Window>
+          )}
+
+          {t.scene === 'splits' && (
+            <Window data-win="splits" style="--w:720px;--h:400px">
+              <div class="sp-col">
+                <div class="sp-slot sp-top"><Terminal /></div>
+                <div class="sp-rule"></div>
+                <div class="sp-slot sp-low"><ZoomedSplit /></div>
+              </div>
+              <div class="sp-div"></div>
+              <div class="sp-slot sp-new" data-end><NewTab /></div>
               <Lights slot="over" />
             </Window>
           )}
@@ -132,7 +150,7 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
     </ul>
     <!-- The panes the tiles take their parts from, and what a window with no
          sidebar gains in its bar. Never shown: scripts/bento.ts clones from them. -->
-    <template data-src><Changes /><AppContent><FileMain /></AppContent>{MARK_UP && <AppContent><MarkUp /></AppContent>}</template>
+    <template data-src><Changes /><AppContent><FileMain /></AppContent><AppContent><MarkUp /></AppContent><History /><Files /><SplitTerminal /></template>
     <template data-tpl="lead"><Lead /></template>
 </Section>
 
@@ -142,15 +160,16 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
 </script>
 
 <style>
-  /* The poster: a panel, and the tiles on it. 14 columns and 6 rows, so a
-     small tile is 2 by 1, the terminal 6 by 3, and nothing is a row of equals. */
+  /* The poster: a panel, and the tiles on it. 14 columns and 8 rows, so a
+     small tile is 2 by 1, the terminal 6 by 3, and nothing is a row of equals.
+     The middle column is the three windows, one under the other. */
   .bento {
     /* The site's blue, under a name the app's own tokens do not take (inside
        .wapp, --accent is the app's). */
     --gap: 16px; --cursor: var(--accent);
     list-style: none; margin: 0; padding: var(--gap); border-radius: 32px;
     display: grid; gap: var(--gap);
-    grid-template-columns: repeat(14, minmax(0, 1fr)); grid-template-rows: repeat(6, 136px);
+    grid-template-columns: repeat(14, minmax(0, 1fr)); grid-template-rows: repeat(8, 136px);
     /* The site's one grey, the one the quiet buttons are filled with. The
        panel was a beige of its own that nothing else used. */
     background: var(--btn-2);
@@ -174,6 +193,10 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
   .settings { grid-area: 5 / 11 / 6 / 13; }
   .free     { grid-area: 5 / 13 / 6 / 15; }
   .looks    { grid-area: 6 / 11 / 7 / 15; }
+  .markup   { grid-area: 7 / 1 / 9 / 5; }
+  .splits   { grid-area: 7 / 5 / 9 / 11; }
+  .history  { grid-area: 7 / 11 / 9 / 13; }
+  .files    { grid-area: 7 / 13 / 9 / 15; }
 
   /* ---- what a tile stands on -------------------------------------------------
      White, and three tiles that are each their own crop of one photo. Two
@@ -235,15 +258,22 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
   }
   .diff .part { width: 420px; height: 240px; }
   .plan .part { width: 560px; height: 420px; }
-  /* Mark Up on the plan: the foot of the preview, down to the tile's edge, so
-     the note bar the app pins to the bottom is in view, with the arrow and the
-     highlight above it. 650 wide is the preview at which the plan's column
-     reaches its 602 and wraps as the canvas drew it, which is where the marks
-     were placed; narrower, the text would move out from under them. The part
-     is placed so the two marks are in the middle of the tile (the column's
-     242nd point, 24 into the part), and the tile cuts both sides. */
-  .plan .part[data-part="Preview"] { width: 650px; height: auto; bottom: 0; left: calc(50% - 266px); border-radius: 12px 12px 0 0; }
-  .plan .part > :global([data-name="Preview"]) { flex: 1 1 auto; min-height: 0; }
+  /* Mark Up on a rendered plan: the foot of the preview, down to the tile's
+     edge, so the note bar the app pins to the bottom is in view, with the
+     arrow and the highlight above it. 650 wide is the preview at which the
+     plan's column reaches its 602 and wraps as the canvas drew it, which is
+     where the marks were placed; narrower, the text would move out from under
+     them. The part is placed so the two marks are in the middle of the tile
+     (the column's 242nd point, 24 into the part), and the tile cuts both
+     sides. */
+  .markup .part { width: 650px; height: auto; bottom: 0; left: calc(50% - 266px); border-radius: 12px 12px 0 0; }
+  .markup .part > :global([data-name="Preview"]) { flex: 1 1 auto; min-height: 0; }
+  /* The commits with their graph, and the project as a tree: two lists, each
+     in a tall narrow tile that cuts its right side and its foot. */
+  .history .part, .files .part { left: 16px; top: 56px; height: 320px; border-radius: 8px 0 0 0; }
+  .history .part { width: 320px; }
+  .files .part { width: 240px; }
+  .history .part > :global(*), .files .part > :global(*) { flex: 1 1 auto; overflow: hidden; }
 
   .part > :global(*) { flex: none; width: 100%; }
   /* The browser as it is in the app: a session's window with its tabs, the
@@ -252,6 +282,26 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
      the canvas drew dates; bento.ts sets it. */
   .browser :global(.win) { position: absolute; left: 24px; top: 72px; width: var(--w); max-width: none; text-align: left; }
   .browser :global([data-name="Web page"]) { object-fit: cover; object-position: 50% 0; }
+
+  /* The window in splits: a session's terminal, the shell ⇧⌘D put under it
+     with a dev server running, and beside both a split holding a new tab,
+     which lists what it can become. Each has its own row of tabs. The window
+     is wider and taller than the tile, which cuts it where the three meet. */
+  .splits :global(.win) { position: absolute; left: 24px; top: 72px; width: var(--w); max-width: none; text-align: left; }
+  .sp-col { display: flex; flex-direction: column; flex: none; width: 320px; min-height: 0; }
+  .sp-slot { display: flex; min-width: 0; min-height: 0; }
+  .sp-slot > :global(*) { flex: 1; }
+  .sp-top { flex: none; height: 136px; }
+  .sp-low, .sp-new { flex: 1; }
+  .sp-rule { height: 1px; flex: none; background: var(--sidebar-border); }
+  .sp-div { width: 1px; flex: none; align-self: stretch; background: var(--sidebar-border); }
+  /* The top left row starts clear of the traffic lights, as a window with no
+     sidebar has it, and is not the rightmost: it ends 8 from its split's edge. */
+  .splits :global(header[data-name="Main bar"]) { padding-left: 78px; padding-right: 8px; }
+  /* A row lower down is a band, as the splits film has it (Panes.astro). */
+  .sp-low :global(header) { height: 36px; padding-right: 8px; border-bottom-width: 0; background: linear-gradient(var(--muted), var(--muted)), var(--background); }
+  .sp-low :global(header .bg-sidebar-accent) { background-color: var(--card); }
+  .sp-top :global([data-name="Terminal"]), .sp-low :global([data-name="Terminal"]) { justify-content: flex-start; }
 
   /* The top of the command palette. */
   .pal { position: absolute; left: 20px; top: 64px; width: 560px; }
@@ -289,7 +339,8 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
 
   /* ---- the small tiles: one thing, and its word under it ---------------------- */
   .quit, .status, .settings, .free { flex-direction: column-reverse; justify-content: center; gap: 8px; padding: 12px; }
-  .quit .cap, .status .cap { font-size: 15px; line-height: 20px; }
+  .quit .cap, .status .cap, .history .cap, .files .cap { font-size: 15px; line-height: 20px; }
+  .history, .files { padding: 16px 12px; }
   /* The app in the Dock, with the dot that says it is running. */
   .app { position: relative; width: 56px; height: 62px; }
   .app img { display: block; width: 56px; height: 56px; filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.35)); }
@@ -342,12 +393,14 @@ const PART: Record<string, string> = { diff: 'Diff', plan: MARK_UP ? 'Preview' :
     .bento { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: 136px; border-radius: 28px; }
     .tile { grid-area: auto; grid-column: span 4; }
     .hero { order: -1; grid-row: span 3; }
-    .worktree, .diff, .plan, .palette, .browser { grid-row: span 2; }
-    .quit, .status, .settings, .free { grid-column: span 2; }
+    .worktree, .diff, .plan, .palette, .browser, .markup, .splits, .history, .files { grid-row: span 2; }
+    .quit, .status, .settings, .free, .history, .files { grid-column: span 2; }
     .cmd p { padding-inline: 16px; }
+    /* A list in a tile wider than it was drawn runs to the tile's edge. */
+    .history .part, .files .part { width: auto; right: 0; }
   }
   /* A tile wide enough for the whole preview shows it whole, in the middle. */
   @media (min-width: 800px) and (max-width: 960px) {
-    .plan .part[data-part="Preview"] { left: calc(50% - 325px); }
+    .markup .part { left: calc(50% - 325px); }
   }
 </style>

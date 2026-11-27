@@ -61,7 +61,7 @@ src/
   scripts/hero.ts          the landing sequence (one GSAP timeline)
   scripts/panes.ts         the splits scene: one story in three chapters, each a scene (its beats, and how it ends)
   scripts/scenes.ts        the agents scene and the terminal-first scene
-  scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes
+  scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes (the diff, a plan, a preview being marked up, the commits, the file tree) and three windows (a terminal, a browser, one in splits)
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/

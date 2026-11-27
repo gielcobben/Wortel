@@ -34,7 +34,11 @@ Split Right would split that one instead of yours.
 - **The leading end**: the sidebar's toggle beside the traffic lights, and
   Back and Forward. They are placed on every layout pass and split resize
   (the first real layout at launch sends no resize) so the arrows ride the
-  sidebar's edge as it opens and closes (`WindowControls.place`).
+  sidebar's edge as it opens and closes (`WindowControls.place`). While
+  the sidebar is hidden the toggle (`SidebarToggle`, a `BadgedGlyphButton`)
+  carries a still dot for the loudest attention among the window's other
+  sessions (`SessionManager.attentionBehindSidebar`, observed by
+  `TitleBarController.observeWaiting`).
 - **The trailing end**: two buttons, 4pt apart. What the session is running
   (`RunningButton`), and the session's "…" at the edge
   (`SessionActions.menu`, the sidebar row's menu, and nothing else). Both

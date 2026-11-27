@@ -988,6 +988,12 @@ looked at.
   read back and captured on 2026-11-26 (a line, the owner's two lines, a
   note that starts with a chip, six lines, a chip selected, ⌘A); nothing
   was typed by a hand.
+- A note past six lines, typed by a hand: that it scrolls under a
+  trackpad, follows the caret, opens at the caret when its layer comes
+  back, and keeps a place scrolled back to through a resize. Tested on
+  2026-11-27 with the note's own text view in a window that is never
+  shown. Until then its text view never grew past the box (its largest
+  size was zero), so the words ran on below the bar and nothing scrolled.
 - That Claude Code and Codex each read a picture from the cache folder
   without asking.
 - In the app, as of 2026-11-26: ⌘[ from the note moving between areas, a

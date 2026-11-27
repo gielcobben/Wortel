@@ -363,6 +363,66 @@ final class MarkupOverlayTests: XCTestCase {
         XCTAssertEqual(visible.maxY, text.frame.height, accuracy: 1)
     }
 
+    /// Lines typed into the note as a person types them, one Return apart.
+    private func type(_ lines: [String], into overlay: MarkupOverlayView) {
+        let text = overlay.noteBar.textView
+        window.makeFirstResponder(text)
+        for (index, line) in lines.enumerated() {
+            if index > 0 { text.insertNewlineIgnoringFieldEditor(nil) }
+            text.insertText(line, replacementRange: text.selectedRange())
+            settle()
+        }
+    }
+
+    /// Whether the line the caret is on is in the note's box.
+    private func caretInSight(_ overlay: MarkupOverlayView) throws -> Bool {
+        let text = overlay.noteBar.textView
+        let layout = try XCTUnwrap(text.layoutManager)
+        let end = NSMaxRange(text.selectedRange())
+        let line = end < (text.string as NSString).length || layout.extraLineFragmentRect.isEmpty
+            ? layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: max(end - 1, 0)),
+                                      effectiveRange: nil)
+            : layout.extraLineFragmentRect
+        let box = try XCTUnwrap(text.enclosingScrollView).contentView.bounds
+        return box.minY <= line.minY + 1 && line.maxY <= box.maxY + 1
+    }
+
+    /// A long note put back (its layer left the window and came back) opens
+    /// at its caret, and not at its first lines.
+    func testALongNoteComesBackAtItsCaret() throws {
+        let overlay = mount()
+        type((1...12).map { "line \($0)" }, into: overlay)
+        overlay.removeFromSuperview()
+        settle()
+        root.addSubview(overlay, positioned: .above, relativeTo: preview)
+        settle()
+        let box = try XCTUnwrap(overlay.noteBar.textView.enclosingScrollView).contentView.bounds
+        XCTAssertGreaterThan(box.minY, 0, "the note opened at its top")
+        XCTAssertTrue(try caretInSight(overlay))
+    }
+
+    /// The preview made narrower wraps a long note onto more lines: the
+    /// caret, in sight before, stays in sight. A note scrolled back to read
+    /// stays where it was through a resize.
+    func testAResizeKeepsTheCaretOrTheReadingPlace() throws {
+        let overlay = mount()
+        type((1...10).map { "line \($0), long enough to wrap when the preview is narrow" }, into: overlay)
+        XCTAssertTrue(try caretInSight(overlay))
+
+        preview.frame.size.width = 320
+        settle()
+        XCTAssertTrue(try caretInSight(overlay), "the caret went out of sight as the words wrapped")
+
+        let text = overlay.noteBar.textView
+        text.scroll(.zero)
+        settle()
+        XCTAssertFalse(try caretInSight(overlay))
+        preview.frame.size.width = 600
+        settle()
+        let box = try XCTUnwrap(text.enclosingScrollView).contentView.bounds
+        XCTAssertEqual(box.minY, 0, "a resize jumped the note back to its caret")
+    }
+
     /// The note cleared as the trash button clears it: one edit of the text.
     private func clear(_ overlay: MarkupOverlayView) {
         let text = overlay.noteBar.textView

@@ -78,6 +78,9 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     var onHoverMark: (Int?) -> Void = { _ in }
     /// A mark's chip was clicked.
     var onPickMark: (Int) -> Void = { _ in }
+    /// The next layout scrolls to the caret: the note is back, and opens
+    /// where it will be typed into.
+    private var followCaret = false
 
     init(session: MarkupSession, placeholders: [String]) {
         self.session = session
@@ -213,6 +216,9 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         session.text.addLayoutManager(textLayout)
         textView.setSelectedRange(NSRange(location: session.text.length, length: 0))
         textView.typingAttributes = Self.attributes
+        // Its text went when it left, and the clip with it to the top: a
+        // long note came back showing its first lines and not the caret.
+        followCaret = true
         update()
         onHeightChange()
     }
@@ -373,6 +379,7 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         // the row to themselves, and ⌘A then ⌫ clears.
         clear.isHidden = session.text.length == 0 || clear.frame.minX < x + 6
         let before = scroll.frame.size
+        let following = caretInSight()
         scroll.frame = NSRect(x: Self.padding.width, y: Self.padding.height,
                               width: max(bounds.width - Self.padding.width * 2, 40),
                               height: max(row.minY - Self.toolGap - Self.padding.height, Self.lineHeight))
@@ -380,12 +387,35 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
         // The caret stays in sight when the box changes size: the text view
         // scrolls to it as it is typed into, but against the box before the
         // bar grew a line, or before the window was made narrower and the
-        // words wrapped onto more lines. Only then: a layout for anything
-        // else leaves a note scrolled back to read where it was.
-        if scroll.frame.size != before {
-            textView.scrollRangeToVisible(textView.selectedRange())
+        // words wrapped onto more lines. Only when it was in sight: a note
+        // scrolled back to read stays where it was through a resize.
+        if followCaret || (following && scroll.frame.size != before) {
+            followCaret = false
+            textView.scrollRangeToVisible(NSRange(location: caret, length: 0))
         }
         colour()
+    }
+
+    /// Where typing goes: the end of the selection, never the whole of it.
+    /// A selection taller than the box has no one place to scroll to.
+    private var caret: Int { NSMaxRange(textView.selectedRange()) }
+
+    /// Whether the caret's line is in the box, as it is laid out now.
+    private func caretInSight() -> Bool {
+        let glyphs = textLayout.numberOfGlyphs
+        let glyph = textLayout.glyphIndexForCharacter(at: caret)
+        // At the end the caret is on the line Return began, if there is
+        // one, and on the last line of words if not.
+        let line: NSRect = if glyph < glyphs {
+            textLayout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        } else if !textLayout.extraLineFragmentRect.isEmpty || glyphs == 0 {
+            textLayout.extraLineFragmentRect
+        } else {
+            textLayout.lineFragmentRect(forGlyphAt: glyphs - 1, effectiveRange: nil)
+        }
+        let middle = line.midY + textView.textContainerOrigin.y
+        let box = scroll.contentView.bounds
+        return middle >= box.minY && middle <= box.maxY
     }
 
     override func viewDidChangeEffectiveAppearance() {

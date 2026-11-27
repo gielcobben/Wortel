@@ -416,6 +416,9 @@ token.
 plan, `npx wrangler email sending enable wortel.sh`, then
 `npx wrangler d1 create wortel-letter --jurisdiction eu`, its id into
 `wrangler.jsonc`, and `npx wrangler d1 migrations apply wortel-letter --remote`.
+The database was created and migrated on 2026-11-27. Email Sending for
+wortel.sh was not enabled then: until it is, a site deploy puts up a form
+whose confirmation mail fails, and every join answers "sorry".
 
 **Try it locally:**
 

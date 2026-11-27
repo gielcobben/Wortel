@@ -43,7 +43,7 @@
   // ships. Created in the EU jurisdiction (`wrangler d1 create wortel-letter
   // --jurisdiction eu`), schema in migrations/. privacy.md says what is in it.
   "d1_databases": [
-    { "binding": "DB", "database_name": "wortel-letter", "database_id": "REPLACE-WITH-D1-ID", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "wortel-letter", "database_id": "d1254000-91d7-4dc3-810e-b4c6cc81b42c", "migrations_dir": "migrations" }
   ],
   // Cloudflare Email Sending, for the one mail this site sends: the
   // confirmation link. Needs wortel.sh onboarded to Email Sending and the

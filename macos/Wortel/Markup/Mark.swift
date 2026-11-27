@@ -256,34 +256,120 @@ struct MarkDetails: Codable, Equatable {
 /// the note with a control character, a line or paragraph separator, or an
 /// invisible formatting character (the ones that reorder text or hide in
 /// it) still in it.
+///
+/// Nor with a message hidden in what does not show. A variation selector,
+/// the combining grapheme joiner, a Hangul filler and the tag characters are
+/// drawn as nothing, and a run of them can spell out a whole instruction
+/// after one visible letter: an id of `x` and 400,000 variation selectors
+/// read `div #x` on the chip and reached the clipboard whole (found in
+/// review, 2026-11-27). So every default-ignorable character goes too, but for the
+/// two an emoji is drawn with: a VS16 straight after one, and a joiner
+/// between two. And a letter keeps eight combining marks at most: more than
+/// any script stacks, and fewer than a tower of them that covers the lines
+/// around it.
 enum MarkText {
+    /// The most combining marks one letter keeps.
+    static let marksPerLetter = 8
+
     /// `text` with those characters gone. On one line, every run of white
     /// space becomes one space; with `lines` kept, a new line and a tab
     /// stay (for HTML in the details file, which is written as JSON).
     static func clean(_ text: String, lines: Bool = false) -> String {
         var out = String.UnicodeScalarView()
         var gap = false
+        // How many marks the letter last kept has.
+        var marks = 0
+        // The character last kept is an emoji (a digit counts, for a
+        // keycap's VS16), or one drawn as a picture, which a joiner may join
+        // to the next.
+        var emoji = false
+        var picture = false
+        // A joiner after a picture, kept only if a picture comes next.
+        var joining = false
+        func keep(_ scalar: Unicode.Scalar) {
+            if joining, !gap, isPicture(scalar) { out.append("\u{200D}") }
+            joining = false
+            if gap, !out.isEmpty { out.append(" ") }
+            gap = false
+            out.append(scalar)
+        }
+        // Between words, or at a line's start: nothing is joined across it.
+        func apart() {
+            joining = false
+            emoji = false
+            picture = false
+            marks = 0
+        }
         for scalar in text.unicodeScalars {
+            let properties = scalar.properties
             if lines, scalar == "\n" || scalar == "\t" {
+                apart()
                 out.append(scalar)
                 gap = false
                 continue
             }
-            switch scalar.properties.generalCategory {
+            if properties.isDefaultIgnorableCodePoint {
+                if scalar == "\u{FE0F}", emoji {
+                    keep(scalar)
+                    emoji = false
+                } else if scalar == "\u{200D}", picture {
+                    joining = true
+                    picture = false
+                }
+                continue
+            }
+            switch properties.generalCategory {
             case .control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned:
                 // A control character that separated words still does.
-                if scalar.properties.isWhitespace || scalar == "\n" || scalar == "\t" { gap = true }
-                continue
+                if properties.isWhitespace || scalar == "\n" || scalar == "\t" {
+                    apart()
+                    gap = true
+                }
             case .spaceSeparator:
+                apart()
                 if lines { out.append(" ") } else { gap = true }
-                continue
+            case .nonspacingMark, .spacingMark, .enclosingMark:
+                guard marks < marksPerLetter else { continue }
+                keep(scalar)
+                marks += 1
+                emoji = false
+                picture = false
             default:
-                if gap, !out.isEmpty { out.append(" ") }
-                gap = false
-                out.append(scalar)
+                keep(scalar)
+                marks = 0
+                emoji = properties.isEmoji
+                picture = isPicture(scalar)
             }
         }
         return String(out)
+    }
+
+    /// An emoji drawn as a picture. Unicode counts a digit, `#` and `*` as
+    /// emoji too, for the keycaps they start; a joiner after one draws
+    /// nothing.
+    private static func isPicture(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.isEmoji && !scalar.isASCII
+    }
+
+    /// A string a page gave, cut to `most` characters and cleaned. Cut by
+    /// Unicode scalar, not by what is drawn as one character: a letter and
+    /// 400,000 marks after it is one `Character`, and a cut by those kept
+    /// all of it.
+    static func fromPage(_ value: Any?, most: Int, lines: Bool = false) -> String? {
+        guard let text = value as? String else { return nil }
+        let cut = String(String.UnicodeScalarView(text.unicodeScalars.prefix(most)))
+        let clean = clean(cut, lines: lines)
+        return clean.isEmpty ? nil : clean
+    }
+
+    /// A selector a page gave, whole and as it was, or none. Cutting one or
+    /// taking a character out of it makes it find something else, or
+    /// nothing; a selector is only of use to an agent when it is the one
+    /// that finds the element.
+    static func selectorFromPage(_ value: Any?, most: Int = 600) -> String? {
+        guard let text = value as? String, !text.isEmpty,
+              text.unicodeScalars.count <= most, clean(text) == text else { return nil }
+        return text
     }
 }
 

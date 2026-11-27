@@ -722,6 +722,72 @@ final class SplitLayoutTests: XCTestCase {
         assertWellFormed(layout)
     }
 
+    // MARK: Which divider a drag holds
+
+    /// A divider is known by what it stands between, not by its sizes: a
+    /// drag that moves it is still holding the same one.
+    func testADividerIsKnownByWhatItStandsBetween() throws {
+        var layout = grid()
+        let dividers = layout.frames(in: bounds).dividers
+        let across = try XCTUnwrap(dividers.first { $0.path.isEmpty })
+        let under = try XCTUnwrap(dividers.first { $0.path == [0] })
+        XCTAssertEqual(layout.sides(of: across),
+                       SplitLayout.DividerSides(axis: .row, before: [.main, b], after: [a, c]))
+        XCTAssertEqual(layout.sides(of: under),
+                       SplitLayout.DividerSides(axis: .column, before: [.main], after: [b]))
+
+        let before = layout.sides(of: across)
+        XCTAssertTrue(layout.moveDivider(at: across.path, index: across.index, to: 300, in: bounds))
+        XCTAssertEqual(layout.sides(of: across), before, "moved, and the same divider")
+    }
+
+    /// The tree changing during a drag: a split closed beside the divider
+    /// held puts the same place in the tree between other splits. This is
+    /// the drag that went on with the wrong divider: holding main|a, a's
+    /// shell exited, and the next step moved main|side, which took the
+    /// column from 400pt to 801 and was remembered.
+    func testASplitClosedUnderADragChangesWhatItsDividerStandsBetween() {
+        var layout = row(.main, a, .side)
+        let held = layout.frames(in: bounds).dividers[0]
+        let sides = layout.sides(of: held)
+        XCTAssertEqual(sides?.after, [a])
+        layout.remove(a)
+        XCTAssertEqual(layout.frames(in: bounds).dividers.count, 1)
+        XCTAssertEqual(layout.sides(of: held)?.after, [.side], "the same place, another divider")
+        XCTAssertNotEqual(layout.sides(of: held), sides)
+
+        // The last divider of the three, with nothing after it now.
+        var three = row(.main, a, .side)
+        let last = three.frames(in: bounds).dividers[1]
+        three.remove(a)
+        XCTAssertNil(three.sides(of: last))
+    }
+
+    /// A split made elsewhere in the tree leaves a divider it doesn't touch
+    /// as it was; one made beside it changes what it stands between.
+    func testASplitMadeDuringADrag() throws {
+        var layout = grid()
+        let dividers = layout.frames(in: bounds).dividers
+        let across = try XCTUnwrap(dividers.first { $0.path.isEmpty })
+        let under = try XCTUnwrap(dividers.first { $0.path == [0] })
+        let acrossSides = layout.sides(of: across), underSides = layout.sides(of: under)
+        let d = Leaf.pane(UUID())
+        XCTAssertTrue(layout.insert(d, beside: c, on: .right))
+        XCTAssertEqual(layout.sides(of: under), underSides, "main over b, untouched")
+        XCTAssertNotEqual(layout.sides(of: across), acrossSides, "d joined the right of it")
+    }
+
+    /// A place that is no divider of this tree has no sides: a path past a
+    /// leaf, a part out of range, or the wrong axis.
+    func testAPlaceThatIsNoDividerHasNoSides() {
+        let layout = row(.main, a)
+        let rect = CGRect.zero
+        XCTAssertNil(layout.sides(of: .init(path: [0], index: 0, axis: .row, rect: rect)))
+        XCTAssertNil(layout.sides(of: .init(path: [], index: 1, axis: .row, rect: rect)))
+        XCTAssertNil(layout.sides(of: .init(path: [], index: 0, axis: .column, rect: rect)))
+        XCTAssertNil(SplitLayout().sides(of: .init(path: [], index: 0, axis: .row, rect: rect)))
+    }
+
     // MARK: - Neighbours
 
     /// Main | a over b | c: every direction from every pane.

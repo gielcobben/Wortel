@@ -110,7 +110,9 @@ struct WorkspaceTabs: Equatable, Sendable {
     var sideLeading = false
     /// Leaves that were put in the tree at a guessed share, for the window
     /// to give their real size the first time it lays them out
-    /// (`markSized`). Not persisted.
+    /// (`markSized`). Saved as `unsizedLeaves` beside the tree, so one that
+    /// no window laid out before a save still opens at its own size, and
+    /// not at the guess, after the next launch.
     var unsized: Set<SplitLayout.Leaf> = []
 
     /// Made consistent as it is made: a column or a strip that has tabs has

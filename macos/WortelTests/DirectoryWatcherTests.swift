@@ -50,4 +50,26 @@ final class DirectoryWatcherTests: XCTestCase {
         // Put it back so tearDown has something to clean up.
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
+
+    /// `open` on a FIFO waits for a writer, and on a serial port for a
+    /// carrier, for ever (measured 2026-11-27). A browser tab watches paths a
+    /// page names, on the main thread, so only a file or a directory is
+    /// watched. Run off the test's thread so a regression fails, not hangs.
+    func testRefusesAFIFOAndADeviceWithoutWaiting() {
+        let fifo = root.appendingPathComponent("pipe").path
+        XCTAssertEqual(mkfifo(fifo, 0o644), 0)
+        let returned = expectation(description: "returned")
+        DispatchQueue.global().async {
+            let pipe = DirectoryWatcher(path: fifo) { _ in }
+            let device = DirectoryWatcher(path: "/dev/null") { _ in }
+            XCTAssertNil(pipe)
+            XCTAssertNil(device)
+            returned.fulfill()
+        }
+        wait(for: [returned], timeout: 5)
+        XCTAssertTrue(DirectoryWatcher.isWatchable(root.path))
+        let file = root.appendingPathComponent("a.txt").path
+        FileManager.default.createFile(atPath: file, contents: Data())
+        XCTAssertTrue(DirectoryWatcher.isWatchable(file))
+    }
 }

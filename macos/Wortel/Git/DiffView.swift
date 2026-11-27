@@ -126,10 +126,7 @@ struct DiffView: NSViewRepresentable {
     /// Tell mark-up which table is the file's now. A tab that comes back
     /// from behind others has a new one, and the marks have to find it.
     private func register(_ table: NSTableView, with coordinator: Coordinator) {
-        guard let markup, markup.table !== table else { return }
-        markup.table = table
-        markup.rowKey = { [weak coordinator] row in coordinator?.key(ofRow: row) }
-        markup.changed()
+        markup?.sign(table, rowKey: { [weak coordinator] row in coordinator?.key(ofRow: row) })
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {

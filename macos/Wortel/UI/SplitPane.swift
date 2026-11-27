@@ -285,7 +285,7 @@ final class SplitPaneController: NSViewController {
         let surface = git.session === session
             ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
         host.show(surface, focusRequest: git.focusRequest(in: region),
-                  handBack: { [weak git] in git?.focusFront(of: .main) })
+                  handBack: { [weak git, region] in git?.handBackKeyboard(from: region) })
         pageHost.view.isHidden = active == nil || active?.terminalID != nil
     }
 }

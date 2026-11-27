@@ -19,16 +19,31 @@
 //
 // WHY THE SAME ANSWER EVERY TIME. Join says "check your inbox" whether the
 // address was new, already waiting, already on the list, or a bot's. Anything
-// else would let the form be used to find out who is on the list.
+// else would let the form be used to find out who is on the list. The same
+// goes for how long the answer takes: every valid join runs the same two
+// statements and answers, and the mail, when there is one, goes out after
+// (waitUntil). Waiting for it made a new address's answer slower than a known
+// one's by however long the mail service takes to accept it. So a mail that
+// fails is not reported to the person either: it is logged, and the claim is
+// undone so that sending the form again tries again, which is what the "check
+// your inbox" page tells someone whose mail does not come to do.
 //
 // WHAT LIMITS ABUSE. Someone can type other people's addresses into the form,
 // and those people get a mail they did not ask for. Three things keep that
 // small: the hidden field bots fill in, a per-IP rate limit (the binding
 // counts in memory and stores nothing), and one mail per address per day.
 // There is no Turnstile, because that is a third-party script on the page.
+//
+// WHAT IS FORGOTTEN. An address not confirmed within a week of its last mail
+// is deleted by forgetUnconfirmed(), once a day by a cron and on every join.
 // ==========================================================================
 
-import { confirmationMail, isToken, mayMail, newToken, parseJoin, PENDING_TTL } from './letter.ts';
+import { confirmationMail, isToken, MAIL_COOLDOWN, newToken, parseJoin, PENDING_TTL } from './letter.ts';
+
+/** The part of the Worker's ExecutionContext the letter uses. */
+export interface Waiter {
+  waitUntil(promise: Promise<unknown>): void;
+}
 
 export interface LetterEnv {
   ASSETS: { fetch(request: Request | string): Promise<Response> };
@@ -41,18 +56,11 @@ const FROM = { name: 'Wortel', email: 'letter@wortel.sh' };
 /** A form post is an address and two short fields; anything bigger is not one. */
 const MAX_BODY = 4096;
 
-interface Row {
-  token: string;
-  confirmed_at: number | null;
-  mailed_at: number;
-  created_at: number;
-}
-
 /** The letter's answer to a request, or null when the request is not the letter's. */
-export async function letter(request: Request, url: URL, env: LetterEnv): Promise<Response | null> {
+export async function letter(request: Request, url: URL, env: LetterEnv, ctx: Waiter): Promise<Response | null> {
   switch (url.pathname) {
     case '/letter/join':
-      return request.method === 'POST' ? join(request, url, env) : notAllowed('POST');
+      return request.method === 'POST' ? join(request, url, env, ctx) : notAllowed('POST');
     case '/letter/confirm':
       if (request.method === 'GET' || request.method === 'HEAD') return page(url, env, 'confirm');
       return request.method === 'POST' ? confirm(request, url, env) : notAllowed('GET, HEAD, POST');
@@ -64,7 +72,7 @@ export async function letter(request: Request, url: URL, env: LetterEnv): Promis
   }
 }
 
-async function join(request: Request, url: URL, env: LetterEnv): Promise<Response> {
+async function join(request: Request, url: URL, env: LetterEnv, ctx: Waiter): Promise<Response> {
   const json = (request.headers.get('accept') ?? '').includes('application/json');
   const answer = (ok: boolean, status = 200) =>
     json
@@ -82,52 +90,69 @@ async function join(request: Request, url: URL, env: LetterEnv): Promise<Respons
   if (asked.kind === 'invalid') return answer(false, 400);
 
   const now = Math.floor(Date.now() / 1000);
-  // Unconfirmed addresses older than a week are forgotten here rather than by
-  // a cron: the table only grows through this request, so this is enough.
-  await env.DB.prepare('DELETE FROM subscribers WHERE confirmed_at IS NULL AND created_at < ?')
-    .bind(now - PENDING_TTL).run();
+  // The daily sweep is what keeps the week. This one is so that an address
+  // past its week, not swept yet, starts again below with a new token rather
+  // than having its old mail's link brought back to life.
+  await forgetUnconfirmed(env.DB, now);
 
-  const row = await env.DB.prepare('SELECT token, confirmed_at, mailed_at, created_at FROM subscribers WHERE email = ?')
-    .bind(asked.email).first<Row>();
-
-  // Already on the list: nothing to do, and nothing to say about it.
-  if (row?.confirmed_at) return answer(true);
-  // Waiting, and mailed recently: the mail already in their inbox still works.
-  if (row && !mayMail(row.mailed_at, now)) return answer(true);
-
-  const token = row?.token ?? newToken();
-  if (row) {
-    // Waiting, and the last mail is a day old: send it again, and the week
-    // the mail promises starts from this one.
-    await env.DB.prepare('UPDATE subscribers SET mailed_at = ?, created_at = ?, source = ? WHERE email = ?')
-      .bind(now, now, asked.source, asked.email).run();
-  } else {
-    // INSERT OR IGNORE: two posts of the same new address at once must not
-    // send two mails or fail one of them.
-    const put = await env.DB.prepare(
-      'INSERT OR IGNORE INTO subscribers (email, token, source, created_at, confirmed_at, mailed_at) VALUES (?, ?, ?, ?, NULL, ?)',
-    ).bind(asked.email, token, asked.source, now, now).run();
-    if (!put.meta.changes) return answer(true);
-  }
-
-  // Behind the custom domain the links are always https://wortel.sh; anywhere
-  // else (wrangler dev) they point back at wherever the form was sent from.
-  const origin = url.hostname === 'wortel.sh' ? 'https://wortel.sh' : url.origin;
-  const mail = confirmationMail(origin, token);
-  try {
-    await env.EMAIL.send({ from: FROM, to: asked.email, ...mail });
-  } catch (err) {
-    console.error('letter: confirmation mail failed', err instanceof Error ? err.message : String(err));
-    // Put things back as they were, so trying again sends again.
-    if (row) {
-      await env.DB.prepare('UPDATE subscribers SET mailed_at = ?, created_at = ? WHERE email = ?')
-        .bind(row.mailed_at, row.created_at, asked.email).run();
-    } else {
-      await env.DB.prepare('DELETE FROM subscribers WHERE email = ? AND confirmed_at IS NULL').bind(asked.email).run();
-    }
-    return answer(false, 503);
+  // Whether to mail is decided by this one statement, and only it, so two
+  // posts of the same address at once cannot both decide to (a SELECT, then a
+  // write, let every concurrent post through). It returns the token to mail:
+  //   - a new address is inserted, with a new token;
+  //   - one still waiting whose last mail is a day old or more is claimed:
+  //     mailed_at moves to now, and so does created_at, because the mail says
+  //     the address is forgotten in seven days and that must hold for the
+  //     latest one;
+  //   - anything else (on the list, or mailed within the day) is left as it
+  //     is and returns nothing.
+  // Either way the answer is the same, and goes now.
+  const fresh = newToken();
+  const claimed = await env.DB.prepare(
+    `INSERT INTO subscribers (email, token, source, created_at, confirmed_at, mailed_at) VALUES (?1, ?2, ?3, ?4, NULL, ?4)
+     ON CONFLICT (email) DO UPDATE SET mailed_at = excluded.mailed_at, created_at = excluded.created_at, source = excluded.source
+     WHERE subscribers.confirmed_at IS NULL AND subscribers.mailed_at <= ?5
+     RETURNING token`,
+  ).bind(asked.email, fresh, asked.source, now, now - MAIL_COOLDOWN).first<{ token: string }>();
+  if (claimed) {
+    // Behind the custom domain the links are always https://wortel.sh;
+    // anywhere else (wrangler dev) they point back at wherever the form was
+    // sent from.
+    const origin = url.hostname === 'wortel.sh' ? 'https://wortel.sh' : url.origin;
+    ctx.waitUntil(mail(env, origin, asked.email, claimed.token, claimed.token === fresh, now));
   }
   return answer(true);
+}
+
+/** The confirmation mail, sent after the answer. When it fails, the claim is undone. */
+async function mail(env: LetterEnv, origin: string, email: string, token: string, isNew: boolean, now: number): Promise<void> {
+  try {
+    await env.EMAIL.send({ from: FROM, to: email, ...confirmationMail(origin, token) });
+  } catch (err) {
+    console.error('letter: confirmation mail failed', err instanceof Error ? err.message : String(err));
+    // Undo the claim, so sending the form again sends again: a new address
+    // is forgotten, a waiting one may be mailed again at once. Both only if
+    // the row is still the one this request wrote.
+    if (isNew) {
+      await env.DB.prepare('DELETE FROM subscribers WHERE email = ? AND token = ? AND confirmed_at IS NULL')
+        .bind(email, token).run();
+    } else {
+      await env.DB.prepare('UPDATE subscribers SET mailed_at = 0 WHERE email = ? AND token = ? AND mailed_at = ? AND confirmed_at IS NULL')
+        .bind(email, token, now).run();
+    }
+  }
+}
+
+/**
+ * Deletes every address that was not confirmed within a week of its last
+ * confirmation mail. Run once a day by the cron in wrangler.jsonc
+ * (index.ts, `scheduled`), so the week /privacy promises holds when nobody
+ * signs up, and on every join. confirm() already treats a row past its week as
+ * gone, so the hours until the next sweep change nothing anyone can see.
+ */
+export async function forgetUnconfirmed(db: D1Database, now: number): Promise<number> {
+  const gone = await db.prepare('DELETE FROM subscribers WHERE confirmed_at IS NULL AND created_at < ?')
+    .bind(now - PENDING_TTL).run();
+  return gone.meta.changes;
 }
 
 /**
@@ -165,7 +190,7 @@ async function confirm(request: Request, url: URL, env: LetterEnv): Promise<Resp
   const t = (await readForm(request))?.get('t');
   if (!isToken(t)) return see(url, '/letter/expired');
   const now = Math.floor(Date.now() / 1000);
-  // Pending past its week counts as gone, even if no join has swept it yet.
+  // Pending past its week counts as gone, even before the daily sweep has run.
   const done = await env.DB.prepare(
     'UPDATE subscribers SET confirmed_at = COALESCE(confirmed_at, ?) WHERE token = ? AND (confirmed_at IS NOT NULL OR created_at >= ?)',
   ).bind(now, t, now - PENDING_TTL).run();

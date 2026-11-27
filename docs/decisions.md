@@ -2580,6 +2580,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Now `http` and `https` go to the browser, a `file:` is shown in the
   Finder, and anything else stays put. `mailto:` never reaches this point:
   it is asked about before it loads (2026-11-09).
+  **2026-11-27:** the header's Open in Your Browser had the same hole, on a
+  tab showing a file (a tab follows a page's link to `./run.command`). A
+  file now goes to the default browser named as the app to open it with,
+  and to the Finder when there is none or it is Wortel.
 - **2026-11-25. An `.html` file opens as the page it makes, in a browser
   tab**, from `wortel open` and a ⌘-clicked path, and loads again when the
   file changes on disk. A browser tab and not a Rendered mode of the file
@@ -2599,6 +2603,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   Not done: a store of its own without the tab's sign-ins, scripts off, or
   read access cut to the file's folder (a page then loses a stylesheet one
   folder up). The spike for phase 3 looks at a separate store anyway.
+- **2026-11-27. What a local page names is watched wherever it is, if it is
+  a file or a folder.** A page naming a FIFO or a serial port froze the app,
+  and again at each launch: `open` on one never returns. The fix is the
+  path's type (a stat first, and `O_NONBLOCK`), not a limit to the page's
+  own folder, which was weighed and left out: a page loads `../style.css`,
+  and its reload on a change there would be lost.
 - **2026-11-25. A page's source shows in the same tab, behind a Page ·
   Source switch**, chosen by the owner over a file tab opened beside it.
   Nothing moves but the content: no second tab, the switch is under the
@@ -2622,6 +2632,14 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   shell: asking adds no safety when nothing is opened. A partial file from a
   stopped or failed download is removed, not moved to the Trash: Wortel made
   it seconds ago and it is half a file.
+  **2026-11-27:** that partial file is now `<name>.download` until the
+  download finishes, as Safari's is, and only a `.download` is ever removed,
+  the one that download was given. A name a server suggests loses a
+  `.download` ending, so it can't be another download's unfinished file.
+  A quit or a crash mid-download had left a truncated file under the real
+  name, and a failed download sharing a name with a running one deleted
+  the other's file. One left by a quit stays where it is, and its name says
+  what it is.
 - **2026-11-26. A `download` link in a frame from another site saves
   nothing.** A response from such a frame was already refused; a link with
   the `download` attribute was not, and a frame can click its own link from
@@ -3406,6 +3424,31 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   button pages are static files at `/letter/confirming` and `/letter/leaving`
   that the Worker serves with the token filled in; `run_worker_first` was
   tried for this and turned every other POST, `/ph` included, into a 405.
+- **2026-11-27. A browser's navigation reaches the site's Worker.** Since
+  compatibility date 2025-04-01 the assets layer answers a navigation to a
+  path with no file itself, with the 404 page, so in a browser the letter's
+  confirm link opened "Nothing grows here" and its buttons got a 405; curl,
+  which sends no `Sec-Fetch-Mode`, reached the Worker, which is why it was
+  missed. `assets_navigation_has_no_effect` turns that off rather than a
+  `run_worker_first` list (see the entry above). A file is still served
+  without the Worker; only misses wake it. The 404 page drops its query
+  before analytics starts, so a mangled link's token is not reported.
+- **2026-11-27. The letter's unconfirmed addresses are swept by a daily
+  cron, not only on a join.** The 2026-11-26 entry above swept on the next
+  join, on the thought that the table only grows through one; but on a week
+  with no join, nothing ran, and an unconfirmed address stayed past the week
+  `/privacy` promises. A cron (`17 3 * * *`, `scheduled` in
+  `web/worker/index.ts`) runs the same delete once a day; a join still runs
+  it too, so an address past its week starts again with a new token.
+- **2026-11-27. A join answers before its mail is sent, and a failed mail
+  is not reported.** Waiting for the mail made a new address's answer slower
+  than a known one's, and a failed send answered "sorry" only for an address
+  that was mailed: both told a stranger whether an address was on the list.
+  Now every valid join runs the same two statements and answers "check your
+  inbox"; the mail goes out in `waitUntil`. When it fails, the log says so
+  and the claim is undone, so sending the form again tries again, which is
+  what the "check your inbox" page already tells someone whose mail does not
+  come. The cost: with Email Sending off, the form looks like it worked.
 
 ## Contributing
 
@@ -3489,3 +3532,13 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   misses, so `use-cache: false`. The Ghostty cache was checked first: it
   restores in 4 s and the build step then takes 1 s, so CI does not rebuild
   Ghostty per commit.
+- **2026-11-27. A note on screen twice draws its marks once.** A file's
+  mark-up session is one per path, app-wide, so the file in two windows or
+  two splits is one note with a layer over each. Marks drawn over both would
+  need an adapter per layer with the ties shared between them: every file
+  adapter split in two, for a case that is rare. So one layer has the marks,
+  the one last shown or used (a press, a scroll, a chip, its window to the
+  front), and the other keeps the note and draws none until it is used.
+  What was there before was wrong, not just limited: a mark drawn in one
+  window was tied through the other's table, and closing the newer layer
+  left the older one making no marks (`macos/docs/architecture/mark-up.md`).

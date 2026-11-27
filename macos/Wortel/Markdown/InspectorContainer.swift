@@ -90,7 +90,7 @@ final class SideColumnController: NSViewController {
         let surface = git.session === session
             ? terminal.flatMap { id in session?.ensureSideSurface(id, runtime: runtime) } : nil
         host.show(surface, focusRequest: git.terminalFocusRequest,
-                  handBack: { [weak git] in git?.focusFront(of: .main) })
+                  handBack: { [weak git] in git?.handBackKeyboard(from: .side) })
         // In front of the terminals, so out of the way of one: it would take
         // every click meant for it.
         pageHost.view.isHidden = !(tab?.isPage ?? false)
@@ -151,9 +151,10 @@ final class SideTerminalHostController: NSViewController {
         self.view = view
     }
 
-    /// `handBack` gives the keyboard to the main area when the terminal that
-    /// had it is hidden: to what's in front there, which is not the session's
-    /// own terminal when a tab covers it.
+    /// `handBack` gives the keyboard on when the terminal that had it is
+    /// hidden: to what is in front of its own row now
+    /// (`GitPanelModel.handBackKeyboard`), never to the main row's, where the
+    /// session's own terminal would make ⌘W close the session.
     func show(_ surface: SurfaceView?, focusRequest: Int, handBack: @escaping () -> Void) {
         if surface !== current {
             // Only a view this host still holds. A terminal dragged to the

@@ -105,6 +105,17 @@ file in the folder did not, a change while the tab was behind another waited
 until it was shown, and the tab was restored and loaded after a relaunch.
 Not checked there: ⌥⌘U and the pill in a live window.
 
+What is watched (`BrowserPageWatch`) is the page's file and up to 32 of the
+local paths its markup names, each with its folder, and only what is a file
+or a folder or isn't there yet. A page can name a FIFO or a serial port
+(`<link rel=canonical href=/dev/tty.Bluetooth-Incoming-Port>`), and `open`
+on one never returns: until 2026-11-27 that froze the app, and again at
+every launch, since the tab's address is saved. `DirectoryWatcher` now
+stats first and opens with `O_NONBLOCK`. A folder deleted and made again
+(`rm -rf dist`, a rebuild) is waited for on the nearest folder above it
+that exists, and watched again when it is back; a reload makes again any
+watch that died.
+
 **Mark-up** (⇧⌘M, the last button in the header) is in `mark-up.md`: its
 layer lies over the web view inside `WebViewContainer`, it turns the swipe
 back off and holds the reload-on-change while it is on, and any navigation
@@ -150,10 +161,29 @@ second and a redraw of whichever button is on screen.
 Measured off screen 2026-11-25 (macOS 27.0): WebKit sets
 `com.apple.quarantine` on the saved file itself, and hands over a file name
 that is already one path component. A stopped download leaves its partial
-file, so `BrowserDownloads.stop` removes it. A Debug build saves to
-`WORTEL_DOWNLOADS_DIR` when that is set, for a test copy
-(`BrowserDownloadsFolder`, read in `main.swift` before the launch scrub
-removes every `WORTEL_` variable).
+file, so `BrowserDownloads.stop` removes it.
+
+A download is written as `report.zip.download` and renamed to `report.zip`
+in `downloadDidFinish`, so a quit, an update's restart or a crash leaves a
+file whose name says it is not whole; until 2026-11-27 it left a truncated
+`report.zip`. Measured off screen that day: the quarantine is on the file
+by `downloadDidFinish` and the rename keeps it. The rename is `renamex_np`
+with `RENAME_EXCL`, so it never replaces a file, and is numbered past a name
+taken meanwhile. A name counts as taken while a running download holds it,
+not only once it is on disk: WebKit makes the file a moment after it is
+given the name (not there 50 ms later) and fails when the destination
+exists, leaving that file alone. Two downloads of one name were both given
+it, the second failed, and its cleanup deleted the first's file. A held
+name is the download's and its `.download`'s, compared ignoring case as
+the disk does. A download's cleanup removes only the exact `.download`
+address it was given (`Item.partial`, `BrowserDownloadName.removePartial`),
+and a server's suggested name loses a `.download` ending
+(`BrowserDownloadName.cleaned`), so no download's own name can be another
+one's unfinished file.
+
+A Debug build saves to `WORTEL_DOWNLOADS_DIR` when that is set, for a test
+copy (`BrowserDownloadsFolder`, read in `main.swift` before the launch
+scrub removes every `WORTEL_` variable).
 
 **Where a thing opens when nothing says where** (`WorkspaceTabs.home(for:)`):
 a file in the main row, and everything else you look at beside your work in
@@ -292,8 +322,9 @@ with it the one state a leaf could be in that a made split could not.
   (`SplitLayout.insert(_:atRootEdge:share:)`, the left edge when
   `sideLeading`), the strip directly under the main row. The model knows
   shares, not points, so both go in at a guess (a third of the width, three
-  tenths of the main row's height) and are marked `unsized`, which is not
-  saved. The window gives each its real size the first time it lays it out
+  tenths of the main row's height) and are marked `unsized`, which is saved
+  (`unsizedLeaves`, below). The window gives each its real size the first
+  time it lays it out
   (`MainAreaController.sizeNewLeaves`, from `syncTree` and `viewDidLayout`,
   through `GitPanelModel.resizeLeaf` and `SplitLayout.resize`). For the
   column that is the session's width or the last one chosen anywhere
@@ -424,6 +455,22 @@ The model:
   A file with no tree, or a tree without the column's or the strip's leaf,
   gets each put where it opens, `unsized`, so it comes up at the session's
   saved width.
+  `unsizedLeaves` is saved beside the tree (since 2026-11-27): the leaves
+  still at their guessed share (`PersistedSession.savedUnsized`), read
+  back as `unsized`, and left out when there are none. Only the session on
+  screen is ever sized (`sizeNewLeaves`), so after an upgrade from a
+  release without the tree every other session had its column and strip
+  at the guess, and with nothing saying so, one save made that a share
+  somebody chose: the column came back at a third of the window for good,
+  not at its width. A build that doesn't know the field (`main` before
+  that day) reads the guess as chosen, which is what it did anyway, and
+  saves without it. Read leniently, as the tree is: a value that is not a
+  list is no guess, and a name that is no leaf of the tree is dropped
+  (`PersistedSessionTests`, `testAColumnNobodyHasSizedIsStillAGuessAfterASave`
+  and the two after it). Checked on a throwaway copy the same day: a file
+  shaped as 2026.48.1 writes it, a second session out of sight with a
+  400pt column, a launch, a quit, a launch and a switch to it. Its column
+  came up at 400pt, and at 293 (a third) with the field not read back.
 - Three kinds of older build. The released app drops both fields and saves
   without them: the column and the strip are as they were, and a made
   split's terminal is then a shell in the keeper that no session claims,
@@ -667,7 +714,22 @@ The views:
   drag may change are noted on the press (`onDividerPressed`), before
   anything moves: noted at the first step they were already the sizes after
   it, and a drag of one step was never remembered as the column's width or
-  the strip's height. To VoiceOver a divider is a splitter
+  the strip's height. A drag holds the divider it was pressed on, by its
+  place in the tree and what it stands between
+  (`SplitTreeView.Held`, `SplitLayout.sides(of:)`), and is let go of when
+  the tree changes under it so that the place names another divider, puts
+  it behind a zoom, or is another session's: no more steps, and the
+  release neither saves nor remembers a width. Divider views are reused by
+  their place in the list, and until 2026-11-27 a split closed during a
+  drag (its shell exited, or `wortel split` made one) handed the view under
+  the pointer another divider: the drag went on with main|side instead of
+  main|split, took the column from 400pt to 801, and
+  `setSplitLayout` let it through (the same leaves), so it was saved and
+  remembered. Checked 2026-11-27 with `try-splits.sh right column
+  hold-close:9 hold-close:1`: with nothing closed the drag goes on; with
+  the split closed under it the next step is refused, the column stays at
+  its 440pt and nothing is remembered. Not tried with a real pointer.
+  To VoiceOver a divider is a splitter
   (`SplitDividerView`: role, orientation, its position as the value), as
   `NSSplitView`'s were while the column was its pane. Increment and
   decrement move it 20pt through the drag's own path (press, drag,
@@ -849,6 +911,23 @@ The keyboard:
     split that has gone onto the trail. Pushed as the main row it would
     bury the split before it: after ⌘D three times, the second ⌘W would go
     to the main row and not to the first ⌘D split.
+- A terminal that had the keyboard and goes out of sight in its own row (a
+  file, Changes or another terminal picked in front of it) hands it to what
+  is now in front of that row, not of the main row
+  (`GitPanelModel.handBackKeyboard`, the `handBack` of every row's
+  `SideTerminalHostController`). A file takes no keyboard, so nobody has it
+  and you are still in that split: ⌘W closes the file. Until 2026-11-27
+  every row handed it to the main row, so after a file tab was picked in a
+  ⌘D split the session's own terminal had the keyboard, `lastRegion` became
+  the main row, and ⌘W closed the session. A row that is out of sight
+  hands it to `lastRegion`. And `focusFront(of: .main)` does nothing while
+  the main row is behind a zoom, as the other rows' branches already did:
+  it gave the hidden row's page or terminal the keys. Checked 2026-11-27
+  with `try-splits.sh right file close column tab file close right zoom
+  file close` (`file` is a probe step for this): the keyboard with nobody
+  after each `file`, the split you were in kept, and each ⌘W closed the
+  file. The same run with the old hand-back put the keyboard in the main
+  row and ⌘W closed the session.
 - Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the
   titlebar), the tree view gives one leaf the whole area and hides the rest.
   ⇧⌘↩ from the column or the strip zooms that one. The hidden rows answer
@@ -861,6 +940,19 @@ The keyboard:
   zoom was on, and `onFocusMainTerminal` lays the main area out first when
   the change that sends the keyboard there has also just ended the zoom
   that hid it.
+- A session switch shows a covered terminal without giving it the keyboard
+  (`TerminalHostViewController.swap`, `SurfaceView.isCovered`): it goes to
+  what covers it (`GitPanelModel.focusCover`), the tab in front of the main
+  row or of the zoomed split. The main area's check runs a turn after the
+  switch lays it out, and a hibernated terminal is swapped in 10 to 500 ms
+  later, after it. Until 2026-11-27 nothing ran it again, so back in a
+  session whose split was zoomed (or whose main row had a file in front)
+  the session's own terminal took the keys, Return included, out of sight.
+  Checked with `HIBERNATE_AFTER=0.3 try-splits.sh file next next next
+  right zoom next next next`: with the old swap, a file's session came back
+  with the keyboard in the terminal under the file, and the zoomed one with
+  it in the hidden terminal (a fault); with this one, nobody and the zoomed
+  split's terminal.
 
 Known limits:
 
@@ -872,10 +964,6 @@ Known limits:
 - A made split that emptied is hidden at once and leaves the window half a
   second later (`MainAreaController.letGoOfDeadPanes`): a terminal moved out of it
   as its last tab is in its old host until the row it went to has shown it.
-- A column or a strip that was opened in a session out of sight, and never
-  shown before the app quit, was saved at its guessed share: `unsized` is
-  not saved, so it comes back at a third of the width, not the session's
-  width. Read from the code, not tried.
 
 A session out of sight and a window resize. Its terminal follows the window
 once the resize ends (`SurfaceView.followWindow`), and that used to be "by as

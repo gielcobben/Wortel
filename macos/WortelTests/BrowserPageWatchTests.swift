@@ -122,4 +122,59 @@ final class BrowserPageWatchTests: XCTestCase {
         watch.watch(page: path("other.html"), resources: [])
         XCTAssertEqual(watch.watchedFiles, [path("other.html")])
     }
+
+    /// `rm -rf dist` and a rebuild: the folder's inode is gone with it, and
+    /// until 2026-11-27 the page never reloaded again.
+    func testAFolderDeletedAndMadeAgainStillReloads() async throws {
+        let dist = folder.appendingPathComponent("dist")
+        try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+        try write("<p>one</p>", to: "dist/index.html")
+        watch.watch(page: path("dist/index.html"), resources: [])
+        try FileManager.default.removeItem(at: dist)
+        try await settle()
+        XCTAssertEqual(changes, 0, "gone is not a change to show")
+        XCTAssertEqual(watch.watchedFolders[dist.path], folder.path, "waits on the folder above")
+        try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+        try write("<p>rebuilt</p>", to: "dist/index.html")
+        try await settle()
+        XCTAssertEqual(changes, 1)
+        XCTAssertEqual(watch.watchedFolders[dist.path], dist.path)
+        // The watches are the new folder's and the new file's, not deaf ones.
+        try write("<p>rebuilt, saved in place</p>", to: "dist/index.html")
+        try await settle()
+        XCTAssertEqual(changes, 2)
+        try write("<p>rebuilt, renamed over</p>", to: "dist/index.html", atomically: true)
+        try await settle()
+        XCTAssertEqual(changes, 3)
+    }
+
+    /// A restored tab whose folder isn't there yet, two levels down: it
+    /// loads when the page is written.
+    func testAPageWhoseFolderIsNotThereYetLoadsWhenItIs() async throws {
+        let sub = folder.appendingPathComponent("site/docs")
+        watch.watch(page: sub.appendingPathComponent("index.html").path, resources: [])
+        XCTAssertEqual(watch.watchedFolders[sub.path], folder.path)
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        try write("<p>here now</p>", to: "site/docs/index.html")
+        try await settle()
+        XCTAssertEqual(changes, 1)
+        try write("<p>and again</p>", to: "site/docs/index.html")
+        try await settle()
+        XCTAssertEqual(changes, 2)
+    }
+
+    /// A page can name any path. `open` on a FIFO or a serial port never
+    /// returned, on the main thread, so those are left out: a regression here
+    /// hangs this test rather than failing it (`DirectoryWatcherTests` has
+    /// the one that fails).
+    func testAFIFOOrADeviceThePageNamesIsNotWatched() throws {
+        let fifo = path("pipe")
+        XCTAssertEqual(mkfifo(fifo, 0o644), 0)
+        watch.watch(page: path("index.html"), resources: [fifo, "/dev/null", path("style.css")])
+        XCTAssertEqual(watch.watchedFiles, [path("index.html"), path("style.css")],
+                       "a file not there yet is kept: it may come")
+        XCTAssertFalse(BrowserPageWatch.mayWatch(fifo))
+        XCTAssertFalse(BrowserPageWatch.mayWatch("/dev/null"))
+        XCTAssertTrue(BrowserPageWatch.mayWatch(folder.path))
+    }
 }

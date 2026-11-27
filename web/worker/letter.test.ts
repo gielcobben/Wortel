@@ -1,14 +1,14 @@
 // Run with `npm test` (node strips the types; there is no build step).
 //
 // The letter's decisions, without D1 or the mail binding: what counts as an
-// address, what a form post says, when another mail may go, what the mail
-// reads. The requests themselves are checked by hand under `wrangler dev`
-// (web/README.md, The letter).
+// address, what a form post says, what the mail reads. One mail a day per
+// address is the database's to keep: letter-routes.test.ts. The requests in a
+// browser are checked by hand under `wrangler dev` (web/README.md, The letter).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  confirmationMail, encodeToken, isToken, mayMail, MAIL_COOLDOWN, newToken, normaliseEmail, parseJoin,
+  confirmationMail, encodeToken, isToken, newToken, normaliseEmail, parseJoin,
 } from './letter.ts';
 
 const form = (fields: Record<string, string>) => new URLSearchParams(fields);
@@ -73,14 +73,6 @@ test('anything else is not a token', () => {
   for (const bad of [null, undefined, '', 'short', 'a'.repeat(42), 'a'.repeat(44), `${'a'.repeat(42)}=`, `${'a'.repeat(42)}+`]) {
     assert.equal(isToken(bad), false, JSON.stringify(bad));
   }
-});
-
-test('one confirmation mail a day per address', () => {
-  const now = 1_800_000_000;
-  assert.equal(mayMail(null, now), true);
-  assert.equal(mayMail(now, now), false);
-  assert.equal(mayMail(now - MAIL_COOLDOWN + 1, now), false);
-  assert.equal(mayMail(now - MAIL_COOLDOWN, now), true);
 });
 
 test('the mail links to the confirm page on the same origin, and nowhere else', () => {

@@ -14,6 +14,8 @@ final class MarkupOverlayTests: XCTestCase {
         var content = CGPoint.zero
         var clip: CGRect
         var picks = 0
+        /// A click lands on nothing that can be picked.
+        var picksNothing = false
         var ties: [CGRect] = []
         /// Ties wait for `answer()`, as a page's do for its script.
         var holdsTies = false
@@ -28,17 +30,24 @@ final class MarkupOverlayTests: XCTestCase {
         var picksThings: Bool { true }
         var scrollsInside: Bool { false }
         var readingColumn: CGRect? { nil }
-        func attach(to layer: NSView) {}
-        func activate(moved: @escaping () -> Void) {}
-        func deactivate(forgetting: Bool) {}
+        /// The layer marks are placed and tied through, as a file's
+        /// adapter converts through it, and the one each tie went through.
+        weak var attached: NSView?
+        var tiedThrough: [ObjectIdentifier?] = []
+        var isActive = false
+        func attach(to layer: NSView) { attached = layer }
+        func activate(moved: @escaping () -> Void) { isActive = true }
+        func deactivate(forgetting: Bool) { isActive = false }
         func probe(at point: CGPoint, reply: @escaping (CGRect?) -> Void) { reply(nil) }
         func pick(_ number: Int, at point: CGPoint, unless picked: [Int], reply: @escaping (MarkPick?) -> Void) {
             picks += 1
+            if picksNothing { return reply(nil) }
             tied[number] = CGSize(width: 40, height: 20)
             reply(.tied(MarkTie(placement: placement(of: number)!, name: "button", details: MarkDetails())))
         }
         func tie(_ number: Int, to box: CGRect, reply: @escaping (MarkTie?) -> Void) {
             ties.append(box)
+            tiedThrough.append(attached.map(ObjectIdentifier.init))
             let answer = { [self] in
                 tied[number] = box.size
                 reply(MarkTie(placement: placement(of: number)!, name: nil, details: MarkDetails()))
@@ -87,9 +96,14 @@ final class MarkupOverlayTests: XCTestCase {
         session.turnOn()
     }
 
+    /// Windows of a test's own, beside the one every test has.
+    private var others: [NSWindow] = []
+
     override func tearDown() async throws {
         window?.close()
         window = nil
+        others.forEach { $0.close() }
+        others = []
         session?.pasteboard.releaseGlobally()
         if let folder { try? FileManager.default.removeItem(at: folder) }
     }
@@ -192,6 +206,113 @@ final class MarkupOverlayTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(page.placement(of: 1)).box(of: mark.shape), landed)
     }
 
+    // MARK: - One note in two windows
+
+    /// A layer on the same note in a window of its own, over a preview of
+    /// its own, as a file shown in a second window has.
+    private func mountElsewhere() -> MarkupOverlayView {
+        let size = NSSize(width: 600, height: 400)
+        let other = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                             backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        others.append(other)
+        let otherRoot = NSView(frame: NSRect(origin: .zero, size: size))
+        other.contentView = otherRoot
+        let otherPreview = NSView(frame: otherRoot.bounds)
+        otherRoot.addSubview(otherPreview)
+        let overlay = MarkupOverlayView(session: session, surface: page)
+        overlay.follow(otherPreview)
+        otherRoot.addSubview(overlay, positioned: .above, relativeTo: otherPreview)
+        otherRoot.layoutSubtreeIfNeeded()
+        settle()
+        return overlay
+    }
+
+    /// The file in mark-up in two windows, and the newer one closed: the
+    /// marks go to the one left. They were let go of, so the one left drew
+    /// no new mark and its preview was no longer followed.
+    func testWhenTheLayerWithTheMarksGoesTheOtherOnTheNoteTakesThem() throws {
+        let first = mount()
+        drag(first, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 160))
+        settle()
+        let second = mountElsewhere()
+        XCTAssertTrue(session.overlay === second)
+        XCTAssertTrue(page.attached === second)
+        XCTAssertTrue(second.hasMarks)
+        XCTAssertNotNil(second.markLayers[1])
+        XCTAssertFalse(first.hasMarks, "placed through the other window's preview")
+
+        second.removeFromSuperview()
+        settle()
+        XCTAssertTrue(session.overlay === first)
+        XCTAssertTrue(page.attached === first)
+        XCTAssertTrue(page.isActive, "the layer left was let go of with the one that went")
+        XCTAssertTrue(first.hasMarks)
+
+        drag(first, from: CGPoint(x: 300, y: 100), to: CGPoint(x: 400, y: 160))
+        settle()
+        XCTAssertEqual(session.marks.map(\.number), [1, 2])
+        XCTAssertNotNil(first.markLayers[2], "a new mark is drawn on the layer left")
+    }
+
+    /// The file in mark-up in two windows: a press in the one without the
+    /// marks takes them, and what it draws is tied through its own preview.
+    func testAPressOnTheOtherLayerOnTheNoteTiesThroughIt() throws {
+        let first = mount()
+        let second = mountElsewhere()
+        XCTAssertTrue(session.overlay === second)
+
+        drag(first, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 160))
+        settle()
+        XCTAssertEqual(session.marks.map(\.number), [1])
+        XCTAssertEqual(page.tiedThrough.last, ObjectIdentifier(first), "tied through the other window's layer")
+        XCTAssertTrue(session.overlay === first)
+        XCTAssertTrue(first.hasMarks)
+        XCTAssertNotNil(first.markLayers[1])
+        XCTAssertFalse(second.hasMarks)
+
+        // The first going leaves the second with the marks.
+        first.removeFromSuperview()
+        settle()
+        XCTAssertTrue(session.overlay === second)
+        XCTAssertNotNil(second.markLayers[1])
+        XCTAssertTrue(page.isActive)
+
+        // And the last going lets the preview go.
+        second.removeFromSuperview()
+        settle()
+        XCTAssertNil(session.overlay)
+        XCTAssertFalse(page.isActive)
+    }
+
+    // MARK: - Pins
+
+    /// A pin is pressed only while it is drawn. A mark whose content went
+    /// is hidden, its pin with it, and a press where the pin was begins a
+    /// drawing like any other.
+    func testAPressWhereAHiddenMarksPinWasDrawsAMark() throws {
+        let overlay = mount()
+        session.tool = .box
+        drag(overlay, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 160))
+        XCTAssertEqual(session.marks.map(\.number), [1])
+
+        // Scrolled far below the mark: it leaves a pin at the top edge.
+        page.content.y -= 1000
+        overlay.place()
+        let layer = try XCTUnwrap(overlay.markLayers[1])
+        let pin = try XCTUnwrap(layer.pin, "a mark out of view leaves a pin")
+        let at = CGPoint(x: pin.midX, y: pin.midY)
+        XCTAssertEqual(overlay.pinned(at: at), 1)
+
+        // What it was on is gone: the mark is hidden, and so is its pin.
+        page.forget(1)
+        overlay.place()
+        XCTAssertTrue(layer.isHidden)
+        XCTAssertNil(overlay.pinned(at: at))
+        drag(overlay, from: at, to: CGPoint(x: at.x + 100, y: at.y + 60))
+        XCTAssertEqual(session.marks.map(\.number), [1, 2], "the hidden pin took the press")
+    }
+
     // MARK: - The note's undo
 
     /// A tab moving rows has a new layer before the old one is taken down,
@@ -216,6 +337,73 @@ final class MarkupOverlayTests: XCTestCase {
         // The last bar on the note going takes the stack with it.
         new.removeFromSuperview()
         settle()
+        XCTAssertFalse(session.undo.canUndo)
+    }
+
+    /// The note cleared as the trash button clears it: one edit of the text.
+    private func clear(_ overlay: MarkupOverlayView) {
+        let text = overlay.noteBar.textView
+        text.breakUndoCoalescing()
+        text.insertText("", replacementRange: NSRange(location: 0, length: session.text.length))
+        text.breakUndoCoalescing()
+        settle()
+    }
+
+    private func click(_ overlay: MarkupOverlayView, at point: CGPoint) {
+        overlay.mouseDown(with: event(.leftMouseDown, point, on: overlay))
+        overlay.mouseUp(with: event(.leftMouseUp, point, on: overlay))
+        settle()
+    }
+
+    /// Two boxes drawn, each its own turn of the run loop, which is what
+    /// closes an undo group: one group for both and ⌘Z took both out.
+    private func drawTwo(_ overlay: MarkupOverlayView) {
+        drag(overlay, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 160))
+        settle()
+        drag(overlay, from: CGPoint(x: 300, y: 100), to: CGPoint(x: 400, y: 160))
+        settle()
+    }
+
+    /// Cleared, then a click on nothing: no mark was made, so nothing has
+    /// started over, and ⌘Z still brings the note back. The count started
+    /// over at the click, before the page had answered, and took the undo
+    /// with it.
+    func testAClickThatMakesNoMarkAfterClearingKeepsTheUndo() throws {
+        let overlay = mount()
+        drawTwo(overlay)
+        XCTAssertEqual(session.marks.map(\.number), [1, 2])
+
+        clear(overlay)
+        XCTAssertTrue(session.marks.isEmpty)
+        page.picksNothing = true
+        click(overlay, at: CGPoint(x: 300, y: 300))
+        XCTAssertEqual(page.picks, 1)
+        XCTAssertTrue(session.marks.isEmpty)
+        XCTAssertEqual(session.upcomingNumber, 1, "the next mark still counts from 1")
+
+        XCTAssertTrue(session.undo.canUndo, "the click on nothing took the undo")
+        session.undo.undo()
+        XCTAssertEqual(session.marks.map(\.number), [1, 2])
+        XCTAssertNotNil(page.placement(of: 1))
+        XCTAssertNotNil(page.placement(of: 2))
+        XCTAssertEqual(session.upcomingNumber, 3)
+    }
+
+    /// Cleared, then a mark made: it is 1, and the cleared marks are let go
+    /// for good, on the page too. An undo takes the new chip out and
+    /// brings none of the old ones back beside it.
+    func testAMarkMadeAfterClearingStartsOverAndLetsTheClearedGo() throws {
+        let overlay = mount()
+        drawTwo(overlay)
+        clear(overlay)
+
+        click(overlay, at: CGPoint(x: 300, y: 300))
+        XCTAssertEqual(session.marks.map(\.number), [1])
+        XCTAssertEqual(session.mark(1)?.shape, .thing, "the new mark, not the cleared drawing")
+        XCTAssertNil(page.placement(of: 2), "the cleared mark is still tied on the page")
+
+        session.undo.undo()
+        XCTAssertTrue(session.marks.isEmpty)
         XCTAssertFalse(session.undo.canUndo)
     }
 }

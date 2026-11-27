@@ -20,12 +20,15 @@ import AppKit
 /// Steps: `right` `down` `left` `up` (a new terminal in a split on that edge
 /// of the area you're in), `focus-left` `focus-right` `focus-up`
 /// `focus-down`, `move-left` `move-right` `move-up` `move-down` (the tab in
-/// front), `zoom`, `equalize`, `tab` (a terminal tab here), `close` (the tab
-/// in front here), `select:<n>` (the nth tab of the row you're in to the
+/// front), `zoom`, `equalize`, `tab` (a terminal tab here), `file` (the first
+/// file of the session's folder, in front here), `close` (the tab in front
+/// here), `select:<n>` (the nth tab of the row you're in to the
 /// front), `trace-tab` `trace-blank` `trace-close` (a tab added or closed,
 /// with the row's motion sampled every 20ms), `column`, `strip`, `sidebar`
 /// (hide or show it), `next` (the next session), `wide`
-/// (drag the first divider 80 points), `resize:<w>x<h>` (the window to that
+/// (drag the first divider 80 points), `hold-close:<n>` (the first divider
+/// pressed and dragged, split `n` closed under the drag, one more step),
+/// `resize:<w>x<h>` (the window to that
 /// size in points, in twenty steps), `light` and `dark` (the copy's
 /// appearance, for a picture), `drop:<n>.<where>` (the tab in front
 /// of the area you're in, let go on split number `n` in reading order, at
@@ -88,6 +91,14 @@ enum SplitProbe {
                 if let blank = git.tabs(in: git.lastRegion).first(where: \.isBlank) {
                     git.fill(blank, with: step == "pick-terminal" ? .terminal : .pane(.changes))
                 }
+            // A file of the session's folder in front of the row you're in,
+            // as a file tab picked there: the terminal it covers had the
+            // keyboard, and ⌘W must then close the file.
+            case "file":
+                guard let cwd = manager.selected?.cwd,
+                      let name = try? FileManager.default.contentsOfDirectory(atPath: cwd)
+                        .sorted().first(where: { !$0.hasPrefix(".") && !$0.hasSuffix("/") }) else { continue }
+                git.open(.file((cwd as NSString).appendingPathComponent(name)), in: git.lastRegion)
             case "close": send(#selector(AppDelegate.closeSession(_:)))
             case "column": send(#selector(AppDelegate.toggleSideColumn(_:)))
             case "strip": send(#selector(AppDelegate.toggleBottomStrip(_:)))
@@ -117,6 +128,36 @@ enum SplitProbe {
                                     display: true)
                     await pause(0.05)
                 }
+            case let spec where spec.hasPrefix("hold-close:"):
+                // The first divider pressed and dragged, the split `n` (in
+                // reading order) closed as if its shell exited, then one more
+                // step and the release: the drag must be over by then, and
+                // no width remembered for it.
+                guard let tree = treeView(in: controller),
+                      let index = Int(spec.dropFirst("hold-close:".count)) else { continue }
+                let widthBefore = MainSplitViewController.ColumnWidth.lastChosen
+                let pressed = tree.pressDivider(0, by: 40)
+                await pause(0.5)
+                let frames = controller.split.mainArea?.paneFrames ?? []
+                var closed = "nothing"
+                if frames.indices.contains(index), let session = manager.selected,
+                   let tab = git.activeTab(in: frames[index].region) {
+                    git.close(tab, in: session)
+                    closed = frames[index].region.rawValue
+                }
+                await pause(1.0)
+                let second = tree.stepHeld(by: 160)
+                tree.releaseHeld()
+                await pause(1.2)
+                let widthAfter = MainSplitViewController.ColumnWidth.lastChosen
+                // With nothing closed (`n` past the last split) the drag goes on.
+                let wrong = closed == "nothing" ? !second : (second || widthAfter != widthBefore)
+                var entry = state(manager, controller)
+                entry["step"] = step
+                entry["landed"] = (wrong ? "FAULT " : "") + "pressed \(pressed), closed \(closed), "
+                    + "next step \(second ? "taken" : "refused"), remembered width \(widthBefore) to \(widthAfter)"
+                trail.append(entry)
+                continue
             case let drop where drop.hasPrefix("drop:"):
                 let landed = self.drop(String(drop.dropFirst("drop:".count)), controller)
                 await pause(1.2)

@@ -96,7 +96,8 @@ final class BottomPaneController: NSViewController {
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
         let surface = git.session === session
             ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
-        host.show(surface, focusRequest: git.bottomFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
+        host.show(surface, focusRequest: git.bottomFocusRequest,
+                  handBack: { [weak git] in git?.handBackKeyboard(from: .bottom) })
         paneHost.view.isHidden = active == nil || active?.terminalID != nil
     }
 }

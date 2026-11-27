@@ -32,6 +32,8 @@
   Cache-Control: public, max-age=86400
 /*.svg
   Cache-Control: public, max-age=86400
+/favicon.ico
+  Cache-Control: public, max-age=86400
 
 # The Sparkle fragments. They exist so release.sh can copy them out of dist/ and
 # hand them to generate_appcast; they are not pages. Each one is a bare fragment

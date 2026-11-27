@@ -282,15 +282,13 @@ final class WindowControls: NSView {
     let history = HistoryButtons()
     private var historyLeading: NSLayoutConstraint!
 
-    // The trailing end: the two ways to split, what the session is running,
-    // and the session's "…" at the edge, where a "more" button usually is
-    // (the owner's order). A split button makes a split beside or under the
-    // one you're in with an empty tab in it, whose page asks what goes
-    // there (`NewTabPage`); the keys, ⌘D and ⇧⌘D, put a terminal there
-    // without asking. "…" is the session itself (rename, pin, close).
+    // The trailing end: what the session is running, and the session's "…"
+    // at the edge, where a "more" button usually is. "…" is the session
+    // itself (rename, pin, close). Both are about the session, which is why
+    // they are the window's and not a row's.
     //
     // For a few hours on 2026-11-26 Changes, History, Files and a browser
-    // were buttons here in place of the split buttons, lit while open. The
+    // were buttons here, lit while open. The
     // owner: "no no no, i dont like it". They opened a thing in one place
     // only, when anything can be anywhere, and six buttons crowded the row
     // under them.
@@ -300,8 +298,11 @@ final class WindowControls: NSView {
     // any split could sit beside any other. (A toggle for the side column
     // sat here for an hour: with every split movable there is no side
     // column to toggle.)
-    let splitRight = HoverFillButton.glyph("rectangle.split.2x1", "Split Right")
-    let splitDown = HoverFillButton.glyph("rectangle.split.1x2", "Split Down")
+    //
+    // The two split buttons sat here too until the evening of 2026-11-26.
+    // They split "the split you're in", from the far corner; each row has
+    // its own pair now, at its own end (`PaneBar`). What is left here is
+    // about the session, not about a split.
     let running = RunningButton()
     let more = HoverFillButton.glyph("ellipsis", "Session")
     private let trailing = NSStackView()
@@ -313,7 +314,7 @@ final class WindowControls: NSView {
     /// them and the row's own "+" (or its zoom button, which is lit and
     /// would otherwise touch the first of them).
     ///
-    /// Measured once: the four buttons have fixed sizes and are never
+    /// Measured once: the two buttons have fixed sizes and are never
     /// hidden, and this is asked after every layout of the tree, every step
     /// of a divider's drag among them, where a `fittingSize` is a solve of
     /// its own. Measure again if a button comes or goes.
@@ -334,7 +335,7 @@ final class WindowControls: NSView {
         history.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toggle)
         addSubview(history)
-        for button in [splitRight, splitDown, running, more] { trailing.addArrangedSubview(button) }
+        for button in [running, more] { trailing.addArrangedSubview(button) }
         trailing.spacing = 4
         trailing.translatesAutoresizingMaskIntoConstraints = false
         addSubview(trailing)
@@ -592,8 +593,6 @@ final class TitleBarController: NSObject, NSPopoverDelegate {
         windowControls.running.action = #selector(openRunningJobs(_:))
         windowControls.more.target = self
         windowControls.more.action = #selector(presentSessionMenu(_:))
-        windowControls.splitRight.action = #selector(AppDelegate.newSplitRight(_:))
-        windowControls.splitDown.action = #selector(AppDelegate.newSplitDown(_:))
     }
 
     func start() {

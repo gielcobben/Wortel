@@ -140,12 +140,16 @@ split move to this one. A row keeps one empty tab at most: "+" again brings
 it forward. It works the same in every split, since anything can be opened
 anywhere.
 
-At the right end of the titlebar are four buttons: Split Right, Split Down,
-what the session is running, and **"…"** at the edge, which is the session
-itself (rename, pin, close and the rest of what its sidebar row's menu has).
-A split button makes a split beside or under the one you're in, with an
-empty tab in it. ⌘D and ⇧⌘D make the same split with a terminal in it: a key
-does not ask.
+Every split's row ends with two buttons, Split Right and Split Down. They
+split that split, whichever one has the keyboard, and the new split holds an
+empty tab that asks what goes there. ⌘D and ⇧⌘D split the one you're in and
+put a terminal there: a key does not ask. A split narrower than about 240
+points shows no split buttons, so its tabs have the room. ⌘D, a tab's
+right-click and a drag to an edge still split it.
+
+At the right end of the titlebar are two buttons, both about the session:
+what it is running, and **"…"** at the edge, which is the session itself
+(rename, pin, close and the rest of what its sidebar row's menu has).
 
 For a few hours on 2026-11-26 the "+" was a new terminal and Changes,
 History, Files and a browser were buttons in that corner. Before that the
@@ -268,8 +272,8 @@ How to split:
 
 - ⌘D and ⇧⌘D, also in the Tab menu: a new terminal in a split beside or under
   the one you're in.
-- The two split buttons at the right end of the titlebar: the same split,
-  with an empty tab in it that asks what goes there.
+- The two split buttons at the end of a split's row: that split, with an
+  empty tab in the new one that asks what goes there.
 - A right-click on a tab, then Split Right or Split Down: that tab moves into
   a new split. The two items are there only when the tab is not the only one
   in its split.

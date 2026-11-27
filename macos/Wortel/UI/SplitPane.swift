@@ -18,16 +18,30 @@ import SwiftUI
 final class PaneBar: ChromeBarView, LeafBar {
     let strip = SideTabStrip()
     let add = HoverFillButton.glyph("plus", "New Tab (⌥⌘T)")
+    // The two ways to split this split, at the end of its own row: a
+    // control sits on the thing it acts on. They were two buttons in the
+    // window's corner that split "the split you're in", which the owner
+    // found odd ("it's weird that they are all the way to the right, even
+    // though if you have focus on a left pane and click the split it splits
+    // on there"): to know what a click would do you had to know where the
+    // keyboard was. The split they make holds an empty tab that asks what
+    // goes there; the keys, ⌘D and ⇧⌘D, put a terminal there without asking.
+    let splitRight = HoverFillButton.glyph("rectangle.split.2x1", "Split Right")
+    let splitDown = HoverFillButton.glyph("rectangle.split.1x2", "Split Down")
     let unzoom = ZoomedButton()
+    /// The split buttons and the zoom button, in that order. A hidden one
+    /// takes no room (a stack view lets go of it).
+    private let trailing = NSStackView()
     private var stripLeading: NSLayoutConstraint!
     private var stripTrailing: NSLayoutConstraint!
-    private var unzoomTrailing: NSLayoutConstraint!
+    private var trailingEnd: NSLayoutConstraint!
     /// Room for the sidebar's controls when this row is the leftmost in the
     /// titlebar with the sidebar collapsed.
     var leadingClearance: CGFloat = 0 {
         didSet {
             let constant = max(8, leadingClearance)
             if abs(stripLeading.constant - constant) > 0.01 { stripLeading.constant = constant }
+            fitSplitButtons()
         }
     }
     /// And for the session's controls at the other end, when this row is the
@@ -35,9 +49,15 @@ final class PaneBar: ChromeBarView, LeafBar {
     var trailingClearance: CGFloat = 0 {
         didSet {
             let constant = -max(8, trailingClearance)
-            if abs(unzoomTrailing.constant - constant) > 0.01 { unzoomTrailing.constant = constant }
+            if abs(trailingEnd.constant - constant) > 0.01 { trailingEnd.constant = constant }
+            fitSplitButtons()
         }
     }
+
+    /// What a row needs to show its split buttons: a named tab, the "+",
+    /// and the two of them. In a narrower split they go, and the tabs have
+    /// the row; ⌘D, a tab's menu and a drag to an edge split it still.
+    private static let roomForSplitButtons: CGFloat = 240
 
     init(region: TabRegion) {
         super.init()
@@ -45,23 +65,42 @@ final class PaneBar: ChromeBarView, LeafBar {
         strip.translatesAutoresizingMaskIntoConstraints = false
         strip.trailingAccessory = add
         addSubview(strip)
-        addSubview(unzoom)
+        for button in [splitRight, splitDown, unzoom] { trailing.addArrangedSubview(button) }
+        trailing.spacing = 4
+        trailing.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(trailing)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
-        unzoomTrailing = unzoom.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)
-        stripTrailing = strip.trailingAnchor.constraint(equalTo: unzoom.leadingAnchor, constant: 0)
-        unzoom.onVisibility = { [unowned self] in
-            stripTrailing.constant = unzoom.isHidden ? 0 : -8
-        }
+        trailingEnd = trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)
+        stripTrailing = strip.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -8)
+        unzoom.onVisibility = { [unowned self] in fitSplitButtons() }
         NSLayoutConstraint.activate([
             stripLeading,
             strip.topAnchor.constraint(equalTo: topAnchor),
             strip.bottomAnchor.constraint(equalTo: bottomAnchor),
             stripTrailing,
-            unzoomTrailing,
-            unzoom.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailingEnd,
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        fitSplitButtons()
+    }
+
+    /// Show the split buttons while the row has room for them beside a tab,
+    /// and keep the gap before them only while something is there.
+    private func fitSplitButtons() {
+        let room = bounds.width - max(8, leadingClearance) - max(8, trailingClearance)
+        let hides = room < Self.roomForSplitButtons
+        if splitRight.isHidden != hides {
+            splitRight.isHidden = hides
+            splitDown.isHidden = hides
+        }
+        let gap: CGFloat = hides && unzoom.isHidden ? 0 : -8
+        if stripTrailing.constant != gap { stripTrailing.constant = gap }
+    }
 
     /// Wire the row to the panel the way every row is wired: picking, closing,
     /// keeping and moving are the panel's, by region.
@@ -75,6 +114,10 @@ final class PaneBar: ChromeBarView, LeafBar {
         strip.preview = { [weak home] tab in TitleBarController.preview(for: tab, in: home?.selected) }
         add.target = self
         add.action = #selector(addTab(_:))
+        splitRight.target = self
+        splitRight.action = #selector(splitToTheRight(_:))
+        splitDown.target = self
+        splitDown.action = #selector(splitDownward(_:))
         self.git = git
         self.region = region
     }
@@ -88,6 +131,17 @@ final class PaneBar: ChromeBarView, LeafBar {
     /// nothing on screen in between.
     @objc private func addTab(_ sender: NSView) {
         git?.openBlank(in: region)
+    }
+
+    /// This split, split: a new one beside it or under it, holding an empty
+    /// tab. With no room for two, nothing is made and the sound says so
+    /// (`GitPanelModel.roomToSplit`), as for the keys.
+    @objc private func splitToTheRight(_ sender: Any?) {
+        git?.split(region, on: .right, with: .blank(UUID()))
+    }
+
+    @objc private func splitDownward(_ sender: Any?) {
+        git?.split(region, on: .down, with: .blank(UUID()))
     }
 }
 

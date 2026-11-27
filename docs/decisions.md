@@ -492,7 +492,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   second one. The "+" has no menu and no right-click menu any more
   (`NewTabMenu` is deleted). **The corner is four buttons again**, in the
   owner's order from earlier: Split Right, Split Down, what the session is
-  running, "…". A split button makes the split with an empty tab in it.
+  running, "…". (Until that evening: the two split buttons are on every
+  split's own row now, "A split's buttons are on its own row", at the end.)
+  A split button makes the split with an empty tab in it.
   **The keys do not ask.** ⌘D and ⇧⌘D still put a terminal in the new
   split, ⌘T a terminal in this one, ⌃⌘1 opens Changes. A key says what it
   wants, and a button is pressed by someone still deciding. That is why
@@ -820,7 +822,40 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   72 wrong. After `main` was merged into the branch (`011bd59`): the app
   builds. Not verified: the drag fixes, VoiceOver on a divider, the slide
   timer on a closing window, and the page sizing in a strip at its
-  minimum. Each takes a pointer, VoiceOver or a second window.
+  minimum. Each takes a pointer, VoiceOver or a second window. **A split's
+  buttons are on its own row.** The owner, that evening: "my biggest open
+  question is still if we should use these split icons on every pane
+  header. ... it's weird that they are all the way to the right, even
+  though if you have focus on a left pane and click the split it splits on
+  there." The pair had been put in the window's corner that morning as the
+  menu's own actions, "the split you're in". That is the indirection the
+  owner named: to know what a click would do, you had to know where the
+  keyboard was. Now every split's row ends with its own Split Right and
+  Split Down, and a click splits that split, whichever one has the
+  keyboard. The rule is that a control sits on the thing it acts on. As
+  before, the split it makes holds an empty tab that asks what goes there,
+  and with no room for two nothing is made and the sound says so. ⌘D and
+  ⇧⌘D are unchanged: the split you are in, a terminal, no asking. A row
+  with less than 240pt of its own, after what it gives up to the window's
+  controls, shows no split buttons, so that a narrow split's row belongs to
+  its tabs. ⌘D, a tab's right-click and a drag to an edge still split it.
+  The window's trailing end keeps two buttons, what the session is running
+  and "…". Both are about the session, which is why they are the window's
+  and not a row's. With one split the window looks as it did, because that
+  split's end is the corner. This takes back a sentence written that
+  morning, "no row has a button of its own": the rows had lost the
+  session's buttons, which was right, and with them the idea that a row
+  could carry anything. A row carries what is about its split. The cost:
+  two more buttons in every row wide enough, where the corner had one pair
+  for the whole window. Verified (2026-11-26, throwaway copies): the app
+  builds. A render with a main row, three 160pt splits under it and
+  Changes and Files beside: the main row and the side split each show
+  their pair at their own end, the three narrow ones show a tab and a "+"
+  only, and the corner has the running button and "…". `blank-right type:t
+  blank-down type:escape right down zoom zoom strip resize:900x560
+  key:shift+cmd+c close close reset next next --relaunch`: 0 faults. The
+  unit tests were not run again: the change is in views only. Not
+  verified: a click on a row's split button.
 - **2026-11-26. "No splits" was reversed: the main area splits into columns
   and rows.** Built on the branch `flexible-panes` and on `main` since it
   was merged. Not in a release yet: the released app and the site still have
@@ -839,10 +874,10 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   sidebar with a tab row of its own (in this first version: a part of the
   main area that was split off). It is made by ⌘D or ⇧⌘D, by Split
   Right or Split Down in a tab's menu (that tab moves into it), by the two
-  split buttons at the end of the titlebar (which make it with an empty tab
-  in it; in this first version the two were items in a row's "+" and in
-  the session's "…": the entry above, at its end), or by letting go of a
-  tab or a file on an edge.
+  split buttons at the end of a split's own row (which make it with an
+  empty tab in it; in this first version the two were items in a row's "+"
+  and in the session's "…": the entry above, at its end), or by letting go
+  of a tab or a file on an edge.
   It is there only while it has tabs: closing its last one takes it away
   and its siblings take the room. Sizes are shares, so a window resize
   keeps them, and no split is laid out under 160 by 100 points while there
@@ -1671,9 +1706,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   moves, the arrows ride the sidebar's edge and stop beside the toggle, and
   the rows to the right are pushed along by the same number every frame.
   **Since 2026-11-26** (the splits, on `main`, not in a release yet) the
-  same overlay is `WindowControls` and has a trailing end as well: Split Right and Split
-  Down, what the session is running, and its "…" (the first entry of
-  "Window, terminal and keys").
+  same overlay is `WindowControls` and has a trailing end as well: what
+  the session is running, and its "…" (the first entry of "Window,
+  terminal and keys").
 - **2026-11-18. A new session at the top level goes on top.** It went after
   the selected row, so in a list nobody arranges a new row turned up in the
   middle. Now that list reads newest first, as a list of chats does. In a

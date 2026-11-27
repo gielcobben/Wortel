@@ -261,11 +261,12 @@ own because macOS 26 and later put every toolbar item on a glass capsule, and
 there is no switch for that.
 
 **Every split's row is the same thing** (`PaneBar`): its tabs, a "+" right
-after the last one, and nothing else. The "+" opens an empty tab in that
-split, whose page asks what it should be (below). It has no menu. No row has
-a button of its own. The
-one exception is temporary: a zoomed split has one button at the end of its
-row, to show the others again. The main row is no different. The session's
+after the last one, and at the row's end Split Right and Split Down. The "+"
+opens an empty tab in that split, whose page asks what it should be (below).
+It has no menu. The two split buttons split that split, whichever one has
+the keyboard. A row with less than 240pt of its own shows neither, and the
+tabs have the row. A zoomed split has one more button after the pair, to
+show the others again. The main row is no different. The session's
 own terminal is a tab named after the session, pinned: it has no close
 button and no menu, and it cannot leave its row. A session with nothing but
 its terminal shows that one tab, never a bare title.
@@ -273,23 +274,29 @@ its terminal shows that one tab, never a bare title.
 **The titlebar has two ends, and they are the window's, not a row's**
 (`WindowControls`, one overlay over the whole titlebar). At the leading end,
 by the traffic lights: the sidebar's toggle, then Back and Forward, which
-ride the sidebar's edge. At the trailing end, four: Split Right, Split Down,
-what the session is running, and the session's "…" menu at the edge, where a
-"more" button usually is. They stay in their corners whatever the splits do. The row under each end makes
+ride the sidebar's edge. At the trailing end, two: what the session is
+running, and the session's "…" menu at the edge, where a "more" button
+usually is. Both are about the session. They stay in their corners whatever
+the splits do. The row under each end makes
 room for it: the leftmost titlebar row for the leading end, the rightmost
 for the trailing one. What the session is running and its "…" were on the
 main row until 2026-11-26, which put them in the middle of the window as
-soon as a split could sit to the right of it. A button for one
-split's own row is the thing not to add back: if it is about the session or
-the window, it goes in a corner, and if it is about the split, it is a key
-or a menu item. There is no button for the side column. One sat in the
+soon as a split could sit to the right of it.
+
+**A control sits on the thing it acts on.** What is about the session or the
+window goes in a corner of the titlebar. What is about one split goes on
+that split's row: its tabs, its "+", its two split buttons. Nothing about
+the session goes back on a row, and nothing about one split goes in the
+corner. The split buttons were in the corner for most of 2026-11-26, where
+they split "the split you're in": to know what a click would do you had to
+know where the keyboard was. There is no button for the side column. One sat in the
 trailing corner for an hour and was taken out: with every split movable
 there is no side column to show or hide, only Changes and Files, which ⌥⌘B
 opens and closes (`docs/decisions.md`).
 
 **A button asks, a key does not.** A split button makes a split beside or
-under the one you are in with an empty tab in it. The "+" does the same in
-the split it belongs to. The keys go straight there: ⌘D and ⇧⌘D put a
+under its own with an empty tab in it. The "+" puts an empty tab in the
+split it belongs to. The keys go straight there: ⌘D and ⇧⌘D put a
 terminal in the new split, ⌘T a terminal in this one, ⇧⌘C opens Changes. A
 key says what it wants. A button is pressed by someone still deciding, so it
 gives the place first and then the choice, on a page that is already there.
@@ -320,7 +327,8 @@ everything a tab can be: two clicks, with nothing on screen in between. The
 buttons in this corner, lit while open, in place of the split buttons: one
 click, but they opened a thing in one place when anything can be anywhere,
 and six buttons left the row under them short (with the split buttons too
-it was eight, and two named tabs no longer fitted).
+it was eight, and two named tabs no longer fitted). And the split buttons
+themselves in this corner, acting on a split somewhere else.
 
 **The corner is paid for by the row under it**, so every point there counts.
 The row clears the buttons, the 8pt to the window's edge, and 4pt before its

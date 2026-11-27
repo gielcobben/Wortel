@@ -19,7 +19,8 @@ its height and the centred traffic lights, the titlebar is transparent, and the
 sidebar and each split along the top of the window draw their row of a flat
 grey band (the ChatGPT app's look). A split lower down has a row on its page
 instead (`SplitLeafView`). Every one of those rows is a `PaneBar`: tabs and
-a "+" (an empty tab there, `workspace-tabs.md`), no buttons of its own.
+a "+" (an empty tab there) and its own Split Right and Split Down
+(`workspace-tabs.md`).
 
 What is not a row's is the window's: one overlay laid over all the rows
 (`WindowControls`, in `BackdropController`; it was `SidebarControls` until
@@ -34,17 +35,11 @@ Split Right would split that one instead of yours.
   Back and Forward. They are placed on every layout pass and split resize
   (the first real layout at launch sends no resize) so the arrows ride the
   sidebar's edge as it opens and closes (`WindowControls.place`).
-- **The trailing end**: four buttons, 4pt apart, in the owner's order:
-  Split Right and Split Down (`splitRight`, `splitDown`), what the session
-  is running (`RunningButton`), and the session's "…" at the edge.
-  `TitleBarController` wires them.
-  - The split buttons send `AppDelegate.newSplitRight` and `newSplitDown`:
-    the split ⌘D and ⇧⌘D make (the split you are in, the same room check and
-    sound), holding an empty tab (`SideTab.blank`) where the keys put a
-    terminal. A key says what it wants, and a button is pressed by someone
-    still deciding. Their tooltips name no key for that reason.
-  - The "…" is `SessionActions.menu`, the sidebar row's menu, and nothing
-    else.
+- **The trailing end**: two buttons, 4pt apart. What the session is running
+  (`RunningButton`), and the session's "…" at the edge
+  (`SessionActions.menu`, the sidebar row's menu, and nothing else). Both
+  are about the session, which is why they are the window's and not a
+  row's. `TitleBarController` wires them.
 
   How it got here, all on 2026-11-26. The running button and the "…" were on
   the main row (`MainBar`), the side column's row (`SideColumnBar`) had the
@@ -56,9 +51,12 @@ Split Right would split that one instead of yours.
   Split Down came, then gave way for a few hours to four buttons for
   Changes, History, Files and a new browser, lit while open (`b4b7710`).
   Those opened a thing in one place only and crowded the row under them,
-  and the owner did not like them. The split buttons are back, and what a
-  split or a row can hold is asked on the empty tab's page instead
-  (`../../../docs/decisions.md`).
+  and the owner did not like them. The split buttons came back, and what a
+  split or a row can hold is asked on the empty tab's page instead. That
+  evening the split buttons left the corner for good: they split "the
+  split you're in" from the far end of the window, and each row has its own
+  pair now (`PaneBar`). What is left here is about the session, not about a
+  split (`../../../docs/decisions.md`).
 
 Who clears what is the tree's to say. `MainAreaController.titlebarRows` lists
 the rows along the top with where each starts and ends, and
@@ -66,7 +64,7 @@ the rows along the top with where each starts and ends, and
 `leadingClearance`, how far the leading controls reach into it, and a
 `trailingClearance`, how far the trailing ones do
 (`WindowControls.trailingWidth`: the buttons, the 8pt to the window's edge,
-and 4pt before the row's own "+"; measured once and kept, since this runs at
+and 4pt before what ends the row under them; measured once and kept, since this runs at
 every step of a divider's drag and a `fittingSize` is a solve of its own, so
 measure it again if a button there ever comes or goes). Only the leftmost row gets any of the
 first and only the rightmost any of the second. Which rows those are changes

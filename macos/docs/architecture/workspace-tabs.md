@@ -158,7 +158,7 @@ asks `home(for:)`): it opened its browser over the tab you were in, the one
 of ⇧⌘C, ⇧⌘H, ⇧⌘F and ⇧⌘B that did. ⌥-click puts a file or a server in the
 other place once (`elsewhere(for:)`: out of the main row, else into it). To
 have a thing in a split of your choosing you say so: that split's "+", a
-split button, ⌥⌘T and its letter, or a drag.
+split button on a row, ⌥⌘T and its letter, or a drag.
 
 Until that date there was a memory. A file or a browser opened where you had
 last *moved* one of its kind in that session, or dropped one from a list
@@ -438,10 +438,18 @@ The views:
 - **One kind of leaf** (`SplitLeafView`): a row on top and a page under it.
   The row is a `LeafBar`, a `ChromeBarView` with a `strip` of tabs, a
   `leadingClearance`, a `trailingClearance` and an `unzoom` button. One
-  class conforms, `PaneBar`: the tabs, "+" right after the last, and
-  nothing else but the button that shows while its split is zoomed. That
-  button takes no room while it is hidden (`ZoomedButton`: its width is 0
-  then, and the strip runs to the row's end). The "+" (`PaneBar.addTab`)
+  class conforms, `PaneBar`: the tabs, "+" right after the last, and at the
+  row's end one stack (`trailing`) of Split Right, Split Down and the button
+  that shows while its split is zoomed. A hidden button takes no room there
+  (`ZoomedButton`'s width is 0 while hidden, and a stack view lets go of a
+  hidden view), so with all three hidden the strip runs to the row's end.
+  The two split buttons split *this* split (`splitToTheRight`,
+  `splitDownward`: `GitPanelModel.split(region, on:, with: .blank)`), not
+  the one with the keyboard, and the split they make holds an empty tab.
+  They show only while the row has 240pt of its own, after the clearances
+  it gives the window's controls (`fitSplitButtons`,
+  `roomForSplitButtons`, checked when the row's size or either clearance
+  changes): in a narrower split the tabs have the row. The "+" (`PaneBar.addTab`)
   opens an empty tab in that row (`GitPanelModel.openBlank`). It has no
   menu and no right-click menu: `NewTabMenu` is deleted. Every leaf has
   one, wired the same way
@@ -453,8 +461,12 @@ The views:
   trailing end of the titlebar (`WindowControls`,
   `window-and-sidebar.md`), or a key (⌘J for the strip). The reason is in
   `../../../docs/decisions.md`: on a row, they ended up in the middle of the
-  window once a split could sit to the right of it. A button of a row's own
-  is the thing not to add back.
+  window once a split could sit to the right of it. The rule that came out
+  of the day: a control sits on the thing it acts on. What is about the
+  session is the window's, what is about one split is on that split's row.
+  The split buttons were in the window's corner until the evening of
+  2026-11-26, acting on "the split you're in", and moved to the rows for
+  that reason.
 - **The main row always shows its tabs.** The session's terminal is the tab
   `SideTab.session`, titled with the session's name and `pinned`
   (`TitleBarController.stripItem`): `SideTabView` hides its close button and
@@ -519,8 +531,8 @@ The views:
 - **The empty tab** (`SideTab.blank(id)`, `Wortel/UI/NewTabPage.swift`,
   since 2026-11-26). A tab that is nothing yet, titled "New Tab". A row's
   "+" opens one at the end of its row, in front (`openBlank`), and a row
-  that already has one brings it forward instead of making a second. The
-  titlebar's split buttons make a split around one. Its page is
+  that already has one brings it forward instead of making a second. A
+  row's split buttons make a split around one. Its page is
   `NewTabPage`, drawn by `TabContent` like any page that is not a
   terminal: five rows, Terminal, Browser, Changes, History, Files, each
   with the key that opens the same thing without asking (⌘T, ⇧⌘B, ⇧⌘C, ⇧⌘H,
@@ -681,10 +693,12 @@ Making one, and dropping on one:
 - ⌘D and ⇧⌘D (`AppDelegate.splitRight`, `splitDown`) put a new terminal in a
   split beside the leaf you're in (`GitPanelModel.currentLeaf`). From Changes
   that is a split beside Changes, from the strip one beside the strip. The
-  two buttons at the trailing end of the titlebar (`AppDelegate.newSplitRight`,
-  `newSplitDown`) make the same split with an empty tab in it, where the
-  keys put a terminal: a key says what it wants, and a button is pressed by
-  someone still deciding. Split Right and Split Down in a tab's own menu
+  two buttons at the end of each split's row (`PaneBar.splitRight`,
+  `splitDown`) split that row's split, with an empty tab in the new one
+  where the keys put a terminal: a key says what it wants, and a button is
+  pressed by someone still deciding. (They were two buttons in the
+  titlebar's corner, through `AppDelegate.newSplitRight` and `newSplitDown`,
+  until the evening of 2026-11-26. Those actions are gone.) Split Right and Split Down in a tab's own menu
   move that tab into a split (`SideTabStrip.onSplit`), and are offered only
   when the tab is not alone in its split, whichever split that is: a
   split's only tab would be split from itself, and `WorkspaceTabs.split`

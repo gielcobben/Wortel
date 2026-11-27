@@ -2016,16 +2016,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc func splitRight(_ sender: Any?) { split(.right) }
     @objc func splitDown(_ sender: Any?) { split(.down) }
 
-    /// The titlebar's two buttons: the same split, with an empty tab in it
-    /// that asks what goes there. A key says what it wants (a terminal); a
-    /// button is pressed by someone still deciding.
-    @objc func newSplitRight(_ sender: Any?) { split(.right, with: .blank(UUID())) }
-    @objc func newSplitDown(_ sender: Any?) { split(.down, with: .blank(UUID())) }
-
-    private func split(_ edge: SplitLayout.Edge, with tab: SideTab? = nil) {
+    private func split(_ edge: SplitLayout.Edge) {
         focusMainWindow()
         guard manager.selected != nil else { return }
-        gitPanel.split(on: edge, with: tab)
+        gitPanel.split(on: edge)
     }
 
     /// `wortel split`: a split on `edge` of `session`'s main row, holding

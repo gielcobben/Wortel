@@ -741,7 +741,10 @@ No layer, no script in any page, no message handler, no observer, no timer.
 
 On, with its tab behind another, its column closed or its session not the
 one showing: the layer has left its window and let go of everything, the
-page's listeners included. What stays is the note's text and the names of
+page's listeners included. A layer put back in a window takes up again
+exactly what it let go of (the note's text in its text view, the frame it
+follows); the first version took up neither, and a layer put back showed an
+empty note that took no typing and no new marks. What stays is the note's text and the names of
 its pictures. Off, with a note kept, the page's script holds which elements
 the marks are on and nothing runs.
 

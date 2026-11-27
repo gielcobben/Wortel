@@ -111,13 +111,21 @@ final class MarkupOverlayView: NSView {
     // MARK: - Coming and going
 
     /// Keep this view exactly over `view`, which its owner may resize
-    /// behind its back: a docked Web Inspector shrinks the web view.
+    /// behind its back: a docked Web Inspector shrinks the web view. Heard
+    /// while the layer is in a window (`show`).
     func follow(_ view: NSView) {
         followed = view
         frame = view.frame
         view.postsFrameChangedNotifications = true
+        if isShowing { startFollowing() }
+    }
+
+    private func startFollowing() {
+        guard let followed else { return }
         NotificationCenter.default.addObserver(self, selector: #selector(followedMoved),
-                                               name: NSView.frameDidChangeNotification, object: view)
+                                               name: NSView.frameDidChangeNotification, object: followed)
+        // It may have moved while this layer was out of the window.
+        followedMoved()
     }
 
     @objc private func followedMoved() {
@@ -130,10 +138,17 @@ final class MarkupOverlayView: NSView {
         if window != nil { show() } else { hide() }
     }
 
+    // The same layer can leave its window and come back (its container
+    // moved), so what `hide` lets go of, `show` takes up again. The first
+    // version let go of the note's text and the frame it follows and took
+    // neither back: a layer put back showed an empty note that took no
+    // typing and no chips, and stayed the size it was.
     private func show() {
         guard !isShowing else { return }
         isShowing = true
         session.overlay = self
+        noteBar.attach()
+        startFollowing()
         surface.attach(to: self)
         surface.activate(moved: { [weak self] in self?.moved() })
         // Once more when everything around has its place: SwiftUI puts this
@@ -153,8 +168,18 @@ final class MarkupOverlayView: NSView {
         guard isShowing else { return }
         isShowing = false
         behind?.cancel()
-        NotificationCenter.default.removeObserver(self)
+        // Left set, the check that draws the marks faint was never asked
+        // again after a scroll.
+        behind = nil
+        awaiting = false
+        setFaint(false)
+        NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
         noteBar.detach()
+        // A press that will never hear its mouse-up, and its stroke. One
+        // whose mark is being made (`pending`) is hidden by its own reply.
+        press = nil
+        hideStroke()
+        showHover(nil)
         selected = nil
         moving = nil
         resizing = nil

@@ -36,7 +36,7 @@ Split Right would split that one instead of yours.
   (the first real layout at launch sends no resize) so the arrows ride the
   sidebar's edge as it opens and closes (`WindowControls.place`). While
   the sidebar is hidden the toggle (`SidebarToggle`, a `BadgedGlyphButton`)
-  carries a still dot for the loudest attention among the window's other
+  carries a still dot for the loudest attention among the window's
   sessions (`SessionManager.attentionBehindSidebar`, observed by
   `TitleBarController.observeWaiting`).
 - **The trailing end**: two buttons, 4pt apart. What the session is running

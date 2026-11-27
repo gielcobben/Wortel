@@ -680,12 +680,13 @@ final class SessionManager {
 
     /// What the sidebar's toggle shows for a window while the sidebar is
     /// hidden: the loudest attention among its sessions, as a folded header
-    /// does for its rows. Not the one on screen, which speaks for itself, and
-    /// never working: the toggle lights only for what is waiting on you.
+    /// does for its rows. Never working: the toggle lights only for what is
+    /// waiting on you. The selected session counts too: its dot is cleared
+    /// the moment you are in front of it, so one it still has (raised in a
+    /// window behind another, or while you were away) is one its row shows
+    /// as well, and leaving it out left no titlebar saying anything.
     func attentionBehindSidebar(of window: SessionWindow) -> AttentionKind? {
-        let onScreen = window.selectedID
-        return AttentionKind.loudest(of: sessions(in: window).lazy
-            .filter { $0.id != onScreen }.map(\.attention))
+        AttentionKind.loudest(of: sessions(in: window).lazy.map(\.attention))
     }
 
     private func sessionsHidden(inPinned pinned: Bool, of window: SessionWindow) -> some Sequence<Session> {

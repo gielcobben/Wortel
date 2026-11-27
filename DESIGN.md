@@ -422,7 +422,7 @@ footer with the keys. The selected row is the accent with white text.
 A louder state is never replaced by a quieter one, and a collapsed folder shows
 the loudest thing inside it after its chevron: a dot, or the three dots when
 nothing in it is louder than working. A hidden sidebar does the same on its
-toggle: the loudest waiting dot on the glyph's corner, still, and never the
+toggle: the loudest dot on the glyph's corner, still, and never the
 three dots. Sound only when a state gets louder.
 
 **A control**

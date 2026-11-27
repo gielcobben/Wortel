@@ -285,8 +285,8 @@ final class WindowControls: NSView {
     let toggle = SidebarToggle()
     let history = HistoryButtons()
 
-    /// The loudest attention among this window's sessions but the selected
-    /// one (`SessionManager.attentionBehindSidebar`).
+    /// The loudest attention among this window's sessions
+    /// (`SessionManager.attentionBehindSidebar`).
     var waiting: AttentionKind? {
         didSet { if waiting != oldValue { updateToggle() } }
     }
@@ -373,7 +373,9 @@ final class WindowControls: NSView {
         if abs(historyLeading.constant - x) > 0.01 { historyLeading.constant = x }
         if sidebarHidden != collapsed {
             sidebarHidden = collapsed
-            updateToggle()
+            // `place` runs inside a layout pass, and a dot swaps the
+            // toggle's glyph and lays it out again: after the pass, not in it.
+            DispatchQueue.main.async { [weak self] in self?.updateToggle() }
         }
         return x + width
     }
@@ -385,10 +387,21 @@ final class WindowControls: NSView {
         let dot = sidebarHidden ? waiting : nil
         toggle.dotColor = dot.map(SessionStatusIndicator.attentionColor)
         let label = !sidebarHidden ? "Hide Sidebar (⌘B)"
-            : dot == nil ? "Show Sidebar (⌘B)" : "Show Sidebar (⌘B), a session is waiting"
+            : dot.map { "Show Sidebar (⌘B), \(Self.says($0))" } ?? "Show Sidebar (⌘B)"
         if toggle.toolTip != label {
             toggle.toolTip = label
             toggle.setAccessibilityLabel(label)
+        }
+    }
+
+    /// What the toggle's words add for its dot: the kind, not one word for
+    /// all four, since a blue dot is news and not something waiting.
+    private static func says(_ kind: AttentionKind) -> String {
+        switch kind {
+        case .needsInput: return "a session needs you"
+        case .failed: return "a command failed"
+        case .turnDone: return "an agent is done"
+        case .finished: return "a command finished"
         }
     }
 
@@ -440,7 +453,8 @@ final class HistoryButtons: NSStackView {
 /// A dot on a glyph's top-right corner, as SF Symbols draw their own badges
 /// (`app.badge`): half out of the corner, with a ring of the glyph cut away
 /// around it so it reads as a badge and not as a blot on the lines. Used where
-/// no `.badge` variant of the symbol exists: the running list, the update icon.
+/// no `.badge` variant of the symbol exists: the running list, the update icon,
+/// the sidebar's toggle.
 enum GlyphBadge {
     static let dotSize: CGFloat = 6
     static let gap: CGFloat = 1.5
@@ -562,6 +576,7 @@ final class SidebarToggle: BadgedGlyphButton {
         setGlyph(NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Sidebar")?
             .withSymbolConfiguration(Chrome.glyph))
         toolTip = "Hide Sidebar (⌘B)"
+        setAccessibilityLabel(toolTip)
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: Chrome.controlSize),

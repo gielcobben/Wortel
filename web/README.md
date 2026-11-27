@@ -418,7 +418,9 @@ plan, `npx wrangler email sending enable wortel.sh`, then
 `wrangler.jsonc`, and `npx wrangler d1 migrations apply wortel-letter --remote`.
 The database was created and migrated on 2026-11-27. Email Sending for
 wortel.sh was not enabled then: until it is, a site deploy puts up a form
-whose confirmation mail fails, and every join answers "sorry".
+whose confirmation mail fails. The form still says "check your inbox" (a join
+answers before its mail is sent, so the answer cannot tell anyone who is on
+the list), no mail comes, and the log says `letter: confirmation mail failed`.
 
 **Try it locally:**
 

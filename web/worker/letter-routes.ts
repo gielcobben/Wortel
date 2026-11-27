@@ -19,7 +19,14 @@
 //
 // WHY THE SAME ANSWER EVERY TIME. Join says "check your inbox" whether the
 // address was new, already waiting, already on the list, or a bot's. Anything
-// else would let the form be used to find out who is on the list.
+// else would let the form be used to find out who is on the list. The same
+// goes for how long the answer takes: every valid join runs the same two
+// statements and answers, and the mail, when there is one, goes out after
+// (waitUntil). Waiting for it made a new address's answer slower than a known
+// one's by however long the mail service takes to accept it. So a mail that
+// fails is not reported to the person either: it is logged, and the claim is
+// undone so that sending the form again tries again, which is what the "check
+// your inbox" page tells someone whose mail does not come to do.
 //
 // WHAT LIMITS ABUSE. Someone can type other people's addresses into the form,
 // and those people get a mail they did not ask for. Three things keep that
@@ -33,6 +40,11 @@
 
 import { confirmationMail, isToken, MAIL_COOLDOWN, newToken, parseJoin, PENDING_TTL } from './letter.ts';
 
+/** The part of the Worker's ExecutionContext the letter uses. */
+export interface Waiter {
+  waitUntil(promise: Promise<unknown>): void;
+}
+
 export interface LetterEnv {
   ASSETS: { fetch(request: Request | string): Promise<Response> };
   DB: D1Database;
@@ -45,10 +57,10 @@ const FROM = { name: 'Wortel', email: 'letter@wortel.sh' };
 const MAX_BODY = 4096;
 
 /** The letter's answer to a request, or null when the request is not the letter's. */
-export async function letter(request: Request, url: URL, env: LetterEnv): Promise<Response | null> {
+export async function letter(request: Request, url: URL, env: LetterEnv, ctx: Waiter): Promise<Response | null> {
   switch (url.pathname) {
     case '/letter/join':
-      return request.method === 'POST' ? join(request, url, env) : notAllowed('POST');
+      return request.method === 'POST' ? join(request, url, env, ctx) : notAllowed('POST');
     case '/letter/confirm':
       if (request.method === 'GET' || request.method === 'HEAD') return page(url, env, 'confirm');
       return request.method === 'POST' ? confirm(request, url, env) : notAllowed('GET, HEAD, POST');
@@ -60,7 +72,7 @@ export async function letter(request: Request, url: URL, env: LetterEnv): Promis
   }
 }
 
-async function join(request: Request, url: URL, env: LetterEnv): Promise<Response> {
+async function join(request: Request, url: URL, env: LetterEnv, ctx: Waiter): Promise<Response> {
   const json = (request.headers.get('accept') ?? '').includes('application/json');
   const answer = (ok: boolean, status = 200) =>
     json
@@ -92,7 +104,8 @@ async function join(request: Request, url: URL, env: LetterEnv): Promise<Respons
   //     the address is forgotten in seven days and that must hold for the
   //     latest one;
   //   - anything else (on the list, or mailed within the day) is left as it
-  //     is and returns nothing, and gets the same answer.
+  //     is and returns nothing.
+  // Either way the answer is the same, and goes now.
   const fresh = newToken();
   const claimed = await env.DB.prepare(
     `INSERT INTO subscribers (email, token, source, created_at, confirmed_at, mailed_at) VALUES (?1, ?2, ?3, ?4, NULL, ?4)
@@ -100,30 +113,33 @@ async function join(request: Request, url: URL, env: LetterEnv): Promise<Respons
      WHERE subscribers.confirmed_at IS NULL AND subscribers.mailed_at <= ?5
      RETURNING token`,
   ).bind(asked.email, fresh, asked.source, now, now - MAIL_COOLDOWN).first<{ token: string }>();
-  if (!claimed) return answer(true);
-  const token = claimed.token;
-
-  // Behind the custom domain the links are always https://wortel.sh; anywhere
-  // else (wrangler dev) they point back at wherever the form was sent from.
-  const origin = url.hostname === 'wortel.sh' ? 'https://wortel.sh' : url.origin;
-  const mail = confirmationMail(origin, token);
-  try {
-    await env.EMAIL.send({ from: FROM, to: asked.email, ...mail });
-  } catch (err) {
-    console.error('letter: confirmation mail failed', err instanceof Error ? err.message : String(err));
-    // Undo the claim, so trying again sends again: a new address is
-    // forgotten, a waiting one may be mailed again at once. Both only if the
-    // row is still the one this request wrote.
-    if (token === fresh) {
-      await env.DB.prepare('DELETE FROM subscribers WHERE email = ? AND token = ? AND confirmed_at IS NULL')
-        .bind(asked.email, token).run();
-    } else {
-      await env.DB.prepare('UPDATE subscribers SET mailed_at = 0 WHERE email = ? AND token = ? AND mailed_at = ? AND confirmed_at IS NULL')
-        .bind(asked.email, token, now).run();
-    }
-    return answer(false, 503);
+  if (claimed) {
+    // Behind the custom domain the links are always https://wortel.sh;
+    // anywhere else (wrangler dev) they point back at wherever the form was
+    // sent from.
+    const origin = url.hostname === 'wortel.sh' ? 'https://wortel.sh' : url.origin;
+    ctx.waitUntil(mail(env, origin, asked.email, claimed.token, claimed.token === fresh, now));
   }
   return answer(true);
+}
+
+/** The confirmation mail, sent after the answer. When it fails, the claim is undone. */
+async function mail(env: LetterEnv, origin: string, email: string, token: string, isNew: boolean, now: number): Promise<void> {
+  try {
+    await env.EMAIL.send({ from: FROM, to: email, ...confirmationMail(origin, token) });
+  } catch (err) {
+    console.error('letter: confirmation mail failed', err instanceof Error ? err.message : String(err));
+    // Undo the claim, so sending the form again sends again: a new address
+    // is forgotten, a waiting one may be mailed again at once. Both only if
+    // the row is still the one this request wrote.
+    if (isNew) {
+      await env.DB.prepare('DELETE FROM subscribers WHERE email = ? AND token = ? AND confirmed_at IS NULL')
+        .bind(email, token).run();
+    } else {
+      await env.DB.prepare('UPDATE subscribers SET mailed_at = 0 WHERE email = ? AND token = ? AND mailed_at = ? AND confirmed_at IS NULL')
+        .bind(email, token, now).run();
+    }
+  }
 }
 
 /**

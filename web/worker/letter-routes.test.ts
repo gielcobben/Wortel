@@ -41,7 +41,7 @@ function fakeD1(db: DatabaseSync) {
   };
 }
 
-function setup({ mailFails = false } = {}) {
+function setup({ mailFails = false, mailWaits = Promise.resolve() } = {}) {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(path(import.meta.dirname, '../migrations/0001_subscribers.sql'), 'utf8'));
   const mails: { to: string; text: string }[] = [];
@@ -51,6 +51,7 @@ function setup({ mailFails = false } = {}) {
     EMAIL: {
       async send(message: { to: string; text: string }) {
         await new Promise((resolve) => setImmediate(resolve));
+        await mailWaits;
         if (mailFails) throw new Error('not onboarded');
         mails.push({ to: message.to, text: message.text });
       },
@@ -60,14 +61,24 @@ function setup({ mailFails = false } = {}) {
   return { db, env, mails };
 }
 
-function join(env: LetterEnv, email: string) {
+/** A join's answer, as soon as it is given, and the work it left to finish after. */
+async function post(env: LetterEnv, email: string) {
   const url = new URL('https://wortel.sh/letter/join');
   const request = new Request(url, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
     body: new URLSearchParams({ email, source: 'letter' }).toString(),
   });
-  return letter(request, url, env);
+  const after: Promise<unknown>[] = [];
+  const response = await letter(request, url, env, { waitUntil: (p) => after.push(p) });
+  return { response, after: Promise.all(after) };
+}
+
+/** A join, once everything it started has finished. */
+async function join(env: LetterEnv, email: string) {
+  const { response, after } = await post(env, email);
+  await after;
+  return response;
 }
 
 interface Row {
@@ -139,10 +150,21 @@ test('an address on the list is left alone, with the same answer', async () => {
   assert.deepEqual(rows(db).map((r) => [r.created_at, r.confirmed_at, r.mailed_at]), [[1, 2, 1]]);
 });
 
-test('a mail that fails leaves a new address forgotten', async () => {
+test('a mail that fails leaves a new address forgotten, with the same answer', async () => {
   const { db, env } = setup({ mailFails: true });
-  await join(env, 'you@example.com');
+  assert.deepEqual(await answers([await join(env, 'you@example.com')]), [[200, { ok: true }]]);
   assert.equal(rows(db).length, 0);
+});
+
+test('the answer does not wait for the mail', async () => {
+  let release!: () => void;
+  const { env, mails } = setup({ mailWaits: new Promise<void>((resolve) => { release = resolve; }) });
+  const { response, after } = await post(env, 'you@example.com');
+  assert.equal(response?.status, 200);
+  assert.equal(mails.length, 0, 'answered while the mail was still going');
+  release();
+  await after;
+  assert.equal(mails.length, 1);
 });
 
 test('a mail that fails leaves a waiting address free to be mailed again', async () => {

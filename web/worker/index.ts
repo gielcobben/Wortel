@@ -39,7 +39,7 @@ const ASSET_HOST = 'eu-assets.i.posthog.com';
 type Env = LetterEnv;
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === PREFIX || url.pathname.startsWith(`${PREFIX}/`)) {
@@ -47,7 +47,7 @@ export default {
     }
 
     if (url.pathname.startsWith('/letter/')) {
-      const answer = await letter(request, url, env);
+      const answer = await letter(request, url, env, ctx);
       if (answer) return answer;
     }
 

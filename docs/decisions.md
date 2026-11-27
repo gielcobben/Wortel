@@ -3422,6 +3422,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `/privacy` promises. A cron (`17 3 * * *`, `scheduled` in
   `web/worker/index.ts`) runs the same delete once a day; a join still runs
   it too, so an address past its week starts again with a new token.
+- **2026-11-27. A join answers before its mail is sent, and a failed mail
+  is not reported.** Waiting for the mail made a new address's answer slower
+  than a known one's, and a failed send answered "sorry" only for an address
+  that was mailed: both told a stranger whether an address was on the list.
+  Now every valid join runs the same two statements and answers "check your
+  inbox"; the mail goes out in `waitUntil`. When it fails, the log says so
+  and the claim is undone, so sending the form again tries again, which is
+  what the "check your inbox" page already tells someone whose mail does not
+  come. The cost: with Email Sending off, the form looks like it worked.
 
 ## Contributing
 

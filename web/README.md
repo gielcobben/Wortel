@@ -218,7 +218,12 @@ frame of each on the canvas would replace that, and one of an image would add
 the chapter that is missing. On a phone the plan wraps and its marks are
 placed over the same words again, the plan moves down to a mark drawn above
 what shows, and code scrolls sideways or up to a mark that would be out of
-sight. The two rows of tiles lift their pieces out of the same two frames.
+sight. The two rows of tiles lift their pieces out of the same two frames. The
+second row's note is `MARKUP_NOTE` in `data/site.ts`: the bar shows it, and
+the text beside it is written from it the way the app copies one, so the two
+cannot disagree. Their boxes are one height: the bar's tile is the narrower
+(4 to 7) so the sentence runs to about as many lines as the text, set a size
+smaller (12 / 16), and whichever comes out shorter takes up the difference.
 
 **/layouts** is made of the homepage's films. It opens with the splits film
 (`films/PanesFilm.astro`), which has a fourth chapter there (`sidebar`): ⌘B

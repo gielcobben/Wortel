@@ -1,0 +1,89 @@
+---
+// What mark-up works on, one preview after another in the same tab's place:
+// rendered Markdown, a file's source, its diff. (A page in a browser tab is
+// the film the page opens with, films/MarkupFilm.astro.) One window: the
+// sidebar and the session's split, with the file in front of its terminal.
+// In every chapter Mark Up turns on, the marks are drawn, and the sentence is
+// written around them. scripts/surfaces.ts plays it.
+//
+// The rendered plan is the canvas's "Mark-up, a plan" as drawn. The canvas has
+// no frame for mark-up over source or over a diff, so those two are put
+// together from frames it does have, by the script: the source tab
+// ("Chrome.swift, source"), the diff of the same file out of the Changes
+// pane, and the marks, the note bar, the Mark Up button and the mode switch
+// out of the plan's frame, placed over the lines. An image has no frame to
+// start from, and is left out.
+import Stage from '../Stage.astro';
+import Window from '../Window.astro';
+import AppContent from '../AppContent.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import MarkUp from '../../app/gen/MarkUp.astro';
+import Code from '../../app/gen/Code.astro';
+import Changes from '../../app/gen/Changes.astro';
+
+const chapters = ['Markdown', 'Source', 'Diff'];
+---
+<Stage film="surfaces" chapters={chapters} photo="hills" at="60% 20%" zoom={1.4} fold>
+  <Window data-swin data-narrow>
+    <div class="sf-slot sf-sb"><Sidebar /></div>
+    <div class="sf-div"></div>
+    <!-- The session's split: its row is the rightmost along the top. -->
+    <div class="sf-slot sf-main" data-end>
+      <div class="sf-pane" data-pane="rendered"><AppContent><MarkUp /></AppContent></div>
+      <div class="sf-pane" data-pane="source" hidden><Code /></div>
+      <div class="sf-pane" data-pane="diff" hidden><Code /></div>
+    </div>
+  </Window>
+  <div class="keys glass" data-keys="markup" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>M</kbd></div>
+  <!-- The diff the third chapter shows: cloned out of the Changes pane. -->
+  <template data-src><Changes /></template>
+</Stage>
+
+<script>
+  import { initSurfaces } from '../../scripts/surfaces';
+  initSurfaces();
+</script>
+
+<style>
+  .sf-slot { display: flex; min-width: 0; min-height: 0; }
+  .sf-sb { width: 234px; flex: none; }
+  .sf-sb > :global(*) { flex: 1; }
+  .sf-div { width: 1px; flex: none; align-self: stretch; background: var(--sidebar-border); }
+  /* The previews share one place, the one in front shown. */
+  .sf-main { flex: 1; display: grid; grid-template-columns: 100%; }
+  .sf-pane { grid-area: 1 / 1; display: flex; min-width: 0; min-height: 0; }
+  .sf-pane[hidden] { display: none; }
+  .sf-pane > :global(*) { flex: 1; }
+  /* A diff shorter than its preview can still be scrolled up from under the
+     note bar (scripts/surfaces.ts, clear): it has that much room under it. */
+  .sf-main :global([data-name="Diff"] > [data-name="Lines"]) { padding-bottom: 176px; }
+  /* Keys show in the middle of the preview (scripts/surfaces.ts says where). */
+  .keys { translate: -50% -50%; }
+
+  /* Narrower than the stage's full width the sidebar folds, as the other
+     films' does, and the window gains what the app gives a window with no
+     sidebar (app.ts, foldable). */
+  @media (max-width: 1263px) {
+    .sf-sb, .sf-div { display: none; }
+    :global([data-film="surfaces"] .win [data-narrow-only]) { display: flex; }
+    :global([data-film="surfaces"] .win [data-narrow-only][data-lead]) { display: contents; }
+    :global([data-film="surfaces"] .win [data-lead] [data-name="Back and Forward"]) { display: none; }
+    .sf-main :global(header[data-name="Main bar"]) { padding-left: 78px; }
+  }
+  /* On a phone the window is as wide as the stage, like every other, and the
+     previews are laid out at that width: the plan wraps, and its marks are
+     placed over the same words again (scripts/surfaces.ts); the code is cut
+     at the window's edge, and scrolls sideways to a mark drawn past it. The
+     note wraps as a text view's does, around its chips. */
+  @media (max-width: 760px) {
+    .sf-main :global([data-name="Note"]) { display: block; }
+    .sf-main :global([data-name="Note"] > [data-name^="Chip"]) { display: inline-flex; vertical-align: -5px; }
+    .sf-main :global([data-name="Note"] > [data-name="Caret"]) { display: inline-block; vertical-align: -4px; }
+    .sf-main :global([data-name="Note"] > span) { white-space: pre-wrap; }
+    /* A tab behind the front one gives up its place in a row this short, and
+       the file's own tab stays (site.css leaves the plan's tab out of a
+       folded window, for the hero's row). */
+    .sf-main :global([data-name="Session tab"]) { display: none; }
+    :global([data-film="surfaces"] .win[data-narrow] [data-name="plan.md tab"]) { display: flex; }
+  }
+</style>

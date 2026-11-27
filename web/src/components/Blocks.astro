@@ -20,6 +20,7 @@ const lastWord = (s: string): [string, string] => {
   'p' in b ? <p set:html={inline(b.p)} />
   : 'h' in b ? <h3>{b.h}</h3>
   : 'list' in b ? <ul>{b.list.map((i) => <li set:html={inline(i)} />)}</ul>
+  : 'code' in b ? <pre><code>{b.code}</code></pre>
   : (
     <table class={b.table.mono === 'first' ? 'terms' : undefined}>
       <thead><tr><th set:html={inline(b.table.head[0])} /><th set:html={inline(b.table.head[1])} /></tr></thead>

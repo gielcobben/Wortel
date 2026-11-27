@@ -1,0 +1,111 @@
+---
+// Tiles on /mark-up, built as the homepage's poster is (home/Bento.astro):
+// light tiles on the site's one grey, a label of a few words on each, and one
+// piece of the real app at its own size, cut by the tile. Two sets:
+//   marks  how a mark is made: an element of a page picked with a click, and
+//          the plan drawn on with an arrow and a highlighter;
+//   note   what becomes of it: the note in its bar, and the same note as
+//          Return puts it on the clipboard (MARKUP_PAGE in data/site.ts).
+// The pieces are lifted out of the canvas's two mark-up frames, which the
+// "marks" set renders once into a template for both.
+import AppContent from '../AppContent.astro';
+import MarkUpPage from '../../app/gen/MarkUpPage.astro';
+import MarkUp from '../../app/gen/MarkUp.astro';
+import { MARKUP_PAGE } from '../../data/site';
+interface Props { set: 'marks' | 'note' }
+const { set } = Astro.props;
+const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
+---
+<ul class:list={['tiles', set]} data-tiles data-reveal>
+  {set === 'marks' && (
+    <>
+      <li class="tile pick">
+        <p class="cap">A click picks an element</p>
+        <div class="wapp part bg-background" data-part="Page" inert aria-hidden="true" data-nosnippet></div>
+      </li>
+      <li class="tile draw">
+        <p class="cap">A drag draws on anything</p>
+        <div class="wapp part bg-background" data-part="Markdown" inert aria-hidden="true" data-nosnippet></div>
+      </li>
+    </>
+  )}
+  {set === 'note' && (
+    <>
+      <li class="tile bar">
+        <p class="cap">The note, in its bar</p>
+        <div class="wapp hold" data-part="Note bar" inert aria-hidden="true" data-nosnippet></div>
+      </li>
+      <li class="tile text">
+        <p class="cap">{copied?.label}</p>
+        <pre class="copied" data-nosnippet>{copied?.text}</pre>
+      </li>
+    </>
+  )}
+</ul>
+{set === 'marks' && <template data-tiles-src><AppContent><MarkUpPage /></AppContent><AppContent><MarkUp /></AppContent></template>}
+
+<script>
+  // Each holder gets a clone of the named part, out of the frames in the
+  // page's template.
+  const src = document.querySelector<HTMLTemplateElement>('template[data-tiles-src]')?.content;
+  if (src) {
+    document.querySelectorAll<HTMLElement>('[data-tiles] [data-part]').forEach((holder) => {
+      const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`);
+      if (part) holder.append(part.cloneNode(true));
+    });
+  }
+</script>
+
+<style>
+  .tiles {
+    --gap: 16px;
+    list-style: none; margin: 0; padding: var(--gap); border-radius: 32px;
+    display: grid; gap: var(--gap); grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 288px;
+    background: var(--btn-2);
+  }
+  .tile {
+    position: relative; overflow: hidden; isolation: isolate; min-width: 0; border-radius: 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px 16px; text-align: center;
+    background: var(--fog-0); color: var(--ink);
+  }
+  .cap { position: relative; z-index: 2; margin: 0; flex: none; font: 500 17px/24px var(--font-display); letter-spacing: -0.012em; text-wrap: balance; color: var(--ink); }
+  /* The panel does not move when it arrives; it fades in whole. */
+  :global(.js) .tiles[data-reveal] { translate: none; filter: none; }
+
+  /* A part lifted out of a frame: a page of the app with one corner showing. */
+  .part {
+    position: absolute; left: 24px; top: 64px; bottom: 0; display: flex; flex-direction: column; overflow: hidden; text-align: left;
+    border-radius: 12px 0 0 0; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgb(0 0 0 / 0.1);
+  }
+  /* The page at the 537 it was captured at, shown from just above the
+     paragraph down: the box drawn around the paragraph and the button a
+     click picked. Nothing else of mark-up is in this picture. */
+  .pick .part { width: 537px; }
+  .pick .part > :global([data-name="Page"]) { flex: none; height: 640px; margin-top: -192px; }
+  .pick .part :global(:is([data-name="Note bar"], [data-name="Hover outline"])) { display: none; }
+  /* The foot of the rendered plan at the 650 its marks were placed at: the
+     arrow and the highlight. */
+  .draw .part { width: 650px; }
+  .draw .part > :global([data-name="Markdown"]) { flex: 1 1 auto; min-height: 0; }
+
+  /* The note bar by itself, as wide as the tile lets it be, where the app
+     pins it to the foot of a preview. */
+  .hold { position: relative; flex: 1; align-self: stretch; display: flex; align-items: center; text-align: left; }
+  .hold > :global([data-name="Note bar"]) { position: relative; inset: auto; flex: 1; margin: 0 8px 16px; }
+  .hold :global([data-name="Placeholder"]) { display: none; }
+  /* The same note as text: what is pasted, on the lines it is pasted on. The
+     two tiles are as tall as that text makes them. */
+  .tiles.note { grid-auto-rows: minmax(288px, auto); }
+  .text { align-items: stretch; }
+  .copied {
+    margin: 0; padding: 16px; border-radius: 12px; text-align: left;
+    background: var(--fog-1); border: 1px solid var(--line); color: var(--ink);
+    font: 500 13px/24px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 900px) {
+    .tiles { grid-template-columns: minmax(0, 1fr); border-radius: 28px; }
+    .tiles.note { grid-auto-rows: auto; }
+    .tiles.note .bar { min-height: 216px; }
+  }
+</style>

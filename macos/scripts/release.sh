@@ -642,7 +642,9 @@ if [ "$INSTALL" = 0 ]; then
 fi
 
 echo "==> Installing to /Applications"
-osascript -e 'tell application "Wortel" to quit' 2>/dev/null || true
+# By bundle id, not by name: a beta shows itself as "Wortel Beta", and a
+# name can match a test copy or another app called Wortel.
+osascript -e 'tell application id "com.gielcobben.Wortel" to quit' 2>/dev/null || true
 sleep 1
 rm -rf /Applications/Wortel.app
 cp -R "$APP" /Applications/Wortel.app

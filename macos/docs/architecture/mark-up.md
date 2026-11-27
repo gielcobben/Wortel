@@ -394,7 +394,13 @@ same pixel. The edge is one pixel of the screen it is on (`1 /
 backingScaleFactor`), black or white at 16%. The shadow is set through the
 view's `shadow`: AppKit owns a view's layer and puts a shadow set on the
 layer back to none, which is why the first bar had no shadow at all. Copy
-is the system's default button. The bar floats 16pt from the preview's
+is drawn as the system's default button and is pressed by no key
+(`CopyButton`): Return is the note's. As the default button it took Return
+from the whole window, since the key window offers every key to its views
+before the first responder and a key that climbs the responder chain to the
+window presses its default button, so Return in the address field, the find
+field or a terminal in another split copied the note instead (found in
+review, shown with the real bar in a harness, 2026-11-26). The bar floats 16pt from the preview's
 edges (12 in a column under 420pt), 640pt wide at most.
 
 It was the system's glass (`NSGlassEffectView`) for a day, and is not any
@@ -538,8 +544,8 @@ The bar is `MarkupNoteBar`: an `NSTextView` on an explicit TextKit 1 stack
 over the session's `NSTextStorage`, so undo, spelling, dictation and input
 methods are the system's. It has its own `UndoManager`, for the reason
 `CommitMessageEditor` gives, and takes ⌘A, ⌘C, ⌘V, ⌘X and ⌘Z itself, since
-those are the terminal's in `wortel.conf` and not on the menu. Return
-copies, ⇧Return and ⌥Return make a line, Esc goes back one step (see
+those are the terminal's in `wortel.conf` and not on the menu. Return in
+the note copies, ⇧Return and ⌥Return make a line, Esc goes back one step (see
 "The tools"). Pasting is plain text only, and Writing Tools are off: both
 would put a chip in the text with no mark behind it, or take one out.
 
@@ -762,6 +768,13 @@ looked at.
 - The crosshair over a page that sets cursors of its own, and that the
   page stops lighting what the pointer passes.
 - Return while an input method is composing (Japanese, Pinyin).
+- Return typed in a key window. That the address field, a terminal and a
+  view that hands keys on no longer copy was shown by asking the key
+  window's key-equivalent pass and its responder chain directly, in a clear
+  window that is not key, not with a typed key.
+- A layer taken out of its window and put back by the app itself. The
+  harness moved the real layer's container out and back, into the same
+  window and another; no path in the app that does so was found or driven.
 - The note bar's default button's accent, its caret and the pointer over
   it: each needs a key window or a real pointer. The bar and the marks were
   captured as really drawn on macOS 27 over a paragraph, light and dark, at

@@ -1,7 +1,7 @@
 // The homepage's structured data: one @graph so crawlers resolve the @id
 // cross-references (the app is the page's mainEntity, the person publishes
 // both). FAQ answers come from site.ts, the same sentences the page renders.
-import { SITE, FAQ } from './site';
+import { SITE, FAQ, HOME, betaNote } from './site';
 import { plain } from './inline';
 import type { Release } from './release';
 
@@ -56,14 +56,14 @@ export function homeSchema(LATEST: Release | null) {
       'A git worktree per session, so several coding agents can share one repository',
       'Shells run outside the app and keep working after you quit or it crashes',
       'More than one window, with sessions that move between them',
-      'Splits with a row of tabs each, for terminals, a browser, files and the git panes',
+      `Splits with a row of tabs each, for terminals, a browser, files and the git panes${betaNote(HOME.window)}`,
       'Shows what Claude Code, Codex, Pi and other agents report they are doing',
       'Notifies you when a background agent stops working and waits on you',
       'Resumes agents that were still running at quit',
       'Built-in git panel: working-tree changes, commit history with a branch graph, and diffs',
       'Project file tree with drag-to-terminal path insertion',
       'Preview windows for source, diffs, rendered Markdown and Quick Look',
-      'Mark-up on any preview or page, copied as a note an agent can read',
+      `Mark-up on any preview or page, copied as a note an agent can read${betaNote(HOME.markup)}`,
       'A bundled wortel command that scripts the app over a socket, with no installer',
       'Almost nothing to configure: five settings and no dotfile',
     ],

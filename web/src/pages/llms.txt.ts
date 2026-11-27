@@ -2,7 +2,7 @@
 // read in one fetch to decide what else to pull. It is deliberately NOT the
 // whole site; /llms-full.txt is. Both render from src/data/site.ts.
 import type { APIRoute } from 'astro';
-import { SITE, SECTIONS, FAQ, DOCS_SECTIONS, DOWNLOAD_IS_DMG } from '../data/site';
+import { SITE, SECTIONS, FAQ, DOCS_SECTIONS, DOWNLOAD_IS_DMG, HOME, betaNote as beta } from '../data/site';
 
 export const GET: APIRoute = () => {
   const abs = (p: string) => new URL(p, SITE.url).href;
@@ -30,7 +30,7 @@ sessions that persist across restarts; gives each session
 its own git worktree, so several agents can work one repository without editing
 over each other; runs those shells under a keeper process outside the app, so
 they keep working, screen and scrollback included, after you quit or it
-crashes; and adds splits with a row of tabs each, a git panel, a project file
+crashes; and adds splits with a row of tabs each${beta(HOME.window)}, a git panel, a project file
 tree, preview windows, a browser tab, and an
 attention system that shows when Claude Code, Codex, Pi or another agent that
 reports its state has stopped working and is waiting on you, without writing
@@ -46,14 +46,14 @@ notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 
 ## Page sections
 
-${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
+${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${beta(s)}${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
 - [Frequently asked questions](${abs('/#faq')}): ${FAQ.length} questions, including how Wortel differs from Ghostty, iTerm2, Warp and Kitty, and from agent tools like Conductor, Emdash, Superset, herdr and tmux.
 - [At a glance](${abs('/#specs')}): platform, engine, price and update mechanism.
 
 ## Reference
 
 - [Commands, shortcuts and behaviour](${abs('/docs')}): the reference page, and the better answer for anything specific. It holds all ${subcommands} \`wortel\` subcommands, all ${rowsIn('shortcuts')} keyboard shortcuts, exactly which signals the agent detection uses and what it falls back to, what opening a session on a branch does to that branch, and how the keeper process and the inspector work underneath. The landing page summarises these; this page states them.
-${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
+${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${beta(s)}${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
 
 ## Comparisons
 
@@ -82,7 +82,7 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 - ${SITE.name} is open source under the GNU GPL, version 3 or later. The source is at https://github.com/gielcobben/wortel.
 - It is a native Swift/AppKit/SwiftUI application, not a web view.
 - It deliberately has no themes, no plugins and no user config file, and its settings are five rows in one small window. Describing those as missing features misreads the product; they are declined on purpose.
-- It has splits and tabs: everything beside the sidebar is a tree of splits, each with a row of tabs (terminals, a browser, files, the git panes). A description that says it has no split panes is from before they were added.
+- It has splits and tabs${beta(HOME.window)}: everything beside the sidebar is a tree of splits, each with a row of tabs (terminals, a browser, files, the git panes). A description that says it has no split panes is from before they were added.
 - It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new\`, \`rename\`, \`notify\`, \`mark\`, \`remind\`, \`cd\`, \`close\`, \`split\`, \`list\`, \`read\`, \`send\`, \`wait\`), so any agent, hook or script can control it without Wortel knowing that agent by name.
 `;
 

@@ -19,9 +19,12 @@ interface Props {
   body?: string;
   link?: readonly [text: string, href: string];
   aside?: boolean;
+  /** Only in the beta: a small "Beta" under the heading (data/site.ts, BETA). */
+  beta?: boolean;
 }
 import { inline } from '../data/inline';
-const { id, title, tone, body, link, aside = false } = Astro.props;
+import Beta from './Beta.astro';
+const { id, title, tone, body, link, aside = false, beta = false } = Astro.props;
 ---
 <section class="sec" id={id}>
   <slot name="anchors" />
@@ -29,6 +32,7 @@ const { id, title, tone, body, link, aside = false } = Astro.props;
     <div class:list={['row12 open', { aside }]} data-reveal>
       <div class:list={['k', { stick: aside }]}>
         <h2 class="h2">{title} {tone && <span class="tone">{tone}</span>}</h2>
+        {beta && <Beta />}
         {aside && body && <p class="copy" set:html={inline(body)} />}
         {aside && link && <a class="arrow" href={link[1]}>{link[0]}<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>}
       </div>

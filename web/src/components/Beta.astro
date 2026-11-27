@@ -1,0 +1,9 @@
+---
+// "Beta", beside what only the beta has: under a section's heading, or after
+// the first cell of a table row (components/Blocks.astro). Where it goes is
+// `beta: true` in data/site.ts (BETA there says how to take it off when the
+// beta becomes a regular release), and how it looks is `.beta` in
+// styles/site.css. This file and that class stay for the next beta.
+import { BETA } from '../data/site';
+---
+<span class="beta">{BETA.label}</span>

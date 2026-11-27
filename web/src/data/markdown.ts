@@ -15,7 +15,7 @@
 // and "not published" has to read as itself rather than as a quiet no.
 import { getCollection } from 'astro:content';
 import { compareVersions, publicRelease } from '../content.config';
-import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, type Block } from './site';
+import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, betaNote as beta, type Block } from './site';
 import { COMPARE, APPS, AXES, GROUPS, type Verdict } from './compare';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
@@ -24,11 +24,13 @@ export const renderBlock = (b: Block): string => {
   if ('p' in b) return b.p;
   if ('h' in b) return `**${b.h}**`;
   if ('list' in b) return b.list.map((li) => `- ${li}`).join('\n');
-  const { head, rows } = b.table;
+  const { head, rows, mono } = b.table;
+  // In a table of commands "(beta)" goes with what the command does, where it
+  // cannot be read as part of the command.
   return [
     `| ${head[0]} | ${head[1]} |`,
     '| --- | --- |',
-    ...rows.map(([k, v]) => `| ${k} | ${v} |`),
+    ...rows.map(([k, v, f]) => (mono === 'first' ? `| ${k} | ${v}${beta(f)} |` : `| ${k}${beta(f)} | ${v} |`)),
   ].join('\n');
 };
 
@@ -54,7 +56,7 @@ const footer = (): string[] => ['', '---', '', `© ${SITE.author}. ${SITE.name} 
 export const homeSections = (): string[] => {
   const out: string[] = [];
   for (const section of SECTIONS) {
-    out.push('', `## ${section.title}`, '');
+    out.push('', `## ${section.title}${beta(section)}`, '');
     if (section.lead) out.push(section.lead, '');
     out.push(section.blocks.map(renderBlock).join('\n\n'));
   }
@@ -75,7 +77,7 @@ export const specs = (): string[] => [
 export const docsSections = (level: number): string[] => {
   const out: string[] = [];
   for (const section of DOCS_SECTIONS) {
-    out.push('', `${hashes(level)} ${section.title}`, '');
+    out.push('', `${hashes(level)} ${section.title}${beta(section)}`, '');
     if (section.lead) out.push(section.lead, '');
     out.push(section.blocks.map(renderBlock).join('\n\n'));
   }

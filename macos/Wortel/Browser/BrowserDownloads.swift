@@ -56,6 +56,9 @@ final class BrowserDownloads: NSObject {
         /// Where its bytes are: `<name>.download` while it runs, the file
         /// itself once it is done.
         var file: URL?
+        /// The `.download` WebKit was given, while it runs: the one address
+        /// this download's cleanup may remove, never one found by its name.
+        var partial: URL?
         var state: State
         var received: Int64 = 0
         /// nil when the server didn't say.
@@ -122,10 +125,11 @@ final class BrowserDownloads: NSObject {
     func stop(_ id: UUID) {
         guard let download = running[id], let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].state = .stopped
-        let file = items[index].file
+        let partial = items[index].partial
+        items[index].partial = nil
         finished(download)
         download.cancel { _ in
-            MainActor.assumeIsolated { BrowserDownloadName.removePartial(file) }
+            MainActor.assumeIsolated { BrowserDownloadName.removePartial(partial) }
         }
     }
 
@@ -179,9 +183,12 @@ final class BrowserDownloads: NSObject {
         }
     }
 
-    /// The names running downloads hold, but `except`'s own.
+    /// The names running downloads hold, each one's and its `.download`'s,
+    /// but `except`'s own.
     private func held(except id: UUID? = nil) -> Set<String> {
-        Set(items.filter { $0.state == .running && $0.id != id }.map(\.name))
+        Set(items.filter { $0.state == .running && $0.id != id }.flatMap { item in
+            [item.name] + (item.partial.map { [$0.lastPathComponent] } ?? [])
+        })
     }
 
     /// The Dock's Downloads stack bounces for a file it is told about, as it
@@ -226,7 +233,7 @@ extension BrowserDownloads: WKDownloadDelegate {
         let name = BrowserDownloadName.free(wanted, in: folder, held: held())
         let file = folder.appendingPathComponent(BrowserDownloadName.partial(name))
         let expected = response.expectedContentLength
-        let item = Item(id: UUID(), name: name, file: file, state: .running,
+        let item = Item(id: UUID(), name: name, file: file, partial: file, state: .running,
                         total: expected > 0 ? expected : nil)
         items.insert(item, at: 0)
         running[item.id] = download
@@ -243,11 +250,12 @@ extension BrowserDownloads: WKDownloadDelegate {
         guard let index = item(of: download) else { return finished(download) }
         // Whole now: under its own name. Should the rename fail, the
         // `.download` is kept, with every byte, and Show in Finder goes to it.
-        if let partial = items[index].file,
+        if let partial = items[index].partial,
            let file = BrowserDownloadName.finish(partial, as: items[index].name, held: held(except: items[index].id)) {
             items[index].file = file
             items[index].name = file.lastPathComponent
         }
+        items[index].partial = nil
         if let file = items[index].file {
             if let size = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int64 {
                 items[index].received = size
@@ -270,7 +278,8 @@ extension BrowserDownloads: WKDownloadDelegate {
         }
         guard items[index].state == .running else { return }
         items[index].state = .failed(error.localizedDescription)
-        BrowserDownloadName.removePartial(items[index].file)
+        BrowserDownloadName.removePartial(items[index].partial)
+        items[index].partial = nil
         items[index].file = nil
     }
 }

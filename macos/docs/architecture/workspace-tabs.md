@@ -173,8 +173,13 @@ taken meanwhile. A name counts as taken while a running download holds it,
 not only once it is on disk: WebKit makes the file a moment after it is
 given the name (not there 50 ms later) and fails when the destination
 exists, leaving that file alone. Two downloads of one name were both given
-it, the second failed, and its cleanup deleted the first's file. Only a
-`.download` is ever removed (`BrowserDownloadName.removePartial`).
+it, the second failed, and its cleanup deleted the first's file. A held
+name is the download's and its `.download`'s, compared ignoring case as
+the disk does. A download's cleanup removes only the exact `.download`
+address it was given (`Item.partial`, `BrowserDownloadName.removePartial`),
+and a server's suggested name loses a `.download` ending
+(`BrowserDownloadName.cleaned`), so no download's own name can be another
+one's unfinished file.
 
 A Debug build saves to `WORTEL_DOWNLOADS_DIR` when that is set, for a test
 copy (`BrowserDownloadsFolder`, read in `main.swift` before the launch

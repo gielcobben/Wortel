@@ -231,6 +231,12 @@ enum BrowserDownloadName {
         name = name.trimmingCharacters(in: .whitespaces)
         // A leading dot would save it where the Finder doesn't show it.
         name = String(name.drop { $0 == "." })
+        // Never a `.download`: that is what a running download is written
+        // as (`partial`), and a server suggesting `report.zip.download`
+        // would otherwise be given another download's unfinished file.
+        while name.lowercased().hasSuffix(".download") {
+            name = String(name.dropLast(".download".count)).trimmingCharacters(in: .whitespaces)
+        }
         guard !name.isEmpty else { return "download" }
         let whole = name as NSString
         let ext = whole.pathExtension
@@ -244,15 +250,18 @@ enum BrowserDownloadName {
     /// are: `report.zip.download`. A file under its real name is a whole one.
     static func partial(_ name: String) -> String { name + ".download" }
 
-    static func isPartial(_ file: URL) -> Bool { file.pathExtension == "download" }
+    static func isPartial(_ file: URL) -> Bool { file.pathExtension.lowercased() == "download" }
 
     /// The name a new download gets in `folder`: `wanted`, numbered past any
     /// name that is on disk, whose `.download` is on disk, or that a running
-    /// download holds (`held`). WebKit makes the file a moment after it is
-    /// given the name, so the disk alone says a name is free that isn't.
+    /// download holds (`held`: each one's name and its `.download`). WebKit
+    /// makes the file a moment after it is given the name, so the disk alone
+    /// says a name is free that isn't. Held names are compared ignoring
+    /// case, as the disk compares them: `Report.zip` is `report.zip` there.
     static func free(_ wanted: String, in folder: URL, held: Set<String>) -> String {
-        free(wanted) { name in
-            held.contains(name)
+        let held = Set(held.map { $0.lowercased() })
+        return free(wanted) { name in
+            held.contains(name.lowercased()) || held.contains(partial(name).lowercased())
                 || FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path)
                 || FileManager.default.fileExists(atPath: folder.appendingPathComponent(partial(name)).path)
         }
@@ -264,24 +273,27 @@ enum BrowserDownloadName {
     /// couldn't be renamed; the file is then still where it was.
     static func finish(_ partialFile: URL, as name: String, held: Set<String>) -> URL? {
         let folder = partialFile.deletingLastPathComponent()
-        var taken = held
+        var taken = Set(held.map { $0.lowercased() })
         for _ in 0..<100 {
             let candidate = free(name) {
-                taken.contains($0) || FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+                taken.contains($0.lowercased())
+                    || FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
             }
             let file = folder.appendingPathComponent(candidate)
             if renamex_np(partialFile.path, file.path, UInt32(RENAME_EXCL)) == 0 { return file }
             guard errno == EEXIST else { return nil }
-            taken.insert(candidate)
+            taken.insert(candidate.lowercased())
         }
         return nil
     }
 
-    /// What a download that didn't finish wrote. Removed rather than moved to
-    /// the Trash: it is a few seconds old, Wortel made it, and half a zip in
-    /// the Trash is nothing anyone would put back. Only ever a `.download`:
-    /// its name was free on disk and held by no other download when it was
-    /// given, so what is there is that download's.
+    /// What a download that didn't finish wrote, at the exact address that
+    /// download was given. Removed rather than moved to the Trash: it is a
+    /// few seconds old, Wortel made it, and half a zip in the Trash is
+    /// nothing anyone would put back. Only ever a `.download`, and no other
+    /// download's: its name was free on disk and held by no running download
+    /// when it was given, and no download is ever given a name ending in
+    /// `.download` as its own (`cleaned`).
     static func removePartial(_ file: URL?) {
         guard let file, isPartial(file) else { return }
         try? FileManager.default.removeItem(at: file)

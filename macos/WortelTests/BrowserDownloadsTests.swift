@@ -42,6 +42,28 @@ final class BrowserDownloadsTests: XCTestCase {
         XCTAssertEqual(read("report.zip"), "the first's data")
     }
 
+    /// A server suggests `report.zip.download` while `report.zip` is running:
+    /// that is the running one's unfinished file. Given it, the second's
+    /// finished file could be removed by the first's failing.
+    func testASuggestedDotDownloadNeverMeetsARunningDownloadsPartial() throws {
+        XCTAssertEqual(BrowserDownloadName.cleaned("report.zip.download"), "report.zip")
+        XCTAssertEqual(BrowserDownloadName.cleaned("notes.DOWNLOAD"), "notes")
+        XCTAssertEqual(BrowserDownloadName.cleaned("x.download.download"), "x")
+        XCTAssertEqual(BrowserDownloadName.cleaned(".download"), "download")
+
+        let first = BrowserDownloadName.free("report.zip", in: folder, held: [])
+        let held: Set = [first, BrowserDownloadName.partial(first)]
+        let second = BrowserDownloadName.free(BrowserDownloadName.cleaned("report.zip.download"),
+                                              in: folder, held: held)
+        XCTAssertEqual(second, "report 2.zip")
+        XCTAssertNotEqual(BrowserDownloadName.partial(second), BrowserDownloadName.partial(first))
+    }
+
+    /// The disk ignores case, so held names do too.
+    func testAHeldNameIsTakenWhateverItsCase() {
+        XCTAssertEqual(BrowserDownloadName.free("report.zip", in: folder, held: ["Report.ZIP"]), "report 2.zip")
+    }
+
     /// A `.download` left by a quit or a crash keeps its name taken.
     func testALeftoverPartialKeepsItsNameTaken() throws {
         try write("half", to: "report.zip.download")

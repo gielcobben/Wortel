@@ -2633,7 +2633,9 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   stopped or failed download is removed, not moved to the Trash: Wortel made
   it seconds ago and it is half a file.
   **2026-11-27:** that partial file is now `<name>.download` until the
-  download finishes, as Safari's is, and only a `.download` is ever removed.
+  download finishes, as Safari's is, and only a `.download` is ever removed,
+  the one that download was given. A name a server suggests loses a
+  `.download` ending, so it can't be another download's unfinished file.
   A quit or a crash mid-download had left a truncated file under the real
   name, and a failed download sharing a name with a running one deleted
   the other's file. One left by a quit stays where it is, and its name says

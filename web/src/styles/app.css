@@ -177,6 +177,24 @@
    radius the canvas gave it. */
 .wapp :is([data-name="Glass"], .win > [class*="backdrop-blur"]) { border-radius: 18px; }
 
+/* ---- a note that wraps as a text view does ------------------------------------
+   The canvas lays a note out as a row that wraps: words, a chip, words, each
+   a whole piece. That is right while the sentence fits on a line. Where a
+   note is shown narrower than it was drawn, or with another sentence
+   (data-note="flow" on what holds the bar), it runs as text instead, the
+   chips in the line like words, so a line breaks between any two words.
+   A chip sits on the sentence's baseline: its own words are what an
+   inline-flex box is lined up by, so the chip's words and the words around
+   it share one line, and the chip's fill stands around them. (It was first
+   lowered by a guessed 5 points, which put its words that far under the
+   sentence's.) The caret takes no room of its own, so it never wraps to a
+   line alone, and stands from 4 under the baseline, as the canvas's does in
+   its row. */
+[data-note="flow"] [data-name="Note"] { display: block; }
+[data-note="flow"] [data-name="Note"] > [data-name^="Chip"] { display: inline-flex; vertical-align: baseline; }
+[data-note="flow"] [data-name="Note"] > [data-name="Caret"] { display: inline-block; vertical-align: -4px; margin-left: -1.5px; }
+[data-note="flow"] [data-name="Note"] > span { white-space: pre-wrap; }
+
 /* ---- a ticked task in rendered Markdown --------------------------------------
    The canvas exports the ticked box as a picture, the accent square with its
    white tick, and the generated markup uses that picture as a mask over the

@@ -28,7 +28,7 @@ const chapters = ['Markdown', 'Source', 'Diff'];
     <div class="sf-slot sf-sb"><Sidebar /></div>
     <div class="sf-div"></div>
     <!-- The session's split: its row is the rightmost along the top. -->
-    <div class="sf-slot sf-main" data-end>
+    <div class="sf-slot sf-main" data-end data-note="flow">
       <div class="sf-pane" data-pane="rendered"><AppContent><MarkUp /></AppContent></div>
       <div class="sf-pane" data-pane="source" hidden><Code /></div>
       <div class="sf-pane" data-pane="diff" hidden><Code /></div>
@@ -74,12 +74,9 @@ const chapters = ['Markdown', 'Source', 'Diff'];
      previews are laid out at that width: the plan wraps, and its marks are
      placed over the same words again (scripts/surfaces.ts); the code is cut
      at the window's edge, and scrolls sideways to a mark drawn past it. The
-     note wraps as a text view's does, around its chips. */
+     note wraps as a text view's does, around its chips, at every width
+     (data-note="flow", styles/app.css). */
   @media (max-width: 760px) {
-    .sf-main :global([data-name="Note"]) { display: block; }
-    .sf-main :global([data-name="Note"] > [data-name^="Chip"]) { display: inline-flex; vertical-align: -5px; }
-    .sf-main :global([data-name="Note"] > [data-name="Caret"]) { display: inline-block; vertical-align: -4px; margin-left: -1.5px; }
-    .sf-main :global([data-name="Note"] > span) { white-space: pre-wrap; }
     /* A tab behind the front one gives up its place in a row this short, and
        the file's own tab stays (site.css leaves the plan's tab out of a
        folded window, for the hero's row). */

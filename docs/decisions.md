@@ -2734,7 +2734,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   typed straight into a prompt; a note is copied and may be pasted later.
   Swept at launch and whenever a new note's folder is made. cmux keeps the
   newest 100 files instead; a count leaves months-old pictures until more
-  are made.
+  are made. Removed, not moved to the Trash, as the pasted images are:
+  Wortel made every file there, nobody but an agent reading a path was
+  meant to open one, and a Trash filling with week-old screenshots helps
+  nobody. This is the one kind of removal the rule "Trash rather than
+  `rm`" leaves out (`AGENTS.md`).
 - **2026-11-25. Mark Up is ⇧⌘M.** Preview's own key for its Markup toolbar
   is ⇧⌘A, which is Select All in a terminal here. cmux uses ⌃⌥⌘D. M is
   free in Wortel and on no Mac convention.

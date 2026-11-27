@@ -1,0 +1,118 @@
+---
+// A feature page: one feature, in depth (/mark-up, /layouts). It sits between
+// the homepage, which makes the point once, and /docs, which states it
+// exactly. The words are a FeaturePage in data/site.ts; the page's own file
+// (pages/mark-up.astro) brings what each part shows, in a slot named for the
+// part's id, and the first film in the slot "hero".
+//
+// Top to bottom, with the homepage's own layout (styles/site.css):
+//   the opening    the page's one large line in two tones, a sentence, the
+//                  download and the part of /docs that goes further, and the
+//                  first film on its stage, as the homepage's landing has it;
+//   the parts      each a Section: the row (a two-line heading, one short
+//                  paragraph, a link), then a stage or tiles at full width,
+//                  then short facts where a part has them;
+//   the reference  rows to read, as /docs has them (.row12.read);
+//   more           the other feature pages, and where else to go.
+// The closing call is the footer's, as on every page.
+//
+// How it is built comes from reading other products' feature pages: a short
+// opening with the product itself as the picture, the feature in a handful of
+// parts with one visual each, a second tier of one-sentence points, a link to
+// the manual from a part, and a close that leads to the other features.
+import Layout from '../layouts/Layout.astro';
+import Section from './Section.astro';
+import Blocks from './Blocks.astro';
+import Beta from './Beta.astro';
+import { inline } from '../data/inline';
+import { SITE, FEATURE_PAGES, type FeaturePage } from '../data/site';
+interface Props { page: FeaturePage }
+const { page } = Astro.props;
+const abs = (p: string) => new URL(p, SITE.url).href;
+const schema = [{
+  '@type': 'WebPage', '@id': abs(`${page.path}#webpage`), url: abs(page.path), name: page.title,
+  description: page.description, isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+}];
+// What each part shows, rendered here so a part's slot can be named by its id.
+const shows = new Map<string, string>();
+for (const part of page.parts) if (Astro.slots.has(part.id)) shows.set(part.id, await Astro.slots.render(part.id));
+const others = FEATURE_PAGES.filter((other) => other.path !== page.path).map((other) => ({ name: other.name, blurb: other.blurb, href: other.path }));
+const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+---
+<Layout title={page.title} description={page.description} path={page.path} schema={schema} markdown={`${page.path}.md`}>
+  <section class="opening">
+    <div class="page">
+      <header class="top" data-reveal-group>
+        <h1 class="display" data-reveal>{page.heading} <span class="tone">{page.tone}</span></h1>
+        {page.beta && <p class="flag" data-reveal><Beta /></p>}
+        <p class="lead" data-reveal set:html={inline(page.lead)} />
+        <div class="ctas" data-reveal>
+          <a class="btn" href={`/download#${page.path.slice(1)}`}>Download for macOS<Fragment set:html={chevron} /></a>
+          <a class="btn ghost" href={page.docs[1]}>{page.docs[0]}</a>
+        </div>
+      </header>
+      <slot name="hero" />
+    </div>
+  </section>
+
+  {page.parts.map((part) => (
+    <Section id={part.id} title={part.title} tone={part.tone} body={part.body} link={part.link}>
+      <Fragment set:html={shows.get(part.id) ?? ''} />
+      {part.facts && (
+        <ul class:list={['facts', { four: part.facts.length === 4 }]} data-reveal-group="0.06">
+          {part.facts.map(([name, text]) => (
+            <li class="fact" data-reveal>
+              <h3 class="h3">{name}</h3>
+              <p class="body" set:html={inline(text)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  ))}
+
+  <div class="page rest">
+    {page.reference.map((s) => (
+      <section id={s.id} class="row12 read">
+        <div class="k"><h2 class="h2">{s.title}</h2></div>
+        <div class="v">
+          {s.lead && <p class="lead" set:html={inline(s.lead)} />}
+          <div class="prose"><Blocks blocks={s.blocks} /></div>
+        </div>
+      </section>
+    ))}
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">More</h2></div>
+      <div class="v">
+        <ul class="more">
+          {[...others, ...page.more].map((m) => (
+            <li>
+              <a class="arrow" href={m.href}>{m.name}<Fragment set:html={chevron} /></a>
+              <p class="body">{m.blurb}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  /* The opening has the homepage landing's measures (components/home/Hero.astro). */
+  .opening { padding-top: 144px; }
+  .top { margin-bottom: 64px; }
+  .top .lead { max-width: 560px; margin-top: 24px; }
+  .flag { margin: 16px 0 0; }
+  .ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 8px; margin-top: 32px; }
+  .ctas .btn:not(.ghost) :global(svg) { margin-left: 2px; }
+  @media (max-width: 900px) { .opening { padding-top: 104px; } .top { margin-bottom: 48px; } }
+  /* The rows to read start as far under the last part as a part does. */
+  .rest { margin-top: 160px; }
+  @media (max-width: 900px) { .rest { margin-top: 112px; } }
+  .v .lead { margin-bottom: 24px; }
+  /* Where to go from here: a link and its sentence, one under the other. */
+  .more { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px var(--col-gap); }
+  .more .arrow { margin-top: 0; }
+  .more .body { margin-top: 8px; max-width: 400px; }
+  @media (max-width: 640px) { .more { grid-template-columns: 1fr; gap: 24px; } }
+</style>

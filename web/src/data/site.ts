@@ -139,6 +139,8 @@ export type Block =
   /** A small heading inside a section, where it holds more than one subject. */
   | { h: string }
   | { list: string[] }
+  /** Something as it is typed or pasted, on lines of its own. */
+  | { code: string }
   | {
       table: {
         head: [string, string];
@@ -409,7 +411,7 @@ export const HOME = {
     title: 'Show it what you mean',
     tone: 'Point at it, say it, paste it',
     body: 'Mark Up (`⇧⌘M`) works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
-    link: ['How mark-up works', '/docs#mark-up'],
+    link: ['Everything mark-up does', '/mark-up'],
     beta: true,
   },
   glance: {
@@ -424,6 +426,151 @@ export const HOME = {
     link: ['Read the docs', '/docs'],
   },
 } as const satisfies { hero: Required<Pick<Head, 'title' | 'tone' | 'body'>> } & Record<string, Head>;
+
+// ==========================================================================
+// The feature pages: one feature, in depth. /mark-up is the first.
+//
+// A feature page sits between the homepage, which makes the point once, and
+// /docs, which states it exactly: it shows everything the feature does, a
+// part at a time. components/FeaturePage.astro lays one out from a
+// FeaturePage, and data/markdown.ts writes its Markdown from the same object:
+//   heading, tone, lead   the page's opening lines, over its first film
+//   parts                 one section each, opening with the homepage's row
+//                         (a two-line heading, one short paragraph, a link)
+//                         over what the page file puts in the slot named for
+//                         the part's id, with short facts under it
+//   reference             rows to read, as /docs has them: keys, the exact
+//                         behaviour
+//   more                  where to go from here: the other feature pages and
+//                         the reference
+// To add a page: write its FeaturePage here, add it to FEATURE_PAGES, and
+// give it a file in pages/ that fills the slots (pages/mark-up.astro), a
+// Markdown twin (pages/mark-up.md.ts) and a line in pages/sitemap.xml.ts.
+// ==========================================================================
+export type FeaturePart = Head & {
+  id: string;
+  /** Short points under what the part shows: a few words, then a sentence. */
+  facts?: [string, string][];
+  /** Something the part shows as text (what is on the clipboard): the page
+   *  file places it, and the Markdown prints it under the paragraph. */
+  code?: { label: string; text: string };
+};
+export type FeaturePage = Beta & {
+  path: string;
+  /** The link to it, where another page lists it, and the sentence beside it. */
+  name: string;
+  blurb: string;
+  /** Under about 60 characters, and about 150. */
+  title: string;
+  description: string;
+  heading: string;
+  tone: string;
+  lead: string;
+  /** The quiet button beside Download: the part of /docs that goes further. */
+  docs: readonly [text: string, href: string];
+  parts: FeaturePart[];
+  reference: Section[];
+  /** Where to go from here, after the other feature pages. */
+  more: { name: string; blurb: string; href: string }[];
+};
+
+/** What Return puts on the clipboard for the note the page's first film
+ *  writes: the sentence with each mark as its name and its picture's path, an
+ *  empty line, the page, the picture of the whole and the details file
+ *  (macos/Wortel/Markup/MarkupNote.swift, copied). The folders are the ones a
+ *  first note of a day gets, with the cache folder cut short. */
+const MARKUP_COPIED = [
+  'Make link “Download for macOS” (~/Library/Caches/…/Markup/2026-11-27/1/1.png) the accent colour, and box (~/Library/Caches/…/Markup/2026-11-27/1/2.png) needs more room above it.',
+  '',
+  'Page: http://localhost:4321/',
+  'All marks: ~/Library/Caches/…/Markup/2026-11-27/1/whole.png',
+  'Details: ~/Library/Caches/…/Markup/2026-11-27/1/details.json',
+].join('\n');
+
+export const MARKUP_PAGE: FeaturePage = {
+  path: '/mark-up',
+  name: 'Mark-up',
+  blurb: 'Point at what a preview shows, write one sentence around the marks, and paste it to an agent.',
+  /** 46 chars. */
+  title: 'Mark-up in Wortel: show an agent what you mean',
+  /** 152 chars. */
+  description:
+    'Mark Up draws on a page, a diff, source, rendered Markdown or an image in Wortel, and copies your note as plain text with pictures, for any coding agent.',
+  heading: 'Mark up what you see',
+  tone: 'Then paste it to an agent',
+  lead: 'Mark Up (`⇧⌘M`) draws on what a preview shows: a page, a file, its diff, an image. You write one sentence around the marks, and Return copies it as text any agent can read.',
+  docs: ['Mark-up in the docs', '/docs#mark-up'],
+  beta: true,
+  parts: [
+    {
+      id: 'surfaces',
+      title: 'On whatever is in front',
+      tone: 'A page, a file, its diff, an image',
+      body: 'Mark Up is a button in every preview’s header. It works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image, in a tab or in a preview window. Not over a PDF, or anything else Quick Look shows.',
+      link: ['The browser tab', '/docs#browser'],
+      facts: [
+        ['A page', 'In a browser tab: the site an agent is building, or an `.html` file opened as the page it makes.'],
+        ['A file', 'Its source, its diff or the Markdown it renders to, whichever the preview is on.'],
+        ['An image', 'A picture opened in a tab or a preview window is drawn on the same way.'],
+      ],
+    },
+    {
+      id: 'marks',
+      title: 'Click it, or draw on it',
+      tone: 'Each mark gets a colour and a number',
+      body: 'A click picks an element of a page. A drag draws around anything, with a box, a pen, an arrow or a highlighter. Each mark lands in your note as a chip with its number, and deleting the chip removes the mark.',
+    },
+    {
+      id: 'note',
+      title: 'Write around the marks',
+      tone: 'Return copies it as plain text',
+      body: 'A bar at the bottom of the preview holds your note, with each mark in it as a chip. Return copies it and turns mark-up off. Paste it to the agent in this session or another. Nothing is typed into a terminal and nothing is sent.',
+      link: ['Exactly what is copied', '/docs#mark-up'],
+      code: { label: 'On the clipboard', text: MARKUP_COPIED },
+      facts: [
+        ['The sentence', 'Each chip written out as what it points at, in words a person can read.'],
+        ['A picture of each mark', 'Its path sits beside the mark’s name, so an agent that can read your disk opens it.'],
+        ['The page or file', 'The address, or the file’s path and which view of it was marked up.'],
+        ['The whole, and the details', 'A picture of the whole with every mark on it, and a file of details.'],
+      ],
+    },
+  ],
+  reference: [
+    {
+      id: 'keys',
+      title: 'The keys',
+      blocks: [
+        {
+          table: {
+            head: ['Action', 'Shortcut'],
+            mono: 'last',
+            rows: [
+              ['Mark up the page or file in front, and stop', '⇧⌘M'],
+              ['Copy the note, and stop', 'Return'],
+              ['Stop, and keep the note', 'Esc'],
+            ],
+          },
+        },
+        { p: 'Mark Up is also a button in a preview’s header, and View ▸ Mark Up.' },
+      ],
+    },
+    {
+      id: 'kept',
+      title: 'What is kept',
+      blocks: [
+        { p: 'Esc stops and keeps the note. The note is dropped when the preview goes elsewhere: another address, a reload, a file switched between Diff, Source and Rendered, a closed tab.' },
+        { p: 'The pictures stay on your Mac, in Wortel’s cache folder, and are removed after seven days.' },
+      ],
+    },
+  ],
+  more: [
+    { name: 'The reference', blurb: 'Every shortcut and command, and the parts worth knowing exactly.', href: '/docs' },
+    { name: 'Everything around the terminal', blurb: 'Worktrees, the command palette, a browser, and sessions that outlive the app.', href: '/#more' },
+  ],
+};
+
+/** Every feature page, in the order another page lists them. */
+export const FEATURE_PAGES: FeaturePage[] = [MARKUP_PAGE];
 
 // ==========================================================================
 // /docs: the reference the homepage stopped being.

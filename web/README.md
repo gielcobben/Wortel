@@ -43,9 +43,13 @@ src/
   pages/feed.xml.ts        /feed.xml the changelog as an Atom feed, linked from every page's <head>
   pages/compare.astro      /compare Wortel against nine named apps
   pages/docs.astro         /docs    commands, shortcuts, behaviour
+  pages/mark-up.astro      /mark-up one feature in depth (see Feature pages)
+  components/FeaturePage.astro  the layout of a feature page, from a FeaturePage in data/site.ts
+  components/films/        a film more than one page shows: MarkupFilm (the homepage's section and /mark-up)
+  components/markup/       what /mark-up shows: Surfaces (mark-up over Markdown, source and a diff) and Tiles
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms*.txt.ts       maps for language models
-  pages/*.md.ts            /index.md, /docs.md, /compare.md, /updates.md: pages as Markdown
+  pages/*.md.ts            /index.md, /docs.md, /compare.md, /mark-up.md, /updates.md: pages as Markdown
   data/markdown.ts         the renderers behind those and llms-full.txt
   pages/404.astro          the not-found page (dist/404.html)
   components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ, in the right column beside its heading)
@@ -61,6 +65,8 @@ src/
   scripts/hero.ts          the landing sequence (one GSAP timeline)
   scripts/panes.ts         the splits scene: one story in three chapters, each a scene (its beats, and how it ends)
   scripts/scenes.ts        the agents scene and the terminal-first scene
+  scripts/markup.ts        the mark-up scene: point, say it, copy, paste
+  scripts/surfaces.ts      /mark-up's second scene: the marks drawn and the note written over three previews
   scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes (the diff, a plan, a preview being marked up, the commits, the file tree) and three windows (a terminal, a browser, one in splits)
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
@@ -144,6 +150,53 @@ current chapter's caption, and the reader had to chase it.
 
 Don't name a site class after a Tailwind utility (`block`, `grid`, `flex`…):
 the app's generated markup uses those.
+
+### Feature pages
+
+A feature page shows one feature in depth: `/mark-up`. It sits between the
+homepage, which makes the point once, and `/docs`, which states it exactly.
+It keeps the homepage's layout (the opening, then sections that open with
+`.row12` over a stage or tiles) and ends in rows to read, as `/docs` does.
+
+- **The words** are a `FeaturePage` in `data/site.ts` (`MARKUP_PAGE`): the
+  opening lines, the parts (a two-line heading, one paragraph, a link, and
+  short facts), the reference rows, and where to go next. `FEATURE_PAGES`
+  lists the pages: the footer, `llms.txt`, `llms-full.txt` and each page's
+  "More" row read it.
+- **The layout** is `components/FeaturePage.astro`. It renders the opening
+  with the film in the slot `hero`, then one `Section` per part with whatever
+  is in the slot named for the part's id, its facts under that (`.facts`),
+  the reference rows (`.row12.read`) and "More".
+- **The page file** (`pages/mark-up.astro`) only fills the slots. Its
+  Markdown twin is `pages/mark-up.md.ts` (`featureMd` in `data/markdown.ts`).
+
+To add one: write its `FeaturePage`, add it to `FEATURE_PAGES`, copy the two
+page files, and give it a line in `pages/sitemap.xml.ts` and a closing photo
+in `components/Footer.astro`. A film two pages show goes in
+`components/films/`, one to a page: a scene finds its film by name.
+
+How a page is paced was taken from reading other products' feature pages
+(Framer's, mostly): a short opening with the product itself as the picture, a
+handful of parts with one visual each, a second tier of one-sentence facts, a
+link to the manual from a part, never the same kind of block three times
+running (film, film, tiles, tiles, rows), and a close that leads to the other
+feature pages before the download.
+
+**/mark-up** opens with the homepage's mark-up film (a page in a browser
+tab). Its second film, `scripts/surfaces.ts`, does the same over three
+previews in one tab's place: rendered Markdown, source, a diff. In each,
+⇧⌘M turns Mark Up on, the pointer draws the marks (a box opens from its
+corner, an arrow and a highlight are uncovered along their length) and the
+sentence is typed around the chips. The Markdown chapter is the canvas's
+"Mark-up, a plan" as drawn. The canvas has no frame for mark-up over source
+or a diff, so those two are put together from frames it has: the source tab,
+the diff out of the Changes pane, and the plan's marks, note bar, Mark Up
+button and mode switch, cloned and placed over lines the script measures. A
+frame of each on the canvas would replace that, and one of an image would add
+the chapter that is missing. On a phone the plan wraps and its marks are
+placed over the same words again, the plan moves down to a mark drawn above
+what shows, and code scrolls sideways or up to a mark that would be out of
+sight. The two rows of tiles lift their pieces out of the same two frames.
 
 ### Motion and interaction
 
@@ -680,7 +733,7 @@ version numbers, no release counts): social networks cache a card for days.
 
 Besides `/llms.txt` and `/llms-full.txt`, the main pages exist as Markdown at
 the same path plus `.md`: `/index.md`, `/docs.md`, `/compare.md`,
-`/updates.md`. Each page's `<head>` points at its own with
+`/mark-up.md`, `/updates.md`. Each page's `<head>` points at its own with
 `rel="alternate" type="text/markdown"` (the `markdown` prop on `Layout`). All of
 them, and `llms-full.txt`, render from `src/data/markdown.ts`.
 

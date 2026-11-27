@@ -11,7 +11,7 @@
 // where the marks are when the split is not the 537 the page was captured
 // at, the pointer's moves, and the typing.
 //
-// components/home/Markup.astro says what goes with this file.
+// components/films/MarkupFilm.astro is the window it plays in.
 import { gsap } from 'gsap';
 import { Pointer, Sidebar, Terminal, foldable, named, pressKeys, reduced, schemePictures, wholeRows } from './app';
 import { film } from './film';
@@ -60,7 +60,7 @@ export function initMarkup() {
   const SAID = words.map((w) => w.textContent || '');
 
   // The canvas places the marks in the page's points at 537. A narrower split
-  // shows the same page smaller (Markup.astro), so they are placed at its
+  // shows the same page smaller (MarkupFilm.astro), so they are placed at its
   // scale; at 537 that is where the canvas has them.
   const shapes = new Map([outline, mark1, mark2].map((el) => {
     const cs = getComputedStyle(el);
@@ -169,7 +169,7 @@ export function initMarkup() {
 
   // ---- on a phone, one split at a time --------------------------------------------
   // The browser while the page is pointed at, the terminal once the note is
-  // pasted. The window is two splits wide there (Markup.astro) and pans.
+  // pasted. The window is two splits wide there (MarkupFilm.astro) and pans.
   // The stage's 16px gutter would show the end of the split out of view
   // (its last column, the divider, the stubs of the prompt's rules): once
   // the pan has arrived, the window is cut at the edge of the split in view.

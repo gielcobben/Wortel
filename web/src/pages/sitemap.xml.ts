@@ -86,6 +86,13 @@ const PAGES: { path: string; changefreq: string; priority: string; sources: stri
     sources: ['src/data/compare.ts', 'src/pages/compare.astro'],
   },
   {
+    // A feature in depth. Its words are in src/data/site.ts with the rest.
+    path: '/mark-up',
+    changefreq: 'monthly',
+    priority: '0.7',
+    sources: ['src/data/site.ts', 'src/pages/mark-up.astro', 'src/components/FeaturePage.astro', 'src/components/markup'],
+  },
+  {
     // Shares src/data/site.ts with the homepage, so the two move together: the
     // reference is written in the same module as the copy it was cut out of.
     path: '/docs',

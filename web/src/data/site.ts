@@ -326,45 +326,35 @@ export const SECTIONS: Section[] = [
   },
 ];
 
-// ---- the bento: Wortel at a glance -------------------------------------------
-// One poster of what Wortel is, built the way Apple closes a keynote section
-// (studied from its 2025 slides): the product itself in the middle, tiles of
-// very different sizes around it, and on each tile ONE piece of the product
-// and a label of a few words. Almost no tile is only type: on Apple's macOS
-// slide one in fourteen is. No sentences on the poster: `body` is the
-// sentence a screen reader and a crawler get instead. `big` is for the rare
-// tile whose picture is its own word or number.
-// The same facts are SPECS below, which the Markdown pages render as a table.
+// ---- the bento: what is around the terminal ---------------------------------
+// One calm poster under "Everything around the terminal": ten tiles, each ONE
+// piece of the product and a label of a few words, in the order they are
+// read (components/home/Bento.astro places them). No sentences on the
+// poster: `body` is the sentence a screen reader and a crawler get instead.
+//
+// It is not the list of features. What has a section of its own on the
+// homepage has no tile (any agent as a command, who needs you, the diff, a
+// rendered plan, the browser), and neither do the two facts the paragraph
+// over the poster states (five settings, free). All of it is in SECTIONS
+// above, DOCS_SECTIONS and SPECS below, which the Markdown pages print.
 export type Tile = {
-  scene:
-    | 'worktree' | 'agents' | 'send' | 'diff' | 'plan' | 'hero' | 'palette' | 'quit' | 'status'
-    | 'browser' | 'settings' | 'free' | 'looks' | 'markup' | 'splits' | 'history' | 'files';
+  scene: 'hero' | 'worktree' | 'palette' | 'splits' | 'markup' | 'history' | 'files' | 'send' | 'looks' | 'quit';
   label: string;
-  big?: string;
   body: string;
 };
 
 export const BENTO: { tiles: Tile[] } = {
   tiles: [
-    { scene: 'worktree', label: 'A worktree per agent', body: 'A session on a branch gets its own directory and files, so several agents share one repository without colliding.' },
-    // The commands, as you would type them: a few of the agents Wortel
-    // recognises by name. Any other command runs the same way.
-    { scene: 'agents', label: 'Whichever agent you use', body: 'Claude Code, Codex, Gemini, opencode, Pi, Amp, Goose, Aider: an agent is one more command in a real terminal, so whichever you use runs as it is.' },
-    { scene: 'send', label: 'Agents that work together', body: 'Every session has the wortel command on its PATH. One agent can hand another a task, wait for it, and read what it said.' },
-    { scene: 'diff', label: 'Every change, beside it', body: 'The working tree file by file, with syntax-highlighted diffs and somewhere to write the commit.' },
-    { scene: 'plan', label: 'Plans, rendered', body: 'A file opens in a tab of its own: source, the diff, or rendered Markdown.' },
     { scene: 'hero', label: 'Ghostty’s engine, in every session', body: 'Every session is a real terminal on Ghostty’s engine, unmodified. An agent is one more command in it.' },
+    { scene: 'worktree', label: 'A worktree per agent', body: 'A session on a branch gets its own directory and files, so several agents share one repository without colliding.' },
     { scene: 'palette', label: 'Every command on ⇧⌘P', body: 'A command palette on ⇧⌘P runs any command, and ⌘P goes to any session by name, or any file in its project.' },
-    { scene: 'quit', label: 'Outlives the app', body: 'Shells run outside the app. After a quit, an update or a crash, each session is as you left it.' },
-    { scene: 'status', label: 'Who needs you', body: 'Agents report whether they are working, waiting on you, done or failed, and the sidebar shows it.' },
-    { scene: 'browser', label: 'A browser in the window', body: 'A browser tab beside the terminal, to preview the site an agent is building.' },
-    { scene: 'settings', big: '5', label: 'settings', body: 'The font, the theme and the keybinds were chosen once. Settings is five rows long.' },
-    { scene: 'free', big: 'Free', label: 'No account', body: 'Wortel is free, and has no account.' },
-    { scene: 'looks', label: 'Follows light and dark', body: 'Every terminal follows the system between light and dark, at once.' },
-    { scene: 'markup', label: 'Mark up what you see', body: 'Mark Up draws on a page, a diff, source, rendered Markdown or an image, and copies your note as text an agent can read.' },
     { scene: 'splits', label: 'Splits, each with its own tabs', body: 'Everything beside the sidebar is made of splits, and every split has its own row of tabs: a terminal, a browser, a file, your changes.' },
+    { scene: 'markup', label: 'Mark up what you see', body: 'Mark Up draws on a page, a diff, source, rendered Markdown or an image, and copies your note as text an agent can read.' },
     { scene: 'history', label: 'The branch graph', body: 'History is the commit list with its branch graph, in a tab beside the terminal.' },
     { scene: 'files', label: 'The project tree', body: 'Files is the project as a tree. Drag a row into the terminal and its path lands at your prompt.' },
+    { scene: 'quit', label: 'Outlives the app', body: 'Shells run outside the app. After a quit, an update or a crash, each session is as you left it.' },
+    { scene: 'looks', label: 'Follows light and dark', body: 'Every terminal follows the system between light and dark, at once.' },
+    { scene: 'send', label: 'Agents that work together', body: 'Every session has the wortel command on its PATH. One agent can hand another a task, wait for it, and read what it said.' },
   ],
 };
 

@@ -54,7 +54,7 @@ src/
   pages/*.md.ts            /index.md, /docs.md, /compare.md, /mark-up.md, /layouts.md, /updates.md: pages as Markdown
   data/markdown.ts         the renderers behind those and llms-full.txt
   pages/404.astro          the not-found page (dist/404.html)
-  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Markup and Review (each a section's words over a film in components/films/), Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ, in the right column beside its heading)
+  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Markup and Review (each a section's words over a film in components/films/), Bento (what is around the terminal: one calm poster of ten pieces of the real app, on a regular grid of two tile sizes and a small one), Glance (the FAQ, in the right column beside its heading)
   components/AppContent.astro  wraps a piece of the app that shows a document: its headings become plain blocks, so the page keeps one h1
   components/GitHubMark.astro  GitHub's mark, for the buttons to the source (SITE.repo) in the nav and the closing call; they open in a new tab
   components/Section.astro a section: the row it opens with (a hairline, a two-line heading at the left,
@@ -70,7 +70,7 @@ src/
   scripts/markup.ts        the mark-up scene: point, say it, copy, paste
   scripts/review.ts        the review scene: Changes, History, Files and a preview, in one session
   scripts/surfaces.ts      /mark-up's second scene: the marks drawn and the note written over three previews
-  scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes (the diff, a plan, a preview being marked up, the commits, the file tree) and three windows (a terminal, a browser, one in splits)
+  scripts/bento.ts         puts the real app into the bento's ten tiles: parts cloned out of the generated panes (a preview being marked up, the commits, the file tree) and two windows (a terminal, one in splits)
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
   styles/app.css           Tailwind + the app's own macOS tokens, scoped to .wapp
 public/

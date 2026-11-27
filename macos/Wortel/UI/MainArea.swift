@@ -118,6 +118,9 @@ final class MainAreaController: NSViewController {
             self?.git.commitSplitLayout()
             self?.rememberSizes()
         }
+        // The split being dragged changed under the drag: nothing of it is
+        // remembered as a width somebody chose.
+        tree.onDividerDragCancelled = { [weak self] in self?.framesBeforeDrag = nil }
         tree.onDividerDoubleClicked = { [weak self] in self?.git.equalizeSplits() }
         tree.onPlaced = { [weak self] in self?.placed() }
         view = tree
@@ -191,6 +194,10 @@ final class MainAreaController: NSViewController {
         }
         tree.setLeaves(views)
         sizeNewLeaves()
+        // Another session's tree: a divider held across the switch was
+        // moving the last one's, whose sizes are not this one's to save or
+        // remember, even where the two trees are alike.
+        if git.session !== sessionBefore { tree.cancelDrag() }
         let zoomed = git.zoomedRegion
         tree.apply(layout: git.splitLayout, zoomed: zoomed?.leaf, hidden: git.hiddenLeaves,
                    slides: slides(zoomed: zoomed))

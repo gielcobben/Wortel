@@ -684,7 +684,22 @@ The views:
   drag may change are noted on the press (`onDividerPressed`), before
   anything moves: noted at the first step they were already the sizes after
   it, and a drag of one step was never remembered as the column's width or
-  the strip's height. To VoiceOver a divider is a splitter
+  the strip's height. A drag holds the divider it was pressed on, by its
+  place in the tree and what it stands between
+  (`SplitTreeView.Held`, `SplitLayout.sides(of:)`), and is let go of when
+  the tree changes under it so that the place names another divider, puts
+  it behind a zoom, or is another session's: no more steps, and the
+  release neither saves nor remembers a width. Divider views are reused by
+  their place in the list, and until 2026-11-27 a split closed during a
+  drag (its shell exited, or `wortel split` made one) handed the view under
+  the pointer another divider: the drag went on with main|side instead of
+  main|split, took the column from 400pt to 801, and
+  `setSplitLayout` let it through (the same leaves), so it was saved and
+  remembered. Checked 2026-11-27 with `try-splits.sh right column
+  hold-close:9 hold-close:1`: with nothing closed the drag goes on; with
+  the split closed under it the next step is refused, the column stays at
+  its 440pt and nothing is remembered. Not tried with a real pointer.
+  To VoiceOver a divider is a splitter
   (`SplitDividerView`: role, orientation, its position as the value), as
   `NSSplitView`'s were while the column was its pane. Increment and
   decrement move it 20pt through the drag's own path (press, drag,

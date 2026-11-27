@@ -84,6 +84,9 @@ final class SplitTreeView: NSView {
         splitLayout = layout
         self.zoomed = zoomed
         hiddenLeaves = hidden
+        // A drag whose divider this change took away, or put between other
+        // splits, or behind a zoom, is over (`Held`).
+        if held != nil, !heldIsStillThere { cancelDrag() }
         if let before {
             let after = wantedFrames
             if Set(before.keys) != Set(after.keys), !after.isEmpty, !before.isEmpty {
@@ -300,9 +303,18 @@ final class SplitTreeView: NSView {
         }
         while dividerViews.count < frames.dividers.count {
             let divider = SplitDividerView()
-            divider.onPress = { [weak self] in self?.onDividerPressed() }
-            divider.onDrag = { [weak self] divider, position in self?.drag(divider, to: position) }
-            divider.onRelease = { [weak self] in self?.onDividerReleased() }
+            divider.onPress = { [weak self, weak divider] pressed in
+                guard let self, let divider else { return }
+                self.hold(pressed, by: divider)
+            }
+            divider.onDrag = { [weak self, weak divider] pressed, position in
+                guard let self, let divider else { return false }
+                return self.dragHeld(pressed, by: divider, to: position)
+            }
+            divider.onRelease = { [weak self, weak divider] moved in
+                guard let self, let divider else { return }
+                self.letGo(by: divider, moved: moved)
+            }
             divider.onDoubleClick = { [weak self] in self?.onDividerDoubleClicked() }
             addSubview(divider, positioned: .above, relativeTo: nil)
             dividerViews.append(divider)
@@ -330,6 +342,32 @@ final class SplitTreeView: NSView {
         layoutSubtreeIfNeeded()
     }
 
+    /// A press on divider `index`, as the pointer makes one, and a first
+    /// step of `delta`. Then `stepHeld` and `releaseHeld` go on with that
+    /// same press, whatever happens to the tree meanwhile.
+    func pressDivider(_ index: Int, by delta: CGFloat) -> Bool {
+        let dividers = splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).dividers
+        guard dividers.indices.contains(index), dividerViews.indices.contains(index) else { return false }
+        let divider = dividers[index]
+        hold(divider, by: dividerViews[index])
+        probeStart = divider.axis == .row ? divider.rect.minX : divider.rect.minY
+        return stepHeld(by: delta)
+    }
+    private var probeStart: CGFloat = 0
+
+    /// Whether the held drag took the step (false: it was let go of).
+    func stepHeld(by delta: CGFloat) -> Bool {
+        guard let held, let view = held.view else { return false }
+        let moved = dragHeld(held.divider, by: view, to: probeStart + delta)
+        layoutSubtreeIfNeeded()
+        return moved
+    }
+
+    func releaseHeld() {
+        guard let view = held?.view else { return }
+        letGo(by: view, moved: true)
+    }
+
     func dragDivider(_ index: Int, by delta: CGFloat) {
         let dividers = splitLayout.frames(in: bounds, metrics: metrics, hidden: hiddenLeaves).dividers
         guard dividers.indices.contains(index) else { return }
@@ -345,6 +383,67 @@ final class SplitTreeView: NSView {
         place()
         onLayoutChanged(splitLayout)
     }
+
+    // MARK: A divider held by the pointer
+
+    /// The divider being dragged, as it was when it was pressed: its place
+    /// in the tree and what it stands between. Divider views are reused by
+    /// their place in the list, so when the tree changes during a drag (a
+    /// split made by `wortel split`, one closed because its shell exited)
+    /// the view under the pointer is handed another divider. The drag went
+    /// on with that one, and the size it ended at was saved and remembered
+    /// as the column's width: a side split of 400pt went to 801.
+    private struct Held {
+        weak var view: SplitDividerView?
+        var divider: SplitLayout.Divider
+        var sides: SplitLayout.DividerSides?
+    }
+    private var held: Held?
+
+    /// The drag was let go of because the split it was moving changed: no
+    /// release follows, so nothing is saved or remembered for it.
+    var onDividerDragCancelled: () -> Void = {}
+
+    private func hold(_ divider: SplitLayout.Divider, by view: SplitDividerView) {
+        held = Held(view: view, divider: divider, sides: splitLayout.sides(of: divider, hidden: hiddenLeaves))
+        onDividerPressed()
+    }
+
+    /// Whether the divider pressed is still there, between the same leaves,
+    /// and on screen.
+    private var heldIsStillThere: Bool {
+        guard let held, let sides = held.sides else { return false }
+        return effectiveZoom == nil && splitLayout.sides(of: held.divider, hidden: hiddenLeaves) == sides
+    }
+
+    /// One step of the drag, of the divider as it was pressed. False when
+    /// the drag is over: let go of here, or before.
+    private func dragHeld(_ divider: SplitLayout.Divider, by view: SplitDividerView,
+                          to position: CGFloat) -> Bool {
+        guard let held, held.view === view else { return false }
+        guard heldIsStillThere else {
+            cancelDrag()
+            return false
+        }
+        drag(held.divider, to: position)
+        return true
+    }
+
+    private func letGo(by view: SplitDividerView, moved: Bool) {
+        guard held?.view === view else { return }
+        held = nil
+        if moved { onDividerReleased() }
+    }
+
+    /// Let go of the divider being dragged, if there is one: the split it
+    /// was moving has changed, or the tree is another session's. Its view
+    /// takes no more steps from this drag, and the release does nothing.
+    func cancelDrag() {
+        guard let held else { return }
+        self.held = nil
+        held.view?.dragWasCancelled()
+        onDividerDragCancelled()
+    }
 }
 
 /// One divider: a hairline, and a few points either side of it that take the
@@ -356,9 +455,12 @@ private final class SplitDividerView: NSView {
     /// How far one increment or decrement from VoiceOver moves it.
     static let accessibilityStep: CGFloat = 20
 
-    var onPress: () -> Void = {}
-    var onDrag: (SplitLayout.Divider, CGFloat) -> Void = { _, _ in }
-    var onRelease: () -> Void = {}
+    /// Pressed: the divider as it is now, which the whole drag moves.
+    var onPress: (SplitLayout.Divider) -> Void = { _ in }
+    /// A step of the drag. False: the drag is over, take no more steps.
+    var onDrag: (SplitLayout.Divider, CGFloat) -> Bool = { _, _ in false }
+    /// Let go, and whether it was dragged at all.
+    var onRelease: (Bool) -> Void = { _ in }
     var onDoubleClick: () -> Void = {}
 
     private let line = FilledView(color: Chrome.hairline)
@@ -366,6 +468,10 @@ private final class SplitDividerView: NSView {
     /// How far the press was from the line's start, so the line doesn't jump
     /// to the pointer when the drag begins.
     private var grab: CGFloat = 0
+    /// The divider as it was pressed, for the length of the drag: `divider`
+    /// is whatever the tree lays out at this view's place, which can be
+    /// another one by the next step. nil once the drag is over.
+    private var pressed: SplitLayout.Divider?
     private var dragged = false
     private var trackingArea: NSTrackingArea?
 
@@ -414,9 +520,9 @@ private final class SplitDividerView: NSView {
 
     private func step(by delta: CGFloat) -> Bool {
         guard let divider, !isHidden else { return false }
-        onPress()
-        onDrag(divider, position(of: divider) + delta)
-        onRelease()
+        onPress(divider)
+        let moved = onDrag(divider, position(of: divider) + delta)
+        onRelease(moved)
         return true
     }
 
@@ -452,18 +558,28 @@ private final class SplitDividerView: NSView {
         let point = tree.convert(event.locationInWindow, from: nil)
         grab = divider.axis == .row ? point.x - divider.rect.minX : point.y - divider.rect.minY
         dragged = false
-        onPress()
+        pressed = divider
+        onPress(divider)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let divider, let tree = superview else { return }
+        guard let pressed, let tree = superview else { return }
         let point = tree.convert(event.locationInWindow, from: nil)
         dragged = true
-        onDrag(divider, (divider.axis == .row ? point.x : point.y) - grab)
+        if !onDrag(pressed, (pressed.axis == .row ? point.x : point.y) - grab) { dragWasCancelled() }
     }
 
     override func mouseUp(with event: NSEvent) {
-        if dragged { onRelease() }
+        if pressed != nil { onRelease(dragged) }
+        pressed = nil
+        dragged = false
+    }
+
+    /// The tree let go of this drag: the split it was moving changed. The
+    /// pointer moves nothing more until the next press, and the release
+    /// saves and remembers nothing.
+    func dragWasCancelled() {
+        pressed = nil
         dragged = false
     }
 }

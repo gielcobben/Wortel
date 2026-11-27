@@ -436,6 +436,34 @@ struct SplitLayout: Equatable, Sendable {
         var dividers: [Divider] = []
     }
 
+    /// What a divider stands between: the leaves of the part before it and
+    /// of the next part on screen after it, along its axis. Two dividers
+    /// with the same sides move the same edge, whatever their sizes.
+    struct DividerSides: Equatable, Sendable {
+        var axis: Axis
+        var before: [Leaf]
+        var after: [Leaf]
+    }
+
+    /// The sides of the divider at `path` and `index` in this tree, or nil
+    /// when the path leads to no split or nothing on screen follows `index`.
+    /// A drag holds on to the sides it began with: when the tree changes
+    /// under it (a split made by `wortel split`, one closed because its
+    /// shell exited) the same path and index can name another divider,
+    /// and moving that one would size splits nobody was dragging.
+    func sides(of divider: Divider, hidden: Set<Leaf> = []) -> DividerSides? {
+        var node = root
+        for step in divider.path {
+            guard case .split(_, let parts) = node, parts.indices.contains(step) else { return nil }
+            node = parts[step].node
+        }
+        guard case .split(let axis, let parts) = node, axis == divider.axis else { return nil }
+        let shown = Self.shown(parts, hidden: hidden)
+        guard let place = shown.firstIndex(of: divider.index), place + 1 < shown.count else { return nil }
+        return DividerSides(axis: axis, before: Self.leaves(of: parts[shown[place]].node),
+                            after: Self.leaves(of: parts[shown[place + 1]].node))
+    }
+
     struct Metrics: Equatable, Sendable {
         /// The room a divider takes between two parts.
         var gap: CGFloat = 1

@@ -28,7 +28,8 @@ blue block cursor beside it.
   beta app only.
 - A beta build wears `macos/Wortel/AppIconBeta.icon`, the owner's variant:
   the mark on a blue blueprint grid, so testers can tell it apart. It is for
-  the beta app only, never the site.
+  the beta app only, never the site. Its name is **Wortel Beta**, in the menu
+  bar, the Dock and Finder; the file is still `Wortel.app`.
 - **Never redraw it, restyle it or approximate it.** Every icon on the site is
   exported from that file (`web/README.md` has the `ictool` commands). An icon
   drawn for the site was rejected on sight.

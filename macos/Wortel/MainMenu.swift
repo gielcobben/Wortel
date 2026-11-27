@@ -176,7 +176,7 @@ enum MainMenu {
         main.addItem(appItem)
         let appMenu = NSMenu()
         appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "About Wortel", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About \(AppName.shown)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         // Routes through the responder chain to AppDelegate, which drives the
         // Sparkle updater and validates (disables) this item mid-check.
@@ -220,16 +220,16 @@ enum MainMenu {
         // the chord and never fires on it; it becomes the real binding only if
         // registration failed, which is exactly when an in-app fallback earns
         // its place. See GlobalHotkey.
-        let showHide = appMenu.addItem(withTitle: "Show/Hide Wortel",
+        let showHide = appMenu.addItem(withTitle: "Show/Hide \(AppName.shown)",
                                        action: #selector(AppDelegate.toggleAppVisibility(_:)),
                                        keyEquivalent: ".")
         showHide.keyEquivalentModifierMask = [.command, .option, .control]
-        appMenu.addItem(withTitle: "Hide Wortel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide \(AppName.shown)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Wortel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit \(AppName.shown)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // Session menu — the heart of the app, all keyboard-driven.
         //

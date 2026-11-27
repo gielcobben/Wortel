@@ -3214,6 +3214,30 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   unverified. Not a second bundle id: a
   beta that is a different app would be a second set of sessions and a
   second keeper.
+- **2026-11-27. A beta calls itself Wortel Beta.** The icon was the only
+  sign, so `release.sh --publish --beta` also passes
+  `WORTEL_DISPLAY_NAME=Wortel Beta`, and refuses a beta whose built name
+  isn't that and a regular release whose name isn't "Wortel". Only the name
+  shown: the bundle stays `Wortel.app`, with the same executable, bundle id
+  and data folder, because the keeper and the `wortel` command run from
+  inside it and Sparkle replaces it in place. Measured on a copy named
+  `Wortel.app` (macOS 27): with `CFBundleDisplayName` "Wortel Beta" alone,
+  only the running app's name (⌘-Tab) changed; the Dock and Finder showed
+  the file's name, and the menu bar's bold title follows `CFBundleName`.
+  Setting `CFBundleName` too reached the menu bar but still not the Dock or
+  Finder. What reached all of them: Info.plist keeps "Wortel", matching the
+  file, and `en.lproj/InfoPlist.strings` says "Wortel Beta" for both keys,
+  written by `macos/scripts/display-name.sh` as a build phase (Finder shows
+  a localized name only when the file is named for the plain one). English
+  is the bundle's only localization, so a Mac in Dutch or Japanese gets it
+  too. The app menu's own items (About, Show/Hide, Hide, Quit), the menu
+  bar extra's Show item, a window with no session, `wortel --version` and
+  the feedback mail's version line read the same name (`AppName`). Prose
+  about what Wortel does still says Wortel, and so does "Wortel 2026.x is
+  ready", which names the update being offered, and that may be a regular
+  release. A renamed `.app` shows its file name, as macOS intends. Whether
+  the next regular release puts "Wortel" back in a tester's Dock and Finder
+  at once, or only once their caches refresh, is not yet seen.
 
 ## Telemetry and privacy
 

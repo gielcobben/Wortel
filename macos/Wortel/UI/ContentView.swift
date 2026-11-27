@@ -712,7 +712,7 @@ enum SessionActions {
             parent.setGlyph("macwindow")
             let submenu = NSMenu()
             for window in others {
-                submenu.addItem(ClosureMenuItem(title: window.selected?.name ?? "Wortel") {
+                submenu.addItem(ClosureMenuItem(title: window.selected?.name ?? AppName.shown) {
                     if manager.moveSessions(ids, toWindow: window) != nil {
                         Telemetry.capture(.sessionMovedWindow(via: .menu))
                     }

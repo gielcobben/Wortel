@@ -13,7 +13,8 @@ agents.
 > root shell). That is the intended metaphor, not "carrot". The site's copy
 > is built on it, and its look is a foggy lake. The mark is the app icon in
 > `macos/Wortel/AppIcon.icon`: the site's icons are exported from it, never redrawn.
-> A beta build wears `macos/Wortel/AppIconBeta.icon` instead.
+> A beta build wears `macos/Wortel/AppIconBeta.icon` instead, and is called
+> Wortel Beta.
 
 ```
 macos/    The macOS app. Swift + XcodeGen. Ships to updates.wortel.sh via

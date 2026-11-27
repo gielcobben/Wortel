@@ -140,7 +140,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     }
 
     private func applyTitle() {
-        window.title = home.selected?.name ?? "Wortel"
+        window.title = home.selected?.name ?? AppName.shown
     }
 
     @objc private func occlusionChanged(_ notification: Notification) {

@@ -19,7 +19,8 @@ If you distribute a build of your own, changed or not, it carries its own
 identity, so nobody mistakes it for Wortel or sends Wortel's users to it:
 
 - **Its own name**, in `CFBundleDisplayName`, the product name, the menus and
-  the windows.
+  the windows, and a beta's (`WORTEL_DISPLAY_NAME` in
+  `macos/scripts/release.sh`).
 - **Its own icon.** Replace `macos/Wortel/AppIcon.icon`, and
   `macos/Wortel/AppIconBeta.icon` if it publishes betas.
 - **Its own bundle id.** `bundleIdPrefix` in `macos/project.yml` and the

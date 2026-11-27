@@ -113,6 +113,15 @@ settings:
     # Stamped into Info.plist as WortelUpdateChannel; the first launch of a
     # beta build puts that Mac on the beta channel (Updater.swift).
     WORTEL_UPDATE_CHANNEL: ""
+    # The name the app shows in the menu bar, the Dock, Finder and ⌘-Tab:
+    # "Wortel Beta" when scripts/release.sh --publish --beta passes it,
+    # "Wortel" otherwise. Only the name shown: the bundle stays Wortel.app,
+    # with the same executable, bundle id and data folder, because the keeper,
+    # the `wortel` command and Sparkle's in-place update all live in or go by
+    # that bundle. Info.plist keeps "Wortel"; scripts/display-name.sh puts any
+    # other name in a localized InfoPlist.strings, the one way (measured) to
+    # change what the Dock and Finder show without renaming Wortel.app.
+    WORTEL_DISPLAY_NAME: Wortel
     # Debug builds sign ad-hoc (fast, no identity needed). Release signing is
     # done by scripts/release.sh (Developer ID + optional notarization) so that
     # dev builds stay frictionless. DEVELOPMENT_TEAM is set for completeness.
@@ -239,10 +248,14 @@ targets:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.gielcobben.Wortel.dev
     # After everything else and before Xcode signs the bundle: the Debug bundle
-    # id, by whether this Mac shares its data folder with Debug builds.
+    # id, by whether this Mac shares its data folder with Debug builds, and
+    # the name shown, by WORTEL_DISPLAY_NAME.
     postBuildScripts:
       - name: Debug bundle id
         script: '"$SRCROOT/scripts/debug-bundle-id.sh"'
+        basedOnDependencyAnalysis: false
+      - name: Display name
+        script: '"$SRCROOT/scripts/display-name.sh"'
         basedOnDependencyAnalysis: false
     info:
       path: Wortel/Info.plist

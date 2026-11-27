@@ -320,10 +320,11 @@ if [ "$PUBLISH" = 1 ]; then
   VERSION_ARGS=(MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION")
   # A beta build knows it is one (Info.plist's WortelUpdateChannel), which is
   # what puts the Mac it first runs on onto the beta channel. It also wears
-  # its own icon (Wortel/AppIconBeta.icon), so a tester can tell it from a
-  # regular build in the Dock; the next regular release puts AppIcon back.
+  # its own icon (Wortel/AppIconBeta.icon) and name ("Wortel Beta", by
+  # scripts/display-name.sh), so a tester can tell it from a regular build in
+  # the Dock and the menu bar; the next regular release puts both back.
   if [ "$BETA" = 1 ]; then
-    VERSION_ARGS+=(WORTEL_UPDATE_CHANNEL=beta ASSETCATALOG_COMPILER_APPICON_NAME=AppIconBeta)
+    VERSION_ARGS+=(WORTEL_UPDATE_CHANNEL=beta ASSETCATALOG_COMPILER_APPICON_NAME=AppIconBeta "WORTEL_DISPLAY_NAME=Wortel Beta")
   fi
 fi
 # Build a universal binary so it runs on both Apple Silicon and Intel Macs.
@@ -365,6 +366,13 @@ if [ "$PUBLISH" = 1 ]; then
   BUILT_ICON="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$APP/Contents/Info.plist" 2>/dev/null || true)"
   WANT_ICON=$([ "$BETA" = 1 ] && echo AppIconBeta || echo AppIcon)
   [ "$BUILT_ICON" = "$WANT_ICON" ] || { echo "✗ Built icon (${BUILT_ICON:-none}) ≠ requested ($WANT_ICON)" >&2; exit 1; }
+  # And the name: "Wortel Beta" in the menu bar, the Dock and Finder on a
+  # beta only. The bundle is Wortel.app either way, and the name shown is
+  # the localized one when there is one (scripts/display-name.sh).
+  BUILT_NAME="$(plutil -extract CFBundleDisplayName raw "$APP/Contents/Resources/en.lproj/InfoPlist.strings" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+  WANT_NAME=$([ "$BETA" = 1 ] && echo "Wortel Beta" || echo Wortel)
+  [ "$BUILT_NAME" = "$WANT_NAME" ] || { echo "✗ Built name (${BUILT_NAME:-none}) ≠ requested ($WANT_NAME)" >&2; exit 1; }
 fi
 
 # --- Sign -------------------------------------------------------------------

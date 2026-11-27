@@ -99,8 +99,11 @@ it. What differs:
 - The appcast item is tagged for the beta channel, so only Macs on it are
   offered the version. The site, `Wortel-latest.dmg` and the site deploy are
   left alone.
-- The build wears `Wortel/AppIconBeta.icon` instead of `AppIcon.icon`. The
-  script refuses to publish a beta without it, and a regular release with it.
+- The build wears `Wortel/AppIconBeta.icon` instead of `AppIcon.icon`, and
+  calls itself "Wortel Beta" (`WORTEL_DISPLAY_NAME`, put in a localized
+  `InfoPlist.strings` by `macos/scripts/display-name.sh`; the bundle is still
+  `Wortel.app`). The script refuses to publish a beta without either, and a
+  regular release with either.
 - The output ends `==> Published <version> as a beta` and prints
   `https://updates.wortel.sh/Wortel-<version>.dmg`. That link is what the
   maintainer hands a tester. Installing it once puts their Mac on the channel;

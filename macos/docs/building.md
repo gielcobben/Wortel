@@ -38,7 +38,8 @@ every one a glob matches.
   With that file there, a Debug build uses the usual folder
   (`DataDirectory`, read by the app, the keeper and the `wortel` command
   alike) and gets the bundle id `com.gielcobben.Wortel`
-  (`scripts/debug-bundle-id.sh`, the app's last build phase, before signing).
+  (`scripts/debug-bundle-id.sh`, one of the app's last build phases, before
+  signing).
   Build again after adding or removing it: a build keeps the bundle id it was
   made with. `WORTEL_DATA_DIR` beats both rules. A Release build is never
   isolated: it is the real app, on the usual folder, unless it is given

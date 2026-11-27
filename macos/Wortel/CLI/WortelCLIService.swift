@@ -194,7 +194,7 @@ final class WortelCLIService {
             // The path goes in `value` rather than the sentence so the CLI can
             // compare it against its own bundle and only mention it when the
             // two differ — which is the entire thing this command is for.
-            reply(.success("Wortel \(version) (\(build))", value: Bundle.main.bundlePath))
+            reply(.success("\(AppName.shown) \(version) (\(build))", value: Bundle.main.bundlePath))
         }
     }
 

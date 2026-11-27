@@ -50,6 +50,17 @@ final class MarkChipCell: NSTextAttachmentCell {
     override func cellSize() -> NSSize { layout.size }
     override func cellBaselineOffset() -> NSPoint { layout.origin }
 
+    /// First on its line, a chip has no clear room before it: the capsule
+    /// starts where the words of the other lines do, and there is nothing
+    /// on its line for it to keep off. With the room it stood 3pt in.
+    override func cellFrame(for textContainer: NSTextContainer, proposedLineFragment lineFrag: NSRect,
+                            glyphPosition position: NSPoint, characterIndex charIndex: Int) -> NSRect {
+        var frame = super.cellFrame(for: textContainer, proposedLineFragment: lineFrag, glyphPosition: position,
+                                    characterIndex: charIndex)
+        if position.x <= lineFrag.minX + textContainer.lineFragmentPadding { frame.size.width -= MarkChip.gap }
+        return frame
+    }
+
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
         draw(cellFrame, look: MarkDrawing.chip(colour, selected: false, emphasised: false))
     }
@@ -68,9 +79,12 @@ final class MarkChipCell: NSTextAttachmentCell {
         // Through an image counted from its bottom-left, in whatever the
         // text view is: the chip's measures were made that way up.
         let (number, numberWidth, name) = (number, numberWidth, name)
+        // Laid out narrower than measured: it starts a line (`cellFrame(for:…)`).
+        let startsLine = cellFrame.width < layout.width
         let image = NSImage(size: cellFrame.size, flipped: false) { rect in
             MainActor.assumeIsolated {
-                MarkChip.draw(number: number, numberWidth: numberWidth, name: name, look: look, in: rect)
+                MarkChip.draw(number: number, numberWidth: numberWidth, name: name, look: look, startsLine: startsLine,
+                              in: rect)
             }
             return true
         }
@@ -86,8 +100,9 @@ enum MarkChip {
     private static let nameFont = NSFont.systemFont(ofSize: 12)
     private static let numberFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
     /// Clear room either side of the capsule, part of the chip itself: two
-    /// chips side by side, or a chip against a word, otherwise touch.
-    private static let gap: CGFloat = 3
+    /// chips side by side, or a chip against a word, otherwise touch. None
+    /// before a chip that starts a line (`MarkChipCell.cellFrame`).
+    fileprivate nonisolated static let gap: CGFloat = 3
     /// Inside the capsule: before the number, between it and the name, and
     /// after the name.
     private static let lead: CGFloat = 7
@@ -133,20 +148,25 @@ enum MarkChip {
         return string
     }
 
-    /// Draw a chip into `rect`, counted from its bottom-left.
+    /// Draw a chip into `rect`, counted from its bottom-left. A chip that
+    /// starts a line has no clear room before it.
     fileprivate static func draw(number: String, numberWidth: CGFloat, name: String, look: MarkDrawing.Chip,
-                                 in rect: NSRect) {
+                                 startsLine: Bool, in rect: NSRect) {
+        let before = startsLine ? 0 : gap
+        let capsule = NSRect(x: rect.minX + before, y: rect.minY, width: rect.width - before - gap, height: rect.height)
         look.fill.setFill()
-        NSBezierPath(roundedRect: rect.insetBy(dx: gap, dy: 0), xRadius: 6, yRadius: 6).fill()
+        NSBezierPath(roundedRect: capsule, xRadius: 6, yRadius: 6).fill()
+        // Its words on the sentence's baseline, as a token's are: a point
+        // lower, they read as dropped against the words beside them.
         let numberHeight = numberFont.ascender - numberFont.descender
         (number as NSString).draw(
-            at: NSPoint(x: rect.minX + gap + lead,
-                        y: rect.minY + (rect.height - numberHeight) / 2 - numberFont.descender - 3),
+            at: NSPoint(x: capsule.minX + lead,
+                        y: rect.minY + (rect.height - numberHeight) / 2 - numberFont.descender - 2),
             withAttributes: [.font: numberFont, .foregroundColor: look.number])
         let titleHeight = nameFont.ascender - nameFont.descender
         (name as NSString).draw(
-            at: NSPoint(x: rect.minX + gap + lead + numberWidth + between,
-                        y: rect.minY + (rect.height - titleHeight) / 2 - nameFont.descender - 3),
+            at: NSPoint(x: capsule.minX + lead + numberWidth + between,
+                        y: rect.minY + (rect.height - titleHeight) / 2 - nameFont.descender - 2),
             withAttributes: [.font: nameFont, .foregroundColor: look.name])
     }
 

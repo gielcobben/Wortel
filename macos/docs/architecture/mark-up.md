@@ -80,7 +80,7 @@ All of it is in `Wortel/Markup/`.
 | The Move tool: carrying, selecting, resizing | `MarkupOverlayView+Move.swift` |
 | One mark on screen, and the selection's outline and handles | `MarkLayer.swift`, `MarkSelectionLayer.swift` |
 | The note bar: its card, the tools, Copy | `MarkupNoteBar.swift` |
-| The note's text view and its layout | `NoteTextView.swift`: `NoteTextView`, `NoteLayoutManager` |
+| The note's text view and its layout | `NoteTextView.swift`: `NoteTextView`, `NoteLayoutManager`, `NoteLines` |
 | A chip | `MarkChip.swift`: `MarkChipAttachment`, `MarkChipCell`, `MarkChip` |
 | The header's button, and the layer's mount over a file | `MarkupButton.swift`, `MarkupOverlayHost.swift` |
 | What an adapter answers, and the words it answers in | `MarkupSurface.swift`: `MarkupSurface`, `MarkTie`, `MarkPick`, `MarkCapture`, `MarkupWhole`, `MarkupCanvas` |
@@ -525,9 +525,37 @@ would put the I-beam back. The arrow covers the chip's 3pt clear edges
 too.
 
 A chip has 3pt of clear room either side, as part of itself, so two chips
-or a chip and a word do not touch. The text is lifted to the middle of its
+or a chip and a word do not touch. A chip that starts a line has none
+before it (`MarkChipCell.cellFrame(for:…)`, which the typesetter asks with
+the chip's place on the line), so its capsule starts where the words of
+the other lines do; with the room it stood 3pt in from them, which the
+owner saw. The text is lifted to the middle of its
 line: a line is 22pt to hold a chip, the caret is as tall as the line, and
 with the text at the line's foot the caret stood well above it.
+
+**Every line has its baseline where a line of words has it**, 19pt from
+the line's top before the text's 3pt lift (`NoteLines`, the layout's
+delegate). The typesetter put a line with a chip on it 3pt higher, at 16,
+though the line stayed 22pt: the
+chip counted as taller than the words. The words on that line rose with
+it, so in a note of several lines the gaps between lines of words were
+25pt after a chip's line and 19pt before one, the chip touched the line
+above (it stood 1pt over its own line's top), and the caret, drawn at the
+middle of the line, was 3pt low against the words. Measured with the real
+bar in an off-screen window on 2026-11-26, before and after: every line's
+words 16pt down from its top, every chip from 2pt under its line's top to
+its foot, so two chips one above the other are 2pt apart (they were half
+a point).
+A chip's own words sit on the sentence's baseline; they were a point
+under it. The system's `NSTokenField`, drawn the same way as a reference,
+keeps its lines evenly spaced with tokens on them, and stands a token
+that starts a line about 4pt in, which here was the thing seen as wrong.
+
+The bar's padding was measured too and left as it is: the first line's
+box starts 14pt under the bar's top (its words' ascenders at 17.6, a
+chip at 15.4), the tools start 8pt under the last line's box, and they end
+10pt over the bar's foot, where their glyphs end about 17pt over it, which
+is what the eye compares with the words above.
 `NoteTextView` also draws the caret itself at the text's height, which a
 text view honours when a subclass draws it; whether macOS 27's own caret
 view does was not seen, since a caret shows only in a key window.
@@ -808,6 +836,11 @@ looked at.
   ⌘A, and the selection moved off a chip; the solid look only with a
   window that answers `isKeyWindow` with yes, since a capture's window is
   not key.
+- The note's even lines with an input method's text being composed, and
+  the blinking caret beside a chip that starts a line. The layout was
+  read back and captured on 2026-11-26 (a line, the owner's two lines, a
+  note that starts with a chip, six lines, a chip selected, ⌘A); nothing
+  was typed by a hand.
 - That Claude Code and Codex each read a picture from the cache folder
   without asking.
 

@@ -532,6 +532,79 @@ final class MarkupTests: XCTestCase {
         }
     }
 
+    /// The note laid out as the bar lays it out, in a column `width` wide.
+    @MainActor
+    private func laidOut(_ pieces: [Any], width: CGFloat) -> (NSLayoutManager, NSTextContainer, NSTextStorage) {
+        let text = NSTextStorage()
+        for piece in pieces {
+            if let words = piece as? String {
+                text.append(NSAttributedString(string: words, attributes: MarkupNoteBar.attributes))
+            } else if let mark = piece as? Mark {
+                text.append(MarkChip.string(for: mark, fitting: width))
+            }
+        }
+        let layout = NoteLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        text.addLayoutManager(layout)
+        layout.ensureLayout(for: container)
+        return (layout, container, text)
+    }
+
+    @MainActor
+    func testALineWithAChipHasItsWordsWhereALineOfWordsHasThem() throws {
+        let (layout, _, text) = laidOut(["Make ", mark(1), " smaller when the window is narrow, and this line of words "
+                                         + "runs on long enough to wrap twice in a narrow column"], width: 240)
+        var baselines: [CGFloat] = []
+        var hasChip: [Bool] = []
+        layout.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: layout.numberOfGlyphs)) {
+            rect, _, _, glyphs, _ in
+            // The first letter on the line, never the chip.
+            let letter = (glyphs.location..<NSMaxRange(glyphs)).first {
+                text.attribute(.attachment, at: layout.characterIndexForGlyph(at: $0), effectiveRange: nil) == nil
+            }
+            guard let letter else { return }
+            baselines.append(layout.location(forGlyphAt: letter).y)
+            hasChip.append(MarkChip.numbers(in: text.attributedSubstring(
+                from: layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil))).count > 0)
+            XCTAssertEqual(rect.height, MarkupNoteBar.lineHeight)
+        }
+        XCTAssertEqual(hasChip.first, true)
+        XCTAssertGreaterThan(hasChip.filter { !$0 }.count, 0)
+        // It was 3pt higher on a line with a chip: 25pt from that line's
+        // words to the next, and 19 from them to the line before.
+        XCTAssertEqual(Set(baselines).count, 1, "\(baselines)")
+    }
+
+    @MainActor
+    func testAChipThatStartsALineStartsWhereTheWordsDo() throws {
+        let long = mark(2, name: "ul \"A worktree per agent works on its own branch\"")
+        // The owner's note, as wide as their bar had it: the long chip goes
+        // to the next line.
+        let (layout, container, text) = laidOut(["this ", mark(1), " should be smaller when resizing the window ", long,
+                                                 " this should be 2 columns"], width: 488)
+        var frames: [CGRect] = []
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            guard value is MarkChipAttachment else { return }
+            frames.append(layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: range,
+                                                                               actualCharacterRange: nil),
+                                              in: container))
+        }
+        let measured = { (number: Int) -> CGFloat in
+            let chip = MarkChip.string(for: number == 1 ? self.mark(1) : long, fitting: 488)
+            return (chip.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)?.bounds.width ?? 0
+        }
+        XCTAssertEqual(frames.count, 2)
+        // Mid-line: its clear room either side.
+        XCTAssertGreaterThan(frames[0].minX, 0)
+        XCTAssertEqual(frames[0].width, measured(1), accuracy: 0.5)
+        // First on the next line: no room before it, 3pt narrower.
+        XCTAssertGreaterThan(frames[1].minY, frames[0].minY)
+        XCTAssertEqual(frames[1].minX, 0)
+        XCTAssertEqual(frames[1].width, measured(2) - 3, accuracy: 0.5)
+    }
+
     // MARK: - A mark's row in a file that was rewritten
 
     /// A file as code is: three functions whose last lines read the same.

@@ -288,6 +288,18 @@ final class NoteTextView: NSTextView {
 /// the line's height and the chip's width with its gaps, and the capsule
 /// floated in it. Words keep the system's selection.
 final class NoteLayoutManager: NSLayoutManager {
+    private let lines = NoteLines()
+
+    override init() {
+        super.init()
+        delegate = lines
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        delegate = lines
+    }
+
     override func fillBackgroundRectArray(_ rectArray: UnsafePointer<NSRect>, count rectCount: Int,
                                           forCharacterRange charRange: NSRange, color: NSColor) {
         // Copied before anything else is asked of the layout: the array is
@@ -332,5 +344,29 @@ final class NoteLayoutManager: NSLayoutManager {
             chips.append(rect.offsetBy(dx: view.textContainerOrigin.x, dy: view.textContainerOrigin.y).integral)
         }
         return chips
+    }
+}
+
+/// Every line of the note has its baseline where a line of words has it.
+///
+/// A line is a fixed 22pt either way, but a chip on it counted as taller
+/// than the words, and the typesetter put that line's baseline 3pt higher
+/// (16 from its top, not 19). Its words rose with it, so two lines of words
+/// with a chip between them were 25pt apart and the next pair 19, and the
+/// chip touched the line above. Held at the words' baseline, the chip,
+/// centred on their capitals, sits inside its own line.
+private final class NoteLines: NSObject, NSLayoutManagerDelegate {
+    func layoutManager(_ layoutManager: NSLayoutManager,
+                       shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
+                       lineFragmentUsedRect: UnsafeMutablePointer<NSRect>, baselineOffset: UnsafeMutablePointer<CGFloat>,
+                       in textContainer: NSTextContainer, forGlyphRange glyphRange: NSRange) -> Bool {
+        // Where the typesetter puts it for words alone: the room a line has
+        // over the font's own height goes above them.
+        let words = MainActor.assumeIsolated {
+            (MarkupNoteBar.lineHeight + MarkupNoteBar.font.descender).rounded()
+        }
+        guard baselineOffset.pointee != words else { return false }
+        baselineOffset.pointee = words
+        return true
     }
 }

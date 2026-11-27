@@ -2839,6 +2839,18 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   view round the clip, above the note bar where there is room, and only the
   ink is cut off. A clip big enough keeps its badge in it as before, so a
   pin for a mark in a scrolling panel stays in the panel.
+- **2026-11-26. A note's lines are evenly spaced, and a chip that starts a
+  line starts where the words do.** The owner found the note bar's spacing
+  odd with chips in it. Measured: a line with a chip had its baseline 3pt
+  higher than a line of words, so lines of words were 25pt and 19pt apart
+  around it and a chip touched the line above; a chip first on its line
+  stood 3pt in, its clear room before it; and a chip's words sat a point
+  under the sentence's baseline. Every line now has the words' baseline,
+  a chip first on its line has no room before it, and its words are on the
+  baseline. Kept as they were: the 22pt line, the 3pt gaps beside a chip
+  elsewhere, the 12pt semibold number and the bar's padding. The system's
+  own token field stands a line's first token in too; here that read as a
+  mistake against the lines of words around it.
 - **2026-11-26. The pen does not make a rough shape a clean one. Tried and
   taken out the same day.** Preview's Sketch pen turns a rough loop into a
   clean oval on letting go, and the owner asked what could be learned

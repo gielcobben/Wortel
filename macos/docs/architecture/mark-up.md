@@ -130,19 +130,48 @@ and moving one of them away stopped the other hearing it (2026-11-26).
 
 **What a page says about itself is not trusted.** An element's name, id,
 selector and text are whatever the page's author wrote, and what is copied
-is pasted into a terminal. Every string from the page is cut to a length
-and passed through `MarkText.clean` on its way in (`WebMarkupSurface.text`):
-control characters, line and paragraph separators and invisible formatting
-characters are removed, so a name cannot carry an escape sequence, end a
-bracketed paste or start a line of its own. The words themselves are the
-page's, quoted and short; an agent reading them reads a page.
+is pasted into a terminal, and from there into an agent's prompt. Every
+string from the page is cut to a length and passed through
+`MarkText.clean` on its way in (`MarkText.fromPage`): control characters,
+line and paragraph separators and invisible formatting characters are
+removed, so a name cannot carry an escape sequence, end a bracketed paste
+or start a line of its own. So is every character that draws as nothing
+(Unicode's default-ignorable ones: the variation selectors, the combining
+grapheme joiner, the Hangul fillers, the tag letters), but for a VS16 straight
+after an emoji and a joiner between two, and a letter keeps eight combining
+marks at most. The cut counts Unicode scalars, not characters: a letter and
+400,000 marks after it is one character. Before this, an id of `x` and
+400,000 variation selectors read `div #x` on the chip and reached the
+clipboard and `details.json` whole, and an instruction spelled in them one
+byte a selector came through byte for byte (found in review, 2026-11-27).
+The script cuts what it sends too (`cut`: a name's words, id and class to
+40 UTF-16 units). A selector is kept whole or not at all
+(`MarkText.selectorFromPage`): one cut short or with a character taken out
+finds something else. The script makes one only of ids and test ids that
+are short and have nothing in them that does not show (`plain`), and goes
+the way down to the element otherwise. The words themselves are the page's,
+quoted and short; an agent reading them reads a page.
 
 An element is followed by reference, so a fixed header's mark stays with
 the header, and a mark inside a scrolling panel moves with the panel and is
 cut off where the panel is (the report carries the clip). An element that
 left the page is looked for again by its selector, since a page that draws
 itself anew replaces its elements with like ones. One that is not found has
-no place: its mark is not drawn, and its chip and its picture stay.
+no place: its mark is not drawn, and its chip and its picture stay. A
+selector is one that finds the element alone, or there is none.
+
+**An element in a shadow root is found in that root.** Its selector is its
+host's, then ` >>> `, then its own in the root (`selectorOf`), and `find`
+walks it down one root at a time: `my-el:nth-of-type(1) >>> button:nth-of-type(1)`.
+`>>>` is not CSS; it is there for `find` and for an agent to read. Before
+this, a button in a web component's shadow root was given
+`button:nth-of-type(1)`, which `document.querySelectorAll` finds in the
+page's own tree, so `details.json` named another button, and when the
+component drew itself anew the mark moved onto that button (found in
+review, 2026-11-27; checked after in a harness with the real script: the
+mark stays on the new button, and on one two shadow roots down). An
+element in a frame keeps no selector to be found again by: `find` looks
+from the top page.
 
 **A drawn area follows the block under its middle**, not the element that
 holds all of it (`blockUnder`). The element that holds an area whole is
@@ -174,7 +203,17 @@ window, scroll events handed to the web view):
 - **`createPDF` holds the whole page without scrolling it**: a 6,000pt page
   in 8 ms, one page, the part below the fold included, a fixed header once
   at the top. That is the picture of the whole. Stitching scrolled tiles,
-  as cmux does, was not needed.
+  as cmux does, was not needed. It is as wide as the page is laid out,
+  times the page zoom, and the marks are placed in it at the zoom
+  (`WebMarkReport.placementsInPicture`). Not at its width over the page's
+  as the report gives it, which is the wider of the root's and the body's:
+  with `html, body { overflow-x: hidden }` and a row wider than the view,
+  the PDF was 800 wide, the page said 1,200, and every mark and every
+  `bounds` was drawn two thirds of the way to the top-left (found in
+  review; measured 2026-11-27 at zoom 1 and 1.5, with and without the rule,
+  in standards and quirks mode: the PDF's width over the laid-out width
+  was the zoom each time). The wider width is kept for whether a sideways
+  scroll moves anything (`wouldScroll`).
 - **The world is separate**: a global set in it is `undefined` to the page,
   and so is its message handler. It reaches a same-site frame's document.
 

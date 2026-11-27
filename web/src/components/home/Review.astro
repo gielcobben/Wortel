@@ -1,0 +1,15 @@
+---
+// Checking what the agent did, on the homepage: the section's words
+// (HOME.review in data/site.ts) over the review film
+// (components/films/ReviewFilm.astro). It comes after "Know which one needs
+// you": the dot says an agent is done, and this is what you do next.
+//
+// The section answers to #git-and-files, the id the longer text in SECTIONS
+// (data/site.ts) and older links use.
+import Section from '../Section.astro';
+import { HOME } from '../../data/site';
+import ReviewFilm from '../films/ReviewFilm.astro';
+---
+<Section id="git-and-files" {...HOME.review}>
+  <ReviewFilm />
+</Section>

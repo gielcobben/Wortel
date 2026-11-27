@@ -100,7 +100,8 @@ final class LinesMarkupSurface: MarkupSurface {
 
     func tie(_ number: Int, to box: CGRect, reply: @escaping (MarkTie?) -> Void) {
         guard let table, let layer, table.numberOfRows > 0 else { return reply(nil) }
-        let inTable = table.convert(box.origin, from: layer)
+        // The row the ink starts on: `box` is the area, with room around it.
+        let inTable = table.convert(MarkStroke.inkCorner(of: box), from: layer)
         var row = table.row(at: NSPoint(x: max(inTable.x, 0), y: inTable.y))
         // Above the first row or below the last: the nearest one.
         if row < 0 { row = inTable.y < 0 ? 0 : table.numberOfRows - 1 }

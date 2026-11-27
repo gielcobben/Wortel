@@ -72,6 +72,12 @@ final class MarkupFileTests: XCTestCase {
         return answer
     }
 
+    /// What the layer hands an adapter for a stroke: its area, with the
+    /// room around the ink (`MarkupOverlayView.draw`).
+    private func area(of points: [CGPoint], pen: MarkPen) throws -> CGRect {
+        try XCTUnwrap(MarkStroke.area(of: points, pen: pen, within: layer.bounds))
+    }
+
     override func tearDown() async throws {
         window?.close()
         window = nil
@@ -91,8 +97,10 @@ final class MarkupFileTests: XCTestCase {
         let height = table.rowHeight
         XCTAssertGreaterThan(table.numberOfRows, 0, "the table has no rows: nothing was laid out")
 
-        // Drawn starting in the fourth row.
-        let made = try XCTUnwrap(tie(surface, 1, to: CGRect(x: 80, y: height * 3 + 4, width: 120, height: 30)))
+        // A box drawn starting in the fourth row, handed over as the layer
+        // hands it: the area, with its room.
+        let made = try XCTUnwrap(tie(surface, 1, to: area(of: [CGPoint(x: 80, y: height * 3 + 4),
+                                                               CGPoint(x: 200, y: height * 3 + 34)], pen: .box)))
         XCTAssertEqual(made.placement.origin.y, height * 3, accuracy: 0.5)
         XCTAssertEqual(made.placement.scale, 1)
 
@@ -111,6 +119,30 @@ final class MarkupFileTests: XCTestCase {
         XCTAssertNotNil(surface.placement(of: 1))
         surface.deactivate(forgetting: true)
         XCTAssertNil(surface.placement(of: 1))
+    }
+
+    /// A box drawn tight around one line, and the highlighter along one,
+    /// are tied to that line. By the area's corner both were tied to the
+    /// line above: the room around the ink is half a row, and more for
+    /// the highlighter.
+    func testAMarkDrawnTightAroundALineIsTiedToThatLineNotTheOneAbove() throws {
+        _ = show(diff(numbered(40)))
+        let surface: any MarkupSurface = LinesMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+        let height = try XCTUnwrap(views.table).rowHeight
+
+        // The tenth line, its box from just inside the row's top half.
+        let box = try area(of: [CGPoint(x: 60, y: height * 9 + 2), CGPoint(x: 240, y: height * 10 - 2)], pen: .box)
+        XCTAssertLessThan(box.minY, height * 9, "the area's room reaches the row above")
+        let boxed = try XCTUnwrap(tie(surface, 1, to: box))
+        XCTAssertEqual(boxed.placement.origin.y, height * 9, accuracy: 0.5)
+
+        // The highlighter through the middle of the twentieth.
+        let middle = height * 19 + height / 2
+        let line = try area(of: [CGPoint(x: 60, y: middle), CGPoint(x: 240, y: middle)], pen: .highlighter)
+        let highlighted = try XCTUnwrap(tie(surface, 2, to: line))
+        XCTAssertEqual(highlighted.placement.origin.y, height * 19, accuracy: 0.5)
     }
 
     /// A chip's click brings its mark's own box into what the note bar
@@ -434,6 +466,33 @@ final class MarkupFileTests: XCTestCase {
         signIn()
         surface.activate(moved: {})
         XCTAssertNil(surface.placement(of: 1))
+    }
+
+    /// A box drawn tight around an item of a tight list is tied to that
+    /// item. By the area's corner it was tied to the item above: the room
+    /// around the ink reaches past the gap between them.
+    func testAMarkDrawnTightAroundAListItemIsTiedToThatItem() throws {
+        let size = NSSize(width: 600, height: 400)
+        let scroll = NSScrollView(frame: NSRect(origin: .zero, size: size))
+        let stack = Layer(frame: NSRect(x: 0, y: 0, width: 600, height: 1000))
+        scroll.documentView = stack
+        mount(scroll, size: size)
+        settle()
+        // Ten items 20pt tall, 4pt apart.
+        let items = (1...10).map { "item \($0)" }
+        views.stack = stack
+        views.blockFrames = Dictionary(uniqueKeysWithValues: items.indices.map {
+            ($0, CGRect(x: 20, y: CGFloat($0) * 24, width: 500, height: 20))
+        })
+        views.blockKey = { items.indices.contains($0) ? items[$0].hashValue : nil }
+        let surface: any MarkupSurface = BlocksMarkupSurface(views: views)
+        surface.attach(to: layer)
+        surface.activate(moved: {})
+
+        // Around the sixth item, from 3pt inside its top.
+        let box = try area(of: [CGPoint(x: 30, y: 5 * 24 + 3), CGPoint(x: 200, y: 5 * 24 + 17)], pen: .box)
+        let made = try XCTUnwrap(tie(surface, 1, to: box))
+        XCTAssertEqual(made.placement.origin.y, 5 * 24, accuracy: 0.5)
     }
 
     // MARK: - An image

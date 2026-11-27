@@ -320,6 +320,17 @@ picture in its pixels. And against the real `MarkdownView` in a clear
 window: frames for the 9 built blocks of 129, a mark tied to its block,
 moved by a scroll in the same call, a picture with the text in it.
 
+A drawn mark is tied to the row or the block its ink starts on
+(`MarkStroke.inkCorner`), not to the corner of its area. The area has
+9.5pt of room around the ink (15 for the highlighter), half a 19pt row,
+so a box drawn tight around a line from its upper half, or the
+highlighter along one, was tied to the line above, and so was a box
+around an item of a tight list. The mark was drawn where it was drawn,
+but it followed the wrong line from then on: rewrite that line and the
+mark lost its place or went with it. The tests had
+handed the adapters boxes with no room. Found in review and shown in
+`MarkupFileTests` with the areas the layer really makes, 2026-11-27.
+
 ## Off, something changes, on again
 
 The owner's report (2026-11-25): mark-up turned off, a scroll, mark-up on

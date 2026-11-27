@@ -42,6 +42,23 @@ enum MarkStroke {
         return roomy.isNull || roomy.width < 1 || roomy.height < 1 ? nil : roomy.integral
     }
 
+    /// Where the ink of a drawn area begins: its top-left corner without
+    /// the room `area` gave it, for a file's adapter to find the line or
+    /// the block a mark starts on. By the area's own corner a box drawn
+    /// tight around a line, its top in the line's upper half, was tied to
+    /// the line above: 9.5pt of room is half a 19pt row, and a
+    /// highlighter's is 15 (found in review, 2026-11-27).
+    ///
+    /// The room and the whole width of the pen's line, not half: `integral`
+    /// may have taken the area a point further out, and this lands on the
+    /// ink rather than a point over it. A highlighter's line is wider than
+    /// that, so the corner is still on its ink. An area cut short by the
+    /// view's edge, or one handed over with no room, gives its middle.
+    static func inkCorner(of area: CGRect) -> CGPoint {
+        let inset = room + width
+        return CGPoint(x: min(area.minX + inset, area.midX), y: min(area.minY + inset, area.midY))
+    }
+
     // MARK: - The other pens
 
     /// The points a mark is kept as, for the pen in hand. The pen and the

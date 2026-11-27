@@ -3406,6 +3406,15 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   button pages are static files at `/letter/confirming` and `/letter/leaving`
   that the Worker serves with the token filled in; `run_worker_first` was
   tried for this and turned every other POST, `/ph` included, into a 405.
+- **2026-11-27. A browser's navigation reaches the site's Worker.** Since
+  compatibility date 2025-04-01 the assets layer answers a navigation to a
+  path with no file itself, with the 404 page, so in a browser the letter's
+  confirm link opened "Nothing grows here" and its buttons got a 405; curl,
+  which sends no `Sec-Fetch-Mode`, reached the Worker, which is why it was
+  missed. `assets_navigation_has_no_effect` turns that off rather than a
+  `run_worker_first` list (see the entry above). A file is still served
+  without the Worker; only misses wake it. The 404 page drops its query
+  before analytics starts, so a mangled link's token is not reported.
 
 ## Contributing
 

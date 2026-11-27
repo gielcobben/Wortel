@@ -1,9 +1,15 @@
 ---
 // The page for a URL that leads nowhere. Built to dist/404.html, which
 // wrangler.jsonc's `not_found_handling: "404-page"` serves with a 404 status
-// for any path that matches no file. Browser navigations get it straight from
-// the assets layer without waking the Worker; anything else that misses goes
-// through worker/index.ts, which hands it back to ASSETS and gets the same page.
+// for any path that matches no file. A miss reaches worker/index.ts first
+// (wrangler.jsonc, `assets_navigation_has_no_effect`), which hands what is not
+// its own back to ASSETS and gets this page.
+//
+// It drops the query and fragment from its own address before analytics
+// starts, because a 404's address can carry a secret: a letter link with its
+// `?t=` token, mangled on the way (a slash added, a path cut short), would
+// otherwise go to PostHog as the page view's URL and to the next page as the
+// referrer. Nobody needs the query of a page that does not exist.
 //
 // noindex and no canonical: it is the answer for every bad URL at once, so it
 // is not a page of its own, and a search result pointing at it would be a bug.
@@ -18,6 +24,7 @@ const links: [string, string][] = [
 ];
 ---
 <Layout title={`Not found: ${SITE.name}`} description="There is no page at this address." path="/404" noindex bare>
+  <script is:inline slot="head">if (location.search || location.hash) history.replaceState(null, '', location.pathname)</script>
   <header class="page phead" data-reveal-group>
     <img class="icon" src="/icon-256.png" width="96" height="96" alt="" data-reveal />
     <h1 class="display" data-reveal>Nothing grows here.</h1>

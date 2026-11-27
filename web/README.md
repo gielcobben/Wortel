@@ -678,7 +678,11 @@ them, and `llms-full.txt`, render from `src/data/markdown.ts`.
 
 `src/pages/404.astro` builds `dist/404.html`, which `not_found_handling:
 "404-page"` in `wrangler.jsonc` serves with a 404 status for any path that
-matches no file. It is `noindex` with no canonical.
+matches no file. It is `noindex` with no canonical. A miss, a browser's
+navigation included, reaches the Worker first and is handed back for this page
+(the `assets_navigation_has_no_effect` flag in `wrangler.jsonc`, without which
+the letter's links never reached the Worker). The page drops its own query
+before analytics starts, so a mangled letter link's token is not reported.
 
 `www.wortel.sh` is not served by this Worker. It is a proxied placeholder DNS
 record plus a zone Redirect Rule (dashboard: Rules, Redirect Rules) that 301s

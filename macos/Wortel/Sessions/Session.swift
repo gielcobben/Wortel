@@ -150,7 +150,8 @@ final class Session: Identifiable {
     var zoomedRegion: TabRegion?
     /// Leaves put in the tree at a guessed share, which the window gives
     /// their real size the first time it lays them out
-    /// (`WorkspaceTabs.unsized`). Observed for that; not persisted.
+    /// (`WorkspaceTabs.unsized`). Observed for that, and persisted
+    /// (`PersistedSession.unsizedLeaves`).
     var unsizedLeaves: Set<SplitLayout.Leaf> = []
 
     /// Every terminal tab id the session holds, wherever it sits.

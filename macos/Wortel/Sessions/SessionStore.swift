@@ -110,6 +110,19 @@ struct PersistedSession: Codable {
     /// puts whatever tabs it did read where they can be reached.
     let splitLayout: SplitLayout?
     let paneTabs: [String: PersistedPaneTabs]?
+    /// The leaves of `splitLayout` whose share is still the guess they were
+    /// put in at (`WorkspaceTabs.unsized`, by `SplitLayout.Leaf.rawValue`):
+    /// a column or a strip opened in a session no window has laid out since,
+    /// which includes every session of a file from before they were leaves
+    /// that was not on screen before the next save. Restored as unsized, so
+    /// the window gives each the session's width (or the strip's height)
+    /// when it is first shown. nil when there are none, and in older files,
+    /// where every saved share is taken as chosen.
+    ///
+    /// Until 2026-11-27 this was not saved: one save after an upgrade, the
+    /// column of every session not on screen came back at a third of the
+    /// window for good, instead of at its own width.
+    let unsizedLeaves: [String]?
 
     /// The agent CLI running in this session when the app last quit, and how it
     /// was launched — the input to resuming it on the next launch.
@@ -185,7 +198,7 @@ struct PersistedSession: Codable {
         case gitPanelVisible, inspectorPane, sideTabs, activeSideTab, sideColumnWidth
         case bottomTabs, activeBottomTab, bottomVisible, closedTabs
         case mainTabs, activeMainTab, sideColumnLeading, browserAddresses, gitCheckout, tabHabits
-        case splitLayout, paneTabs
+        case splitLayout, paneTabs, unsizedLeaves
         case runningAgent, runningModel, runningArgv, runningConversationID, runningStartedAt
         case lastConversationID, portBase, remindAt, agentAsleep, lastTypedAt
         case createdAt, lastSentAt
@@ -211,6 +224,7 @@ struct PersistedSession: Codable {
          tabHabits: [String: String]? = nil,
          splitLayout: SplitLayout? = nil,
          paneTabs: [String: PersistedPaneTabs]? = nil,
+         unsizedLeaves: [String]? = nil,
          runningAgent: String? = nil, runningModel: String? = nil, runningArgv: String? = nil,
          runningConversationID: String? = nil, runningStartedAt: Date? = nil,
          lastConversationID: String? = nil,
@@ -240,6 +254,7 @@ struct PersistedSession: Codable {
         self.tabHabits = tabHabits
         self.splitLayout = splitLayout
         self.paneTabs = paneTabs
+        self.unsizedLeaves = unsizedLeaves
         self.runningAgent = runningAgent; self.runningModel = runningModel
         self.runningArgv = runningArgv
         self.runningConversationID = runningConversationID
@@ -317,6 +332,9 @@ struct PersistedSession: Codable {
         // the others, whose terminals would lose their row.
         paneTabs = (try? c.decodeIfPresent([String: LenientPaneTabs].self, forKey: .paneTabs))
             .map { $0.compactMapValues(\.value) }
+        // Leniently too: a value this build can't read is a share taken as
+        // chosen, which is what a file without it means.
+        unsizedLeaves = (try? c.decodeIfPresent([String].self, forKey: .unsizedLeaves)) ?? nil
         // Absent in files written before agent resume moved off the marker file,
         // and absent for any session with no agent running at quit — both mean
         // "nothing to resume", so a plain nil is the whole migration.
@@ -415,8 +433,11 @@ extension PersistedSession {
         // each where it opens, to be sized by the window when it is shown.
         tabs.layout = splitLayout ?? SplitLayout()
         // A share that was saved is not a guess, whatever making `tabs`
-        // put in the tree it had before this one.
-        tabs.unsized = []
+        // put in the tree it had before this one, unless the file says it
+        // was still one (`unsizedLeaves`). Those, and the leaves
+        // `normalized` puts in for a file without them in its tree, are
+        // given their size when the session is first shown.
+        tabs.unsized = Set((unsizedLeaves ?? []).compactMap(SplitLayout.Leaf.init(rawValue:)))
         if sideTabs == nil, panelVisible {
             let pane = inspectorPane.flatMap(InspectorPane.init(rawValue:)) ?? defaultPane
             tabs.side = [.pane(pane)]
@@ -430,6 +451,14 @@ extension PersistedSession {
         // row exactly once, what's in front something the row has, an empty
         // column or strip hidden. See `WorkspaceTabs.normalized`.
         return tabs.normalized()
+    }
+
+    /// `unsized` as the file keeps it: the leaves of `layout` still at a
+    /// guessed share, in a fixed order, or nil when there are none (and
+    /// then the key is not written at all).
+    static func savedUnsized(_ unsized: Set<SplitLayout.Leaf>, in layout: SplitLayout) -> [String]? {
+        let saved = unsized.filter(layout.contains).map(\.rawValue).sorted()
+        return saved.isEmpty ? nil : saved
     }
 
     /// A strip tab as saved: a `SideTab` raw value, or, in files from when the

@@ -292,8 +292,9 @@ with it the one state a leaf could be in that a made split could not.
   (`SplitLayout.insert(_:atRootEdge:share:)`, the left edge when
   `sideLeading`), the strip directly under the main row. The model knows
   shares, not points, so both go in at a guess (a third of the width, three
-  tenths of the main row's height) and are marked `unsized`, which is not
-  saved. The window gives each its real size the first time it lays it out
+  tenths of the main row's height) and are marked `unsized`, which is saved
+  (`unsizedLeaves`, below). The window gives each its real size the first
+  time it lays it out
   (`MainAreaController.sizeNewLeaves`, from `syncTree` and `viewDidLayout`,
   through `GitPanelModel.resizeLeaf` and `SplitLayout.resize`). For the
   column that is the session's width or the last one chosen anywhere
@@ -424,6 +425,22 @@ The model:
   A file with no tree, or a tree without the column's or the strip's leaf,
   gets each put where it opens, `unsized`, so it comes up at the session's
   saved width.
+  `unsizedLeaves` is saved beside the tree (since 2026-11-27): the leaves
+  still at their guessed share (`PersistedSession.savedUnsized`), read
+  back as `unsized`, and left out when there are none. Only the session on
+  screen is ever sized (`sizeNewLeaves`), so after an upgrade from a
+  release without the tree every other session had its column and strip
+  at the guess, and with nothing saying so, one save made that a share
+  somebody chose: the column came back at a third of the window for good,
+  not at its width. A build that doesn't know the field (`main` before
+  that day) reads the guess as chosen, which is what it did anyway, and
+  saves without it. Read leniently, as the tree is: a value that is not a
+  list is no guess, and a name that is no leaf of the tree is dropped
+  (`PersistedSessionTests`, `testAColumnNobodyHasSizedIsStillAGuessAfterASave`
+  and the two after it). Checked on a throwaway copy the same day: a file
+  shaped as 2026.48.1 writes it, a second session out of sight with a
+  400pt column, a launch, a quit, a launch and a switch to it. Its column
+  came up at 400pt, and at 293 (a third) with the field not read back.
 - Three kinds of older build. The released app drops both fields and saves
   without them: the column and the strip are as they were, and a made
   split's terminal is then a shell in the keeper that no session claims,
@@ -902,10 +919,6 @@ Known limits:
 - A made split that emptied is hidden at once and leaves the window half a
   second later (`MainAreaController.letGoOfDeadPanes`): a terminal moved out of it
   as its last tab is in its old host until the row it went to has shown it.
-- A column or a strip that was opened in a session out of sight, and never
-  shown before the app quit, was saved at its guessed share: `unsized` is
-  not saved, so it comes back at a third of the width, not the session's
-  width. Read from the code, not tried.
 
 A session out of sight and a window resize. Its terminal follows the window
 once the resize ends (`SurfaceView.followWindow`), and that used to be "by as

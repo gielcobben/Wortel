@@ -199,6 +199,17 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
 
     override var isFlipped: Bool { true }
 
+    /// The view is back: its text view shows the note again, the caret at
+    /// its end, where the next chip goes.
+    func attach() {
+        guard !session.text.layoutManagers.contains(textLayout) else { return }
+        session.text.addLayoutManager(textLayout)
+        textView.setSelectedRange(NSRange(location: session.text.length, length: 0))
+        textView.typingAttributes = Self.attributes
+        update()
+        onHeightChange()
+    }
+
     /// The view is leaving: the note stays, its text view does not.
     func detach() {
         session.text.removeLayoutManager(textLayout)

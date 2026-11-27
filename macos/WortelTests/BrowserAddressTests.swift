@@ -126,6 +126,33 @@ final class BrowserAddressTests: XCTestCase {
                                                 as: URL(string: "http://localhost:3001")!))
     }
 
+    /// What ends mark-up on a page. The addresses are what WebKit reported,
+    /// measured 2026-11-26: a same-document change (a new fragment,
+    /// `replaceState`, `pushState`) is heard only as a new `url`, never as
+    /// a commit, so this is all there is to tell them by.
+    func testOnlyAnotherDocumentOrRouteIsElsewhere() {
+        let page = URL(string: "http://127.0.0.1:4321/docs/index.html")!
+        func elsewhere(_ to: String, from: URL? = page) -> Bool {
+            BrowserAddress.isElsewhere(URL(string: to)!, from: from)
+        }
+        // A heading written into the address as the page scrolls.
+        XCTAssertFalse(elsewhere("http://127.0.0.1:4321/docs/index.html#install"))
+        XCTAssertFalse(elsewhere("http://127.0.0.1:4321/docs/index.html",
+                                 from: URL(string: "http://127.0.0.1:4321/docs/index.html#install")!))
+        XCTAssertFalse(elsewhere("http://127.0.0.1:4321/docs/index.html#"))
+        XCTAssertFalse(elsewhere(page.absoluteString))
+        // A route in a single-page app, and a new query.
+        XCTAssertTrue(elsewhere("http://127.0.0.1:4321/docs/other"))
+        XCTAssertTrue(elsewhere("http://127.0.0.1:4321/docs/other#install"))
+        XCTAssertTrue(elsewhere("http://127.0.0.1:4321/docs/index.html?page=2"))
+        XCTAssertTrue(elsewhere("http://127.0.0.1:4322/docs/index.html"))
+        XCTAssertTrue(elsewhere(page.absoluteString, from: nil))
+        // A file's page, by its fragment too.
+        let file = URL(fileURLWithPath: "/tmp/site/index.html")
+        XCTAssertFalse(elsewhere("file:///tmp/site/index.html#b", from: file))
+        XCTAssertTrue(elsewhere("file:///tmp/site/other.html", from: file))
+    }
+
     /// Only files on this Mac are watched beside the page, each once.
     func testTheFilesAPageLoadedAreItsLocalOnes() {
         XCTAssertEqual(BrowserAddress.localFiles(in: [

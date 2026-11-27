@@ -121,6 +121,15 @@ final class BrowserPage: NSObject {
     }()
     @ObservationIgnored private var hasMarkup = false
 
+    /// Whether Wortel's own reload of a changed file waits: while mark-up is
+    /// on, and while the note has words or marks that were never copied. A
+    /// reload drops the note, and this one nobody at the page asked for. A
+    /// note that was copied has been used: the agent edits the file, and
+    /// the page shows the change.
+    private var holdsReload: Bool {
+        hasMarkup && (markup.isOn || markup.hasUncopied)
+    }
+
     /// Whether there is a page here to mark up: somewhere, loaded, and not
     /// behind its own source.
     var canMarkUp: Bool {
@@ -223,8 +232,11 @@ final class BrowserPage: NSObject {
             webView.observe(\.url) { [weak self] view, _ in
                 MainActor.assumeIsolated {
                     guard let self, let url = view.url else { return }
-                    // A new address, a route change in a single-page app.
-                    if url != self.currentURL { self.endMarkup() }
+                    // A new address, a route change in a single-page app. Not
+                    // a new fragment: scrolling passes through the marks, and
+                    // a page that writes its heading into the address as it
+                    // scrolls would end mark-up for a scroll.
+                    if BrowserAddress.isElsewhere(url, from: self.currentURL) { self.endMarkup() }
                     self.currentURL = url
                     self.leaveSourceIfElsewhere()
                     self.onNavigate(url)
@@ -311,11 +323,9 @@ final class BrowserPage: NSObject {
     /// The file the page is from, or one it loaded, changed on disk.
     private func fileChanged() {
         // Not on screen: when it is shown, as a page that crashed there.
-        // Being marked up: when that is over. A reload drops the marks and
-        // the note, and this one would do it mid-sentence, for an edit the
-        // agent made and nobody at the page asked for.
-        guard webView.window != nil, !webView.isHiddenOrHasHiddenAncestor,
-              !(hasMarkup && markup.isOn) else {
+        // Being marked up, or holding a note not yet copied: once it is
+        // copied or cleared (`holdsReload`).
+        guard webView.window != nil, !webView.isHiddenOrHasHiddenAncestor, !holdsReload else {
             reloadWhenShown = true
             return
         }
@@ -446,7 +456,7 @@ final class BrowserPage: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let visible = self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor
-            if visible, self.reloadWhenShown, !(self.hasMarkup && self.markup.isOn) {
+            if visible, self.reloadWhenShown, !self.holdsReload {
                 self.reloadWhenShown = false
                 // Past the cache: it may be owed for a file that changed.
                 self.reloadFromOrigin()
@@ -523,6 +533,12 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         // the policy below took elsewhere (WebKit's "frame load interrupted").
         guard error.code != NSURLErrorCancelled,
               !(error.domain == "WebKitErrorDomain" && error.code == 102) else { return }
+        // The page is covered by a notice from here on, so mark-up could no
+        // longer be seen or turned off, yet would hold the swipe back, the
+        // pointer and any reload owed. It ends, as for a reload that worked:
+        // nothing was committed, but the load that brings the page back will
+        // be, and would end it then.
+        endMarkup()
         let unreachable: Set<Int> = [NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost,
                                      NSURLErrorTimedOut]
         if unreachable.contains(error.code), let host = location?.host(), BrowserAddress.isLocalHost(host) {

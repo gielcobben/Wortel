@@ -93,6 +93,21 @@ enum BrowserAddress {
         return open.host() == wanted.host() && open.port == wanted.port
     }
 
+    /// Whether a page whose address went from `old` to `new` is another
+    /// page: another document, or another route in a single-page app. A
+    /// change of the fragment alone is not, however the page made it: a
+    /// docs site rewrites it as the page scrolls past its headings.
+    static func isElsewhere(_ new: URL, from old: URL?) -> Bool {
+        guard let old else { return true }
+        return withoutFragment(new) != withoutFragment(old)
+    }
+
+    private static func withoutFragment(_ url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
+        parts.fragment = nil
+        return parts.string ?? url.absoluteString
+    }
+
     /// The local files in what a page says it loaded, as paths: what is
     /// watched beside the page's own file. Anything that isn't a `file:`
     /// address is somewhere a change on disk can't reach.

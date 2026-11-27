@@ -199,9 +199,12 @@ While mark-up is on over a page (`BrowserPage.markupChanged`):
   view on top takes the clicks, but a web view hears the pointer through a
   tracking area, and would go on lighting what it passes and setting its
   own cursor.
-- A reload owed for a changed file waits (`fileChanged`, `reloadWhenShown`)
-  until mark-up is off. A reload drops the note, and this one would do it
-  mid-sentence for an edit nobody at the page asked for.
+- A reload owed for a changed file waits (`fileChanged`, `reloadWhenShown`,
+  `holdsReload`) until mark-up is off and the note has nothing in it that
+  was not copied (`MarkupSession.hasUncopied`). A reload drops the note,
+  and this one would do it mid-sentence, or after Esc, for an edit nobody
+  at the page asked for. After a copy it runs at once: the agent was
+  handed the note to edit the file, and the page shows what it did.
 - ⌘+ and ⌘R still reach the page with the keyboard in the note
   (`BrowserTabs.page(holding:)` counts the note as its page's).
 
@@ -351,12 +354,20 @@ turn of the run loop after each step), and a document with pictures in it.
 There is no lock on the header. When what was marked up goes elsewhere,
 mark-up ends and the marks and the note are dropped (`MarkupSession.end`):
 a new address or a route change (`webView.url`), a load committed
-(`didCommit`, which a reload is), Page · Source, the page's process dying,
-the tab closing; and for a file, another of Diff · Source · Rendered
+(`didCommit`, which a reload is), a load that failed (the page is behind
+a notice then, where mark-up could be neither seen nor turned off),
+Page · Source, the page's process dying, the tab closing; and for a file,
+another of Diff · Source · Rendered
 (`PreviewContent`, and `MarkupSession.prepare`), its tab or window
 closing. A file rewritten on disk is not elsewhere: the marks stay, each
 where its line or block now is. One rule covers what the person does and what a page does
 by itself, which nothing could lock anyway.
+
+A new fragment alone is not a new address (`BrowserAddress.isElsewhere`).
+WebKit reports a new fragment, `replaceState` and `pushState` only as a
+new `url`, never as a load (measured 2026-11-26), and a docs site
+rewrites the fragment as the page scrolls past its headings: without
+this, scrolling with mark-up on ended it. A new path or query ends it.
 
 Esc and a copy only turn it off (`turnOff`): the note is kept, and turning
 mark-up on again finds it. ⌘A then ⌫ in the note clears it.

@@ -2929,6 +2929,35 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   animation's events, a load, a scroll, mark-up turned on) and ends 400
   ms after the last one. What it misses is a script's animation that
   nothing announces, which is in the known limits.
+- **2026-11-26. A new fragment is not elsewhere.** Any new address ended
+  mark-up, and a docs site writes the heading in view into the address as
+  it scrolls, so scrolling over a page dropped the note. Measured in
+  WebKit: a new fragment, `replaceState` and `pushState` are each heard
+  only as a new address, never as a load. Now an address that differs
+  from the last only after its `#` keeps mark-up on, whichever of the
+  three made it; a new path or query ends it, as a route change in a
+  single-page app. Telling `replaceState` from `pushState` (whether the
+  history entry is a new one) was looked at and not used: a scroll-spy
+  can use either, and both are a fragment.
+- **2026-11-26. A note not yet copied holds Wortel's own reload; a copied
+  one does not.** Wortel's reload of a page whose file changed waited only
+  while mark-up was on. Esc keeps the note, and the reload then ran and
+  dropped it, words and marks nobody had copied. Now it also waits while
+  the note has anything in it that has not been copied, and runs once it
+  is copied or cleared. After a copy it runs at once, as before, though
+  the note goes with it: the loop is copy the note, the agent edits the
+  file, see the change, and a copied note has been used. A reload the
+  person asks for (⌘R) still ends mark-up whatever the note holds.
+- **2026-11-26. A load that fails ends mark-up.** A reload during mark-up
+  against a stopped server fails before anything is loaded: no load, no
+  new address, so nothing ended it. The page went behind a notice, and
+  with it the button and the menu item, while mark-up stayed on, holding
+  the swipe back, the page's pointer and any reload owed, with no way to
+  see it or turn it off. It now ends when a load fails, which matches the
+  rule above (a reload ends it), and loses nothing that was not going:
+  the load that brings the page back would end it then. Turning it off
+  and keeping the note until then was the other choice, and keeps a note
+  for no more than that wait.
 
 ## Running processes
 

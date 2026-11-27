@@ -67,6 +67,9 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
     /// still being made for a note that is gone lands nowhere, even after a
     /// newer copy has started.
     @ObservationIgnored private var copyNumber = 0
+    /// Edits to the note, and how many of them the last copy had in it.
+    @ObservationIgnored private var edits = 0
+    @ObservationIgnored private var editsCopied = 0
 
     /// The folders of notes that are still open, which the sweep leaves.
     private static var open: Set<String> = []
@@ -78,6 +81,10 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
 
     /// Whether there is anything to come back to.
     var hasNote: Bool { !marks.isEmpty || text.length > 0 }
+
+    /// The note has words or marks that were never copied: a reload nobody
+    /// asked for waits for them (`BrowserPage.holdsReload`).
+    var hasUncopied: Bool { hasNote && edits != editsCopied }
 
     // MARK: - On, off, gone
 
@@ -126,6 +133,8 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         pictureNames = []
         undo.removeAllActions()
         text.setAttributedString(NSAttributedString())
+        edits = 0
+        editsCopied = 0
         marks = []
         overlay?.marksChanged()
         surface?.deactivate(forgetting: true)
@@ -178,6 +187,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         var moved = mark
         moved.picture = known[mark.number]?.picture
         known[mark.number] = moved
+        edits += 1
         if let index = marks.firstIndex(where: { $0.number == mark.number }) { marks[index] = moved }
         overlay?.marksChanged()
     }
@@ -215,6 +225,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
                                  range editedRange: NSRange, changeInLength delta: Int) {
         guard editedMask.contains(.editedCharacters) else { return }
         MainActor.assumeIsolated {
+            edits += 1
             let present = Set(MarkChip.numbers(in: textStorage))
             let now = known.values.filter { present.contains($0.number) }.sorted { $0.number < $1.number }
             guard now != marks else { return }
@@ -232,7 +243,7 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
         guard isOn, !isCopying, !marks.isEmpty else { return }
         isCopying = true
         copyNumber += 1
-        let number = copyNumber
+        let number = copyNumber, edits = edits
         let marks = marks
         let pieces = MarkChip.pieces(in: text)
         let subject = subject()
@@ -281,17 +292,19 @@ final class MarkupSession: NSObject, NSTextStorageDelegate {
                 }
                 let copied = MarkupNote.copied(pieces: pieces, marks: references, subject: subject,
                                                whole: wholePicture, details: detailsPath)
-                DispatchQueue.main.async { self?.finishCopy(copied, marks: marks, number: number) }
+                DispatchQueue.main.async { self?.finishCopy(copied, marks: marks, number: number, edits: edits) }
             }
         }
         if let surface { surface.whole(marks, reply: finish) } else { finish(nil) }
     }
 
-    private func finishCopy(_ copied: String, marks: [Mark], number: Int) {
+    private func finishCopy(_ copied: String, marks: [Mark], number: Int, edits: Int) {
         // Ended while the pictures were written: there is no note to copy,
         // and the clipboard may hold a newer one by now.
         guard isCopying, number == copyNumber else { return }
         isCopying = false
+        // What was typed while the pictures were written is not in this copy.
+        editsCopied = edits
         pasteboard.clearContents()
         pasteboard.setString(copied, forType: .string)
         Telemetry.capture(.markupCopied(where: place, marks: CountBucket(marks.count),

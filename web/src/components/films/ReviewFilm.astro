@@ -1,0 +1,118 @@
+---
+// The review film: checking what the agent did, without leaving the window.
+// One session, the one whose agent has just said it is done ("Quicker
+// panes": the canvas's terminal, its diff, its commits, its tree and its
+// plan are all that session's), and one story in four chapters that each
+// start where the one before ended:
+//   Changes  ⇧⌘C opens Changes in a column beside the terminal;
+//   History  ⇧⌘H puts the commits and their graph in front there;
+//   Files    ⇧⌘F the project as a tree;
+//   Preview  a file is picked in the tree, and Space opens it in a preview
+//            tab in front of the terminal, its title in italics.
+// scripts/review.ts plays it. The column's row of tabs grows a tab a
+// chapter, as the canvas draws the three panes.
+//
+// The homepage's section (components/home/Review.astro) and /layouts show
+// it. One to a page: the script finds the film by its name.
+import Stage from '../Stage.astro';
+import Window from '../Window.astro';
+import AppContent from '../AppContent.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import Terminal from '../../app/gen/Terminal.astro';
+import FileMain from '../../app/gen/FileMain.astro';
+import Changes from '../../app/gen/Changes.astro';
+import History from '../../app/gen/History.astro';
+import Files from '../../app/gen/Files.astro';
+interface Props {
+  /** Which photo, and which part of it (Stage.astro). */
+  photo?: string;
+  at?: string;
+  zoom?: number;
+}
+const { photo = 'lake', at = '20% 30%', zoom = 1.5 } = Astro.props;
+const chapters = ['Changes', 'History', 'Files', 'Preview'];
+---
+<Stage film="review" chapters={chapters} photo={photo} at={at} zoom={zoom} fold>
+  <Window data-rwin data-narrow>
+    <div class="rv-slot rv-sb"><Sidebar /></div>
+    <div class="rv-div rv-sbdiv"></div>
+    <!-- The session's split: the agent's terminal, and the file previewed in
+         front of it. Alone, its row is the rightmost along the top
+         (data-end, styles/site.css); scripts/review.ts takes the mark off
+         while the column is open. -->
+    <div class="rv-slot rv-main" data-slot="main" data-end>
+      <div class="rv-pane" data-pane="terminal"><Terminal /></div>
+      <div class="rv-pane" data-pane="file" hidden><AppContent><FileMain /></AppContent></div>
+    </div>
+    <div class="rv-div" data-div="side" hidden></div>
+    <!-- The column beside it, at the outer edge. -->
+    <div class="rv-slot rv-side" data-slot="side" data-end hidden>
+      <div class="rv-pane" data-pane="changes"><Changes /></div>
+      <div class="rv-pane" data-pane="history" hidden><History /></div>
+      <div class="rv-pane" data-pane="files" hidden><Files /></div>
+    </div>
+  </Window>
+  <div class="keys glass" data-keys="changes" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>C</kbd></div>
+  <div class="keys glass" data-keys="history" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd></div>
+  <div class="keys glass" data-keys="files" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>F</kbd></div>
+  <div class="keys glass" data-keys="space" aria-hidden="true"><kbd class="wide">Space</kbd></div>
+</Stage>
+
+<script>
+  import { initReview } from '../../scripts/review';
+  initReview();
+</script>
+
+<style>
+  /* Slots: the sidebar at the canvas's 234, the column at 384, and the
+     session's split the rest. */
+  .rv-slot { position: relative; display: grid; grid-template-columns: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+  .rv-slot > * { grid-area: 1 / 1; min-width: 0; min-height: 0; }
+  .rv-slot[hidden], .rv-div[hidden], .rv-pane[hidden] { display: none; }
+  .rv-sb { width: 234px; flex: none; }
+  .rv-main { flex: 1; min-width: 80px; }
+  .rv-side { --col: 384px; width: var(--col); flex: none; }
+  .rv-div { width: 1px; flex: none; align-self: stretch; background: var(--sidebar-border); }
+  .rv-pane { display: flex; }
+  .rv-pane > :global(*) { flex: 1; }
+  /* The column slides in. Its pane is held at its resting width against the
+     window's edge, and the divider passes over it, so nothing in it is laid
+     out again on the way (README, Motion). */
+  .rv-side .rv-pane { min-width: var(--col); width: 100%; justify-self: end; }
+
+  /* Keys show over the terminal, in the room it keeps clear above its prompt
+     (scripts/review.ts says where). */
+  .keys { translate: -50% -50%; }
+  .keys kbd.wide { min-width: 96px; font-size: 15px; }
+
+  /* Narrower than the stage's full width the sidebar folds, as the other
+     films' does, and the window gains what the app gives a window with no
+     sidebar (app.ts, foldable). The column gives up a little before the
+     terminal is left a strip. */
+  @media (max-width: 1263px) {
+    .rv-sb, .rv-sbdiv { display: none; }
+    .rv-side { --col: min(384px, 50%); }
+    :global([data-film="review"] .win [data-narrow-only]) { display: flex; }
+    :global([data-film="review"] .win [data-narrow-only][data-lead]) { display: contents; }
+    :global([data-film="review"] .win [data-lead] [data-name="Back and Forward"]) { display: none; }
+    .rv-main :global(header[data-name="Main bar"]) { padding-left: 78px; }
+  }
+
+  /* On a phone the stage shows one of the two at a time, each as wide as the
+     stage: the session's split, or the column while that is what the chapter
+     is about. The window is two wide while the column is open (--n) and the
+     film pans (scripts/review.ts). What is out of view is not drawn
+     (data-view), so no strip of it shows in the stage's own margin. */
+  @media (max-width: 760px) {
+    :global([data-film="review"] .stage .win) { width: calc(var(--n, 1) * 100% + (var(--n, 1) - 1) * 1px); }
+    .rv-main, .rv-side { flex: none; width: calc((100% - (var(--n, 1) - 1) * 1px) / var(--n, 1)); }
+    .rv-side .rv-pane { min-width: 0; }
+    /* The preview's own tab stays in its row (site.css leaves the plan's tab
+       out of a folded window, for the hero's), and the session's tab behind
+       it gives up its place in a row this short. */
+    :global([data-film="review"] .win[data-narrow] [data-name="plan.md tab"]) { display: flex; }
+    .rv-main [data-pane="file"] :global([data-name="Session tab"]) { display: none; }
+    :global([data-rwin][data-view="main"]) .rv-side,
+    :global([data-rwin][data-view="side"]) .rv-main { visibility: hidden; }
+  }
+</style>

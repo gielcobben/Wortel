@@ -45,14 +45,14 @@ src/
   pages/docs.astro         /docs    commands, shortcuts, behaviour
   pages/mark-up.astro      /mark-up one feature in depth (see Feature pages)
   components/FeaturePage.astro  the layout of a feature page, from a FeaturePage in data/site.ts
-  components/films/        a film more than one page shows: MarkupFilm (the homepage's section and /mark-up)
+  components/films/        a film more than one page shows: MarkupFilm (the homepage's section and /mark-up), ReviewFilm (the homepage's "See what it did")
   components/markup/       what /mark-up shows: Surfaces (mark-up over Markdown, source and a diff) and Tiles
   pages/release-notes/     /release-notes/<version>.html  notes for Sparkle
   pages/llms*.txt.ts       maps for language models
   pages/*.md.ts            /index.md, /docs.md, /compare.md, /mark-up.md, /updates.md: pages as Markdown
   data/markdown.ts         the renderers behind those and llms-full.txt
   pages/404.astro          the not-found page (dist/404.html)
-  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ, in the right column beside its heading)
+  components/home/         Hero, Start (a terminal first: a shell, an agent typed into it, the field in Settings that names it, ⌘N starting one), Agents, Panes, Markup and Review (each a section's words over a film in components/films/), Bento (Wortel at a glance: one poster of pieces of the real app, in the manner of Apple's keynote summaries), Glance (the FAQ, in the right column beside its heading)
   components/AppContent.astro  wraps a piece of the app that shows a document: its headings become plain blocks, so the page keeps one h1
   components/GitHubMark.astro  GitHub's mark, for the buttons to the source (SITE.repo) in the nav and the closing call; they open in a new tab
   components/Section.astro a section: the row it opens with (a hairline, a two-line heading at the left,
@@ -66,6 +66,7 @@ src/
   scripts/panes.ts         the splits scene: one story in three chapters, each a scene (its beats, and how it ends)
   scripts/scenes.ts        the agents scene and the terminal-first scene
   scripts/markup.ts        the mark-up scene: point, say it, copy, paste
+  scripts/review.ts        the review scene: Changes, History, Files and a preview, in one session
   scripts/surfaces.ts      /mark-up's second scene: the marks drawn and the note written over three previews
   scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes (the diff, a plan, a preview being marked up, the commits, the file tree) and three windows (a terminal, a browser, one in splits)
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
@@ -252,6 +253,25 @@ done with the mouse is done by the film's pointer (`Pointer` in
 motion the film is still on "Drag a tab" as it ends, both splits, and
 each chapter shows how it ends (Zoom: the zoom). Anything the visitor presses
 stops a scene where it is.
+
+**The review film** (`scripts/review.ts`, "See what it did", after the
+agents) is the same kind of story in the session whose agent has just said it
+is done, "Quicker panes": the canvas's terminal, diff, commits, tree and plan
+are all that session's. Four chapters, each starting where the one before
+ended, held 2.4 s on how it ends so there is time to read a pane:
+- **Changes**: ⇧⌘C, and the column slides in at the outer edge (384 wide)
+  with the working tree and the diff.
+- **History**: ⇧⌘H puts the commits and their graph in front there. The
+  column's row of tabs is a tab longer in each chapter, as the canvas draws
+  the three panes.
+- **Files**: ⇧⌘F, the project as a tree.
+- **Preview**: the pointer picks `plan.md` in the tree and Space opens it in
+  a preview tab in front of the terminal, its title in italics.
+
+Its keys show over the terminal, in the room it keeps clear above its prompt
+(`data-reserve`). On a phone the stage shows the session's split or the
+column, each as wide as the stage, and pans between them; the tree scrolls to
+the plan's row first. With reduced motion it is still on Preview.
 
 Rules for motion, so a new piece moves like the rest:
 - Curves are `--ease-out` (anything answering the reader) and `--ease-in-out`

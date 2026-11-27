@@ -398,6 +398,16 @@ export const HOME = {
     body: 'Claude Code, Codex, Pi, opencode and others report when they are working, waiting on you, done or failed. A dot in the sidebar, a notification for a session out of sight, and `⌥⇧⌘↓` takes you there.',
     link: ['How the agents report', '/docs#agent-detection'],
   },
+  // This entry, the section that reads it (components/home/Review.astro) and
+  // its line in pages/index.astro go together. The keys it names are the
+  // beta's, so it carries the flag.
+  review: {
+    title: 'See what it did',
+    tone: 'The diff, the commits, the files',
+    body: 'When an agent says it is done, its work is one key away. `⇧⌘C` opens Changes beside the terminal, `⇧⌘H` the commits with their graph and `⇧⌘F` the project as a tree. Pick a file and it opens in a preview tab: its source, its diff or rendered Markdown.',
+    link: ['The keys for each', '/docs#shortcuts'],
+    beta: true,
+  },
   window: {
     title: 'Split it anywhere',
     tone: 'Every split has its own tabs',

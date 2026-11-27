@@ -29,7 +29,8 @@
 #                                         are left alone. The versioned DMG is
 #                                         the link to hand a tester: the first
 #                                         launch of a beta build puts that Mac
-#                                         on the channel (Updater.swift).
+#                                         on the channel (Updater.swift). It
+#                                         wears Wortel/AppIconBeta.icon.
 #   ./scripts/release.sh --publish 2026.33.1 --republish
 #                                       replace the version already published,
 #                                         same bytes-key, same appcast <item>.
@@ -318,8 +319,12 @@ VERSION_ARGS=()
 if [ "$PUBLISH" = 1 ]; then
   VERSION_ARGS=(MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION")
   # A beta build knows it is one (Info.plist's WortelUpdateChannel), which is
-  # what puts the Mac it first runs on onto the beta channel.
-  if [ "$BETA" = 1 ]; then VERSION_ARGS+=(WORTEL_UPDATE_CHANNEL=beta); fi
+  # what puts the Mac it first runs on onto the beta channel. It also wears
+  # its own icon (Wortel/AppIconBeta.icon), so a tester can tell it from a
+  # regular build in the Dock; the next regular release puts AppIcon back.
+  if [ "$BETA" = 1 ]; then
+    VERSION_ARGS+=(WORTEL_UPDATE_CHANNEL=beta ASSETCATALOG_COMPILER_APPICON_NAME=AppIconBeta)
+  fi
 fi
 # Build a universal binary so it runs on both Apple Silicon and Intel Macs.
 # (A single-arch build shows "app is damaged" on the other architecture.)
@@ -346,6 +351,21 @@ fi
 APP="$DERIVED/Build/Products/Release/Wortel.app"
 [ -d "$APP" ] || { echo "Release .app not found at $APP (see build/xcodebuild.log)" >&2; exit 1; }
 echo "==> Built $APP"
+
+# What a publish stamps on the build, checked before signing and notarizing
+# spend several minutes and two notary submissions on it.
+if [ "$PUBLISH" = 1 ]; then
+  # The channel: a beta that doesn't know it would never join a tester's Mac
+  # to the channel, and a regular build stamped beta would join everyone's.
+  BUILT_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :WortelUpdateChannel' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+  WANT_CHANNEL=$([ "$BETA" = 1 ] && echo beta || true)
+  [ "$BUILT_CHANNEL" = "$WANT_CHANNEL" ] || { echo "✗ Built channel (${BUILT_CHANNEL:-none}) ≠ requested (${WANT_CHANNEL:-none})" >&2; exit 1; }
+  # And the icon goes with the channel: the beta one on a beta only, so
+  # everyone else never gets it and a tester can see which build they run.
+  BUILT_ICON="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+  WANT_ICON=$([ "$BETA" = 1 ] && echo AppIconBeta || echo AppIcon)
+  [ "$BUILT_ICON" = "$WANT_ICON" ] || { echo "✗ Built icon (${BUILT_ICON:-none}) ≠ requested ($WANT_ICON)" >&2; exit 1; }
+fi
 
 # --- Sign -------------------------------------------------------------------
 # Hardened runtime is only enabled for notarization; a plain local run doesn't
@@ -417,11 +437,8 @@ if [ "$PUBLISH" = 1 ]; then
   # Confirm the build actually picked up the version we stamped.
   BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
   [ "$BUILT" = "$VERSION" ] || { echo "✗ Built version ($BUILT) ≠ requested ($VERSION)" >&2; exit 1; }
-  # And the channel: a beta that doesn't know it would never join a tester's
-  # Mac to the channel, and a regular build stamped beta would join everyone's.
-  BUILT_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :WortelUpdateChannel' "$APP/Contents/Info.plist" 2>/dev/null || true)"
-  WANT_CHANNEL=$([ "$BETA" = 1 ] && echo beta || true)
-  [ "$BUILT_CHANNEL" = "$WANT_CHANNEL" ] || { echo "✗ Built channel (${BUILT_CHANNEL:-none}) ≠ requested (${WANT_CHANNEL:-none})" >&2; exit 1; }
+  # The channel and the icon were checked right after the build, before
+  # signing and notarizing spent minutes on a build that was going nowhere.
 
   # Keep this build's dSYMs. The app reports a crash as an offset into its own
   # binary and nothing else (see Telemetry/CrashReport.swift), so turning that

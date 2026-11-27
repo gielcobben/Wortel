@@ -2854,6 +2854,21 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   regular release goes out while a beta is out. A feature branch may be
   pushed without asking, since it reaches nobody; `main`, a release and a
   deploy are still asked for each time.
+- **2026-11-26. A beta wears its own icon.**
+  `macos/Wortel/AppIconBeta.icon`, the mark in glass on a blue blueprint
+  grid, made in Icon Composer by the owner. A beta is otherwise the same app
+  as a regular release, so a tester had no way to see in the Dock which one
+  they were running. `release.sh --publish --beta` builds with
+  `ASSETCATALOG_COMPILER_APPICON_NAME=AppIconBeta` and refuses to publish
+  when the built `CFBundleIconName` doesn't match the channel, in either
+  direction. Debug and regular builds keep `AppIcon` (XcodeGen's default),
+  and only the chosen icon goes into `Assets.car`. Both checks run right
+  after the build, before notarizing. The next regular release should put
+  the regular icon back on a tester's Mac; not yet seen, since whether the
+  Dock refreshes its cached icon after an in-place Sparkle update is
+  unverified. Not a second bundle id: a
+  beta that is a different app would be a second set of sessions and a
+  second keeper.
 
 ## Telemetry and privacy
 

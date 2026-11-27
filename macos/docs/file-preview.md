@@ -117,6 +117,26 @@ verdict is recorded here so it isn't retried by accident: **rendering quality wo
 over selection**, and the escape hatch is the mode switch, not a better
 renderer.
 
+**The stack is lazy, so a block has to be its own height the moment it is
+built.** A block scrolled back into view from above is built above the reader;
+SwiftUI keeps the text still when a block's first size differs from its
+guess, but not when a built block changes size afterwards. A picture used to
+do exactly that: a chip until its file was read a turn later, then the
+picture, and everything in view went down by the difference. Measured
+2026-11-25 with wheel events through a 433-block document: 10 jumps of 324pt
+scrolling up, none scrolling down, none with the pictures missing. So a
+picture's size is read from its file's header the first time it is seen
+(`MarkdownImageView.size(of:)`) and kept, and until the pixels arrive its
+block holds that room; the same scroll then measured no jumps. A file that is
+there and is not a picture when read (rewritten as something else) gets its
+alt-text chip, and its kept size becomes nothing so the next build is the
+chip at once: the room alone stayed an empty box for good (fixed
+2026-11-26, checked in a harness with the real view). What the
+lazy stack still does: blocks below the view have guessed heights, so on a
+long first scroll down the document grows (`docs/decisions.md`: 20,193pt to
+58,844pt in ten steps) and the scroller's knob shrinks and steps back. The
+text does not move.
+
 **Front matter renders as a YAML code block.** A `---` on the first line, closed
 by `---` or `...`, is lifted out before any other parsing. Read as Markdown it
 was a rule, one run-on paragraph, and (the closing `---` sitting under that

@@ -22,7 +22,7 @@ final class PreviewWindowBar: ChromeBarView {
     /// A press on the row's empty space, about to move the window.
     var onWindowDrag: () -> Void = {}
 
-    init(document: PreviewDocument, openPage: ((URL) -> Void)? = nil) {
+    init(document: PreviewDocument, markup: MarkupSession? = nil, openPage: ((URL) -> Void)? = nil) {
         super.init()
 
         let icon = FileButton(url: document.url)
@@ -35,7 +35,8 @@ final class PreviewWindowBar: ChromeBarView {
 
         // The tab's own switch, hosted. It hides itself for a binary file and
         // for a file with one mode, as the tab's does: absent, not greyed.
-        let modes = NSHostingView(rootView: PreviewWindowModeSwitch(document: document, openPage: openPage))
+        let modes = NSHostingView(rootView: PreviewWindowModeSwitch(document: document, markup: markup,
+                                                                    openPage: openPage))
         modes.sizingOptions = [.intrinsicContentSize]
         modes.safeAreaRegions = []
 
@@ -65,6 +66,7 @@ final class PreviewWindowBar: ChromeBarView {
 /// out to the file's editor.
 private struct PreviewWindowModeSwitch: View {
     @Bindable var document: PreviewDocument
+    let markup: MarkupSession?
     let openPage: ((URL) -> Void)?
 
     var body: some View {
@@ -75,6 +77,10 @@ private struct PreviewWindowModeSwitch: View {
             OpenAsPageButton(document: document, size: Chrome.controlSize, open: openPage)
             // The row's controls are 28pt, as its FileButton is (DESIGN.md).
             OpenInEditorButton(document: document, size: Chrome.controlSize)
+            if let markup, markup.isOffered(over: document) {
+                MarkupButton(session: markup, size: Chrome.controlSize,
+                             prepare: { markup.prepare(for: document) })
+            }
         }
     }
 }

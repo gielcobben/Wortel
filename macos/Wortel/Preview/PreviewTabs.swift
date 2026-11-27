@@ -56,6 +56,8 @@ final class PreviewTabs {
     private struct Entry {
         let document: PreviewDocument
         let find: PreviewFind
+        /// Mark-up over the file, beside its find.
+        let markup: MarkupSession
     }
 
     init(highlighter: (any DiffHighlighting)?) {
@@ -103,10 +105,16 @@ final class PreviewTabs {
         let entry = Entry(
             document: PreviewDocument(url: url, diffSource: source.diff, mode: mode,
                                       highlighter: highlighter),
-            find: PreviewFind())
+            find: PreviewFind(), markup: MarkupSession())
         documents[path] = entry
         if let line = pendingLines.removeValue(forKey: path) { entry.document.reveal(line: line) }
         return (entry.document, entry.find)
+    }
+
+    /// Mark-up for a file's tab: its document's, made with it.
+    func markup(for path: String) -> MarkupSession? {
+        _ = document(for: path)
+        return documents[path]?.markup
     }
 
     /// Show `line` in a file's tab: now if its document exists, else when it
@@ -148,6 +156,7 @@ final class PreviewTabs {
 
     /// A file's tab closed: stop watching it.
     func forget(_ path: String) {
+        documents[path]?.markup.end()
         documents[path] = nil
         sources[path] = nil
         arrivingModes[path] = nil
@@ -179,10 +188,11 @@ struct PreviewTab: View {
         let _ = document.anchorLine = document.visibleLine
         let _ = document.anchorOffset = document.visibleOffset
         VStack(spacing: 0) {
-            PreviewTabHeader(document: document, openPage: tabs.onOpenPage,
+            let markup = tabs.markup(for: path)
+            PreviewTabHeader(document: document, markup: markup, openPage: tabs.onOpenPage,
                              openInWindow: { tabs.openInWindow(path) })
             PreviewContent(document: document, find: find, settings: tabs.settings,
-                           onOpenFile: tabs.onOpenFile)
+                           onOpenFile: tabs.onOpenFile, markup: markup)
         }
         // A tab replaces its document when it shows a different file.
         .id(path)
@@ -194,6 +204,7 @@ struct PreviewTab: View {
 /// into a window. Laid out like the source-control tabs' RepoHeader.
 private struct PreviewTabHeader: View {
     @Bindable var document: PreviewDocument
+    let markup: MarkupSession?
     let openPage: ((URL) -> Void)?
     let openInWindow: () -> Void
 
@@ -221,6 +232,12 @@ private struct PreviewTabHeader: View {
             .buttonStyle(HoverFillStyle())
             .foregroundStyle(.secondary)
             .help("Open in New Window")
+            // Last at the right, as in a browser tab. Absent where there is
+            // nothing to mark: Quick Look, an empty file, no changes. Unless
+            // mark-up is on, which it stays while a diff is emptied under it.
+            if let markup, markup.isOffered(over: document) {
+                MarkupButton(session: markup, prepare: { markup.prepare(for: document) })
+            }
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)

@@ -83,6 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
             DropPasteboard.sweepOldImages()
         }
+        // And the pictures of mark-up notes nothing was written to for a
+        // week, on the queue everything there goes through (`MarkupStore`):
+        // one sweep at a time, in order with the pictures being written.
+        MarkupStore.queue.asyncAfter(deadline: .now() + 5, qos: .utility) {
+            MarkupStore.shared.sweep()
+        }
 
         let manager = SessionManager(runtime: runtime)
         self.manager = manager
@@ -1783,18 +1789,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// a page with no history that way lets the key through to the areas, so
     /// the keyboard is never stuck in a page.
     @objc func focusNextArea(_ sender: Any?) {
-        if let page = keyboardBrowserPage, page.canGoForward { return page.goForward() }
+        if let page = historyBrowserPage, page.canGoForward { return page.goForward() }
         stepArea(1)
     }
 
     @objc func focusPreviousArea(_ sender: Any?) {
-        if let page = keyboardBrowserPage, page.canGoBack { return page.goBack() }
+        if let page = historyBrowserPage, page.canGoBack { return page.goBack() }
         stepArea(-1)
     }
 
-    /// The browser whose page has the keyboard, if one does.
+    /// The browser whose page has the keyboard, if one does. The mark-up
+    /// note over a page counts as the page's, so ⌘+ there zooms it.
     private var keyboardBrowserPage: BrowserPage? {
         BrowserTabs.shared.page(holding: window?.firstResponder)
+    }
+
+    /// The browser whose web view itself has the keyboard: what ⌘[ and ⌘]
+    /// are Back and Forward in. Not the mark-up note, which lies beside the
+    /// web view: from there a step back would end mark-up and drop a note
+    /// that may never have been copied, so the keys move between areas, as
+    /// from anywhere else.
+    private var historyBrowserPage: BrowserPage? {
+        guard let page = keyboardBrowserPage, let view = window?.firstResponder as? NSView,
+              view.isDescendant(of: page.webView) else { return nil }
+        return page
     }
 
     private func stepArea(_ offset: Int) {
@@ -1893,6 +1911,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let page = frontBrowser().flatMap({ BrowserTabs.shared.existingPage(for: $0) }),
               page.pageFile != nil else { return nil }
         return page
+    }
+
+    /// ⇧⌘M: mark-up over the preview in front, on and off.
+    @objc func toggleMarkup(_ sender: Any?) {
+        guard let target = markupTarget() else { return }
+        if target.session.isOn || target.prepare() { target.session.toggle() }
+    }
+
+    /// What View ▸ Mark Up acts on: the preview in front, the area you're
+    /// in first and then the column, the main area and the strip, as find
+    /// picks its target (`findTarget`). A file with something to mark, a
+    /// page that is somewhere and loaded, or that page's source.
+    ///
+    /// `prepare` gets a file's session ready for the view of the file that
+    /// is showing. It is apart from the looking, which the menu does every
+    /// time it opens and which must change nothing.
+    private func markupTarget() -> (session: MarkupSession, prepare: () -> Bool)? {
+        for tab in frontRegions.compactMap({ gitPanel.activeTab(in: $0) }) {
+            if let path = tab.filePath {
+                let document = previewTabs.document(for: path).document
+                if let session = previewTabs.markup(for: path), session.isOffered(over: document) {
+                    return (session, { session.prepare(for: document) })
+                }
+            } else if let id = tab.browserID, let page = BrowserTabs.shared.existingPage(for: id) {
+                if let source = page.shownSource {
+                    if source.markup.isOffered(over: source.document) {
+                        return (source.markup, { source.markup.prepare(for: source.document) })
+                    }
+                } else if page.canMarkUp {
+                    return (page.markup, { true })
+                }
+            }
+        }
+        return nil
     }
 
     /// ⌥⌘I: Web Inspector for the browser in front, or away again.
@@ -2523,6 +2575,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             menuItem.title = page?.showsSource == true ? "Show Page" : "Show Page Source"
             return page != nil
         }
+        if menuItem.action == #selector(toggleMarkup(_:)) {
+            let target = markupTarget()
+            menuItem.state = target?.session.isOn == true ? .on : .off
+            return target != nil
+        }
         if menuItem.action == #selector(showWebInspector(_:)) {
             let page = frontBrowser().flatMap { BrowserTabs.shared.existingPage(for: $0) }
             menuItem.title = page?.isInspectorVisible == true ? "Hide Web Inspector" : "Show Web Inspector"
@@ -2551,7 +2608,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if menuItem.action == #selector(focusNextArea(_:))
             || menuItem.action == #selector(focusPreviousArea(_:)) {
-            return visibleRegions.count > 1 || keyboardBrowserPage != nil
+            return visibleRegions.count > 1 || historyBrowserPage != nil
         }
         if menuItem.action == #selector(splitRight(_:)) || menuItem.action == #selector(splitDown(_:)) {
             return manager.selected != nil

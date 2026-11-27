@@ -64,6 +64,12 @@ final class BrowserTabs {
             if let webView = current as? WKWebView {
                 return pages.values.first { $0.webView === webView }
             }
+            // The mark-up note lies over its page, beside the web view and
+            // not inside it: with the keyboard there, ⌘+ is still the page's.
+            if let container = current as? WebViewContainer,
+               let webView = container.subviews.lazy.compactMap({ $0 as? WKWebView }).first {
+                return pages.values.first { $0.webView === webView }
+            }
             view = current.superview
         }
         return nil
@@ -99,11 +105,68 @@ final class BrowserPage: NSObject {
     /// ⌘F over this page.
     @ObservationIgnored let find = BrowserFind()
 
+    /// Mark-up over this page (`Wortel/Markup/`): made the first time its
+    /// header is drawn, a flag and empty lists until it is turned on.
+    @ObservationIgnored private(set) lazy var markup: MarkupSession = {
+        let session = MarkupSession()
+        session.surface = WebMarkupSurface(webView: webView)
+        session.place = .page
+        session.subject = { [weak self] in
+            guard let location = self?.location else { return .page("") }
+            return .page(location.isFileURL ? location.path : location.absoluteString)
+        }
+        session.onChange = { [weak self] in self?.markupChanged() }
+        hasMarkup = true
+        return session
+    }()
+    @ObservationIgnored private var hasMarkup = false
+
+    /// Whether Wortel's own reload of a changed file waits: while mark-up is
+    /// on, and while the note has words or marks that were never copied. A
+    /// reload drops the note, and this one nobody at the page asked for. A
+    /// note that was copied has been used: the agent edits the file, and
+    /// the page shows the change.
+    private var holdsReload: Bool {
+        hasMarkup && (markup.isOn || markup.hasUncopied)
+    }
+
+    /// Whether there is a page here to mark up: somewhere, loaded, and not
+    /// behind its own source.
+    var canMarkUp: Bool {
+        location != nil && !isWaiting && failure == nil && !showsSource
+    }
+
+    /// Mark-up went on or off. While it is on, a sideways scroll must not
+    /// become a step back in history (scrolling passes through the marks to
+    /// the page), and the page takes no pointer of its own.
+    private func markupChanged() {
+        let on = markup.isOn
+        webView.allowsBackForwardNavigationGestures = !on
+        (webView as? BrowserWebView)?.isMarkingUp = on
+        guard !on else { return }
+        // The keyboard back to the page, if the note had it.
+        if let window = webView.window, BrowserTabs.shared.page(holding: window.firstResponder) === self {
+            focusPage()
+        }
+        // And the reload that waited for the note (`fileChanged`).
+        screenMayHaveChanged()
+    }
+
+    /// The page went elsewhere, or is gone: its marks would point at
+    /// nothing, so they go, and the note with them.
+    private func endMarkup() {
+        guard hasMarkup else { return }
+        (markup.surface as? WebMarkupSurface)?.pageLeft()
+        markup.end()
+    }
+
     /// A file's source, shown in place of its page.
     struct Source {
         let file: URL
         let document: PreviewDocument
         let find: PreviewFind
+        /// Mark-up over the source, which is a file's and not the page's.
+        let markup: MarkupSession
     }
 
     /// The source of the file this tab is on, from the first time it was
@@ -169,6 +232,11 @@ final class BrowserPage: NSObject {
             webView.observe(\.url) { [weak self] view, _ in
                 MainActor.assumeIsolated {
                     guard let self, let url = view.url else { return }
+                    // A new address, a route change in a single-page app. Not
+                    // a new fragment: scrolling passes through the marks, and
+                    // a page that writes its heading into the address as it
+                    // scrolls would end mark-up for a scroll.
+                    if BrowserAddress.isElsewhere(url, from: self.currentURL) { self.endMarkup() }
                     self.currentURL = url
                     self.leaveSourceIfElsewhere()
                     self.onNavigate(url)
@@ -217,6 +285,9 @@ final class BrowserPage: NSObject {
     /// tab uses (`PreviewContent`), with a document of this tab's own.
     func showSource(_ on: Bool) {
         guard on != showsSource else { return }
+        // Another view of the file: the marks were on this one.
+        endMarkup()
+        source?.markup.end()
         guard on else {
             showsSource = false
             source?.find.dismiss()
@@ -227,7 +298,8 @@ final class BrowserPage: NSObject {
         }
         guard let file = pageFile, let previews = BrowserTabs.shared.previews else { return }
         if source?.file.path != file.path {
-            source = Source(file: file, document: previews.sourceDocument(for: file), find: PreviewFind())
+            source = Source(file: file, document: previews.sourceDocument(for: file), find: PreviewFind(),
+                            markup: MarkupSession())
         }
         // Typing must not go on into a page nobody can see.
         if BrowserTabs.shared.page(holding: webView.window?.firstResponder) === self {
@@ -243,6 +315,7 @@ final class BrowserPage: NSObject {
     /// file's, or no file's.
     private func leaveSourceIfElsewhere() {
         guard let source, pageFile?.path != source.file.path else { return }
+        source.markup.end()
         showsSource = false
         self.source = nil
     }
@@ -250,7 +323,9 @@ final class BrowserPage: NSObject {
     /// The file the page is from, or one it loaded, changed on disk.
     private func fileChanged() {
         // Not on screen: when it is shown, as a page that crashed there.
-        guard webView.window != nil, !webView.isHiddenOrHasHiddenAncestor else {
+        // Being marked up, or holding a note not yet copied: once it is
+        // copied or cleared (`holdsReload`).
+        guard webView.window != nil, !webView.isHiddenOrHasHiddenAncestor, !holdsReload else {
             reloadWhenShown = true
             return
         }
@@ -381,7 +456,12 @@ final class BrowserPage: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let visible = self.webView.window != nil && !self.webView.isHiddenOrHasHiddenAncestor
-            if visible, self.reloadWhenShown {
+            // Not while a load is under way: it brings the page anew, and
+            // its commit settles what was owed. A new address is heard
+            // before its load starts and ends mark-up there (measured
+            // 2026-11-26: a link, Back), so the reload the note held would
+            // otherwise start in the middle of the next page's load.
+            if visible, self.reloadWhenShown, !self.holdsReload, !self.webView.isLoading {
                 self.reloadWhenShown = false
                 // Past the cache: it may be owed for a file that changed.
                 self.reloadFromOrigin()
@@ -403,6 +483,10 @@ final class BrowserPage: NSObject {
     }
 
     fileprivate func close() {
+        endMarkup()
+        // The source's too: an open note's folder is one the sweep skips,
+        // and a closed tab's would be skipped until the app quits.
+        source?.markup.end()
         retry?.cancel()
         watch.stop()
         snapshotTimer?.invalidate()
@@ -433,6 +517,15 @@ final class BrowserPage: NSObject {
 }
 
 extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
+    /// The page is another one from here on, or the same one loaded anew.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // Loaded anew, from the file as it is now: a reload owed for a
+        // change, or for a crash off screen, is done with. First, as ending
+        // mark-up below lets go of the reload it held.
+        reloadWhenShown = false
+        endMarkup()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isWaiting = false
         failure = nil
@@ -452,6 +545,12 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
         // the policy below took elsewhere (WebKit's "frame load interrupted").
         guard error.code != NSURLErrorCancelled,
               !(error.domain == "WebKitErrorDomain" && error.code == 102) else { return }
+        // The page is covered by a notice from here on, so mark-up could no
+        // longer be seen or turned off, yet would hold the swipe back, the
+        // pointer and any reload owed. It ends, as for a reload that worked:
+        // nothing was committed, but the load that brings the page back will
+        // be, and would end it then.
+        endMarkup()
         let unreachable: Set<Int> = [NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost,
                                      NSURLErrorTimedOut]
         if unreachable.contains(error.code), let host = location?.host(), BrowserAddress.isLocalHost(host) {
@@ -569,6 +668,7 @@ extension BrowserPage: WKNavigationDelegate, WKUIDelegate {
     /// The page's process died (a crash, or memory pressure): start again
     /// rather than leave a blank tab.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        endMarkup()
         let now = Date()
         crashes = crashes.filter { now.timeIntervalSince($0) < 60 } + [now]
         // Killed off screen under memory pressure: reloading now would undo
@@ -708,7 +808,7 @@ struct BrowserTab: View {
                     .onAppear { if find.focusRequest != focusedFor { focusFind() } }
             }
             ZStack {
-                WebViewHost(page: page)
+                WebViewHost(page: page, isMarkingUp: page.markup.isOn && page.canMarkUp)
                     // Whether it's on screen, once the move settles: a tab moving
                     // rows appears in one place and disappears from the other
                     // in no set order.
@@ -730,7 +830,8 @@ struct BrowserTab: View {
                     let _ = source.document.anchorLine = source.document.visibleLine
                     let _ = source.document.anchorOffset = source.document.visibleOffset
                     PreviewContent(document: source.document, find: source.find,
-                                   settings: previews.settings, onOpenFile: previews.onOpenFile)
+                                   settings: previews.settings, onOpenFile: previews.onOpenFile,
+                                   markup: source.markup)
                         .background(Color(nsColor: Chrome.content))
                 }
             }
@@ -856,6 +957,16 @@ private struct BrowserHeader: View {
             }
             button("arrow.up.forward.square", "Open in Your Browser", action: page.openInBrowser)
                 .disabled(page.location == nil)
+            // Last at the right in every preview's bar. Absent with no page
+            // to mark up: nowhere yet, still waiting, failed, or its source.
+            if page.showsSource, let source = page.source {
+                // Over the file's source it is the source that is marked up.
+                if source.markup.isOffered(over: source.document) {
+                    MarkupButton(session: source.markup, prepare: { source.markup.prepare(for: source.document) })
+                }
+            } else if page.canMarkUp {
+                MarkupButton(session: page.markup)
+            }
         }
         .padding(.horizontal, 8)
         .frame(height: 34)
@@ -1110,11 +1221,16 @@ private struct PageNotice: View {
 /// its host, the newest one made, and only that host attaches or removes it.
 private struct WebViewHost: NSViewRepresentable {
     let page: BrowserPage
+    /// Mark-up is on over this page: the layer with the marks and the note
+    /// lies over the web view. A stored value, read where the view is
+    /// built, so turning it on or off is what updates this host.
+    var isMarkingUp = false
 
     func makeNSView(context: Context) -> NSView {
         let container = WebViewContainer()
         page.host = container
         attach(to: container)
+        container.setMarkup(isMarkingUp ? page.markup : nil)
         return container
     }
 
@@ -1123,7 +1239,10 @@ private struct WebViewHost: NSViewRepresentable {
         // that took over is gone. (Not "out of the window": a host just made
         // isn't in one yet, and that's exactly when the old one refreshes.)
         if page.host == nil { page.host = container }
-        if page.host === container { attach(to: container) }
+        if page.host === container {
+            attach(to: container)
+            (container as? WebViewContainer)?.setMarkup(isMarkingUp ? page.markup : nil)
+        }
     }
 
     static func dismantleNSView(_ container: NSView, coordinator: ()) {
@@ -1132,6 +1251,7 @@ private struct WebViewHost: NSViewRepresentable {
         for case let webView as WKWebView in container.subviews {
             BrowserTabs.shared.page(holding: webView)?.hideInspector()
         }
+        (container as? WebViewContainer)?.setMarkup(nil, animated: false)
         container.subviews.forEach { $0.removeFromSuperview() }
     }
 
@@ -1151,6 +1271,26 @@ private struct WebViewHost: NSViewRepresentable {
 /// Chrome, a short list skips the page, so no page can keep you in it: quit,
 /// close, a new session, and moving between tabs and between sessions.
 private final class BrowserWebView: WKWebView {
+    /// Mark-up is on over this page. The layer over it takes the clicks,
+    /// but a web view hears the pointer move through a tracking area, which
+    /// a view on top does not stop: without this the page would go on
+    /// lighting what the pointer passes and setting its own cursor.
+    var isMarkingUp = false {
+        didSet { if isMarkingUp, !oldValue { window?.invalidateCursorRects(for: self) } }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        if !isMarkingUp { super.mouseMoved(with: event) }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if !isMarkingUp { super.mouseEntered(with: event) }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !isMarkingUp { super.cursorUpdate(with: event) }
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, window?.firstResponder === self, Self.isReserved(event),
            let menu = NSApp.mainMenu, menu.performKeyEquivalent(with: event) {
@@ -1204,4 +1344,28 @@ private final class BrowserWebView: WKWebView {
 /// at a key a page ignored, so this ends the climb here.
 final class WebViewContainer: NSView {
     override func keyDown(with event: NSEvent) {}
+
+    /// The mark-up layer over the web view, while mark-up is on here.
+    ///
+    /// A view of this container beside the web view, not a SwiftUI overlay
+    /// on the tab: the Web Inspector docks into this container and resizes
+    /// the web view, and the layer follows the web view's frame, so it
+    /// covers the page and never the inspector.
+    private var markup: MarkupOverlayView?
+
+    func setMarkup(_ session: MarkupSession?, animated: Bool = true) {
+        guard let session, let surface = session.surface,
+              let webView = subviews.first(where: { $0 is WKWebView }) else {
+            guard let overlay = markup else { return }
+            markup = nil
+            if animated { overlay.leave() } else { overlay.removeFromSuperview() }
+            return
+        }
+        if let markup, markup.session === session, markup.superview === self { return }
+        markup?.removeFromSuperview()
+        let overlay = MarkupOverlayView(session: session, surface: surface)
+        overlay.follow(webView)
+        addSubview(overlay, positioned: .above, relativeTo: webView)
+        markup = overlay
+    }
 }

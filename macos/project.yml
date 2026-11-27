@@ -509,6 +509,38 @@ targets:
       # either never reloads (a watch that went deaf after a save) or reloads
       # for every file an agent touches in the folder.
       - path: Wortel/Browser/BrowserPageWatch.swift
+      # Mark-up, the parts with no window in them. What is copied (a chip
+      # run into the word after it reads as a typo in someone's prompt), the
+      # folder and its sweep (which removes files), what a page's script
+      # reports (read as if a page could send anything), and which part of
+      # a very tall page is pictured.
+      - path: Wortel/Markup/Mark.swift
+      - path: Wortel/Markup/MarkStroke.swift
+      - path: Wortel/Markup/MarkupNote.swift
+      - path: Wortel/Markup/MarkupStore.swift
+      - path: Wortel/Markup/WebMarkReport.swift
+      - path: Wortel/Markup/MarkupSurface.swift
+      - path: Wortel/Markup/MarkDrawing.swift
+      # Mark-up over a file: a mark that finds its row again after the file
+      # is rewritten (among rows that read the same, by its neighbours), a
+      # picture cut from an image's own pixels, and a whole file pictured by
+      # scrolling a table that has to be back where it was.
+      - path: Wortel/Markup/MarkAnchor.swift
+      - path: Wortel/Markup/MarkupViews.swift
+      - path: Wortel/Markup/ViewPicture.swift
+      - path: Wortel/Markup/LinesMarkupSurface.swift
+      - path: Wortel/Markup/ImageMarkupSurface.swift
+      - path: Wortel/Markup/BlocksMarkupSurface.swift
+      - path: Wortel/Markup/MarkupSession.swift
+      - path: Wortel/Markup/MarkChip.swift
+      - path: Wortel/Markup/MarkupOverlayView.swift
+      - path: Wortel/Markup/MarkupOverlayView+Marking.swift
+      - path: Wortel/Markup/MarkupOverlayView+Mouse.swift
+      - path: Wortel/Markup/MarkupOverlayView+Move.swift
+      - path: Wortel/Markup/MarkupNoteBar.swift
+      - path: Wortel/Markup/NoteTextView.swift
+      - path: Wortel/Markup/MarkLayer.swift
+      - path: Wortel/Markup/MarkSelectionLayer.swift
       - path: Wortel/Sessions/SessionSwitcherMatch.swift
       # ⌘P's files: the index, the ranking (pinned against real paths, since
       # "the one I meant was third" fails nothing else), the walk's limits

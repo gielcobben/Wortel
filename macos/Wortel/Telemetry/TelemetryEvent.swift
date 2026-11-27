@@ -72,6 +72,15 @@ enum TelemetryEvent: Equatable {
     /// their release, and this is the one number that says if they're used.
     case tabOpened(kind: TabOpenedKind, area: TabArea)
 
+    /// Mark-up was turned on over a preview, and which kind. Whether it is
+    /// used at all, and whether beyond the browser tab it began in.
+    case markupStarted(where: MarkupPlace)
+
+    /// A note was copied: over what, with how many marks, and whether any
+    /// was a picked element (as against a drawn area). Never what was
+    /// marked, nor a word of the note.
+    case markupCopied(where: MarkupPlace, marks: CountBucket, picked: Bool)
+
     /// ⌘P or ⇧⌘P was opened and closed, and how. Says whether the palette is a
     /// habit, which half of it is used, and how often it's opened for nothing.
     case paletteUsed(mode: PaletteMode, result: PaletteResult)
@@ -198,6 +207,8 @@ enum TelemetryEvent: Equatable {
         case .inspectorShown: return "inspector_shown"
         case .previewOpened: return "preview_opened"
         case .tabOpened: return "tab_opened"
+        case .markupStarted: return "markup_started"
+        case .markupCopied: return "markup_copied"
         case .paletteUsed: return "palette_used"
         case .commitMade: return "commit_made"
         case .processesShown: return "processes_shown"
@@ -242,6 +253,10 @@ enum TelemetryEvent: Equatable {
             return ["mode": mode.rawValue, "where": place.rawValue]
         case let .tabOpened(kind, area):
             return ["kind": kind.rawValue, "area": area.rawValue]
+        case let .markupStarted(place):
+            return ["where": place.rawValue]
+        case let .markupCopied(place, marks, picked):
+            return ["where": place.rawValue, "marks": marks.rawValue, "picked": picked ? "true" : "false"]
         case let .paletteUsed(mode, result):
             return ["mode": mode.rawValue, "result": result.rawValue]
         case let .commitMade(message):
@@ -398,6 +413,15 @@ enum PreviewKind: String {
 enum PreviewPlace: String, CaseIterable {
     case tab
     case window
+}
+
+/// What kind of preview was marked up.
+enum MarkupPlace: String, CaseIterable {
+    case page
+    case source
+    case diff
+    case rendered
+    case image
 }
 
 /// Mirrors `SideTab`, without the session's own terminal: that one is never

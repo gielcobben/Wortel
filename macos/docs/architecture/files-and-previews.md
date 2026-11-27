@@ -181,6 +181,11 @@ are accessories** — they close with the main window and are not restored, so
 quitting stays what it was. They are also why the inspector no longer shares its
 column with anything.
 
+**Mark-up** (⇧⌘M, the last button in a file tab's header and a preview
+window's row) is in `mark-up.md`. What it asks of these views: `DiffView`,
+`MarkdownView` and the image view each sign in to `MarkupViews` when they
+are made, and `PreviewContent` lays the layer over its content.
+
 **⌘P's files** (`FileIndex`, `FileMatch`, `FileListing`, `FileIndexStore`,
 `FileSearch`) — go to a file by name, in the session's repository, or its
 folder outside one (`manager.branchSource()`, as ⌘Y). The decision and its

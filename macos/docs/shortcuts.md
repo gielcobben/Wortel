@@ -364,6 +364,26 @@ Back, forward and zoom need the keyboard in the page. When the page has no
 history in that direction, ⌘[ and ⌘] move between areas as they do everywhere
 else, so the keyboard is never stuck in a page.
 
+## Marking up
+
+| Action | Shortcut | Same as |
+|---|---|---|
+| Mark up the page or file in front, and stop | ⇧⌘M | |
+| Copy the note, and stop | Return | |
+| A new line in the note | ⇧Return, ⌥Return | every chat field |
+| Drop the stroke being drawn, or stop and keep the note | Esc | |
+| Take back the last mark | ⌘Z | |
+| A straight line, a level highlight, an arrow in steps of 45° | hold ⇧ while drawing | every drawing app |
+| Remove a mark | ⌫ on its chip | |
+
+⇧⌘M reaches the page or file in front from anywhere, as ⌘F does: the area
+you're in first. In a preview window it is that window's file. Preview's own key for its Markup toolbar is ⇧⌘A, which is Select All
+in a terminal here.
+
+While marking up, the keyboard is in the note. ⌘R, ⌘L and ⌘+ still reach the
+page, and going anywhere else with them ends mark-up and drops the note. So
+does switching a file between Diff, Source and Rendered.
+
 ## In a file
 
 | Action | Shortcut | Same as |

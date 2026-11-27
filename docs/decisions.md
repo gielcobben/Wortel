@@ -2672,6 +2672,333 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   the file name a tier above the path (VS Code's and Zed's rule): measured
   optimised at 487k paths, 1 to 12 ms a key. Debug builds are about 40 times
   slower at this, which only shows on a repository that size.
+- **2026-11-25. Mark-up: point at what a preview shows, write one sentence,
+  copy it.** One mode for every preview (a page first; source, a diff,
+  Markdown and an image next), turned on from the preview's own header or
+  View ▸ Mark Up. A click picks an element of a page, a drag draws, each mark
+  is a picture and a chip in the note. Return copies plain text with the
+  paths of the pictures and a details file. It copies, and neither types
+  into a terminal nor sends: the person pastes it where they want, into
+  this session's agent, another one, or an issue, and a copy cannot land in
+  a question an agent is asking. That is also what keeps the note bar on
+  the right side of "no AI chat box of its own" (`docs/product.md`): it
+  talks to nobody. `macos/docs/architecture/mark-up.md` has how it is
+  built.
+- **2026-11-25. The marks are a native view over the preview, not a script
+  in the page.** cmux draws its marks inside the page; so would have been
+  quicker here. A layer of the app's own cannot be broken by a page or
+  change one, is in no picture of the page by accident, and is one piece of
+  code for every kind of preview, with an adapter each for where a mark is
+  and how a picture is taken. The cost was expected to be a mark trailing a
+  scrolling page, since WebKit scrolls in another process. Measured, a
+  report reaches the app 0.6 ms after its scroll event on an idle page and
+  as late as the page stalls on a busy one (41 ms with 40 ms stalls). So
+  marks follow the page's reports and are drawn faint only while one is
+  owed for more than 50 ms. Drawing them faint on every scroll was planned
+  and dropped once the number was in.
+- **2026-11-25. No lock on the header while marks exist.** When the preview
+  goes elsewhere (a new address, a reload, a route change, Page · Source,
+  a closed tab) mark-up ends and the marks and the note are dropped, without
+  asking. cmux does the same. Switching the header's controls off while
+  marks exist was the first proposal: it protects a sentence from a stray
+  ⌘R, but it is extra code on top of this rule and not instead of it, since
+  a page navigates by itself and nothing can lock that. One thing does
+  wait: Wortel's own reload of a page whose file changed, which would
+  otherwise wipe a note mid-sentence for an edit the agent made.
+- **2026-11-25. After a copy the note is still there.** Return copies and
+  turns mark-up off; turning it on again finds the marks and the sentence,
+  until the preview goes elsewhere. The owner's choice over a clean start
+  each time, which was the recommendation (by then the agent has usually
+  changed the page). It lets a note be copied again or added to. ⌘A then ⌫
+  clears it.
+- **2026-11-25. The picture of the whole is the whole page.** Every mark
+  drawn on one picture of the page from top to bottom, as cmux has, chosen
+  by the owner over a picture of what is in view at Return. cmux scrolls the
+  page tile by tile and stitches. Here `WKWebView.createPDF` gives the whole
+  page without scrolling it (measured: a 6,000pt page in 8 ms, the part
+  below the fold included), so nothing moves while it is taken. 1,600
+  pixels wide at most; past 12 screens tall it is the stretch around the
+  marks, and says so.
+- **2026-11-25. A mark has a colour and a number.** Its badge on the
+  preview and its chip in the note carry the same number, and a drawn area
+  is "area 2" in what is copied. cmux ties them by colour alone, from 14
+  colours. Here the colours are the system's, seven before they repeat (the
+  Finder's tag order, without yellow, which cannot be read as a line on
+  white), so the number is what holds after the seventh mark and for an eye
+  that cannot tell the colours apart.
+- **2026-11-25. A note's pictures go in the app's cache folder and are
+  removed after seven days.** `~/Library/Caches/<bundle id>/Markup/<day>/<n>/`:
+  no space in the path, no macOS permission question, and macOS does not
+  empty it by itself, which it does the temp folder (at a restart, and
+  after three days). A pasted image goes after one day because its path is
+  typed straight into a prompt; a note is copied and may be pasted later.
+  Swept at launch and whenever a new note's folder is made. cmux keeps the
+  newest 100 files instead; a count leaves months-old pictures until more
+  are made. Removed, not moved to the Trash, as the pasted images are:
+  Wortel made every file there, nobody but an agent reading a path was
+  meant to open one, and a Trash filling with week-old screenshots helps
+  nobody. This is the one kind of removal the rule "Trash rather than
+  `rm`" leaves out (`AGENTS.md`).
+- **2026-11-25. Mark Up is ⇧⌘M.** Preview's own key for its Markup toolbar
+  is ⇧⌘A, which is Select All in a terminal here. cmux uses ⌃⌥⌘D. M is
+  free in Wortel and on no Mac convention.
+- **2026-11-25. Mark-up is built in two stages, pages first.** The plan
+  asked how many kinds of view the layer has to sit over, and to split by
+  kind past two. There are four that can be marked up (a web view, a table,
+  a lazy SwiftUI stack, an image view) and one that cannot (Quick Look). So
+  the first stage is everything shared and the page, and the second is the
+  file tab and the preview window. Not built, with the reason: arrow keys
+  to an element's parent or child (the note has the keyboard, and the
+  arrows move its caret; a container is picked by its padding or by a drag
+  around it).
+- **2026-11-25. Mark-up has tools after all: a pen, a box, an arrow, a
+  highlighter and Move.** The plan said no tools: a click picks, a drag
+  draws, and nothing to switch between. That held for a day. Having used
+  it, the owner asked for more than a freehand line, and a hand draws a
+  box and an arrow badly. So the pen stays what a drag does by default and
+  a click still picks with any pen in hand; the tools add shapes, they do
+  not replace the gesture. They sit in a row inside the note bar, under
+  the text with Copy at the other end, the owner's choice over one row
+  beside the text (which squeezes the words in a narrow column) and over
+  the preview's header (full already, and far from the drawing). Shift
+  straightens whichever is in hand. Moving a drawing is a fifth tool, the
+  owner's choice over dragging it by its number badge, which was the
+  recommendation: a tool is what drawing apps have taught. Text on the
+  preview was offered and not taken: the note holds the words.
+- **2026-11-25. With Move in hand a drawing is selected and resized, the
+  way tldraw's select tool does it, less most of it.** Asked for by the
+  owner, who named tldraw as the thing to learn from. Taken from its
+  source: select at the press and change nothing until the press has
+  travelled 4pt; corner handles that scale about the opposite corner,
+  Shift for proportions, Option for the middle, mirroring past the
+  corner; an arrow has only its two ends and no box; one handle where
+  four would crowd; Esc mid-drag puts back exactly what was there, and
+  one Esc is one step. Left out: rotation, handles on the sides, nudging
+  with the arrow keys (the keyboard is in the note), dragging out a copy,
+  snapping guides, arrow bends, and returning to Move after each shape
+  (tldraw does for a box and an arrow; here the pen in hand stays in
+  hand, since a note usually has several marks of one kind). A handle is
+  taken from 20pt around, larger than tldraw's 12, because it is used
+  over a busy page and not a blank canvas.
+- **2026-11-25. The note bar is the system's glass, where there is glass.**
+  `docs/brand.md` says never glass for its own sake, and the rest of the
+  app's glass is the window's own material under the frame. The note bar
+  is the case Apple's guidance names: a control surface floating over
+  content, which on macOS 26 and later is what glass is for ("a distinct
+  functional layer for controls and navigation", and for larger pieces a
+  rounded rectangle, not a capsule). So the bar keeps its shape and takes
+  the system's material, its edge and its shadow, and adds none of its
+  own. What Messages' own compose field measures was looked for and is
+  published nowhere; nothing here is copied from it by number. Before
+  macOS 26 the bar is the popover material with an edge and a shadow.
+- **2026-11-25. The note bar is not glass after all: a card with a ground,
+  a hairline and a shadow.** The entry above held for a day. On glass the
+  owner could not read the note over a README (the page's text came
+  through behind it), and after a near-opaque ground was put inside the
+  glass, still found the bar's edges soft. Glass's rim is a lit, blurred
+  edge by design, and nothing public sharpens it. So the bar is the
+  popover material, a ground of the page's raised colour at 86%, one line
+  of one screen pixel at 16% and a shadow, all cut by one shape. What was
+  kept from the glass day: the larger size, the 16pt corners, Copy as the
+  one tinted thing.
+- **2026-11-25. The box is the tool in hand to begin with, and it is
+  dashed.** The pen was first because a freehand drag was all there was
+  before there were tools. Asked by the owner whether the box should be:
+  yes. Most marks say "this area", a box says it exactly, and a picture of
+  a rectangle is easier for an agent to read than a loop. Dashed, the
+  owner's idea, which also settles something that was wrong before: a
+  picked element is outlined solid, and a drawn box in a solid line looked
+  the same. The pen is one click away, second in the row.
+- **2026-11-25. A box is a solid line again.** The dashes held for a day.
+  The owner tried the dashed box and preferred the solid line it was
+  before, having seen both. So a box is the pen's 3pt solid line again; it
+  is still first in the row and in hand to begin with. The cost is what
+  the dashes were for: a drawn box and a picked element are both solid
+  rounded rectangles in the mark's colour. What still tells them apart, in
+  how each is drawn: an element's outline is 2pt and hugs the element from
+  just outside it, with its badge on the element's top-left corner; a box
+  is 3pt, where the hand put it, with its badge where the drag began. And
+  the chip says which: an element by its name, a box by the word "box".
+- **2026-11-25. Shift does not square a box.** Shift while drawing a box
+  made it a square. The owner: holding Shift for an area has no purpose, a
+  rectangle is fine. It now does nothing to a box being drawn, and still
+  straightens the pen, the highlighter and the arrow. Resizing a box by a
+  handle is not drawing one: there Shift still keeps the proportions,
+  which is the system's convention for resizing.
+- **2026-11-25. A click on an element already picked selects its chip.**
+  A second click on the same element made a second mark with a second
+  number on top of the first. It now makes no mark and uses no number;
+  the mark's chip is selected in the note, as a click on the chip would
+  select it, without bringing anything into view (it was just clicked).
+  Only a mark made by picking counts: an element a drawing is tied to can
+  still be picked, since the drawing says "this area" and the pick "this
+  element". A picked mark whose chip was deleted does not count.
+- **2026-11-25. A selected chip is drawn as a selected token, and the
+  pointer over it is the arrow.** A chip was selected as a character is,
+  and the system painted its selection block behind it, taller and wider
+  than the capsule. The owner did not like it. A selected chip is now
+  solid in its mark's colour with its words on it, as Mail's address
+  tokens are, with no selection behind it; words around it keep the
+  system's highlight. White words where white has 3:1 on the colour, black
+  where it does not (orange, green and teal, light and dark). What
+  selection means is unchanged. Over a chip the pointer is the arrow, the
+  owner's call: a chip is clicked, not edited.
+- **2026-11-25. Over rendered Markdown the note bar is a little wider than
+  the text.** First built as exactly the reading column. The owner saw it
+  wider (a bug: it took the column only at the first scroll) and liked it
+  wider. So it is the column and the bar's own padding more either side:
+  the note's words start under the document's, which is the alignment that
+  can be seen, and the card stands proud of the text.
+- **2026-11-26. A mark that has left the view leaves a pin, and the pin can
+  be pressed.** A badge was already held at the edge its mark scrolled out
+  by, as a circle. The owner asked for a drop there, a pin. It is one only
+  once none of the mark shows, with its point toward the mark, so the
+  shape says something a circle did not: which way, and that the mark is
+  gone and not cut off. Two things were added that were not asked for,
+  because a pin is otherwise wrong in the two commonest cases: pins that
+  would sit on one another are lined up side by side, and a pin for a mark
+  below is kept above the note bar. And a press on a pin brings its mark
+  into view, as its chip's click does: a thing that points somewhere is
+  pressed to go there.
+- **2026-11-26. A pin is always whole, also where what its mark may show
+  in has no room for one.** A badge was held inside its mark's clip and cut
+  off at it. The clip of a mark in a box that clips (a card, the window drawn
+  on wortel.sh) is what is left of the box, and scrolled past, that was a
+  strip a few points tall at the top of the view: the owner saw the pin's
+  point under the page's own header and not its number, and once the box had
+  gone there was no pin at all. Where the clip is too small for a pin (37pt
+  each way) or a circle (20pt), the badge now stands in that much of the
+  view round the clip, above the note bar where there is room, and only the
+  ink is cut off. A clip big enough keeps its badge in it as before, so a
+  pin for a mark in a scrolling panel stays in the panel.
+- **2026-11-26. A note's lines are evenly spaced, and a chip that starts a
+  line starts where the words do.** The owner found the note bar's spacing
+  odd with chips in it. Measured: a line with a chip had its baseline 3pt
+  higher than a line of words, so lines of words were 25pt and 19pt apart
+  around it and a chip touched the line above; a chip first on its line
+  stood 3pt in, its clear room before it; and a chip's words sat a point
+  under the sentence's baseline. Every line now has the words' baseline,
+  a chip first on its line has no room before it, and its words are on the
+  baseline. Kept as they were: the 22pt line, the 3pt gaps beside a chip
+  elsewhere, the 12pt semibold number and the bar's padding. The system's
+  own token field stands a line's first token in too; here that read as a
+  mistake against the lines of words around it.
+- **2026-11-26. The pen does not make a rough shape a clean one. Tried and
+  taken out the same day.** Preview's Sketch pen turns a rough loop into a
+  clean oval on letting go, and the owner asked what could be learned
+  from it. Built: a recogniser of our own geometry (Apple has no API for
+  it), a line, an arrow, a box and an oval, kept as kinds there already
+  were. Tuned against strokes made by a program it took almost none of
+  the owner's loops; measured then against real people's single strokes
+  (Google's Quick, Draw! dataset) it took 61% of circles and 18% of
+  leaning ones, and retuned on those, 94% of circles, 87% of squares and
+  91% of lines, with 8 of 9,227 zigzags and squiggles wrongly made a
+  shape. The owner used that and wanted it gone: it does it sometimes and
+  not other times, and a tool that cannot be predicted is watched on
+  every stroke. That is the finding, and no threshold fixes it: 94% is
+  one loop in sixteen left rough for no reason a person can see. In
+  Preview the drawing is the product; here a mark points, and the agent
+  that reads it reads a rough loop as well as a clean one, so the clean
+  shape was looks only, at the price of 570 lines with 35 thresholds. The
+  box is in hand to begin with and is exact every time, and Shift makes a
+  line straight. The code is in the branch's history (`MarkSnap.swift`)
+  for anyone who finds a use where the shape is what is kept.
+- **2026-11-26. The mark-up adapters' protocol has no extension with
+  defaults.** A default in an extension is what a call through
+  `any MarkupSurface` runs whatever the adapter implements, which is how
+  every mark on a file was once tied to nothing while the tests passed. The
+  rule was "every member the layer calls is a requirement"; a rule kept by
+  remembering is kept until someone forgets. Without the extension an
+  adapter that leaves a requirement out does not compile, and the price is
+  a line in an adapter that has nothing to do for it.
+- **2026-11-25. In rendered Markdown the picture of the whole is what is in
+  view.** A page and a file's source are pictured whole, as decided above:
+  a page by its PDF, a table by scrolling it a screen at a time inside one
+  turn of the run loop, so nothing is seen to move. Markdown is a lazy
+  SwiftUI stack. Tried the table's way: scrolled 4,000pt down, it had
+  drawn nothing by the end of that turn and had drawn it a moment later.
+  So the document would have to be seen scrolling from end to end, a turn
+  a screen. It is pictured as it is in view, the copied text says "The
+  part with the marks", and every mark still has its own picture.
+- **2026-11-25. A mark on a file is tied to its line or its block, and
+  finds it again after the file is rewritten.** A file under a preview is
+  rewritten all day; that is what the agent beside it does. A mark kept
+  at a scroll position would sit on another line after the first edit
+  above it. So a mark on source or a diff remembers what its row held and
+  looks for it again near where it was, and a mark on Markdown is an
+  offset in a block. When the line or block is gone the mark is not
+  drawn, and its chip and picture stay: the note is still about what was
+  there.
+- **2026-11-25. A mark knows its line by its neighbours, and where that
+  is not enough it is not drawn.** A line's text was all a mark knew it
+  by, and the nearest line that read the same took its place. Code is
+  full of such lines: measured, three lines added above two marks put
+  both five rows off. So a mark remembers the four rows either side of
+  its own, and of the rows that read the same the one whose neighbours
+  agree most is its row. Where several read the same and none has a
+  neighbour left, the mark has no place until its line is back. Nearest
+  was the other choice there; a mark on the wrong line says something
+  about that line, and one that is not drawn says nothing false.
+- **2026-11-25. A drawn area on a page follows the block under its
+  middle.** It was tied to the element that held all of it, which made
+  what is copied about it right and its place wrong: that element is
+  often the whole column, and text moves inside a column that stays put
+  (measured: 76pt after a paragraph was added above, 209pt after ⌘+ far
+  down a page). What is copied still names the element that holds it
+  whole. The middle and not the corner, since an area is drawn around
+  something and its corner is beside that thing.
+- **2026-11-25. A page is looked at every frame only while something in
+  it moves.** A transition, an animation and a picture arriving move
+  things with no scroll, resize or mutation to hear. Looking every frame
+  for as long as mark-up is on would catch all of it and was left out:
+  it is a timer by another name, on every page, for the few that move.
+  The look starts from what announces a move (a transition's or an
+  animation's events, a load, a scroll, mark-up turned on) and ends 400
+  ms after the last one. What it misses is a script's animation that
+  nothing announces, which is in the known limits.
+- **2026-11-26. A new fragment is not elsewhere.** Any new address ended
+  mark-up, and a docs site writes the heading in view into the address as
+  it scrolls, so scrolling over a page dropped the note. Measured in
+  WebKit: a new fragment, `replaceState` and `pushState` are each heard
+  only as a new address, never as a load. Now an address that differs
+  from the last only after its `#` keeps mark-up on, whichever of the
+  three made it; a new path or query ends it, as a route change in a
+  single-page app. Telling `replaceState` from `pushState` (whether the
+  history entry is a new one) was looked at and not used: a scroll-spy
+  can use either, and both are a fragment.
+- **2026-11-26. A note not yet copied holds Wortel's own reload; a copied
+  one does not.** Wortel's reload of a page whose file changed waited only
+  while mark-up was on. Esc keeps the note, and the reload then ran and
+  dropped it, words and marks nobody had copied. Now it also waits while
+  the note has anything in it that has not been copied, and runs once it
+  is copied or cleared. After a copy it runs at once, as before, though
+  the note goes with it: the loop is copy the note, the agent edits the
+  file, see the change, and a copied note has been used. A reload the
+  person asks for (⌘R) still ends mark-up whatever the note holds.
+- **2026-11-26. A load that fails ends mark-up.** A reload during mark-up
+  against a stopped server fails before anything is loaded: no load, no
+  new address, so nothing ended it. The page went behind a notice, and
+  with it the button and the menu item, while mark-up stayed on, holding
+  the swipe back, the page's pointer and any reload owed, with no way to
+  see it or turn it off. It now ends when a load fails, which matches the
+  rule above (a reload ends it), and loses nothing that was not going:
+  the load that brings the page back would end it then. Turning it off
+  and keeping the note until then was the other choice, and keeps a note
+  for no more than that wait.
+- **2026-11-26. A diff emptied under its marks keeps the note in sight.**
+  When the agent put a file back while it was marked up in Diff, the diff
+  had nothing to mark, and the bar, the marks and the header's button
+  went while mark-up stayed on; the next view of the file dropped a note
+  nobody could see. A file rewritten under its marks is not elsewhere,
+  and a line that is gone leaves its chip, so now the layer stays over
+  the view it was turned on in while mark-up is on, the marks with no
+  place and the note, the tools and the button where they were. Turning
+  mark-up off when the view empties, the note kept as Esc keeps it, was
+  the other choice. It hides a note for something the person did not
+  do, which the next view of the file then drops unseen, and a diff also
+  has nothing to mark for the moment it is read again after every
+  rewrite, so that rule would have turned mark-up off at every edit, or
+  needed a way to tell the two apart.
 
 ## Running processes
 

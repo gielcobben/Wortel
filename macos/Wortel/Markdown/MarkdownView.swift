@@ -41,6 +41,11 @@ struct MarkdownView: View {
     /// diff it gets, is one decision made in one place for every opener in the
     /// app.
     var onOpenFile: ((URL) -> Void)?
+    /// Where mark-up finds this document's blocks, when it is a preview's
+    /// (`MarkupViews`), and whether it wants their frames now: only while
+    /// mark-up is on over this document.
+    var markup: MarkupViews?
+    var reportsFrames = false
 
     /// Where each visible block sits, keyed by block id. Only the realized ones
     /// report — the stack is lazy — so this is a handful of values per frame
@@ -53,6 +58,19 @@ struct MarkdownView: View {
     }
 
     private static let space = "markdown"
+
+    /// Each built block's frame in the stack, for mark-up to tie a mark to
+    /// (`BlocksMarkupSurface`). Empty unless `reportsFrames`, and measured
+    /// in the stack and not in the view: a block's place in the stack does
+    /// not change when the document scrolls, so scrolling reports nothing.
+    private struct BlockFrames: PreferenceKey {
+        static let defaultValue: [Int: CGRect] = [:]
+        static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+            value.merge(nextValue()) { first, _ in first }
+        }
+    }
+
+    private static let stackSpace = "markdown-stack"
 
     /// The anchor has been applied to a document with blocks in it. Once per
     /// view, as `DiffView` does: a file rewritten under the reader changes the
@@ -92,6 +110,16 @@ struct MarkdownView: View {
                     show(reveal, with: proxy)
                 }
                 .onChange(of: reveal) { _, request in show(request, with: proxy) }
+                // Mark-up asks for a block by its id when a mark's chip is
+                // clicked. Only this reader can scroll to a block that is
+                // not built yet.
+                .onChange(of: reportsFrames, initial: true) { _, _ in
+                    // At once, not eased: the mark is placed exactly when
+                    // its block is built, and an easing scroll went on past
+                    // that and left the mark 130pt lower, half under the
+                    // note bar (measured 2026-11-25).
+                    markup?.revealBlock = { id in proxy.scrollTo(id, anchor: .center) }
+                }
         }
     }
 
@@ -216,10 +244,15 @@ struct MarkdownView: View {
                                     key: BlockOffsets.self,
                                     value: [block.id: geometry
                                         .frame(in: .named(Self.space)).minY])
+                                    .preference(
+                                        key: BlockFrames.self,
+                                        value: reportsFrames
+                                            ? [block.id: geometry.frame(in: .named(Self.stackSpace))] : [:])
                             }
                         }
                 }
             }
+            .coordinateSpace(name: Self.stackSpace)
             .background(EnclosingScrollView.Marker(box: scrollView))
             .lineSpacing(lineSpacing)
             .padding(.horizontal, 24)
@@ -248,6 +281,19 @@ struct MarkdownView: View {
         .coordinateSpace(name: Self.space)
         .onPreferenceChange(BlockOffsets.self) { offsets in
             reportTopBlock(offsets)
+        }
+        .onPreferenceChange(BlockFrames.self) { frames in
+            guard let markup else { return }
+            // The view that stands for the stack, the frames measured in
+            // it, and what each block holds, for a mark to know its own by.
+            markup.stack = scrollView.view
+            markup.blockFrames = frames
+            markup.blockScale = scale
+            let blocks = blocks
+            markup.blockKey = { id in
+                blocks.indices.contains(id) ? blocks[id].text.hashValue : nil
+            }
+            markup.changed()
         }
     }
 

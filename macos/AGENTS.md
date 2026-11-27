@@ -62,6 +62,7 @@ scripts/check-terminals.sh   # every terminal test, in throwaway copies, about 7
 | `Wortel/Git/` | `docs/architecture/git-panel.md` |
 | Anything about worktrees | `docs/worktrees.md` (the model), `docs/architecture/worktrees.md` (the code) |
 | `Wortel/Files/`, `Wortel/Preview/`, `Wortel/Markdown/` | `docs/architecture/files-and-previews.md`, `docs/file-preview.md` |
+| `Wortel/Markup/`, a new kind of preview to mark up | `docs/architecture/mark-up.md` |
 | `Wortel/Keeper/`, `WortelKeeper/` | `docs/architecture/keeper.md`, `../docs/incidents.md` |
 | `Wortel/CLI/`, `WortelCLI/` | `docs/architecture/command-menus-hotkey.md`, `docs/cli.md` (design), `docs/wortel-command.md` (the user's guide) |
 | `Wortel/Processes/` | `docs/running-processes.md`. Run `scripts/verify-running-jobs.py` before it ships |
@@ -126,6 +127,12 @@ Skills are in `../.agents/skills/` (Claude Code reads them through
   The fourth is computation fanned out over the cores for one call: ⌘P's
   `FileMatch.rank` and `FileListing.walk` share a result box (and the walk a
   lock) between their workers, and keep nothing once the call returns.
+  The fifth is mark-up's pictures: `MarkupStore.queue` draws the marks onto
+  the picture of the whole, encodes and writes every PNG and the details
+  file, and sweeps old notes, one at a time and in order, so a copy never
+  waits on an encoder. A `MarkupCanvas` is filled on main and then handed to
+  that queue whole; nothing touches it on main after the hand-over, and the
+  result comes back to main to go on the clipboard.
 - **Nothing about the user's work leaves the machine.** Wortel reports anonymous
   feature usage (`Wortel/Telemetry/`, opt-out, `docs/telemetry.md`) and that is
   the whole of it. No case in `TelemetryEvent` takes a `String`, which is what

@@ -171,6 +171,14 @@ tab.
 
 ### 2. Mark-up, everywhere, as pictures
 
+Built on `browser-markup` on 2026-11-25, in two stages (pages, then files),
+waiting for the owner's hand check of the second. It has tools now (a
+pen, a box, an arrow, a highlighter, Move), which the table above said it
+would not: see `docs/decisions.md`, 2026-11-25. What it does is in
+`architecture/mark-up.md` and its decisions in `docs/decisions.md`. This
+section and the "Mark-up" one above leave this file when it merges, but for
+what phase 3 still needs from them.
+
 The whole of it for the person: the mode in every preview, drawing, the note
 bar, the copy, a picture per mark, the picture of the whole, the folder and
 its cleanup. And in a page, picking an element with its details, since a page

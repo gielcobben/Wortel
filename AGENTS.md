@@ -99,7 +99,10 @@ in the View menu.
 number of sessions.
 
 **Nothing destructive without the user choosing it.** Archive rather than
-delete, Trash rather than `rm`, and when unsure, keep the thing.
+delete, Trash rather than `rm`, and when unsure, keep the thing. The one
+exception is a file Wortel made for itself in its cache (a pasted image, a
+mark-up note's pictures), removed when it is as old as `docs/decisions.md`
+says it may get.
 
 **Publishing is never done unasked.** A release, a deploy of the site or the
 Worker, a push to `main`: each needs to be asked for, each time. A feature

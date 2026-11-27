@@ -550,7 +550,8 @@ final class MainAreaController: NSViewController {
         // Only for the session the panel is pointed at: see `SideColumnController.sync`.
         let surface = showing && git.session === session
             ? active?.terminalID.flatMap { session?.ensureSideSurface($0, runtime: runtime) } : nil
-        tabHost.show(surface, focusRequest: git.mainFocusRequest, handBack: { [weak git] in git?.focusFront(of: .main) })
+        tabHost.show(surface, focusRequest: git.mainFocusRequest,
+                     handBack: { [weak git] in git?.handBackKeyboard(from: .main) })
         // Out of the way of clicks when it has nothing to show.
         tabHost.view.isHidden = surface == nil
         // Nor does its cursor show through what covers it.

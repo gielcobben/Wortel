@@ -20,8 +20,9 @@ import AppKit
 /// Steps: `right` `down` `left` `up` (a new terminal in a split on that edge
 /// of the area you're in), `focus-left` `focus-right` `focus-up`
 /// `focus-down`, `move-left` `move-right` `move-up` `move-down` (the tab in
-/// front), `zoom`, `equalize`, `tab` (a terminal tab here), `close` (the tab
-/// in front here), `select:<n>` (the nth tab of the row you're in to the
+/// front), `zoom`, `equalize`, `tab` (a terminal tab here), `file` (the first
+/// file of the session's folder, in front here), `close` (the tab in front
+/// here), `select:<n>` (the nth tab of the row you're in to the
 /// front), `trace-tab` `trace-blank` `trace-close` (a tab added or closed,
 /// with the row's motion sampled every 20ms), `column`, `strip`, `sidebar`
 /// (hide or show it), `next` (the next session), `wide`
@@ -88,6 +89,14 @@ enum SplitProbe {
                 if let blank = git.tabs(in: git.lastRegion).first(where: \.isBlank) {
                     git.fill(blank, with: step == "pick-terminal" ? .terminal : .pane(.changes))
                 }
+            // A file of the session's folder in front of the row you're in,
+            // as a file tab picked there: the terminal it covers had the
+            // keyboard, and ⌘W must then close the file.
+            case "file":
+                guard let cwd = manager.selected?.cwd,
+                      let name = try? FileManager.default.contentsOfDirectory(atPath: cwd)
+                        .sorted().first(where: { !$0.hasPrefix(".") && !$0.hasSuffix("/") }) else { continue }
+                git.open(.file((cwd as NSString).appendingPathComponent(name)), in: git.lastRegion)
             case "close": send(#selector(AppDelegate.closeSession(_:)))
             case "column": send(#selector(AppDelegate.toggleSideColumn(_:)))
             case "strip": send(#selector(AppDelegate.toggleBottomStrip(_:)))

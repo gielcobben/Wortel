@@ -849,6 +849,23 @@ The keyboard:
     split that has gone onto the trail. Pushed as the main row it would
     bury the split before it: after ⌘D three times, the second ⌘W would go
     to the main row and not to the first ⌘D split.
+- A terminal that had the keyboard and goes out of sight in its own row (a
+  file, Changes or another terminal picked in front of it) hands it to what
+  is now in front of that row, not of the main row
+  (`GitPanelModel.handBackKeyboard`, the `handBack` of every row's
+  `SideTerminalHostController`). A file takes no keyboard, so nobody has it
+  and you are still in that split: ⌘W closes the file. Until 2026-11-27
+  every row handed it to the main row, so after a file tab was picked in a
+  ⌘D split the session's own terminal had the keyboard, `lastRegion` became
+  the main row, and ⌘W closed the session. A row that is out of sight
+  hands it to `lastRegion`. And `focusFront(of: .main)` does nothing while
+  the main row is behind a zoom, as the other rows' branches already did:
+  it gave the hidden row's page or terminal the keys. Checked 2026-11-27
+  with `try-splits.sh right file close column tab file close right zoom
+  file close` (`file` is a probe step for this): the keyboard with nobody
+  after each `file`, the split you were in kept, and each ⌘W closed the
+  file. The same run with the old hand-back put the keyboard in the main
+  row and ⌘W closed the session.
 - Zoomed (`toggleZoom`, ⇧⌘↩, a double-click on a row that is not in the
   titlebar), the tree view gives one leaf the whole area and hides the rest.
   ⇧⌘↩ from the column or the strip zooms that one. The hidden rows answer

@@ -41,6 +41,13 @@ Code|Pane · Code · Dark|Main pane|Pane · Code · Light
 Browser|Pane · Browser · Dark|Main pane|Pane · Browser · Light
 BottomStrip|Pane · Bottom strip · Dark|Bottom strip|Pane · Bottom strip · Light
 Palette|Pane · Command palette · Dark|Command palette|Pane · Command palette · Light
+WindowControls|Pane · Window controls · Dark|Window controls|Pane · Window controls · Light
+NewTab|Pane · New Tab · Dark|New Tab pane|Pane · New Tab · Light
+SplitTerminal|Pane · Terminal, in a split · Dark|Terminal pane|Pane · Terminal, in a split · Light
+MarkUp|Pane · Mark-up · Dark|Main pane|Pane · Mark-up · Light
+MarkUpPage|Pane · Mark-up, a page · Dark|Browser pane|Pane · Mark-up, a page · Light
+NotePasted|Pane · Terminal, a note pasted · Dark|Terminal pane|Pane · Terminal, a note pasted · Light
+ZoomedSplit|Zoomed split · Dark|Terminal pane|Zoomed split · Light
 Settings|Settings · General · Dark|Window|Settings · General · Light
 HeroWindow|Foggy Lake|Window|-
 '
@@ -132,13 +139,18 @@ for f in public/app/*.png; do
   grep -qx "$id" "$work/need" || { notes=$((notes + 1)); echo "  note     $f is not used by any generated file. Remove it in the same commit."; }
 done
 
-# Layer names. Looked up: [data-name="X"] and named(root, 'X'). Defined: the
-# generated files, markup the components write, and names the scripts set.
+# Layer names. Looked up: [data-name="X"], named(root, 'X'), and the controls
+# the window film lets a visitor press, which are the keys of PRESS in
+# src/scripts/panes.ts (a line of the form `  'Name': () => …`: they reach a
+# selector through a template string, so the first two never see them).
+# Defined: the generated files, markup the components write, and names the
+# scripts set.
 gen_dir=src/app/gen
 [ $check = 1 ] && gen_dir="$work/gen"
 {
   grep -rhoE '\[data-name="[^"$]+"\]' src/scripts src/components src/pages src/styles | sed -E 's/^\[data-name="//; s/"\]$//' || true
   grep -rhoE "named\([^,()]+, '[^']+'" src/scripts src/components | sed -E "s/.*, '//; s/'\$//" || true
+  grep -hoE "^ +'[^']+': \(\) =>" src/scripts/panes.ts | sed -E "s/^ +'//; s/': \(\) =>\$//" || true
 } | sort -u > "$work/looked-up"
 {
   grep -hoE 'data-name="[^"]+"' "$gen_dir"/*.astro | sed -E 's/^data-name="//; s/"$//' || true

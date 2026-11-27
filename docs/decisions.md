@@ -3260,6 +3260,22 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   a photo behind the whole bento (read as wallpaper), and a compact window for
   the panes film's Terminal chapter. The bento follows Apple's keynote summary
   slides: one piece of the real product per tile, tiles of uneven size.
+- **2026-11-27. The homepage sells splits and mark-up, in the order a day
+  with agents goes.** Hero, a terminal first, which agent needs you, then
+  "Split it anywhere" (the window film rebuilt as four chapters in one
+  window: arranged, split, three at once, zoom) and a new section, "Show it
+  what you mean", whose film marks up the landing page in a browser split and
+  pastes the note into the agent beside it. Then the tiles and the answers.
+  Studied first, in a browser: polar.sh, framer.com and paper.design. Taken:
+  one cast through every film (the same sessions, the same landing page on
+  `localhost:4321`), one cause and effect per chapter held at its end, the
+  window re-arranged in place and never swapped for a picture, cause in one
+  split and effect in the other, a composition of its own on a phone. Not
+  taken: logo walls, carousels, a decorative ending, dark only, a GPU
+  background. Splits cut where the app cuts (a made split, a zoom) and slide
+  only where the app slides (`⌥⌘B`, `⌘J`). The plan tile went back to a plain
+  rendered plan so mark-up is not told twice. The section comes off the page
+  with two lines in `pages/index.astro`.
 - **2026-11-23. Every release has a page of its own**, at
   `/updates/<version>`, so one release can be linked, shared and found by a
   search, and the changelog is also an Atom feed at `/feed.xml`. The

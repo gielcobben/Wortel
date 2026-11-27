@@ -55,11 +55,11 @@ src/
                            a paragraph and a link at the right), then what it shows
   app/gen/*.astro          the app's panes, GENERATED from the Opmaak canvas
   components/Stage.astro   a stage: the lake with the chapter tabs and play/pause over the window
-  components/Window.astro  the window's chrome exactly as the canvas draws it: glass, layout, rim
+  components/Window.astro  the window's chrome as the canvas draws it: glass, layout, and the corner (Running and "…")
   scripts/app.ts           tools for acting on a generated window: select a row, set a status, print a line
   scripts/film.ts          a film with chapters: autoplay, tabs, arrow keys
   scripts/hero.ts          the landing sequence (one GSAP timeline)
-  scripts/panes.ts         the panes scene: a state per place, a target layout per chapter
+  scripts/panes.ts         the splits scene: one story in three chapters, each a scene (its beats, and how it ends)
   scripts/scenes.ts        the agents scene and the terminal-first scene
   scripts/bento.ts         puts the real app into the bento's tiles: parts cloned out of the generated panes
   styles/site.css          the site's design system: READ ITS HEADER before adding a section
@@ -157,11 +157,46 @@ window itself stops that, and play picks it up again. Nothing the films do is
 tied to scroll; only the photos drift a little against it (below).
 
 The windows answer to the pointer: sessions select at once, as in the app,
-folders fold, Back and Forward walk the sessions you were on, the sidebar and
-column buttons and the tabs work (panes), and the notification and the
-prompt's choices work (agents).
+folders fold, Back and Forward walk the sessions you were on, the sidebar
+button, a tab's close button and Show All Splits work (splits), and the
+notification and the prompt's choices work (agents).
 Anything pressable is marked `data-row`, `data-fold` or `data-press` and gets
-the app's own hover from `styles/app.css`.
+the app's own hover from `styles/app.css`. A control is found by its layer
+name (`PRESS` in `scripts/panes.ts`), or by where it is when the name is not
+its own (`PRESS_AT`: every tab's close button is "Close"). A split is gone
+when its last tab closes, and a click anywhere else in a split puts the
+keyboard there.
+
+**The splits film** is one story in one window that only goes forward, in
+three chapters named for what you do. Each is a cause and what the window
+does about it, held 1.5 s on how it ends, and each starts where the one
+before ended; only the loop back to the first is a cut. `scene(i)` in
+`scripts/panes.ts` returns where a scene starts, its beats (what happens, and
+when) and its length, so a chapter's hold is never a number kept beside the
+script. The session is the one building the landing page ("Landing page
+hero", in `web`), the same one the mark-up film after it picks up.
+- **⌘D**: the agent's terminal alone. ⌘D is pressed and the window is two
+  splits, the new one a shell in the session's folder; `npm run dev` is
+  typed into it and the server's output arrives. 3 s.
+- **Drag a tab**: ⌘ and a click on the address the server printed opens the
+  page where a browser opens by itself, in a column that slides in at the
+  outer edge. Its tab is picked up and carried to the bottom edge of the
+  shell's split, the split lights where the tab would land, and let go it
+  makes a split there, with the page in it. 3.7 s.
+- **Zoom**: a click back in the agent's terminal, ⇧⌘↩ gives it everything
+  beside the sidebar with Show All Splits lit in its row, and ⇧⌘↩ again
+  shows all three. 3.9 s.
+
+Keys are shown the way the other films show them (`pressKeys`), but over the
+split that has the keyboard, in the largest gap in what its terminal shows,
+and they are gone as the app answers: they never sit on a line of text. The
+agent's terminal keeps five rows clear under its last line for them
+(`data-reserve`, which `fitTerminal()` in `scripts/app.ts` honours). What is
+done with the mouse is done by the film's pointer (`Pointer` in
+`scripts/app.ts`: 0.7 s of travel), typing is 55 ms a character. With reduced
+motion the film is still on "Drag a tab" as it ends, all three splits, and
+each chapter shows how it ends (Zoom: the zoom). Anything the visitor presses
+stops a scene where it is.
 
 Rules for motion, so a new piece moves like the rest:
 - Curves are `--ease-out` (anything answering the reader) and `--ease-in-out`
@@ -171,6 +206,20 @@ Rules for motion, so a new piece moves like the rest:
   160ms). Only the films and the landing sequence take longer.
 - Tabs and columns inside a window swap at once, with a 200ms fade in, as the
   app does. Nothing slides between tabs.
+- Inside a window only what slides in the app slides: the sidebar, and a
+  column that opens beside the terminal by itself (a tab opened there, as
+  the ⌘-clicked page is: 500ms on `power3.inOut`). A split somebody makes, a
+  tab dropped on an edge, a split that is closed, a zoom and a new
+  arrangement land in one cut, with the same 200ms fade on what the cut
+  brought. What slides clips its pane instead of reflowing it: the pane
+  stays where it is at rest, held to the window's edge on its own side, and
+  the divider passes over it.
+- A dragged tab is drawn the way the app draws one (`BottomStrip.swift`, the
+  tab drag's overlay): the tab's own picture under the pointer at 90%, the
+  tab itself at 35% in its row, and where it would land at 10% of the
+  accent with no words: all of a split over its middle, and over an edge the
+  half a new split would take, with a 1px line at 55% on the side that meets
+  the old one (`.carried`, `.landing` in `site.css`).
 - Every hover sits behind `@media (hover: hover) and (pointer: fine)`, so a tap
   on a phone never leaves one stuck on.
 - Nothing appears from `scale(0)`: from 0.5 or more, with opacity.
@@ -223,8 +272,60 @@ Rules for motion, so a new piece moves like the rest:
   often there), and its section gaps are worked out again for what is left.
 - Traffic lights are drawn in CSS as true 14pt circles in the captures'
   colours, so they are crisp at 1x, 2x and 3x.
-- Headings step in size with whole-pixel line-heights, so every window sits on
-  a whole pixel.
+- The window's corner, Running and "…", is the window's own layer over the
+  titlebar, 8 from its right edge, whatever the splits under it do.
+  `components/Window.astro` puts the canvas's `Window controls` there in
+  every window it draws (the hero's window is one frame and brings its own).
+  A pane on the canvas ends its row 8 from its edge, and the rightmost row
+  along the top has to end 72 from the window's, which leaves 4 between Split
+  Down and Running. So the slot that holds that row carries `data-end`
+  (`site.css`: `.win [data-end] header`). In the splits film the mark moves
+  with the splits (`lay()` in `scripts/panes.ts`), and when a column slides
+  in at the outer edge the row that was the rightmost gives the 72 back on
+  the slide's own curve. On a phone,
+  where a folded window's main row is the only one, the stylesheet gives it
+  the 72.
+- A split's row of tabs is fitted to its width the way the app fits one, so
+  a pane drawn at 384 is right at 234 or at a phone's width (`fitBars()` in
+  `scripts/app.ts`, which `wholeRows()` calls; the styles are in `site.css`).
+  The split buttons show while the row has 240 points of its own. Tabs that
+  do not fit give up the room for their close buttons, then give way
+  together to 130 points with their titles cut, then the row scrolls to the
+  tab in front under a 20px fade with the "+" still after it, as the
+  canvas's own History state draws a row that ran short. A zoomed split's
+  row keeps Show All Splits when its two split buttons go, as the app's
+  does.
+- A plain shell on the canvas (the strip, the terminal in a split) ends in a
+  spacer that keeps its lines at the top. `app.css` takes that spacer out of
+  every terminal for Claude's pinned prompt box, so the splits film says it
+  again for the shell in its split (`Panes.astro`).
+- The splits film composes what the canvas draws as whole states ("Splits",
+  "Zoomed split") out of three panes, and these things in it are the site's:
+  - The agent's terminal is "Terminal, a note pasted" (`NotePasted.astro`),
+    drawn for the mark-up film, with its prompt emptied: nothing has been
+    pasted yet. Zoomed, its row gets the canvas's Show All Splits, cloned
+    from the dev server split's row, where the canvas drew it.
+  - The shell beside it is the canvas's zoomed dev server split
+    (`ZoomedSplit.astro`). The film starts it as a new shell: the canvas's
+    own lines are hidden and shown as they would have arrived, with a login
+    line before them, and the tab is named for the folder, then for what
+    runs in it. Its own Show All Splits never shows.
+  - The browser is "Mark-up, a page" (`MarkUpPage.astro`), for its capture
+    of the landing page at a split's width in both colour schemes. Its
+    mark-up layers and the header hairline that comes with them are hidden,
+    the page is as wide as its split and cut off at the bottom, and only the
+    capture the colour scheme shows is fetched (`schemePictures()`). It is
+    one pane, moved from the column at the edge to the split under the
+    shell when its tab is dropped there.
+  - A row lower down has the band look, where the browser's was drawn with
+    the titlebar's: 36 high, the strip's wash on the page colour, no
+    hairline, the front tab on the card colour (`Panes.astro`).
+  - With three splits on screen, the front tab of each split the keyboard
+    is not in keeps its fill and draws its glyph and title a step quieter
+    (`data-quiet`, `site.css`), as the app does.
+  - The column at the edge opens at the app's width, 440 and no more than
+    half of what is beside the sidebar, which leaves the two terminals a
+    quarter each until the tab is dragged away. That is what the app does.
 - To check a window against the canvas: `opmaak render "<frame>" --scale 1`,
   screenshot the same markup at 1510x1015, and `magick compare`. Text will
   differ (the canvas renders with its server's fonts); boxes should not.
@@ -240,24 +341,32 @@ the app gives it in that state (the traffic lights on the window, Show
 Sidebar in the main bar) and `site.css` shows them only at that width; a
 `Stage` asks for it with `fold`, and the window carries `data-narrow` in its
 markup, so the sidebar is folded from the first paint and nothing shifts
-when the script runs. Three liberties are taken, all for the
-session's name, which with no sidebar is the only thing saying which session
-this is: Back and Forward are left out of the bar, the hero's session shows
-one tab of its three, and the Settings window takes the stage's width (it is
-380 points in the app, wider than the stage) with its tabs moved clear of the
-traffic lights.
+when the script runs. The split buttons are gone from that row, as they are
+from any row in the app with under 240 points of its own. Three liberties are
+taken for the session's name, which with no sidebar is on its tab and nowhere
+else: Back and Forward are left out of the row, the hero's session shows one
+tab of its three, and the row goes without its "+" (under 360px wide, without
+Show Sidebar too). A fourth is the Settings window, which takes the stage's
+width (it is 380 points in the app, wider than the stage) with its tabs moved
+clear of the traffic lights.
 
 Two films are about more than one part of the window, and a phone shows one
 part at a time. Their windows are wider than the stage and the film pans:
-the panes film between the main pane and the column, each exactly as wide as
-the stage (the sidebar is folded and the column never closes there, so
-nothing wraps again between chapters); the agents film between the sidebar,
-while the dots are the story, and the terminal, once you have gone to the
-session that asked. The pan is the camera's; nothing in the window moves
+the splits film between the agent's terminal, the column beside it and,
+while the browser is there, the column at the edge, each exactly as wide as
+the stage, to whichever has the keyboard. What is off the stage is not
+drawn, so no strip of the split next door shows in the stage's own margin.
+So in "⌘D" the film goes to the new shell; in "Drag a tab" to the page, and
+back with the tab as it is carried, to where it lands; and a zoomed split
+is the whole window, at the stage's width, with Show Sidebar and the "+"
+left out of its row so the session's name and Show All Splits have the
+room. The agents film pans between
+the sidebar, while the dots are the story, and the terminal, once you have
+gone to the session that asked. The pan is the camera's; nothing in the window moves
 that the app would not move.
 
 Between a phone and a wide screen (1000px and under: a tablet, a narrow
-browser window) the panes window is whole but folds its sidebar, since
+browser window) the splits window is whole but folds its sidebar, since
 sidebar, terminal and column do not fit across and the terminal was left a
 strip ten characters wide.
 

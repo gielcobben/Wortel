@@ -301,6 +301,35 @@ a, button, summary, select, [role="tab"] { touch-action: manipulation; }
 /* A generated window brings the canvas's own edge; ours replaces it. */
 :is(.stage, .tile) .win [data-name="Window"] { box-shadow: none; border-radius: 0; }
 :is(.stage, .tile) .win [data-name="Rim"] { display: none; }
+/* The window's corner, Running and "…" (components/Window.astro), lies over
+   the end of the titlebar, so the rightmost row along the top ends its own
+   buttons 72 from the window's edge and not 8, as the app's does: that
+   leaves 4 between Split Down and Running. A pane is drawn ending at 8, so
+   the slot that holds the rightmost row says which it is (data-end). */
+.win [data-end] header { padding-right: 72px; }
+/* A row of tabs short of room, as the app lays one out (scripts/app.ts,
+   fitBars). data-short: a tab behind the front one gives up the room kept
+   for its close button. data-short="squeeze": still too long, so the tabs
+   give way together, each no further than its floor, and a title that is
+   cut ends in an ellipsis. data-over: at their floors and still too long, so
+   the row is scrolled to its end, where the tab in front and the "+" are,
+   and what is left of the tabs before them runs out under a 20px fade
+   (data-over="end": the tab in front is the first, so the row stays put and
+   fades at its other end). Tabs the canvas drew scrolled already (the file
+   tree's row) come in a box of a fixed width: it gives way to the row it is
+   in. */
+.win [data-name="Tabs"][data-short] > [data-name$=" tab"]:has(> :last-child > .size-5:empty) { padding-right: 6px; }
+.win [data-name="Tabs"][data-short] > [data-name$=" tab"] > :last-child:has(> .size-5:empty) { display: none; }
+.win [data-name="Tabs"][data-short="squeeze"] > [data-name$=" tab"] { flex-shrink: 1; min-width: var(--floor, 0); }
+.win [data-name="Tabs"][data-over=""] { justify-content: flex-end; -webkit-mask-image: linear-gradient(to right, transparent, #000 20px); mask-image: linear-gradient(to right, transparent, #000 20px); }
+.win [data-name="Tabs"][data-over="end"] { -webkit-mask-image: linear-gradient(to left, transparent, #000 20px); mask-image: linear-gradient(to left, transparent, #000 20px); }
+.win [data-name="Tabs"] > div:has(> [data-name$=" tab"]) { flex-shrink: 1; min-width: 0; }
+/* With three splits or more on screen the app tells them apart: the front
+   tab of each split you are not in keeps its fill and draws its glyph and
+   its title a step quieter. A scene says which those are (data-quiet on the
+   split, scripts/panes.ts). */
+.win [data-quiet] header :is(.text-sidebar-foreground, .text-foreground) { color: var(--sidebar-accent-foreground); }
+.win [data-quiet] header :is(.bg-sidebar-foreground, .bg-foreground) { background-color: var(--sidebar-accent-foreground); }
 /* Where the window and anything beside it stand. */
 .stage .set { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; }
 
@@ -379,16 +408,25 @@ a, button, summary, select, [role="tab"] { touch-action: manipulation; }
   .stage .win { width: 100%; max-width: none; height: min(var(--h, 704px), 512px); }
   .controls { justify-content: flex-start; width: 100%; }
   .win[data-narrow] :is([data-name="Sidebar slot"], [data-name="Side column slot"], [data-name="Layout"] > [data-name="Divider"], [data-side]) { display: none; }
-  .win[data-narrow] header[data-name="Main bar"] { padding-left: 78px; }
+  /* With the column gone the main row is the rightmost one: it clears the
+     window's corner (72, as [data-end] above). The split buttons go, as the
+     app's do in a row this short. */
+  .win[data-narrow] header[data-name="Main bar"] { padding-left: 78px; padding-right: 72px; }
+  .win[data-narrow] [data-name="Split buttons"] { display: none; }
   .win[data-narrow] [data-narrow-only] { display: flex; }
   .win[data-narrow] [data-narrow-only][data-lead] { display: contents; }
-  /* The one liberty: Back and Forward are left out of that bar, and the
-     hero's session shows one tab of its three. At this width they would
-     leave the session's name two letters, and in a window with no sidebar
-     the name in the bar is the only place that says which session it is. */
+  /* The liberties, all for the session's name: Back and Forward are left
+     out of that bar, the hero's session shows one tab of its three, and a
+     folded window's row goes without its "+". At this width they would leave
+     the name two letters, and in a window with no sidebar the name on its
+     tab is the only place that says which session it is. */
   .stage .win [data-lead] [data-name="Back and Forward"],
-  .win[data-narrow] :is([data-name="Build tab"], [data-name="plan.md tab"]) { display: none; }
+  .win[data-narrow] :is([data-name="Build tab"], [data-name="plan.md tab"], [data-name="Tab divider"]),
+  .win[data-narrow] header[data-name="Main bar"] [data-name="New Tab"] { display: none; }
 }
+/* On the narrowest phones that still left the name one letter, between the
+   traffic lights and the window's corner: there Show Sidebar goes as well. */
+@media (max-width: 359px) { .win[data-narrow] [data-narrow-only][data-lead] { display: none; } }
 
 /* Facts: short points under a shot, three or four across. */
 .facts { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px var(--col-gap); }
@@ -405,7 +443,17 @@ a, button, summary, select, [role="tab"] { touch-action: manipulation; }
 
 /* The pointer a film uses for what is done with the mouse (scripts/app.ts). */
 .pointer { position: absolute; left: 0; top: 0; z-index: 6; opacity: 0; pointer-events: none; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35)); }
-.pointer svg { display: block; }
+.pointer svg { display: block; position: relative; z-index: 1; }
+/* What it carries while a tab is dragged: the tab's own picture, as the app
+   shows one under the pointer, a little see-through. */
+.pointer .carried { position: absolute; opacity: 0.9; }
+/* And where that tab would land, as the app draws it, with no words: the
+   part of the window it would take at 10% of the accent, and when that is
+   half of a split, a 1px line at 55% on the side that meets the old one. */
+.win .landing { position: absolute; inset: 0; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.win .landing[data-edge="down"] { top: 50%; border-top: 1px solid color-mix(in srgb, var(--primary) 55%, transparent); }
+/* What that pointer is over is lit the way the app lights what is hovered. */
+.win [data-lit] { background: var(--sidebar-accent); border-radius: 8px; }
 
 /* Things that only exist for screen readers and crawlers. */
 .vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -471,9 +519,9 @@ a, button, summary, select, [role="tab"] { touch-action: manipulation; }
 .prose h2 { font: 500 24px/32px var(--font-display); letter-spacing: -0.02em; color: var(--ink); margin: 48px 0 0; }
 .prose h3 { font: 500 17px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); margin: 32px 0 0; }
 /* Something you type, a path, a file: wherever a sentence carries one. */
-.prose code, .body code, .lead code { font: 500 0.86em var(--font-mono); padding: 2px 6px; border-radius: 6px; background: var(--fog-1); color: var(--ink); border: 1px solid var(--line); }
+.prose code, .body code, .lead code, .copy code { font: 500 0.86em var(--font-mono); padding: 2px 6px; border-radius: 6px; background: var(--fog-1); color: var(--ink); border: 1px solid var(--line); }
 /* A key in a sentence sits in the line, and never makes it taller. */
-.prose kbd, .body kbd, .lead kbd { vertical-align: 1px; }
+.prose kbd, .body kbd, .lead kbd, .copy kbd { vertical-align: 1px; }
 .prose pre { margin: 24px 0 0; padding: 16px 24px; border-radius: 12px; background: var(--fog-1); border: 1px solid var(--line); color: var(--ink); overflow-x: auto; font: 500 14px/24px var(--font-mono); }
 .prose pre code { background: none; border: 0; padding: 0; color: inherit; }
 .prose table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 24px; }

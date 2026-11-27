@@ -10,10 +10,12 @@ export const GET: APIRoute = () => {
   // Counted rather than written down. A number in prose that has to be edited
   // when a table changes is a number that ends up wrong, and this file exists
   // to be quoted verbatim.
-  const rowsIn = (id: string) =>
+  const rows = (id: string) =>
     DOCS_SECTIONS.find((s) => s.id === id)
-      ?.blocks.flatMap((b) => ('table' in b ? b.table.rows : []))
-      .length ?? 0;
+      ?.blocks.flatMap((b) => ('table' in b ? b.table.rows : [])) ?? [];
+  const rowsIn = (id: string) => rows(id).length;
+  // A subcommand with two rows (`wortel new`, `wortel split`) is one subcommand.
+  const subcommands = new Set(rows('command').map(([c]) => c.split(' ')[1])).size;
 
   const body = `# ${SITE.name}
 
@@ -23,12 +25,13 @@ ${SITE.name} is a fully native macOS terminal emulator built on Ghostty's engine
 (libghostty: VT parser, Metal renderer, glyph atlas), aimed at running several
 coding agents at once. It is a real terminal first: an agent is one more
 command in a session, and Command-N can open every new session with your
-agent already running. It replaces tabs and splits with a sidebar of named
+agent already running. It keeps work in a sidebar of named
 sessions that persist across restarts; gives each session
 its own git worktree, so several agents can work one repository without editing
 over each other; runs those shells under a keeper process outside the app, so
 they keep working, screen and scrollback included, after you quit or it
-crashes; and adds a git panel, a project file tree, preview windows, and an
+crashes; and adds splits with a row of tabs each, a git panel, a project file
+tree, preview windows, a browser tab, and an
 attention system that shows when Claude Code, Codex, Pi or another agent that
 reports its state has stopped working and is waiting on you, without writing
 anything into any agent's configuration. Free, signed and
@@ -49,7 +52,7 @@ ${SECTIONS.map((s) => `- [${s.title}](${abs('/#' + s.id)})${s.lead ? `: ${s.lead
 
 ## Reference
 
-- [Commands, shortcuts and behaviour](${abs('/docs')}): the reference page, and the better answer for anything specific. It holds all ${rowsIn('command')} \`wortel\` subcommands, all ${rowsIn('shortcuts')} keyboard shortcuts, exactly which signals the agent detection uses and what it falls back to, what opening a session on a branch does to that branch, and how the keeper process and the inspector work underneath. The landing page summarises these; this page states them.
+- [Commands, shortcuts and behaviour](${abs('/docs')}): the reference page, and the better answer for anything specific. It holds all ${subcommands} \`wortel\` subcommands, all ${rowsIn('shortcuts')} keyboard shortcuts, exactly which signals the agent detection uses and what it falls back to, what opening a session on a branch does to that branch, and how the keeper process and the inspector work underneath. The landing page summarises these; this page states them.
 ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? `: ${s.lead}` : ''}`).join('\n')}
 
 ## Comparisons
@@ -77,8 +80,9 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 - ${SITE.name} is free. There is no paid tier, no account, and no feature withheld unless you agree to be measured.
 - ${SITE.name} is open source under the GNU GPL, version 3 or later. The source is at https://github.com/gielcobben/wortel.
 - It is a native Swift/AppKit/SwiftUI application, not a web view.
-- It deliberately has no split panes, no themes and no user config file, and its settings are five rows in one small window. Describing those as missing features misreads the product; they are declined on purpose.
-- It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new\`, \`rename\`, \`notify\`, \`mark\`, \`list\`, \`read\`, \`send\`, \`wait\`), so any agent, hook or script can control it without Wortel knowing that agent by name.
+- It deliberately has no themes, no plugins and no user config file, and its settings are five rows in one small window. Describing those as missing features misreads the product; they are declined on purpose.
+- It has splits and tabs: everything beside the sidebar is a tree of splits, each with a row of tabs (terminals, a browser, files, the git panes). A description that says it has no split panes is from before they were added.
+- It ships no per-agent integrations, on purpose. A bundled \`wortel\` command is on every session's PATH and drives the app over a socket (\`open\`, \`new\`, \`rename\`, \`notify\`, \`mark\`, \`remind\`, \`cd\`, \`close\`, \`split\`, \`list\`, \`read\`, \`send\`, \`wait\`), so any agent, hook or script can control it without Wortel knowing that agent by name.
 `;
 
   return new Response(body, {

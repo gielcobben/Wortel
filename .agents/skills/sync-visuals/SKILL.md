@@ -47,21 +47,35 @@ starting: what you will redraw, what you will add, and what you are leaving
 out and why. A new frame is a decision about what the site and the marketing
 images need, so ask when it is not obvious.
 
-What the canvas holds (2026-11-19), all on its first page:
+What the canvas holds (2026-11-27), all on its first page:
 
 - A cover, the **Tokens** sheets and the **Components** sheets, light and dark.
 - **Panes**, each by itself in a slot (`Pane · Sidebar · Dark`, and so on):
-  sidebar, terminal (wide, and beside a column), changes, history, files, a
-  file in the column and in the main area, code, browser, bottom strip,
-  command palette. Light and dark twins carry the same markup.
+  sidebar, terminal (wide, beside a column, in a split, with a note pasted),
+  changes, history, files, a file in the column and in the main area, code,
+  browser, bottom strip, command palette, the window's corner (`Window
+  controls`), the New Tab page, and mark-up (on Markdown, and on a page).
+  Light and dark twins carry the same markup.
 - **Window skeletons** with empty slots.
-- **States**, twelve whole windows, each four times: light and dark, on black
-  and on a wallpaper.
+- **States**, whole windows, each four times: light and dark, on black and on
+  a wallpaper. The twelve from before the splits, and since 2026-11-27: New
+  Tab, Splits, Zoomed split, Mark-up, Mark-up on a page, and the browser's
+  find bar, downloads list and a page from a file.
+- **Mark-up · Parts**, light and dark: its button, chips, tools and marks.
 - **Shots** for marketing, and `Foggy Lake`, whose window is the site's hero.
 - **Other windows**, in a row at y 17100: Settings (General, and Updates as a
   released build has it) and a preview window, each light and dark.
 
-Not drawn yet: the reminder picker, menus, popovers, sheets and hover cards.
+Every frame was redrawn for the splits on 2026-11-27 from the app's code
+(revision 1468 to about 1915), not from captures: Screen Recording kept being
+lost to app swaps that night. Compare against captures before moving the
+marker. The section header colour is plain classes
+(`text-black/[0.38] dark:text-white/[0.45]`), because the canvas refuses a
+custom token.
+
+Not drawn yet: the reminder picker, menus, sheets and hover cards. The one
+popover drawn is the downloads list, and its corner, arrow and shadow are
+assumed.
 Keep this paragraph true.
 
 **A sidebar is one flat list** of section headers and rows. The gap between

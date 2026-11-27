@@ -380,10 +380,9 @@ export type Head = Beta & {
   title: string;
   tone?: string;
   body?: string;
-  /** Where the paragraph goes further, after it: a part of /docs. */
+  /** Where it goes further, under the heading: the feature's own page
+   *  (/layouts, /mark-up), or a part of /docs. */
   link?: readonly [text: string, href: string];
-  /** The feature's own page (/layouts, /mark-up), under the heading. */
-  page?: readonly [text: string, href: string];
 };
 
 export const HOME = {
@@ -418,7 +417,7 @@ export const HOME = {
     title: 'Split it anywhere',
     tone: 'Every split has its own tabs',
     body: '`⌘D` splits where you are and `⇧⌘D` splits it down. Drag a tab to the edge of any split and it makes a new one there. Every split has its own row of tabs: a terminal, a browser, a file, your changes. `⇧⌘↩` gives one the whole window.',
-    page: ['Everything a layout does', '/layouts'],
+    link: ['Everything a layout does', '/layouts'],
     beta: true,
   },
   // This entry, the section that reads it (components/home/Markup.astro) and
@@ -427,7 +426,7 @@ export const HOME = {
     title: 'Show it what you mean',
     tone: 'Point at it, say it, paste it',
     body: 'Mark Up `⇧⌘M` works on a page, a diff, source, rendered Markdown or an image. Click an element or draw around anything, write one sentence around the marks, and Return copies it as text an agent can read. Nothing is sent for you.',
-    page: ['Everything mark-up does', '/mark-up'],
+    link: ['Everything mark-up does', '/mark-up'],
     beta: true,
   },
   glance: {

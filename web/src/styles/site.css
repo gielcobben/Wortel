@@ -16,8 +16,8 @@
    columns 1 to 5 and the text 7 to 12; on a page that is text (.read) the
    name is smaller in columns 1 to 3, and the text has 4 to 11.
      On the homepage (components/Section.astro) the name is a heading in two
-     lines, the claim in ink and its other half in grey, the text is one short
-     paragraph and a link, and under the row comes what the section shows, at
+     lines, the claim in ink and its other half in grey, with a link under it,
+     the text is one short paragraph, and under the row comes what the section shows, at
      full width: a .stage (the app on the lake: chapters, a window) or the
      bento. The questions sit in the right column itself.
      Inner pages open with .phead and are .row12.read rows: a page of text

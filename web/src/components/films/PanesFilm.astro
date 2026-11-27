@@ -110,7 +110,11 @@ const chapters = ['⇧⌘D', 'Drag a tab', 'Zoom', ...(sidebar ? ['Sidebar'] : [
   .slot > * { grid-area: 1 / 1; min-width: 0; min-height: 0; }
   .sb { width: 234px; flex: none; }
   .col { display: flex; flex-direction: column; flex: 1; min-width: 80px; min-height: 0; overflow: hidden; }
-  .main, .side { flex: 1 1 0; grid-template-columns: 100%; }
+  /* The shell under the agent's split is the shorter of the two, 240 of the
+     window's 704, as a divider dragged down leaves it: at half, most of it
+     was empty under the dev server's few lines. */
+  .main { flex: 1 1 0; grid-template-columns: 100%; }
+  .side { flex: none; height: 240px; grid-template-columns: 100%; }
   .edge { flex: none; grid-template-columns: 100%; }
   .divider { width: 1px; flex: none; background: var(--sidebar-border); align-self: stretch; }
   .rule { height: 1px; flex: none; background: var(--sidebar-border); }

@@ -28,7 +28,7 @@
 // There is no Turnstile, because that is a third-party script on the page.
 // ==========================================================================
 
-import { confirmationMail, isToken, mayMail, newToken, parseJoin, PENDING_TTL } from './letter.ts';
+import { confirmationMail, isToken, MAIL_COOLDOWN, newToken, parseJoin, PENDING_TTL } from './letter.ts';
 
 export interface LetterEnv {
   ASSETS: { fetch(request: Request | string): Promise<Response> };
@@ -40,13 +40,6 @@ export interface LetterEnv {
 const FROM = { name: 'Wortel', email: 'letter@wortel.sh' };
 /** A form post is an address and two short fields; anything bigger is not one. */
 const MAX_BODY = 4096;
-
-interface Row {
-  token: string;
-  confirmed_at: number | null;
-  mailed_at: number;
-  created_at: number;
-}
 
 /** The letter's answer to a request, or null when the request is not the letter's. */
 export async function letter(request: Request, url: URL, env: LetterEnv): Promise<Response | null> {
@@ -87,28 +80,25 @@ async function join(request: Request, url: URL, env: LetterEnv): Promise<Respons
   await env.DB.prepare('DELETE FROM subscribers WHERE confirmed_at IS NULL AND created_at < ?')
     .bind(now - PENDING_TTL).run();
 
-  const row = await env.DB.prepare('SELECT token, confirmed_at, mailed_at, created_at FROM subscribers WHERE email = ?')
-    .bind(asked.email).first<Row>();
-
-  // Already on the list: nothing to do, and nothing to say about it.
-  if (row?.confirmed_at) return answer(true);
-  // Waiting, and mailed recently: the mail already in their inbox still works.
-  if (row && !mayMail(row.mailed_at, now)) return answer(true);
-
-  const token = row?.token ?? newToken();
-  if (row) {
-    // Waiting, and the last mail is a day old: send it again, and the week
-    // the mail promises starts from this one.
-    await env.DB.prepare('UPDATE subscribers SET mailed_at = ?, created_at = ?, source = ? WHERE email = ?')
-      .bind(now, now, asked.source, asked.email).run();
-  } else {
-    // INSERT OR IGNORE: two posts of the same new address at once must not
-    // send two mails or fail one of them.
-    const put = await env.DB.prepare(
-      'INSERT OR IGNORE INTO subscribers (email, token, source, created_at, confirmed_at, mailed_at) VALUES (?, ?, ?, ?, NULL, ?)',
-    ).bind(asked.email, token, asked.source, now, now).run();
-    if (!put.meta.changes) return answer(true);
-  }
+  // Whether to mail is decided by this one statement, and only it, so two
+  // posts of the same address at once cannot both decide to (a SELECT, then a
+  // write, let every concurrent post through). It returns the token to mail:
+  //   - a new address is inserted, with a new token;
+  //   - one still waiting whose last mail is a day old or more is claimed:
+  //     mailed_at moves to now, and so does created_at, because the mail says
+  //     the address is forgotten in seven days and that must hold for the
+  //     latest one;
+  //   - anything else (on the list, or mailed within the day) is left as it
+  //     is and returns nothing, and gets the same answer.
+  const fresh = newToken();
+  const claimed = await env.DB.prepare(
+    `INSERT INTO subscribers (email, token, source, created_at, confirmed_at, mailed_at) VALUES (?1, ?2, ?3, ?4, NULL, ?4)
+     ON CONFLICT (email) DO UPDATE SET mailed_at = excluded.mailed_at, created_at = excluded.created_at, source = excluded.source
+     WHERE subscribers.confirmed_at IS NULL AND subscribers.mailed_at <= ?5
+     RETURNING token`,
+  ).bind(asked.email, fresh, asked.source, now, now - MAIL_COOLDOWN).first<{ token: string }>();
+  if (!claimed) return answer(true);
+  const token = claimed.token;
 
   // Behind the custom domain the links are always https://wortel.sh; anywhere
   // else (wrangler dev) they point back at wherever the form was sent from.
@@ -118,12 +108,15 @@ async function join(request: Request, url: URL, env: LetterEnv): Promise<Respons
     await env.EMAIL.send({ from: FROM, to: asked.email, ...mail });
   } catch (err) {
     console.error('letter: confirmation mail failed', err instanceof Error ? err.message : String(err));
-    // Put things back as they were, so trying again sends again.
-    if (row) {
-      await env.DB.prepare('UPDATE subscribers SET mailed_at = ?, created_at = ? WHERE email = ?')
-        .bind(row.mailed_at, row.created_at, asked.email).run();
+    // Undo the claim, so trying again sends again: a new address is
+    // forgotten, a waiting one may be mailed again at once. Both only if the
+    // row is still the one this request wrote.
+    if (token === fresh) {
+      await env.DB.prepare('DELETE FROM subscribers WHERE email = ? AND token = ? AND confirmed_at IS NULL')
+        .bind(asked.email, token).run();
     } else {
-      await env.DB.prepare('DELETE FROM subscribers WHERE email = ? AND confirmed_at IS NULL').bind(asked.email).run();
+      await env.DB.prepare('UPDATE subscribers SET mailed_at = 0 WHERE email = ? AND token = ? AND mailed_at = ? AND confirmed_at IS NULL')
+        .bind(asked.email, token, now).run();
     }
     return answer(false, 503);
   }

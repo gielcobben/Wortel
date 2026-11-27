@@ -4,8 +4,8 @@
 // The letter is an email when something big ships, a few times a year. This
 // file is everything about it that can be tested under `node --test`: what
 // counts as an address, what a form post says, what the confirmation mail
-// reads, when another one may go out. letter-routes.ts is the part that
-// touches D1, the mail binding and the requests.
+// reads, how long things last. letter-routes.ts is the part that touches D1,
+// the mail binding and the requests (letter-routes.test.ts runs it on SQLite).
 //
 // What is kept about a person is their address, the day they joined, which
 // form they used and a random token, and nothing else: no IP, no user agent,
@@ -20,7 +20,11 @@ export type Source = (typeof SOURCES)[number];
 
 /** An unconfirmed address is forgotten after this long. */
 export const PENDING_TTL = 7 * 24 * 60 * 60;
-/** At most one confirmation mail per address in this long, however often the form is sent. */
+/**
+ * At most one confirmation mail per address in this long, however often the
+ * form is sent. Enforced by the one statement in letter-routes.ts that claims
+ * the mail, so it holds for posts that arrive together.
+ */
 export const MAIL_COOLDOWN = 24 * 60 * 60;
 
 /**
@@ -80,11 +84,6 @@ export function newToken(): string {
 /** Whether a string could be a token at all, so a junk one never reaches the database. */
 export function isToken(input: unknown): input is string {
   return typeof input === 'string' && /^[A-Za-z0-9_-]{43}$/.test(input);
-}
-
-/** Whether another confirmation mail may go to an address last mailed at `mailedAt`. */
-export function mayMail(mailedAt: number | null, now: number): boolean {
-  return mailedAt === null || now - mailedAt >= MAIL_COOLDOWN;
 }
 
 export interface Mail {

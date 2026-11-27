@@ -62,8 +62,10 @@ export default {
 
     // The bucket has no index, and this hostname is one people paste into a
     // browser after seeing it in a release note. Send them somewhere real.
+    // Permanent, so search engines fold this address into /updates: as a 302
+    // it was listed in Google's results as a page of its own.
     if (url.pathname === '/') {
-      return Response.redirect('https://wortel.sh/updates', 302);
+      return Response.redirect('https://wortel.sh/updates', 301);
     }
 
     // A malformed percent-escape (`/%zz`) makes decodeURIComponent throw, and

@@ -13,6 +13,8 @@ struct WebMarkReport: Equatable {
     /// pixels.
     var scroll = CGPoint.zero
     var view = CGSize.zero
+    /// The wider and the taller of the root's and the body's scroll size:
+    /// for whether a scroll moves anything (`wouldScroll`), not for scale.
     var page = CGSize.zero
     var marks: [Int: Entry] = [:]
 
@@ -99,5 +101,28 @@ struct WebMarkReport: Equatable {
             origin: CGPoint(x: entry.rect.minX + offset.x, y: entry.rect.minY + offset.y),
             size: entry.rect.size, scale: 1,
             clip: CGRect(origin: .zero, size: page))
+    }
+
+    /// Where each mark is in a picture of the whole page `size` points in
+    /// all, at `perPixel` points a CSS pixel. That is the page zoom, never
+    /// the picture's width over `page`'s: `page` is as wide as the widest
+    /// of what is in it, hidden or not, and the picture is as wide as the
+    /// page is laid out (`WebMarkupSurface.whole`).
+    func placementsInPicture(perPixel: CGFloat, size: CGSize) -> [Int: MarkPlacement] {
+        var placements: [Int: MarkPlacement] = [:]
+        for number in marks.keys {
+            guard let inPage = placementInPage(of: number) else { continue }
+            placements[number] = MarkPlacement(
+                origin: CGPoint(x: inPage.origin.x * perPixel, y: inPage.origin.y * perPixel),
+                size: CGSize(width: inPage.size.width * perPixel, height: inPage.size.height * perPixel),
+                scale: perPixel, clip: CGRect(origin: .zero, size: size))
+        }
+        return placements
+    }
+
+    /// What was in view, in that picture.
+    func visibleInPicture(perPixel: CGFloat) -> CGRect {
+        CGRect(x: scroll.x * perPixel, y: scroll.y * perPixel,
+               width: view.width * perPixel, height: view.height * perPixel)
     }
 }

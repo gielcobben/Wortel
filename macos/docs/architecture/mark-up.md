@@ -203,7 +203,17 @@ window, scroll events handed to the web view):
 - **`createPDF` holds the whole page without scrolling it**: a 6,000pt page
   in 8 ms, one page, the part below the fold included, a fixed header once
   at the top. That is the picture of the whole. Stitching scrolled tiles,
-  as cmux does, was not needed.
+  as cmux does, was not needed. It is as wide as the page is laid out,
+  times the page zoom, and the marks are placed in it at the zoom
+  (`WebMarkReport.placementsInPicture`). Not at its width over the page's
+  as the report gives it, which is the wider of the root's and the body's:
+  with `html, body { overflow-x: hidden }` and a row wider than the view,
+  the PDF was 800 wide, the page said 1,200, and every mark and every
+  `bounds` was drawn two thirds of the way to the top-left (found in
+  review; measured 2026-11-27 at zoom 1 and 1.5, with and without the rule,
+  in standards and quirks mode: the PDF's width over the laid-out width
+  was the zoom each time). The wider width is kept for whether a sideways
+  scroll moves anything (`wouldScroll`).
 - **The world is separate**: a global set in it is `undefined` to the page,
   and so is its message handler. It reaches a same-site frame's document.
 

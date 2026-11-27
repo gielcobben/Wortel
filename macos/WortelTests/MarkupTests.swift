@@ -775,6 +775,24 @@ final class MarkupTests: XCTestCase {
         XCTAssertTrue(bottom.wouldScroll(deltaX: 0, deltaY: 12))
     }
 
+    func testThePictureOfTheWholeIsAtThePageZoomWhateverThePageHides() throws {
+        // `html, body { overflow-x: hidden }` and a 1,200px row in an 800pt
+        // view: the page says 1,200 wide, and its PDF is 800 (measured
+        // 2026-11-27). A mark at CSS 300, 250 is at 300, 250 in it.
+        let values = ([0, 100, 800, 600, 1200, 2100] + [1, 300, 150, 100, 50, 0, 0, 800, 600, 0])
+            .map { NSNumber(value: $0) }
+        let read = try XCTUnwrap(WebMarkReport(values))
+        let pictured = read.placementsInPicture(perPixel: 1, size: CGSize(width: 800, height: 2100))
+        XCTAssertEqual(pictured[1]?.origin, CGPoint(x: 300, y: 250))
+        XCTAssertEqual(pictured[1]?.size, CGSize(width: 100, height: 50))
+        XCTAssertEqual(pictured[1]?.clip, CGRect(x: 0, y: 0, width: 800, height: 2100))
+        XCTAssertEqual(read.visibleInPicture(perPixel: 1), CGRect(x: 0, y: 100, width: 800, height: 600))
+        // Zoomed to 150%: the PDF is 1.5 points a CSS pixel.
+        let zoomed = read.placementsInPicture(perPixel: 1.5, size: CGSize(width: 1200, height: 3150))
+        XCTAssertEqual(zoomed[1]?.origin, CGPoint(x: 450, y: 375))
+        XCTAssertEqual(zoomed[1]?.scale, 1.5)
+    }
+
     // MARK: - Pictures
 
     func testEachPenIsDrawnOnAPicture() throws {

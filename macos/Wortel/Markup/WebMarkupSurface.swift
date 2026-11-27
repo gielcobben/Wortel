@@ -278,6 +278,16 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
 
     func whole(_ marks: [Mark], reply: @escaping (MarkupWhole?) -> Void) {
         guard let webView else { return reply(nil) }
+        // The PDF's points per CSS pixel: the page zoom, as in the view
+        // (`zoom`). Not the PDF's width over the page's: the page's width
+        // is the wider of the root's and the body's, and `createPDF` lays
+        // out the root's alone. On a page that hides what is wider than the
+        // view (`html, body { overflow-x: hidden }` and a 1,200px row in an
+        // 800pt view), that put every mark and every `bounds` two thirds of
+        // the way to the top-left (found in review, 2026-11-27). Measured
+        // then: the PDF is the laid-out width times the zoom, at zoom 1 and
+        // 1.5, with and without the rule, in standards and quirks mode.
+        let perPixel = zoom
         // Where the marks are first, then the page: asked in this order so
         // the two describe the same moment as nearly as two calls can.
         ask("report()") { body in
@@ -291,17 +301,6 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
                     }
                     let box = page.getBoxRect(.mediaBox)
                     guard box.width >= 1, box.height >= 1 else { return reply(nil) }
-                    // The PDF's points per CSS pixel: 1 at actual size,
-                    // whatever page zoom makes of it otherwise.
-                    let perPixel = report.page.width >= 1 ? box.width / report.page.width : 1
-                    var placements: [Int: MarkPlacement] = [:]
-                    for number in report.marks.keys {
-                        guard let inPage = report.placementInPage(of: number) else { continue }
-                        placements[number] = MarkPlacement(
-                            origin: CGPoint(x: inPage.origin.x * perPixel, y: inPage.origin.y * perPixel),
-                            size: CGSize(width: inPage.size.width * perPixel, height: inPage.size.height * perPixel),
-                            scale: perPixel, clip: CGRect(origin: .zero, size: box.size))
-                    }
                     let held = PDFPage(page: page, box: box)
                     reply(MarkupWhole(
                         draw: { context in
@@ -309,9 +308,8 @@ final class WebMarkupSurface: NSObject, MarkupSurface, WKScriptMessageHandler {
                             context.drawPDFPage(held.page)
                         },
                         size: box.size,
-                        visible: CGRect(x: report.scroll.x * perPixel, y: report.scroll.y * perPixel,
-                                        width: report.view.width * perPixel, height: report.view.height * perPixel),
-                        placements: placements))
+                        visible: report.visibleInPicture(perPixel: perPixel),
+                        placements: report.placementsInPicture(perPixel: perPixel, size: box.size)))
                 }
             }
         }

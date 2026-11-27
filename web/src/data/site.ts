@@ -687,7 +687,7 @@ export const DOCS_SECTIONS: Section[] = [
         p: 'A bar at the bottom of the preview holds your note, with each mark in it as a chip, so the sentence is written around them. Return copies the note as plain text and turns mark-up off: the sentence, the path of a picture of each mark, the page or file it was about, a picture of the whole with every mark on it, and a file of details. Paste it to an agent, in this session or another. Nothing is typed into a terminal and nothing is sent.',
       },
       {
-        p: 'Esc stops and keeps the note, and deleting a chip removes its mark. The note is dropped when the preview goes elsewhere: another address, a reload, a file switched between Diff, Source and Rendered, a closed tab. The pictures stay on your Mac, in Wortel’s cache folder, and are removed after seven days.',
+        p: 'Esc stops and keeps the note, and deleting a chip removes its mark. The note is dropped when you take the preview elsewhere: another address, a reload, a file switched between Diff, Source and Rendered, a closed tab. A reload the page makes by itself, like a dev server’s after an agent saves a file, waits until you copy or press Esc, and Reload in the tab’s header shows a dot while it does. The pictures stay on your Mac, in Wortel’s cache folder, and are removed after seven days.',
       },
     ],
   },

@@ -1,14 +1,14 @@
 // The splits scene: one window and one story, told a chapter at a time, by
 // the film or by the visitor's own hands on the window's controls.
 //
-// The session is the agent building the landing page. ⌘D splits its
-// terminal, and a dev server is started in the new shell. A ⌘-click on the
-// address the server prints opens the page where a browser opens by itself,
-// in a column at the outer edge, and its tab is dragged from there to the
-// bottom edge of the server's split, which makes a split under it. Then ⇧⌘↩
-// gives the agent's terminal everything beside the sidebar, and ⇧⌘↩ again
-// shows all three. The window only ever goes forward: each chapter starts
-// where the one before it ended.
+// The session is the agent building the landing page. ⇧⌘D splits its
+// terminal down, and a dev server is started in the new shell under it. A
+// ⌘-click on the address the server prints opens the page where a browser
+// opens by itself, in a column at the outer edge, half the window, and its
+// tab is dragged from there into the agent's split, where it joins the
+// agent's tab. Then ⇧⌘↩ gives the page everything beside the sidebar, and
+// ⇧⌘↩ again shows both splits. The window only ever goes forward: each
+// chapter starts where the one before it ended.
 //
 // It moves the way the app does. A tab opened beside the terminal slides its
 // column in; a split somebody makes, a tab dropped on an edge and a zoom land
@@ -20,18 +20,19 @@ import { gsap } from 'gsap';
 import { Pointer, Sidebar, Terminal, fitTerminal, named, pressKeys, reduced, schemePictures, sessionScreen, wholeRows } from './app';
 import { film, type Film } from './film';
 
-/** The agent's terminal, the shell beside it, the browser. */
+/** The agent's split, the shell under it, the browser's column at the edge. */
 type Split = 'main' | 'side' | 'web';
 type Layout = {
   session: string;
   sidebar: 'sidebar' | 'hidden';
-  /** Whether the terminal is split: the shell beside it. */
+  /** Whether the terminal is split: the shell under it. */
   side: boolean;
-  /** Where the browser is: nowhere, in the column at the outer edge, or under the shell. */
-  web: 'none' | 'edge' | 'below';
+  /** Where the browser is: nowhere, in the column at the outer edge, or a tab
+   *  in the agent's split, in front of the agent's own. */
+  web: 'none' | 'edge' | 'tab';
   /** The shell: new, or with the dev server running in it. */
   shell: 'idle' | 'dev';
-  /** Whether the agent's terminal is zoomed. */
+  /** Whether the agent's split is zoomed. */
   zoom: boolean;
   /** Where the keyboard is. */
   focus: Split;
@@ -41,7 +42,7 @@ const HERO = 'Landing page hero';
 // The terminal alone, where the story starts, and how each chapter ends.
 const LONE: Layout = { session: HERO, sidebar: 'sidebar', side: false, web: 'none', shell: 'idle', zoom: false, focus: 'main' };
 const TWO: Layout = { ...LONE, side: true, shell: 'dev', focus: 'side' };
-const THREE: Layout = { ...TWO, web: 'below', focus: 'web' };
+const THREE: Layout = { ...TWO, web: 'tab', focus: 'main' };
 const BACK: Layout = { ...THREE, focus: 'main' };
 const ENDS = [TWO, THREE, BACK];
 // What "Zoom" is about, for a visitor who gets no motion: the still.
@@ -64,21 +65,27 @@ export function initPanes() {
   const div = (k: string) => win.querySelector<HTMLElement>(`[data-div="${k}"]`)!;
   const tpl = (k: string) => root.querySelector<HTMLTemplateElement>(`template[data-tpl="${k}"]`)!;
   const keys = (k: string) => root.querySelector<HTMLElement>(`[data-keys="${k}"]`)!;
-  const col = win.querySelector<HTMLElement>('[data-col]')!;
   const box = win.parentElement!;
   const mainBar = pane('terminal').querySelector<HTMLElement>('header')!;
   const devBar = pane('split').querySelector<HTMLElement>('header')!;
-  /** The pane each split is drawn by. */
-  const of = (k: Split) => pane(k === 'main' ? 'terminal' : k === 'side' ? 'split' : 'page');
+  const pageBar = pane('page').querySelector<HTMLElement>('header')!;
+  /** The pane each split is drawn by: the agent's split shows the page once it holds it. */
+  const of = (k: Split) => pane(k === 'main' ? (state.web === 'tab' ? 'page' : 'terminal') : k === 'side' ? 'split' : 'page');
+  /** The agent's split's row: the top left one. */
+  const head = () => (state.web === 'tab' ? pageBar : mainBar);
 
   // Show All Splits is the canvas's, drawn in the zoomed dev server split's
   // row. The app puts it in whichever row is zoomed, after the two split
-  // buttons: here that is the agent's terminal, so it is cloned into that row.
+  // buttons: here that is the agent's split, so it is cloned into the row of
+  // each thing that can be in front there.
   const drawn = named(devBar, 'Show All Splits')!;
-  const unzoom = drawn.cloneNode(true) as HTMLElement;
+  const unzooms = [mainBar, pageBar].map((bar) => {
+    const u = drawn.cloneNode(true) as HTMLElement;
+    u.hidden = true;
+    named(bar, 'Split buttons')!.append(u);
+    return u;
+  });
   drawn.hidden = true;
-  unzoom.hidden = true;
-  named(mainBar, 'Split buttons')!.append(unzoom);
 
   // ---- the session ------------------------------------------------------------
   // The one building the landing page, in its folder, as the film after this
@@ -149,6 +156,44 @@ export function initPanes() {
   const tabOfPage = pane('page').querySelector<HTMLElement>('[data-name="Browser tab"]')!;
   // Of the page's two captures, light and dark, only the one in use is fetched.
   schemePictures(pane('page'));
+  // Once the browser has the agent's split it is as wide as the window gives
+  // it, and the page is the capture made at that width (Panes.astro). Those
+  // are fetched the first time they are shown, the scheme in use only.
+  const dark = matchMedia('(prefers-color-scheme: dark)');
+  const wide = Array.from(named(pane('page'), 'Page')!.querySelectorAll<HTMLImageElement>(':scope > img')).map((narrow) => {
+    const img = narrow.cloneNode(false) as HTMLImageElement;
+    const isDark = img.classList.contains('dark:block');
+    img.removeAttribute('src');
+    delete img.dataset.src;
+    img.dataset.wide = isDark ? 'dark' : 'light';
+    narrow.after(img);
+    return img;
+  });
+  const loadWide = () => {
+    if (!pane('page').hasAttribute('data-wide')) return;
+    wide.forEach((img) => { if (!img.src && (img.dataset.wide === 'dark') === dark.matches) img.src = `/img/page-wide-${img.dataset.wide}.webp`; });
+  };
+  dark.addEventListener('change', loadWide);
+  // The agent's own tab, behind the page's once the page joins its split:
+  // a tab behind the front one, as the canvas draws one (no fill, the
+  // quieter glyph and title, the room kept for its close button).
+  const agentTab = (() => {
+    const t = document.createElement('div');
+    t.dataset.name = 'Agent tab';
+    t.className = 'flex h-7 shrink-0 items-center rounded-lg pl-[10px] pr-1';
+    const glyph = named(mainBar, 'Session tab')!.firstElementChild!.cloneNode(true) as HTMLElement;
+    glyph.querySelectorAll('.bg-sidebar-foreground').forEach((g) => g.classList.replace('bg-sidebar-foreground', 'bg-sidebar-accent-foreground'));
+    const label = document.createElement('span');
+    label.className = 'ml-[10px] mr-[2px] min-w-0 truncate text-[13px] leading-4 text-sidebar-accent-foreground';
+    label.textContent = HERO;
+    const end = document.createElement('div');
+    end.className = 'ml-1 flex';
+    end.append(Object.assign(document.createElement('div'), { className: 'size-5' }));
+    t.append(glyph, label, end);
+    t.hidden = true;
+    tabOfPage.before(t);
+    return { t, label };
+  })();
 
   const state: Layout = { ...LONE };
   const SIDEBAR = 234;
@@ -166,25 +211,32 @@ export function initPanes() {
   // (Running and "…", components/Window.astro): the app's trailing clearance.
   const END = 72;
 
-  // How wide the columns beside the agent's terminal are. A split made with
-  // ⌘D takes half of what is beside the sidebar. A tab opened at the outer
-  // edge gets the width that column opens at in the app, 440 and no more
-  // than half of the area (MainArea.swift, sizeNewLeaves), and the two splits
-  // already there share what is left. That is tight, as it is in the app, and
-  // it is why the tab is dragged somewhere better.
+  // How wide the column at the outer edge is. A tab opened there gets the
+  // width that column opens at in the app, 440 and no more than half of the
+  // area (MainArea.swift, sizeNewLeaves), and the agent's split and the shell
+  // under it keep the rest.
   const COLUMN = 440;
   const sizes = () => {
     const area = win.offsetWidth - (state.sidebar === 'hidden' ? 0 : SIDEBAR + 1);
-    if (state.web !== 'edge') return { col: Math.floor((area - 1) / 2), edge: 0 };
-    const edge = Math.min(COLUMN, Math.floor(area / 2));
-    return { col: Math.floor((area - edge - 2) / 2), edge };
+    return { edge: state.web === 'edge' ? Math.min(COLUMN, Math.floor(area / 2)) : 0 };
   };
 
   // ---- the leftmost row's extra buttons ----------------------------------------
-  // The agent's terminal is always the leftmost split.
-  const led = () => mainBar.querySelector<HTMLElement>(':scope > [data-lead]');
+  // The agent's split is always the leftmost along the top: its row is the
+  // agent's, or the page's once the page is in front there.
+  const led = () => head().querySelector<HTMLElement>(':scope > [data-lead]');
+  /** Carry the buttons to the agent's split's row when what is in front there changes. */
+  const seatLead = () => {
+    const h = head(), other = h === mainBar ? pageBar : mainBar;
+    const el = other.querySelector<HTMLElement>(':scope > [data-lead]');
+    if (!el) return;
+    h.prepend(el);
+    gsap.killTweensOf([h, other], 'paddingLeft');
+    gsap.set(h, { paddingLeft: 78 });
+    gsap.set(other, { clearProps: 'paddingLeft' });
+  };
   const lead = (on: boolean, d: number) => {
-    const h = mainBar;
+    const h = head();
     gsap.killTweensOf(h, 'paddingLeft');
     const rest = parseFloat(h.dataset.pad ||= getComputedStyle(h).paddingLeft);
     if (on) {
@@ -207,28 +259,32 @@ export function initPanes() {
   // front tabs are quiet: with three splits on screen, the front tab of each
   // split you are not in keeps its fill and gives up its emphasis.
   const lay = () => {
-    const z = state.zoom, edge = !z && state.web === 'edge', below = !z && state.web === 'below', side = !z && state.side;
-    gsap.killTweensOf([col, slot('edge'), devBar], 'width,paddingRight');
-    gsap.set(devBar, { clearProps: 'paddingRight' });
-    col.hidden = div('side').hidden = !side;
+    const z = state.zoom, tab = state.web === 'tab', edge = !z && state.web === 'edge', side = !z && state.side;
+    gsap.killTweensOf([slot('edge'), mainBar, pageBar], 'width,paddingRight');
+    gsap.set([mainBar, pageBar], { clearProps: 'paddingRight' });
+    slot('side').hidden = div('side').hidden = !side;
     slot('edge').hidden = div('edge').hidden = !edge;
-    slot('below').hidden = div('below').hidden = !below;
-    if (state.web !== 'none') slot(state.web).append(pane('page'));
+    if (state.web !== 'none') slot(tab ? 'main' : 'edge').append(pane('page'));
+    pane('page').hidden = state.web === 'none';
+    pane('terminal').hidden = tab;
+    agentTab.t.hidden = !tab;
+    pane('page').toggleAttribute('data-wide', tab && !phone.matches);
+    loadWide();
     const w = sizes();
     slot('edge').style.setProperty('--edge', `${w.edge}px`);
-    gsap.set(col, phone.matches ? { clearProps: 'width' } : { width: w.col });
     gsap.set(slot('edge'), phone.matches ? { clearProps: 'width' } : { width: w.edge });
-    slot('main').toggleAttribute('data-end', !side);
-    slot('side').toggleAttribute('data-end', !edge);
+    slot('main').toggleAttribute('data-end', !edge);
     slot('edge').toggleAttribute('data-end', true);
     slot('main').toggleAttribute('data-zoomed', z);
-    unzoom.hidden = !z;
-    // The shell keeps room for keys while it has its split's whole height.
-    shell.roomy(state.web !== 'below');
-    const open: Split[] = z ? ['main'] : ['main', ...(state.side ? ['side' as const] : []), ...(state.web !== 'none' ? ['web' as const] : [])];
-    for (const k of ['main', 'side', 'web'] as const) of(k).toggleAttribute('data-quiet', open.length > 2 && k !== state.focus);
-    // On a phone: how many splits wide the window is.
-    win.style.setProperty('--n', z ? '1' : edge ? '3' : '2');
+    unzooms.forEach((u) => (u.hidden = !z));
+    seatLead();
+    // The shell keeps room under its last line for the ⌘ shown over it.
+    shell.roomy(true);
+    const open: Split[] = z ? ['main'] : ['main', ...(state.side ? ['side' as const] : []), ...(edge ? ['web' as const] : [])];
+    for (const p of ['terminal', 'split', 'page']) pane(p).removeAttribute('data-quiet');
+    if (open.length > 2) for (const k of open) if (k !== state.focus) of(k).setAttribute('data-quiet', '');
+    // On a phone: how many columns wide the window is.
+    win.style.setProperty('--n', edge ? '2' : '1');
     press();
   };
   /** The short fade on what a cut brought. */
@@ -237,7 +293,7 @@ export function initPanes() {
   const focus = (to: Split) => { state.focus = to; lay(); };
 
   // ---- what each cause does ------------------------------------------------------
-  /** ⌘D: the terminal is split, a new shell beside it, and the keyboard is in it. */
+  /** ⇧⌘D: the terminal is split down, a new shell under it, and the keyboard is in it. */
   function split() {
     state.side = true; state.shell = 'idle'; state.focus = 'side';
     shell.idle();
@@ -248,34 +304,33 @@ export function initPanes() {
   /** A ⌘-click on the server's address: the page opens where a browser opens
    *  by itself, in a column at the outer edge, which slides in. */
   function open() {
-    const was = col.offsetWidth;
     state.web = 'edge'; state.focus = 'web';
     lay();
     shell.served(true);
     if (!phone.matches) {
       gsap.from(slot('edge'), { width: 0, ...FOLD });
-      gsap.from(col, { width: was, ...FOLD });
-      // The shell's row was the rightmost and no longer is: it gives the
+      // The agent's row was the rightmost and no longer is: it gives the
       // corner's room back on the same curve.
-      gsap.fromTo(devBar, { paddingRight: END }, { paddingRight: parseFloat(getComputedStyle(devBar).paddingRight), ...FOLD, clearProps: 'paddingRight' });
+      gsap.fromTo(mainBar, { paddingRight: END }, { paddingRight: parseFloat(getComputedStyle(mainBar).paddingRight), ...FOLD, clearProps: 'paddingRight' });
     }
     pan(true);
   }
-  /** The browser's tab let go on the bottom edge of the shell's split: a split there, holding it. */
+  /** The browser's tab let go over the middle of the agent's split: it joins
+   *  that split's tabs, in front, and its column at the edge is gone. */
   function drop() {
-    state.web = 'below'; state.focus = 'web';
+    state.web = 'tab'; state.focus = 'main';
     lay();
     arrive(pane('page'));
     pan(true);
   }
-  /** Zoom the agent's terminal over everything beside the sidebar, or show all the splits again. */
+  /** Zoom the agent's split over everything beside the sidebar, or show all the splits again. */
   function zoom(on: boolean, fade = true) {
     if (state.zoom === on) return;
     state.zoom = on;
     if (on) state.focus = 'main';
     lay();
     pan(false);
-    if (fade) arrive(...(on ? [pane('terminal').firstElementChild!] : [col, pane('terminal').firstElementChild!]));
+    if (fade) arrive(...(on ? [of('main').firstElementChild!] : [slot('side'), of('main').firstElementChild!]));
   }
   function sidebar(to: Layout['sidebar'], d = 1) {
     if (state.sidebar === to) return;
@@ -284,8 +339,8 @@ export function initPanes() {
     gsap.to(slot('sidebar'), { width: open ? SIDEBAR : 0, ...FOLD, duration: FOLD.duration * d });
     gsap.to(div('sidebar'), { autoAlpha: open ? 1 : 0, duration: 0.2 * d, delay: open ? 0 : 0.35 * d });
     lead(!open, d);
-    // The columns keep their shares of what is beside the sidebar.
-    if (!phone.matches) { const w = sizes(); gsap.to(col, { width: w.col, ...FOLD, duration: FOLD.duration * d }); gsap.to(slot('edge'), { width: w.edge, ...FOLD, duration: FOLD.duration * d }); }
+    // The column at the edge keeps its share of what is beside the sidebar.
+    if (!phone.matches) { const w = sizes(); gsap.to(slot('edge'), { width: w.edge, ...FOLD, duration: FOLD.duration * d }); }
   }
 
   function session(name: string) {
@@ -294,6 +349,7 @@ export function initPanes() {
     // Instant, as in the app: no fade, no slide.
     sb.select(name);
     title.textContent = name;
+    agentTab.label.textContent = name;
     if (!screens.has(name)) screens.set(name, sessionScreen(term, name));
     term.swap(screens.get(name)!);
   }
@@ -323,16 +379,15 @@ export function initPanes() {
     return (['session', 'sidebar', 'side', 'web', 'zoom'] as const).every((k) => to[k] === state[k]) && (!to.side || to.shell === state.shell);
   };
 
-  // ---- on a phone, the window pans to the split that has the keyboard ----------
-  // The stage shows one split's worth of the window: the agent's terminal,
-  // the column beside it (the shell, and the browser once it is under it),
-  // or the column at the edge while the browser is there. What is off the
-  // stage is not drawn (data-view, Panes.astro), so no strip of it shows in
-  // the stage's own margin.
+  // ---- on a phone, the window pans to the column that has the keyboard ---------
+  // The stage shows one column of the window: the agent's split with the
+  // shell under it, or the column at the edge while the browser is there.
+  // What is off the stage is not drawn (data-view, Panes.astro), so no strip
+  // of it shows in the stage's own margin.
   function pan(animate: boolean) {
     if (!phone.matches) { gsap.set(win!, { x: 0 }); win!.removeAttribute('data-view'); return; }
-    const view = state.zoom || state.focus === 'main' ? 'main' : state.focus === 'web' && state.web === 'edge' ? 'edge' : 'side';
-    const x = -(view === 'main' ? 0 : view === 'side' ? 1 : 2) * (box.clientWidth + 1);
+    const view = !state.zoom && state.focus === 'web' && state.web === 'edge' ? 'edge' : 'main';
+    const x = view === 'edge' ? -(box.clientWidth + 1) : 0;
     const moves = animate && !reduced() && Math.abs((gsap.getProperty(win!, 'x') as number) - x) > 0.5;
     if (moves) win!.removeAttribute('data-view');
     gsap.to(win!, { x, duration: moves ? 0.6 : 0, ease: 'power3.inOut', overwrite: 'auto', onComplete: () => win!.setAttribute('data-view', view) });
@@ -357,10 +412,10 @@ export function initPanes() {
   // The same for a control that shares its name with others, found by where
   // it is: every tab's close button is "Close" (so is a traffic light). A
   // split is gone when its last tab closes. `when` says while it can be
-  // pressed: the shell's can while nothing is under it.
+  // pressed.
   const PRESS_AT: [where: string, act: () => void, when?: () => boolean][] = [
-    ['[data-pane="split"] [data-name="Terminal tab"] [data-name="Close"]', () => { state.side = false; focus('main'); pan(true); }, () => state.web === 'none'],
-    ['[data-pane="page"] [data-name="Browser tab"] [data-name="Close"]', () => { state.web = 'none'; focus(state.side ? 'side' : 'main'); pan(true); }],
+    ['[data-pane="split"] [data-name="Terminal tab"] [data-name="Close"]', () => { state.side = false; focus(state.focus === 'side' ? 'main' : state.focus); pan(true); }],
+    ['[data-pane="page"] [data-name="Browser tab"] [data-name="Close"]', () => { const was = state.web; state.web = 'none'; focus(was === 'tab' || !state.side ? 'main' : 'side'); pan(true); }],
   ];
   function press() {
     for (const name of Object.keys(PRESS)) win!.querySelectorAll<HTMLElement>(`[data-name="${name}"]`).forEach((el) => (el.dataset.press = ''));
@@ -375,7 +430,7 @@ export function initPanes() {
   const landing = document.createElement('div');
   landing.className = 'landing';
   landing.hidden = true;
-  slot('side').append(landing);
+  slot('main').append(landing);
   let carried: HTMLElement | null = null;
   let take = 0;
   const shown: gsap.core.Timeline[] = [];
@@ -397,8 +452,15 @@ export function initPanes() {
    * the stage's own points, and within the part of the split the stage shows.
    */
   function gap(split: Split) {
-    const host = of(split), screen = host.querySelector<HTMLElement>('[data-name="Terminal"]') ?? host;
-    const b = box.getBoundingClientRect(), r = screen.getBoundingClientRect();
+    const host = of(split), screen = host.querySelector<HTMLElement>('[data-name="Terminal"]');
+    const b = box.getBoundingClientRect();
+    // A page has no lines to keep clear of: the middle of what the split shows of it.
+    if (!screen) {
+      const r = (named(host, 'Page') ?? host).getBoundingClientRect();
+      const left = Math.max(r.left, b.left), right = Math.min(r.right, b.right);
+      return { x: (left + right) / 2 - b.left, y: (r.top + r.bottom) / 2 - b.top };
+    }
+    const r = screen.getBoundingClientRect();
     const cs = getComputedStyle(screen);
     const rows = (Array.from(screen.children) as HTMLElement[])
       .map((el) => ({ el, r: el.getBoundingClientRect() }))
@@ -439,8 +501,8 @@ export function initPanes() {
     };
 
     if (i === 0) {
-      // ⌘D: the agent's terminal is split, and in the new shell, which opens
-      // in the session's folder, the dev server is started.
+      // ⇧⌘D: the agent's terminal is split down, and in the new shell, which
+      // opens in the session's folder, the dev server is started.
       let t = chord('split', 'main', 0.5, split);
       t = type((s) => shell.type(s), shell.RUN, t + 0.4);
       step(() => { shell.started(); state.shell = 'dev'; }, t + 0.15);
@@ -452,9 +514,8 @@ export function initPanes() {
     if (i === 1) {
       // Drag a tab: ⌘ and a click on the address the server printed opens
       // the page in a column at the edge. Its tab is picked up and carried
-      // to the bottom edge of the shell's split: over the split's middle all
-      // of it lights, over its bottom edge the half a new split would take,
-      // and let go there it makes that split.
+      // over the middle of the agent's split, which lights all of it, and
+      // let go there it joins that split's tabs.
       step(() => pointer.click(shell.link, TRAVEL), 0.3);
       chord('command', 'side', 0.3 + TRAVEL - BEAT, open);
       const grab = 0.3 + TRAVEL + 0.75, GRAB = 0.6, CARRY = 0.9;
@@ -470,35 +531,22 @@ export function initPanes() {
         carried.append(tabOfPage.cloneNode(true));
         pointer.el.prepend(carried);
         tabOfPage.style.opacity = '0.35';
-        // To the lower half of the shell's split. On a phone the stage
-        // follows the tab there, so that is the lower half of the stage.
-        const s = slot('side').getBoundingClientRect();
-        const to = phone.matches ? { x: box.clientWidth / 2, y: win!.offsetTop + win!.offsetHeight * 0.75 } : { x: s.right - b.left - 48, y: s.top - b.top + s.height * 0.75 };
+        // To the middle of the agent's split. On a phone the stage follows
+        // the tab there, so that is the middle of the stage's width.
+        const s = slot('main').getBoundingClientRect();
+        const to = { x: phone.matches ? box.clientWidth / 2 : s.left - b.left + s.width / 2, y: s.top - b.top + s.height / 2 };
         pointer.move(to, CARRY);
-        if (phone.matches) { state.focus = 'side'; pan(true); }
+        if (phone.matches) { state.focus = 'main'; pan(true); }
       }, lift);
-      step(() => { landing.removeAttribute('data-edge'); landing.hidden = false; }, lift + CARRY * 0.45);
-      step(() => landing.setAttribute('data-edge', 'down'), lift + CARRY * 0.75);
+      step(() => { landing.removeAttribute('data-edge'); landing.hidden = false; }, lift + CARRY * 0.6);
       const let_go = lift + CARRY + 0.1;
       step(() => { carried?.remove(); carried = null; landing.hidden = true; tabOfPage.style.opacity = ''; drop(); last = THREE; }, let_go);
       step(() => pointer.hide(), let_go + 0.4);
       return { start: TWO, beats, length: let_go + 0.2 };
     }
-    // Zoom: back in the agent's terminal, ⇧⌘↩ gives it everything beside the
-    // sidebar, and ⇧⌘↩ again shows all three.
-    let t = 0.3;
-    if (phone.matches) {
-      // The stage is on the column: it goes back to the terminal.
-      step(() => { focus('main'); pan(true); }, t);
-      t += 0.7;
-    } else {
-      // A click in the terminal, beside where the keys will show.
-      step(() => { const at = gap('main'); pointer.click({ x: at.x + 120, y: at.y }, TRAVEL); }, t);
-      step(() => focus('main'), t + TRAVEL);
-      step(() => pointer.hide(), t + TRAVEL + 0.25);
-      t += TRAVEL + 0.2;
-    }
-    t = chord('zoom', 'main', t, () => zoom(true));
+    // Zoom: the page has the keyboard where it was dropped, ⇧⌘↩ gives it
+    // everything beside the sidebar, and ⇧⌘↩ again shows both splits.
+    let t = chord('zoom', 'main', 0.5, () => zoom(true));
     t = chord('zoom', 'main', t + HELD, () => { zoom(false); last = BACK; });
     return { start: THREE, beats, length: t + 0.2 };
   }
@@ -524,7 +572,7 @@ export function initPanes() {
       else if (!animate) arrange(LONE);
       else play(i, f);
     },
-  // With no motion the still is the busiest one: all three splits.
+  // With no motion the still is the busiest one: both splits, the page in front.
   })), 1);
 
   // Pressing something pauses the film, wherever it has got to.

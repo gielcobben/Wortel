@@ -59,6 +59,10 @@ const latest = await latestRelease();
      the "+" and the split buttons: at the canvas's 360 the row is 4 short and
      the tabs behind the front one lose the room for their close buttons. */
   .hero :global([data-name="Side column slot"]) { width: 336px; }
+  /* The list of changes and the diff share the column's height, half each:
+     the canvas gives the list a fixed basis and the diff the rest. */
+  .hero :global([data-name="Changes pane"] [data-name="Changes"] > [data-name="List"]),
+  .hero :global([data-name="Changes pane"] [data-name="Changes"] > [data-name="Diff"]) { flex: 1 1 0; height: auto; }
   @media (max-width: 900px) { .hero { padding-top: 104px; } .top { margin-bottom: 48px; } }
   /* No controls over this window: on a phone the photo keeps a strip above it. */
   @media (max-width: 760px) { .hero :global(.stage.first) { padding-top: 32px; } }

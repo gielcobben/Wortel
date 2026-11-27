@@ -3566,3 +3566,12 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   What was there before was wrong, not just limited: a mark drawn in one
   window was tied through the other's table, and closing the newer layer
   left the older one making no marks (`macos/docs/architecture/mark-up.md`).
+- **2026-11-27. The review for large work is `/code-review max`, not the
+  cloud review.** The rule of 2026-11-26 made the multi-agent cloud review
+  (`/code-review ultra`) required for anything large or touching privacy,
+  telemetry or a page's script, without saying that it is billed: a few free
+  runs per account, then about $5 to $25 a run in usage credits. Made a
+  standing rule, that is a charge on most merges, and agents were told to
+  ask for it. `max` runs in the session on normal usage, and it is what the
+  2026.48.3 beta was checked with (20 fixes came out of it). The cloud review
+  stays something the owner may start, never something an agent asks for.

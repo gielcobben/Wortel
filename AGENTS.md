@@ -124,9 +124,10 @@ cut from `main`. There is no dev, next or canary branch
   - A small fix: `./scripts/check.sh`, and you read your own diff.
   - A feature: `/code-review` in a session, and the owner has used the build.
   - A large feature, or anything that touches privacy, telemetry or a script
-    put into a web page: also the multi-agent cloud review, which only the
-    owner can start (`/code-review ultra`). Ask for it, and don't merge
-    without it.
+    put into a web page: `/code-review max` in a session, and its findings
+    fixed or answered before the merge. Never ask for the cloud review
+    (`/code-review ultra`): it is billed per run. The owner starts it when
+    they want it.
   - The keeper, saving or resume: that review, `docs/incidents.md` and the
     keeper's scripts, and it reaches people as a beta first.
 - **`main` is where things come together**, not what people run. It is

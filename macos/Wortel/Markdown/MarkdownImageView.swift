@@ -27,6 +27,9 @@ struct MarkdownImageView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var loaded: NSImage?
+    /// The file is there and was not a picture when read: its chip, not
+    /// the room a picture of its old size would take.
+    @State private var unreadable = false
     @State private var hovering = false
 
     /// A `<picture>` gets to be right about which background it is on. Written
@@ -69,7 +72,7 @@ struct MarkdownImageView: View {
                 .resizable()
                 .frame(width: fitted(loaded.size).width, height: fitted(loaded.size).height)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        } else if let file, let size = Self.size(of: file) {
+        } else if !unreadable, let file, let size = Self.size(of: file) {
             // The room the picture will take, before it is read. The stack is
             // lazy: this block is built again each time it comes back into
             // view, and scrolling up it is built above the reader. Grown there
@@ -144,6 +147,8 @@ struct MarkdownImageView: View {
     /// document with several of them would otherwise pause the scroll it appears
     /// in. `NSImage` is built here, on main, from bytes that arrive Sendable.
     private func load() async {
+        // Another source (the appearance changed) is judged on its own.
+        unreadable = false
         guard let file else {
             loaded = nil
             return
@@ -151,14 +156,21 @@ struct MarkdownImageView: View {
         let data = await Task.detached(priority: .userInitiated) {
             try? Data(contentsOf: file, options: .mappedIfSafe)
         }.value
-        guard let data else {
+        guard let data, let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else {
+            // Its size is kept from when it was a picture, and a size is
+            // what draws the room for one: a file rewritten as something
+            // else stayed an empty box, in this build and every one after.
+            // A size of nothing is the chip from the next build on.
             loaded = nil
+            unreadable = true
+            Self.sizes[file] = .zero
             return
         }
-        loaded = NSImage(data: data)
+        loaded = image
+        unreadable = false
         // What was read wins over the header: the file may have been
         // rewritten since, and the next build should be this size.
-        if let loaded, loaded.size.width > 0 { Self.sizes[file] = loaded.size }
+        Self.sizes[file] = image.size
     }
 }
 

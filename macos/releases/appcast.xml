@@ -3,6 +3,44 @@
     <channel>
         <title>Wortel</title>
         <item>
+            <title>2026.48.3</title>
+            <pubDate>Fri, 27 Nov 2026 10:47:04 -0500</pubDate>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>2026.48.3</sparkle:version>
+            <sparkle:shortVersionString>2026.48.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    margin: 0; padding: 12px 14px;
+    color: #16171b; background: transparent;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8ea; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .date { font-size: 11px; opacity: 0.55; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 18px; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  code {
+    font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 1px 4px; border-radius: 4px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
+  a { color: #0070f5; }
+</style>
+<h1>Split it anywhere, and mark up what you see</h1>
+<p class="date">Wortel 2026.48.3 &middot; 2026-11-27</p>
+<p><strong>Splits, each with its own tabs.</strong> ⌘D splits the split you are in to the right and ⇧⌘D splits it down, each with a new terminal. A tab let go on the edge of a split makes a new split there, and let go on its middle moves into it. Changes and Files still open beside the terminal with ⌥⌘B, and ⌘J still takes you to a terminal under the main one. ⇧⌘↩ zooms the split you are in to the whole window and back, and View ▸ Reset Layout puts every tab back where a session starts with it, closing nothing.</p>
+<p><strong>A tab that asks what it should be.</strong> The + in a split’s row, or ⌥⌘T, opens an empty tab listing Terminal, Browser, Changes, History and Files. Click one or press its first letter. ⌘] and ⌘[ walk the splits, ⌃⌥⌘ and an arrow goes to the split on that side, and ⌃⌘ and an arrow moves the tab in front there.</p>
+<p><strong>Mark up what you see.</strong> Mark Up (⇧⌘M) works over a page in a browser tab, a file’s source, its diff, rendered Markdown and an image. Click an element of a page, or draw around anything with a box, a pen, an arrow or a highlighter. Your note goes in a bar at the bottom, with each mark in it as a chip. Return copies it as plain text with a picture of each mark, ready to paste to an agent. Nothing is typed or sent for you.</p>
+<p><strong>The browser tab grew up.</strong> ⌘F finds in a page, with Safari’s keys. A download is saved to Downloads, named .download until it is whole. It never replaces a file and is never opened, and a button in the tab’s header lists what was saved. An .html file opens as the page it makes, reloads when the file changes, and ⌥⌘U shows its source.</p>
+<p><strong>Smaller things.</strong> <code>wortel split</code> opens a terminal in a split beside a session, and <code>wortel split down -- &#x3C;command></code> runs a dev server or a log there. A session made with <code>wortel new</code> is now filed right after the session that ran it. A slow start shows a spinner on its empty page. A beta now says “Wortel Beta” in the menu bar, the Dock and Finder, so you can tell it from the regular app. Settings ▸ Beta updates takes this Mac off the beta channel.</p>
+<p><strong>Usage data.</strong> Wortel now counts when mark-up is turned on and when a note is copied: over which kind of preview, roughly how many marks, and whether one was a picked element. It also counts <code>wortel split</code>, and a tab opened in a split. Never what was marked, a word of the note, or any file, folder or repository name.</p>]]></description>
+            <enclosure url="https://updates.wortel.sh/Wortel-2026.48.3.zip" length="29856352" type="application/octet-stream" sparkle:edSignature="9KQZ53rsUR5Y1rDSZvKCRclKjD+DAUwbVJOybr7j1kXI1DQAN5XhF2CAXPffj3yafFByH0FbwFPUJTV0DMyQDA=="/>
+        </item>
+        <item>
             <title>2026.48.2</title>
             <pubDate>Fri, 27 Nov 2026 09:56:13 -0500</pubDate>
             <sparkle:channel>beta</sparkle:channel>

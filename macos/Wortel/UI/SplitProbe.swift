@@ -157,6 +157,23 @@ enum SplitProbe {
                 entry["landed"] = "\n      " + samples.joined(separator: "\n      ")
                 trail.append(entry)
                 continue
+            case "hover-split":
+                // The row's Split Right with its hover lit, clicked: the
+                // click moves the button, and no pointer is over it here, so
+                // the hover has to be out again afterwards.
+                let region = git.lastRegion
+                let bar = controller.split.mainArea?.rows.first { $0.region == region }?.strip.superview as? PaneBar
+                bar?.splitRight.probeEnter()
+                let before = bar?.splitRight.probeHoverIsLit ?? false
+                bar?.splitRight.performClick(nil)
+                await pause(1.0)
+                let after = bar?.splitRight.probeHoverIsLit ?? false
+                var entry = state(manager, controller)
+                entry["step"] = step
+                entry["landed"] = bar == nil ? "FAULT no row" : !before ? "FAULT the hover did not light"
+                    : after ? "FAULT the hover is still lit after the click" : "lit, clicked, out again"
+                trail.append(entry)
+                continue
             case let typed where typed.hasPrefix("type:"):
                 // A plain key to whatever has the keyboard in the window, as
                 // the window would hand it on. Never posted to the system.

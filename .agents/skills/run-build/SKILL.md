@@ -18,6 +18,12 @@ xcodebuild -project Wortel.xcodeproj -scheme Wortel -configuration Debug build
 Don't add `clean`. If the link fails on a tree-sitter scanner symbol, run the
 same build again.
 
+**Build `main`, or a branch rebased on today's `main`**, for the owner's daily
+app. Never a branch that is behind `main`: where Debug builds share the usual
+data folder, an older build saves `sessions.json` back without the fields it
+doesn't know, and the owner's layout goes with them. Rebase first
+(`git fetch origin main && git rebase origin/main`).
+
 **Which Wortel a Debug build is.** On a Mac where
 `~/Library/Application Support/Wortel/debug-builds-share-this-folder` exists,
 a Debug build is the daily Wortel: the usual data folder and the bundle id

@@ -2809,6 +2809,23 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   deploy are untouched by a beta. Not built: builds on every commit (Ghostty's
   "tip"), which would need signing and notarizing in CI for a handful of
   testers.
+- **2026-11-26. Work goes from its branch to `main`, and releases and betas
+  are cut from `main`. No dev, next or canary branch.** Asked whether one
+  was needed between the branches and `main`. One maintainer with many
+  agents would merge every feature twice, keep the two in step, meet
+  conflicts in this file (every branch adds to it) and in the appcast, and
+  give unchecked work a second place to wait and go stale. `main` already
+  is where things come together, and what stands between it and people is
+  the release checklist ("the build has been used"), not a branch. Ghostty
+  and Zed cut their early channels from `main` too. So the safety goes into
+  the review before `main`, sized to the change: the multi-agent cloud
+  review for anything large or touching privacy, telemetry or a page's
+  script, always, which the owner starts. `release.sh` refuses to publish
+  from another branch (`--allow-branch` for an emergency): a beta cut from
+  a branch is taken away from its testers by the next regular release. No
+  regular release goes out while a beta is out. A feature branch may be
+  pushed without asking, since it reaches nobody; `main`, a release and a
+  deploy are still asked for each time.
 
 ## Telemetry and privacy
 

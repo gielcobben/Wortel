@@ -101,7 +101,38 @@ number of sessions.
 delete, Trash rather than `rm`, and when unsure, keep the thing.
 
 **Publishing is never done unasked.** A release, a deploy of the site or the
-Worker, a push: each needs to be asked for, each time.
+Worker, a push to `main`: each needs to be asked for, each time. A feature
+branch may be pushed without asking: it reaches nobody, and it is a copy of
+the work off this Mac.
+
+## How work reaches people
+
+A branch, the review its size calls for, `main`, then a release, or a beta,
+cut from `main`. There is no dev, next or canary branch
+(`docs/decisions.md`, 2026-11-26).
+
+- **Each piece of work is a branch of its own**, rebased on `main` before it
+  is tried or merged. Pushing it runs no CI: `.github/workflows/macos.yml`
+  runs on pull requests and on `main`. A branch that wants CI gets a draft
+  pull request.
+- **The review before `main` goes by what the change touches.**
+  - A small fix: `./scripts/check.sh`, and you read your own diff.
+  - A feature: `/code-review` in a session, and the owner has used the build.
+  - A large feature, or anything that touches privacy, telemetry or a script
+    put into a web page: also the multi-agent cloud review, which only the
+    owner can start (`/code-review ultra`). Ask for it, and don't merge
+    without it.
+  - The keeper, saving or resume: that review, `docs/incidents.md` and the
+    keeper's scripts, and it reaches people as a beta first.
+- **`main` is where things come together**, not what people run. It is
+  released once the owner has used it (the `release` skill's checklist).
+- **Releases and betas are cut from `main`**, and `release.sh` refuses
+  another branch. While a beta is out, which is a few days, no regular
+  release goes out: one cut from `main` would carry the beta's change to
+  everyone before the testers have had it.
+- **The owner's daily build is `main`, or a branch rebased on today's
+  `main`.** Never a branch that is behind it: an older build saves the
+  session file back without the fields it doesn't know.
 
 ## Working in this checkout
 

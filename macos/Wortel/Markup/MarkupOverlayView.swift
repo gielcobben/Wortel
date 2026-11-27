@@ -51,6 +51,14 @@ final class MarkupOverlayView: NSView {
     /// the session's until it is tied again or let go.
     var live: Mark?
 
+    /// The drawing drawn where the hand has it rather than where its
+    /// content is: carried with the Move tool, or let go and not yet tied
+    /// again. `place` leaves it alone.
+    var held: Int?
+    /// Mark-up went off and the layer is fading out (`leave`). It is still
+    /// in its window for that long, and takes no part in anything.
+    private(set) var isLeaving = false
+
     private weak var followed: NSView?
     private var isShowing = false
     /// The mark whose chip the pointer is on, shown by the others standing
@@ -144,7 +152,7 @@ final class MarkupOverlayView: NSView {
     // neither back: a layer put back showed an empty note that took no
     // typing and no chips, and stayed the size it was.
     private func show() {
-        guard !isShowing else { return }
+        guard !isShowing, !isLeaving else { return }
         isShowing = true
         session.overlay = self
         noteBar.attach()
@@ -184,6 +192,13 @@ final class MarkupOverlayView: NSView {
         moving = nil
         resizing = nil
         live = nil
+        // Drawn where the hand had it, by a transform nothing else would
+        // take off: back where the session has it if the layer returns.
+        if let held {
+            markLayers[held]?.setAffineTransform(.identity)
+            selectionLayer.setAffineTransform(.identity)
+        }
+        held = nil
         // Only the layer the session knows as its own lets go: a tab moving
         // rows has a new one before the old one is taken down.
         guard session.overlay === self else { return }
@@ -210,6 +225,10 @@ final class MarkupOverlayView: NSView {
 
     /// Mark-up went off: fade out, then go.
     func leave() {
+        // Faded is not gone: a click on the page in those moments came
+        // here, was swallowed, and over a page picked an element for a
+        // mark the session would never add.
+        isLeaving = true
         hide()
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, superview != nil else {
             return removeFromSuperview()
@@ -301,7 +320,9 @@ final class MarkupOverlayView: NSView {
         // somewhere else for a quarter of a second.
         CATransaction.setDisableActions(true)
         for mark in session.marks {
-            guard let layer = markLayers[mark.number] else { continue }
+            // Content that moves under a drawing in hand moves under it:
+            // the drawing stays with the pointer.
+            guard let layer = markLayers[mark.number], mark.number != held else { continue }
             if let placement = surface.placement(of: mark.number) {
                 layer.isHidden = false
                 layer.place(live?.number == mark.number ? live ?? mark : mark, at: placement, in: bounds,

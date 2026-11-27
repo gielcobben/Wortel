@@ -213,7 +213,16 @@ final class MarkupNoteBar: NSView, NSTextViewDelegate {
     /// The view is leaving: the note stays, its text view does not.
     func detach() {
         session.text.removeLayoutManager(textLayout)
-        // The undo stack points into the text view that is going.
+        // A tab moving rows has its new bar on the note before this one
+        // goes, and clearing here took away the undo it was already using.
+        // A text view's undo edits the text through whichever text view is
+        // on it when it runs (measured 2026-11-27: after the first of two
+        // left, undo went through the second and asked nothing of the
+        // first), so the stack is kept while another bar is on the note.
+        // With none it goes, as it always did: an undo kept with no text
+        // view on the note at all, for a bar that comes later, was not
+        // measured.
+        guard session.text.layoutManagers.isEmpty else { return }
         session.undo.removeAllActions()
     }
 

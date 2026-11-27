@@ -7,12 +7,14 @@ import AppKit
 /// this hands the mouse to it.
 extension MarkupOverlayView {
     /// The drawing in hand: which, where the press began, how far it has
-    /// been carried, and whether it has been at all.
+    /// been carried, and its ink in the view when it began to be, which is
+    /// where it is let go from: what it is on may move meanwhile.
     struct Carry {
         let mark: Mark
         let from: CGPoint
         var offset = CGSize.zero
-        var carried = false
+        var points: [CGPoint]?
+        var carried: Bool { points != nil }
     }
 
     /// A handle in hand: whose, which, the drawing's points in the view
@@ -55,7 +57,12 @@ extension MarkupOverlayView {
             // is let go. Until the press has travelled it is a click.
             let offset = CGSize(width: point.x - carry.from.x, height: point.y - carry.from.y)
             guard carry.carried || hypot(offset.width, offset.height) >= MarkStroke.clickTravel else { return true }
-            carry.carried = true
+            if carry.points == nil {
+                guard case .area(_, let ink) = carry.mark.shape,
+                      let placement = surface.placement(of: carry.mark.number) else { return true }
+                carry.points = ink.map(placement.point)
+                held = carry.mark.number
+            }
             carry.offset = offset
             moving = carry
             let shift = CGAffineTransform(translationX: offset.width, y: offset.height)
@@ -85,7 +92,7 @@ extension MarkupOverlayView {
         if let carry = moving {
             moving = nil
             cursor(at: point).set()
-            if carry.carried { move(carry.mark, by: carry.offset) }
+            if carry.carried { move(carry) }
             return true
         }
         if let resize = resizing {
@@ -130,14 +137,14 @@ extension MarkupOverlayView {
         return session.marks.reversed().first(where: under)
     }
 
-    /// Let go of a drawing somewhere else.
-    private func move(_ mark: Mark, by offset: CGSize) {
-        guard case .area(_, let ink) = mark.shape, abs(offset.width) + abs(offset.height) >= 1,
-              let placement = surface.placement(of: mark.number) else { return settle(mark.number) }
-        retie(mark, to: ink.map { point -> CGPoint in
-            let placed = placement.point(point)
-            return CGPoint(x: placed.x + offset.width, y: placed.y + offset.height)
-        })
+    /// Let go of a drawing somewhere else: where it was drawn under the
+    /// pointer, whatever its content did meanwhile.
+    private func move(_ carry: Carry) {
+        let offset = carry.offset
+        guard let points = carry.points, abs(offset.width) + abs(offset.height) >= 1 else {
+            return settle(carry.mark.number)
+        }
+        retie(carry.mark, to: points.map { CGPoint(x: $0.x + offset.width, y: $0.y + offset.height) })
     }
 
     /// A drawing moved or resized to `points` in the view: it is tied to
@@ -160,6 +167,7 @@ extension MarkupOverlayView {
         markLayers[number]?.setAffineTransform(.identity)
         selectionLayer.setAffineTransform(.identity)
         CATransaction.commit()
+        if held == number { held = nil }
         if live?.number == number { live = nil }
         place()
     }
@@ -213,6 +221,8 @@ extension MarkupOverlayView {
 
     /// The selection where its drawing is now.
     func placeSelection() {
+        // In hand, it goes with its drawing, by the same transform.
+        if held != nil, held == selected { return }
         guard let selected, let mark = live?.number == selected ? live : selectedMark,
               case .area(_, let ink) = mark.shape, let placement = surface.placement(of: selected) else {
             selectionLayer.isHidden = true

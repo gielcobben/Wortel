@@ -91,8 +91,11 @@ All of it is in `Wortel/Markup/`.
 | A mark's row or block known again after a rewrite | `MarkAnchor.swift` |
 
 The tests are `WortelTests/MarkupTests.swift` (the parts with no window in
-them) and `WortelTests/MarkupFileTests.swift` (the file adapters against
-the real views, in a window that is never shown). A tested file is listed
+them), `WortelTests/MarkupFileTests.swift` (the file adapters against
+the real views, in a window that is never shown) and
+`WortelTests/MarkupOverlayTests.swift` (the layer, its bar and its session
+over a preview that answers as the test says, the mouse handed to the
+layer). A tested file is listed
 in the test target in `project.yml`.
 
 ## A page
@@ -405,6 +408,12 @@ this, scrolling with mark-up on ended it. A new path or query ends it.
 Esc and a copy only turn it off (`turnOff`): the note is kept, and turning
 mark-up on again finds it. ⌘A then ⌫ in the note clears it.
 
+Turned off over a page, the layer fades out (`leave`) and is in its window
+for that moment, taking no click (`isLeaving`: no hit, no press). A click
+on the page then came to the layer, was swallowed, and picked an element
+for a mark the session would never add, which the page's script kept
+(found in review, shown in `MarkupOverlayTests`, 2026-11-27).
+
 A copy still being made when mark-up ends lands nowhere, even once a
 newer copy has started: each copy takes a number and `end` moves it on.
 
@@ -610,6 +619,24 @@ the note copies, ⇧Return and ⌥Return make a line, Esc goes back one step (se
 "The tools"). Pasting is plain text only, and Writing Tools are off: both
 would put a chip in the text with no mark behind it, or take one out.
 
+Nothing can be dropped into the note, which is what keeps a chip from
+being dragged into words. A text view takes a drop only in a type it both
+reads and lists as a drop type, and the note reads words as
+`public.utf8-plain-text` where the system's list names them by the older
+`NSStringPboardType`. So a selection with a chip in it, dragged within the
+note, slides back; dragged out it is words, as ⌘C makes them. Checked on
+2026-11-27 with the real bar, its own `dragSelection` and drop methods:
+nothing changed. With drops let in, the chip landed as its name and its
+mark was gone, so a change that lets drops in has to carry the chip.
+
+The undo stack outlives a bar while another bar is on the note. A tab
+moving rows has its new layer up before the old one goes, and the old
+bar's going cleared the undo the new bar was already using. A text view's
+undo edits the text through whichever text view is on it when it runs:
+measured 2026-11-27 with two text views on one text and zombies on, undo
+went through the second after the first had gone and asked nothing of the
+first. The last bar to go still clears it.
+
 ## A mark that has left the view leaves a pin
 
 A badge sits on its mark's corner, and is held inside what the mark may
@@ -708,7 +735,15 @@ comes back.
   go, it is tied again to what is under it there (the same call that tied
   it first) and pictured again; it keeps its number and its chip. A picked
   element is not moved: it is where its element is. With Move in hand the
-  pointer is the arrow, and a hand over a drawing.
+  pointer is the arrow, and a hand over a drawing. While it is carried,
+  what moves under it moves under it: the drawing stays with the pointer
+  and is let go where it was drawn (`MarkupOverlayView.held`, which
+  `place` leaves alone). It jumped back by however far it had been
+  carried whenever the marks were placed again mid-drag, a page's report
+  or the note growing a line, since setting a transformed layer's frame
+  takes the transform off its position; and let go after the content had
+  moved, it landed where the content took it (found in review, shown in
+  `MarkupOverlayTests`, 2026-11-27).
 - **Move also selects and resizes.** A press on a drawn mark selects it,
   and nothing about it changes until the press has travelled 4pt, so a
   click never nudges it. A box, a pen line or a highlight shows a 1pt

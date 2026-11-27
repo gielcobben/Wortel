@@ -54,7 +54,11 @@ final class MarkLayer: CALayer {
         // The layer is the part of the view the mark may show in; what it
         // draws is placed in the view's own coordinates, moved back by that.
         let clip = placement.clip
-        frame = clip
+        // Not `frame`: on a layer with a transform (the Move tool's, while
+        // a drawing is carried) the frame is the moved box, and setting it
+        // takes the move back off the position.
+        bounds = CGRect(origin: .zero, size: clip.size)
+        position = clip.origin
         cut.frame = bounds
         let offset = CGAffineTransform(translationX: -clip.minX, y: -clip.minY)
         let box = placement.box(of: mark.shape)

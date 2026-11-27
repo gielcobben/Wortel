@@ -89,7 +89,14 @@ extension MarkupOverlayView {
 
     // MARK: - The press
 
+    // Fading out, the layer is not there: what is under it takes the
+    // pointer, as it will once the layer has gone.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isLeaving ? nil : super.hitTest(point)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        guard !isLeaving else { return }
         // The keyboard back to the note, if it wandered to the header.
         if window?.firstResponder !== noteBar.textView { noteBar.focus() }
         showHover(nil)

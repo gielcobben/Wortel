@@ -122,12 +122,11 @@ text the row is `.row12.read`: the name is smaller (20 / 28) in columns 1 to
 3, and the text has columns 4 to 11.
 
 - **On the homepage** a section is `components/Section.astro`. The name is a
-  heading in two lines, the claim in ink and its other half in grey; the right
-  column is one short paragraph and a link to the part of `/docs` that goes
-  further. A section whose feature has a page of its own (`page` in `HOME`:
-  splits, mark-up) links to it under the heading instead, and one that only
-  the beta has says "Beta" over its heading, as the feature pages do over
-  their name. Under the row, at full width, comes what the section shows: a
+  heading in two lines, the claim in ink and its other half in grey; under it
+  is the section's link, to the feature's own page (`/layouts`, `/mark-up`)
+  or to the part of `/docs` that goes further; the right column is one short
+  paragraph. A section that only the beta has says "Beta" over its heading,
+  as the feature pages do over their name. Under the row, at full width, comes what the section shows: a
   `Stage` (a part of the foggy lake with the chapter tabs and a round
   play/pause button over the app window at its natural proportions) or the
   bento. The questions are the exception: they are a column themselves, so
@@ -266,7 +265,9 @@ when) and its length, so a chapter's hold is never a number kept beside the
 script. The session is the one building the landing page ("Landing page
 hero", in `web`), the same one the mark-up film after it picks up.
 - **⇧⌘D**: the agent's terminal alone. ⇧⌘D is pressed and the window is
-  two splits, the new one under it a shell in the session's folder; `npm
+  two splits, the new one under it a shell in the session's folder (240 of
+  the window's 704 tall, as a divider dragged down leaves it: at half, most
+  of it was empty); `npm
   run dev` is typed into it and the server's output arrives. 3 s.
 - **Drag a tab**: ⌘ and a click on the address the server printed opens the
   page where a browser opens by itself, in a column that slides in at the

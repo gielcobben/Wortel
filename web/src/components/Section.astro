@@ -3,9 +3,9 @@
 // .row12), then what the section shows.
 //
 // The row is a hairline, a heading in two lines at the left (the claim in
-// ink, its other half in grey) and one short paragraph with a link at the
-// right. A section whose feature has a page of its own (`page`) links to it
-// under the heading, and one that only the beta has says "Beta" over it. They stay put while a film below plays. What the section shows (a
+// ink, its other half in grey) with the section's link under it, and one
+// short paragraph at the right. A section that only the beta has says
+// "Beta" over its heading. They stay put while a film below plays. What the section shows (a
 // stage, the bento, a table) is the slot, at the full width of the page.
 //
 // With `aside`, what it shows is a column of its own (the questions): the
@@ -18,16 +18,15 @@ interface Props {
   title: string;
   tone?: string;
   body?: string;
+  /** Where it goes further, linked under the heading. */
   link?: readonly [text: string, href: string];
-  /** The feature's own page, linked under the heading. */
-  page?: readonly [text: string, href: string];
   aside?: boolean;
   /** Only in the beta: a small "Beta" over the heading (data/site.ts, BETA). */
   beta?: boolean;
 }
 import { inline } from '../data/inline';
 import Beta from './Beta.astro';
-const { id, title, tone, body, link, page, aside = false, beta = false } = Astro.props;
+const { id, title, tone, body, link, aside = false, beta = false } = Astro.props;
 const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 ---
 <section class="sec" id={id}>
@@ -37,17 +36,11 @@ const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true
       <div class:list={['k', { stick: aside }]}>
         {beta && <Beta />}
         <h2 class="h2">{title} {tone && <span class="tone">{tone}</span>}</h2>
-        {page && <a class="arrow" href={page[1]}>{page[0]}<Fragment set:html={chevron} /></a>}
         {aside && body && <p class="copy" set:html={inline(body)} />}
-        {aside && link && <a class="arrow" href={link[1]}>{link[0]}<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>}
+        {link && <a class="arrow" href={link[1]}>{link[0]}<Fragment set:html={chevron} /></a>}
       </div>
       <div class="v">
-        {aside ? <slot /> : (
-          <>
-            {body && <p class="copy" set:html={inline(body)} />}
-            {link && <a class="arrow" href={link[1]}>{link[0]}<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>}
-          </>
-        )}
+        {aside ? <slot /> : body && <p class="copy" set:html={inline(body)} />}
       </div>
     </div>
     {!aside && <div class="show"><slot /></div>}

@@ -5,8 +5,9 @@
   // It was assets-only until PostHog arrived. `main` does NOT put a script in
   // front of the site: Cloudflare matches a static asset first and only invokes
   // the Worker when nothing matches, so every page and font is served exactly
-  // as before and worker/index.ts runs for /ph/* alone. See that file for why
-  // the analytics traffic is proxied rather than sent to posthog.com direct.
+  // as before and worker/index.ts runs for /ph/* and the letter's three
+  // routes alone. See that file for why the analytics traffic is proxied
+  // rather than sent to posthog.com direct.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wortel-web",
   // Cobben account — the one that holds the wortel.sh zone.
@@ -32,7 +33,28 @@
     // by the assets layer without invoking the Worker, so /ph is unaffected:
     // posthog-js calls it with fetch and sendBeacon, never as a navigation.
     "not_found_handling": "404-page"
+    // No run_worker_first. The letter needed the Worker in front of two pages,
+    // and a list here was tried: with it, every POST to a path NOT on the list
+    // got a 405 from the assets layer instead of reaching the Worker, /ph's
+    // analytics included (wrangler 4.134, 2026-11-26). So the letter's routes
+    // are paths with no file behind them, like /ph (worker/letter-routes.ts).
   },
+  // The letter's list: addresses that asked for an email when something big
+  // ships. Created in the EU jurisdiction (`wrangler d1 create wortel-letter
+  // --jurisdiction eu`), schema in migrations/. privacy.md says what is in it.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "wortel-letter", "database_id": "REPLACE-WITH-D1-ID", "migrations_dir": "migrations" }
+  ],
+  // Cloudflare Email Sending, for the one mail this site sends: the
+  // confirmation link. Needs wortel.sh onboarded to Email Sending and the
+  // Workers Paid plan, without which it only reaches verified addresses.
+  "send_email": [
+    { "name": "EMAIL", "allowed_sender_addresses": ["letter@wortel.sh"] }
+  ],
+  // Joins per IP, counted in memory at the edge and never stored.
+  "ratelimits": [
+    { "name": "JOIN_LIMIT", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }
+  ],
   // The apex only. www.wortel.sh is NOT routed here: it is a proxied
   // placeholder record (AAAA 100::) plus a zone Redirect Rule that 301s it to
   // https://wortel.sh with the path and query kept (Rules > Redirect Rules in

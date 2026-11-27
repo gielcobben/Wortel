@@ -3385,6 +3385,27 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   · 27 MB" sat beside the buttons as small grey print on the landscape, where
   it could not be read. It is gone at every width (a phone had already lost
   it). The download page says the version and the size.
+- **2026-11-26. The letter: an opt-in email list, collected and nothing
+  more yet.** Sparkle was the only way to reach people who use Wortel, so an
+  update that broke auto-update would have had no one to tell. One form (on
+  `/download` after the click, at the foot of `/updates`, on `/letter`), never
+  in front of the download and never in the app. Double opt-in: a
+  confirmation mail with a link to a page whose button confirms, because mail
+  scanners open every link and a confirming GET would confirm every address
+  typed in. The same "check your inbox" for every answer, so the form cannot
+  tell anyone who is on the list. Kept: address, dates, which form, a random
+  token; no IP. Unconfirmed rows go after a week, swept on the next join
+  rather than by a cron; leaving deletes the row rather than flagging it. The
+  list is D1 (EU jurisdiction) behind the site's own Worker, not `updates/`,
+  which only reads and must not go down with a site change. Cloudflare Email
+  Sending sends only the confirmation mail, which is what it is for
+  (transactional); how letters are sent is decided when there is one to
+  send, and every one must carry the leave link the privacy page promises.
+  No Turnstile: abuse is held by a hidden field, a per-IP rate limit and one
+  mail per address a day, without a third-party script on the page. The two
+  button pages are static files at `/letter/confirming` and `/letter/leaving`
+  that the Worker serves with the token filled in; `run_worker_first` was
+  tried for this and turned every other POST, `/ph` included, into a 405.
 
 ## Contributing
 

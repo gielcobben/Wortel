@@ -4,7 +4,11 @@
     "module": "es2022",
     "moduleResolution": "bundler",
     "lib": ["es2022"],
-    "types": ["@cloudflare/workers-types"],
+    // Both the Workers globals and Node's, because the test files run under
+    // `node --test` (which strips the types itself, so there is no build step
+    // and imports carry their real .ts extension). Same as updates/.
+    "types": ["@cloudflare/workers-types", "node"],
+    "allowImportingTsExtensions": true,
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true

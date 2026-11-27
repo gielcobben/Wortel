@@ -68,6 +68,12 @@ const PAGES: { path: string; changefreq: string; priority: string; sources: stri
     sources: ['src/pages/download.astro'],
   },
   {
+    path: '/letter',
+    changefreq: 'yearly',
+    priority: '0.4',
+    sources: ['src/pages/letter.astro'],
+  },
+  {
     path: '/about',
     changefreq: 'yearly',
     priority: '0.5',

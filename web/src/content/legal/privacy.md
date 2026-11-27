@@ -6,14 +6,16 @@ nav: Privacy
 order: 10
 ---
 
-Wortel is free, has no account, and asks for nothing about you. This page is the
-whole of what is measured anyway, written so you can check it rather than take
-it on trust.
+Wortel is free, has no account, and asks for nothing about you, unless you give
+it an email address for the letter. This page is the whole of what is measured
+and kept, written so you can check it rather than take it on trust.
 
 The short version: the website counts pages and download clicks without storing
 anything on your machine, the update server counts downloads and update checks,
 and the app reports which of its features get used, in a form that cannot
-describe you or your work. That last one you can switch off in one click.
+describe you or your work. That last one you can switch off in one click. The
+letter keeps an email address, and only for someone who asked for it and
+confirmed.
 
 ## Who is responsible
 
@@ -209,11 +211,46 @@ country. It is not used to build a profile of you.
 There is no cookie banner because there are no cookies. What European law asks
 consent for is storing things on your device, and none of this does.
 
+## The letter
+
+The letter is an email when something big ships, a few times a year. It is the
+one place Wortel keeps something that identifies you, and only because you typed
+it in and asked. The form is on the download page after you download, at the foot
+of the changelog, and on [the letter's page](/letter).
+
+When you send the form, this is kept:
+
+- your email address
+- the day you joined, and when the confirmation mail went out
+- which of the three forms you used
+- a random code that the links in the mails carry, so they work without an
+  account or a password
+
+Not your IP address, your browser, your country or anything else. To stop the
+form being used to fill other people's inboxes, how often it is sent from one
+connection is counted for a minute and never written down.
+
+Nothing is sent until you confirm. The form sends one mail, with a link to a page
+with a Confirm button, and until you press it the address is not on the list. An
+address that is not confirmed within a week is deleted.
+
+**Leaving deletes the address.** Every letter has a link to leave. That link,
+or a mail to [privacy@wortel.sh](mailto:privacy@wortel.sh), removes the address
+and everything kept with it, rather than marking it as unsubscribed.
+
+The address is used for the letter and for nothing else: not for analytics, not
+joined to anything the website or the app counts, and never shared or sold. The
+mails carry no tracking pixel, and their links go straight to wortel.sh.
+
+The list is stored in Cloudflare's D1 database, in the EU jurisdiction, and the
+confirmation mail is sent through Cloudflare's email service.
+
 ## Who else is involved
 
 - **PostHog**, EU region, receives the events described above and stores them.
 - **Cloudflare** serves this site and the update files, and sees the requests
-  that reach them, as any host does.
+  that reach them, as any host does. It also stores the letter's list and sends
+  its confirmation mail.
 
 Nothing is sold, and nothing is shared with advertisers, data brokers or anyone
 building an advertising profile. There is no such profile to share.
@@ -223,6 +260,9 @@ building an advertising profile. There is no such profile to share.
 The lawful basis is legitimate interest under Article 6(1)(f) GDPR: knowing
 roughly how many people use a free tool, and which parts they use, in the least
 identifying way that answers the question.
+
+The letter is different: its basis is your consent, under Article 6(1)(a). The
+confirmation mail is the record of it, and leaving withdraws it.
 
 The website stores nothing on your device, so there is nothing there for a
 consent banner to ask about. The app is different and it is worth being straight
@@ -237,6 +277,11 @@ identifies you, and the update server's identifier is rebuilt daily from
 information that is never stored, so there is generally no way to find "your"
 data in order to show or delete it. That is a consequence of collecting so
 little, not a way of dodging the question.
+
+The letter is the exception, because it is kept under your address. Write to
+[privacy@wortel.sh](mailto:privacy@wortel.sh) from that address and what is kept
+with it can be shown to you or deleted, or use the link to leave and it is
+deleted at once.
 
 The app is the one place a request can actually be acted on, because its
 identifier is stable. You can read it yourself:

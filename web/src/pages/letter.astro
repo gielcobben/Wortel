@@ -1,0 +1,42 @@
+---
+// /letter: what the letter is, the form, and what is kept. The same form is on
+// /download after the click and at the foot of /updates; this is the page the
+// footer links to and the states (pages/letter/[state].astro) lead back to.
+import Layout from '../layouts/Layout.astro';
+import LetterForm from '../components/LetterForm.astro';
+import { SITE, LETTER } from '../data/site';
+
+const abs = (p: string) => new URL(p, SITE.url).href;
+const title = `The ${SITE.name} letter`;
+const description = `An email when ${SITE.name} ships something big, a few times a year. Nothing else, and every one has a link to leave.`;
+const schema = [{
+  '@type': 'WebPage', '@id': abs('/letter#webpage'), url: abs('/letter'), name: title, description,
+  isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+}];
+---
+<Layout title={title} description={description} path="/letter" schema={schema} bare>
+  <header class="page phead" data-reveal-group>
+    <h1 class="display" data-reveal>The letter</h1>
+    <p class="lead" data-reveal>{LETTER.line}</p>
+    <div class="form" data-reveal><LetterForm source="letter" /></div>
+  </header>
+
+  <div class="page">
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">What is kept</h2></div>
+      <div class="v prose">
+        <p>{LETTER.kept} The <a href="/privacy">privacy page</a> has the rest.</p>
+      </div>
+    </section>
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">Without an address</h2></div>
+      <div class="v prose">
+        <p>Every release is on the <a href="/updates">changelog</a>, which is also an <a href="/feed.xml">Atom feed</a>. Wortel updates itself either way.</p>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  .form { margin-top: 32px; }
+</style>

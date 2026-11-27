@@ -178,6 +178,23 @@ kbd {
 }
 .btn.sm { height: 32px; padding: 0 16px; font-size: 14px; }
 
+/* ---- a text field ----------------------------------------------------------
+   The one there is: the letter's address (components/LetterForm.astro). The
+   shape of a button beside it, filled with the quiet grey, so the pair reads
+   as one control. 16px type, because iOS zooms the page into anything smaller. */
+.field {
+  height: 40px; padding: 0 16px; border: 0; border-radius: 999px;
+  font: 400 16px/24px var(--font-sans); color: var(--ink);
+  background: var(--btn-2);
+  transition: background-color 200ms ease;
+}
+.field::placeholder { color: var(--ink-3); opacity: 1; }
+.field:focus { outline: none; }
+.field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .field:hover { background: var(--line-2); } }
+/* For a screen reader only: a label the eye gets from the placeholder and the button. */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 /* ---- touch ---------------------------------------------------------------
    A control answers the moment it is tapped (no wait for a second tap), its
    label is not selected by a long press, and with no hover and no grey flash

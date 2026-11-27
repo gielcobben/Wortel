@@ -39,11 +39,12 @@ if run updates; then
 fi
 
 if run web; then
-  echo "==> web: typecheck + build"
+  echo "==> web: typecheck + tests + build"
   (
     cd "$ROOT/web"
     [ -d node_modules ] || npm ci --silent
     npm run --silent check
+    npm test --silent
     npm run --silent build
     # No em-dash in anything that ships (web/README.md's rule).
     if grep -rl '—' dist/ ; then echo "✗ em-dash in the built site (files above)" >&2; exit 1; fi

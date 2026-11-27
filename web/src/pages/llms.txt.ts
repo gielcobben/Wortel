@@ -69,10 +69,11 @@ ${DOCS_SECTIONS.map((s) => `  - [${s.title}](${abs('/docs#' + s.id)})${s.lead ? 
 
 - [Every release, newest first](${abs('/updates')}): the full changelog, one entry per version, with the date it shipped and what changed. Versions are CalVer (year.ISO-week.nth release that week), so 2026.32.2 is the second release of week 32 of 2026.
 - Each release has a page of its own at ${abs('/updates/')}<version>, and the changelog is an Atom feed at [${abs('/feed.xml')}](${abs('/feed.xml')}).
+- [The letter](${abs('/letter')}): an email when something big ships, a few times a year, opt-in with a confirmation link. Only the address, the day it joined and which form was used are kept; leaving deletes it.
 
 ## Legal
 
-- [Privacy](${abs('/privacy')}): the app itself contains no analytics and sends nothing about how it is used; the website counts page views and download clicks with nothing stored on the reader's device, so there is no cookie banner; the update server counts downloads and Sparkle's roughly daily update check, which is the one thing that cannot be switched off from inside the app.
+- [Privacy](${abs('/privacy')}): the app itself contains no analytics and sends nothing about how it is used; the website counts page views and download clicks with nothing stored on the reader's device, so there is no cookie banner; the update server counts downloads and Sparkle's roughly daily update check, which is the one thing that cannot be switched off from inside the app; the letter keeps an email address only for someone who asks for it and confirms.
 - [Terms](${abs('/terms')}): free for any use including commercial, provided as is with no warranty, open source under GPL-3.0-or-later (the name and icon excepted), built on open-source components listed in THIRD-PARTY-NOTICES.md, governed by Dutch law.
 
 ## Notes

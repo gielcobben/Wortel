@@ -1,0 +1,81 @@
+---
+// The letter's form: an address and a button. A real form posting to
+// /letter/join (worker/letter-routes.ts), so it works with no JavaScript at
+// all and lands on /letter/sent. With JavaScript it is sent in place and the
+// form is answered where it stood.
+//
+// `source` says which form it was (download, updates, letter); it is the one
+// thing kept beside the address apart from dates, so a form nobody uses can
+// be told from one that is broken.
+import { LETTER } from '../data/site';
+
+interface Props {
+  source: 'download' | 'updates' | 'letter';
+  /** A line above the field, inside the form so it goes when the form is answered. */
+  intro?: string;
+}
+const { source, intro } = Astro.props;
+const id = `letter-${source}`;
+---
+<form class="letter" method="post" action="/letter/join" data-letter data-sent={LETTER.sent} data-sorry={LETTER.sorry}>
+  {intro && <p class="small intro">{intro}</p>}
+  <input type="hidden" name="source" value={source} />
+  {/* For bots: off screen, out of the tab order, hidden from screen readers. A person leaves it empty. */}
+  <div class="trap" aria-hidden="true">
+    <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+  </div>
+  <div class="row">
+    <label class="sr" for={id}>{LETTER.field}</label>
+    <input class="field" id={id} type="email" name="email" required maxlength="254" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder={LETTER.placeholder} />
+    <button class="btn" type="submit">{LETTER.button}</button>
+  </div>
+  <p class="label note" data-note aria-live="polite" hidden></p>
+</form>
+
+<script>
+  // The answers come from the form's own attributes: data/site.ts is build-time
+  // only (it fetches at import), so it is never bundled into a page.
+  for (const form of document.querySelectorAll<HTMLFormElement>('form[data-letter]')) {
+    const note = form.querySelector<HTMLElement>('[data-note]')!;
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (button.disabled) return;
+      button.disabled = true;
+      note.hidden = true;
+      let ok = false;
+      try {
+        const res = await fetch(form.action, {
+          method: 'POST',
+          headers: { accept: 'application/json' },
+          body: new URLSearchParams(new FormData(form) as unknown as Record<string, string>),
+        });
+        ok = res.ok && (await res.json()).ok === true;
+      } catch {}
+      button.disabled = false;
+      if (ok) {
+        // The form is done: its answer takes its place, in the live line so a
+        // screen reader says it.
+        for (const el of form.querySelectorAll<HTMLElement>(':scope > :not([data-note])')) el.hidden = true;
+        note.classList.add('done');
+      }
+      note.textContent = (ok ? form.dataset.sent : form.dataset.sorry) ?? '';
+      note.hidden = false;
+    });
+  }
+</script>
+
+<style>
+  .letter { max-width: 560px; }
+  .intro { margin-bottom: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .field { flex: 1 1 240px; min-width: 0; max-width: 320px; }
+  .row .btn { appearance: none; border: 0; cursor: pointer; }
+  .row .btn:disabled { opacity: 0.6; cursor: default; }
+  .note { margin-top: 16px; }
+  .letter > [hidden] { display: none; }
+  /* Answered: the line is all that is left, so it reads at the size of the words around it. */
+  .note.done { margin-top: 0; font-size: 15px; line-height: 24px; color: var(--ink); }
+  .trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  @media (max-width: 640px) { .field { max-width: none; } }
+</style>

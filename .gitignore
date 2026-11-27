@@ -4,6 +4,8 @@ xcuserdata/
 DerivedData/
 build/
 .wrangler/
+# Local Worker secrets for `wrangler dev`. Never committed.
+.dev.vars
 
 # Sparkle release archives — large binaries; R2 (wortel-updates) is the
 # canonical store. releases/appcast.xml stays tracked as a record of the feed.

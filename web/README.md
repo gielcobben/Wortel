@@ -181,17 +181,31 @@ in `components/Footer.astro`. A film two pages show goes in
 
 How a page is paced was taken from reading other products' feature pages
 (Framer's, mostly): a short opening with the product itself as the picture, a
-handful of parts with one visual each, a second tier of one-sentence facts, a
-link to the manual from a part, never the same kind of block three times
-running (film, film, tiles, tiles, rows), and a close that leads to the other
-feature pages before the download.
+handful of parts with one visual each, a link to the manual from a part,
+never the same kind of block three times running (film, film, tiles, tiles,
+rows), and a close that leads to the other feature pages before the download.
+A part may carry a second tier of one-sentence facts (`facts`). `/mark-up`
+had two such lists and lost them, since they repeated the paragraph beside
+the film and the tile that shows the copied text; `/layouts` keeps its two,
+which say what no picture on the page does.
 
 **/mark-up** opens with the homepage's mark-up film (a page in a browser
-tab). Its second film, `scripts/surfaces.ts`, does the same over three
+tab), with its sidebar hidden from the start (`bare`): the terminal keeps 360
+and the browser has the rest. From 640 wide the browser shows the page as
+captured at a wide split (`public/img/page-wide-*.webp`, the splits film's),
+and the marks are placed for that layout, from the paragraph and the button
+as measured on the site at 1074 (`scripts/markup.ts`). Narrower, it shows a
+retake of the canvas's own picture, `public/img/page-narrow-*.webp`: this
+site at 537 by 740 points, 2x, with the hero held (`/?t=30`). The canvas's
+was taken before the hero's stage had arrived and shows an empty box under
+the buttons; the layout is the same to the point, so the canvas's marks are
+where they were. The "A click picks an element" tile uses the retake too.
+Retake all four when the hero changes. The homepage's films still show the
+canvas's picture. Its second film, `scripts/surfaces.ts`, does the same over three
 previews in one tab's place: rendered Markdown, source, a diff. In each,
-⇧⌘M turns Mark Up on, the pointer draws the marks (a box opens from its
-corner, an arrow and a highlight are uncovered along their length) and the
-sentence is typed around the chips. The Markdown chapter is the canvas's
+⇧⌘M turns Mark Up on, the pointer draws the marks (a box is dragged out from
+its corner, a whole rectangle all the way; an arrow and a highlight are
+uncovered along their length) and the sentence is typed around the chips. The Markdown chapter is the canvas's
 "Mark-up, a plan" as drawn. The canvas has no frame for mark-up over source
 or a diff, so those two are put together from frames it has: the source tab,
 the diff out of the Changes pane, and the plan's marks, note bar, Mark Up

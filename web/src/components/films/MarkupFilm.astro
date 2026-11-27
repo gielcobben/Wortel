@@ -17,12 +17,18 @@ import MarkUpPage from '../../app/gen/MarkUpPage.astro';
 interface Props {
   /** In the first screen: its photo comes with the page (Stage.astro). */
   eager?: boolean;
+  /** With the sidebar hidden from the start, as /mark-up has it: the two
+      splits have the whole window and the browser is the larger one. Wide
+      enough, it shows the page as captured at a wide split
+      (public/img/page-wide-*.webp), with the marks placed for that picture
+      (scripts/markup.ts). */
+  bare?: boolean;
 }
-const { eager = false } = Astro.props;
+const { eager = false, bare = false } = Astro.props;
 const chapters = ['Point', 'Say it', 'Copy', 'Paste'];
 ---
 <Stage film="markup" chapters={chapters} photo="haze" at="100% 40%" zoom={1.8} fold eager={eager}>
-    <Window data-mwin data-narrow>
+    <Window data-mwin data-narrow data-bare={bare ? '' : undefined}>
       <div class="mk-slot mk-sb"><Sidebar /></div>
       <div class="mk-div mk-sbdiv"></div>
       <div class="mk-slot mk-term" data-split="terminal"><NotePasted /></div>
@@ -78,6 +84,25 @@ const chapters = ['Point', 'Say it', 'Copy', 'Paste'];
     :global([data-film="markup"] .win [data-lead] [data-name="Back and Forward"]) { display: none; }
     .mk-term :global(header[data-name="Main bar"]) { padding-left: 78px; }
   }
+
+  /* With the sidebar hidden from the start (bare): the terminal keeps 360
+     and the browser has the rest. Where a split is taller than the page's
+     picture, the page's own ground goes on under it. On a phone the two
+     splits are as below, as they are with a sidebar. */
+  @media (min-width: 761px) {
+    [data-bare] .mk-sb, [data-bare] .mk-sbdiv { display: none; }
+    [data-bare] .mk-term { flex: none; width: min(360px, 40%); }
+    [data-bare] .mk-web { flex: 1; width: auto; }
+    [data-bare] .mk-term :global(header[data-name="Main bar"]) { padding-left: 78px; }
+    :global([data-film="markup"] .win[data-bare] [data-narrow-only]) { display: flex; }
+    :global([data-film="markup"] .win[data-bare] [data-narrow-only][data-lead]) { display: contents; }
+    :global([data-film="markup"] .win[data-bare] [data-lead] [data-name="Back and Forward"]) { display: none; }
+  }
+  [data-bare] .mk-web :global([data-name="Page"]) { background: var(--fog-0); }
+  /* Of the page's two pictures, the one for the split's width (data-wide,
+     scripts/markup.ts). */
+  .mk-web :global([data-name="Page"][data-wide] > img:not([data-wide])),
+  .mk-web :global([data-name="Page"]:not([data-wide]) > img[data-wide]) { display: none; }
 
   /* On a phone the stage shows one split at a time, each as wide as the
      stage: the browser while the page is pointed at, the terminal once the

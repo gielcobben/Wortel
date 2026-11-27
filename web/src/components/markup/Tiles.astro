@@ -3,7 +3,7 @@
 // light tiles on the site's one grey, a label of a few words on each, and one
 // piece of the real app at its own size, cut by the tile. Two sets:
 //   marks  how a mark is made: an element of a page picked with a click, and
-//          the plan drawn on with an arrow and a highlighter;
+//          the rendered plan drawn on with a box, an arrow and a highlighter;
 //   note   what becomes of it: the note in its bar, and the same note as
 //          Return puts it on the clipboard (MARKUP_PAGE in data/site.ts).
 // The pieces are lifted out of the canvas's two mark-up frames, which the
@@ -50,8 +50,13 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
   const src = document.querySelector<HTMLTemplateElement>('template[data-tiles-src]')?.content;
   if (src) {
     document.querySelectorAll<HTMLElement>('[data-tiles] [data-part]').forEach((holder) => {
-      const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`);
-      if (part) holder.append(part.cloneNode(true));
+      const part = src.querySelector<HTMLElement>(`[data-name="${holder.dataset.part}"]`)?.cloneNode(true) as HTMLElement | undefined;
+      if (!part) return;
+      // The page is this site's own retake of the canvas's picture, as the
+      // film this page opens with has it (scripts/markup.ts): in the canvas's
+      // the hero's stage had not arrived, and shows as an empty box.
+      part.querySelectorAll<HTMLImageElement>('img[data-name^="Web page"]').forEach((img) => { img.src = `/img/page-narrow-${img.classList.contains('dark:block') ? 'dark' : 'light'}.webp`; });
+      holder.append(part);
     });
   }
 </script>
@@ -83,10 +88,15 @@ const copied = MARKUP_PAGE.parts.find((p) => p.code)?.code;
   .pick .part { width: 537px; }
   .pick .part > :global([data-name="Page"]) { flex: none; height: 640px; margin-top: -192px; }
   .pick .part :global(:is([data-name="Note bar"], [data-name="Hover outline"])) { display: none; }
-  /* The foot of the rendered plan at the 650 its marks were placed at: the
-     arrow and the highlight. */
-  .draw .part { width: 650px; }
-  .draw .part > :global([data-name="Markdown"]) { flex: 1 1 auto; min-height: 0; }
+  /* The rendered plan at the 650 its marks were placed at, from "Steps" down
+     to the last of its tasks, so it reads as the document it is: a heading,
+     a list with the box around two of its steps, a code block, and "Checks"
+     with the arrow and the highlight. The tiles are tall enough for that. */
+  .tiles.marks { grid-auto-rows: 512px; }
+  /* 16 in, so the box, which is as wide as the plan's column, ends inside the tile. */
+  .draw .part { left: 16px; width: 650px; }
+  .draw .part > :global([data-name="Markdown"]) { flex: 1 1 auto; min-height: 0; justify-content: flex-start; overflow: hidden; }
+  .draw .part > :global([data-name="Markdown"] > :first-child) { flex: none; margin-top: -424px; }
 
   /* The note bar by itself, as wide as the tile lets it be, where the app
      pins it to the foot of a preview. */

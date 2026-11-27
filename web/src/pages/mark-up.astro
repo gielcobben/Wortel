@@ -2,7 +2,8 @@
 // /mark-up: one feature, in depth. The words are MARKUP_PAGE in data/site.ts
 // and the layout is components/FeaturePage.astro; this file brings what each
 // part shows, in the slot named for the part's id:
-//   hero      the mark-up film, on a page in a browser tab (the homepage's)
+//   hero      the mark-up film, on a page in a browser tab (the homepage's),
+//             here with no sidebar, so the browser is the larger split
 //   surfaces  the same done over rendered Markdown, source and a diff
 //   marks     how a mark is made, as tiles
 //   note      the note in its bar, and as the text Return copies
@@ -14,7 +15,7 @@ import Tiles from '../components/markup/Tiles.astro';
 import { MARKUP_PAGE } from '../data/site';
 ---
 <FeaturePage page={MARKUP_PAGE}>
-  <MarkupFilm slot="hero" eager />
+  <MarkupFilm slot="hero" eager bare />
   <Surfaces slot="surfaces" />
   <Tiles slot="marks" set="marks" />
   <Tiles slot="note" set="note" />

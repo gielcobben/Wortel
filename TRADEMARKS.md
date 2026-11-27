@@ -1,8 +1,9 @@
 # The name and the icon
 
 The code is yours to use under the GPL (see [`LICENSE`](LICENSE)). The name
-**Wortel** and its icon (`macos/Wortel/AppIcon.icon`, and everything exported
-from it, on the site and in the app) are not part of that licence. They belong
+**Wortel** and its icon (`macos/Wortel/AppIcon.icon`, its beta variant
+`macos/Wortel/AppIconBeta.icon`, and everything exported from them, on the
+site and in the app) are not part of that licence. They belong
 to Giel Cobben, and they say which builds come from wortel.sh.
 
 ## What you can do
@@ -19,7 +20,8 @@ identity, so nobody mistakes it for Wortel or sends Wortel's users to it:
 
 - **Its own name**, in `CFBundleDisplayName`, the product name, the menus and
   the windows.
-- **Its own icon.** Replace `macos/Wortel/AppIcon.icon`.
+- **Its own icon.** Replace `macos/Wortel/AppIcon.icon`, and
+  `macos/Wortel/AppIconBeta.icon` if it publishes betas.
 - **Its own bundle id.** `bundleIdPrefix` in `macos/project.yml` and the
   `com.gielcobben.Wortel` identifiers in the code. With Wortel's bundle id,
   macOS treats the two as one app: they share settings and permissions.

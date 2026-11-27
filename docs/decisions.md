@@ -2862,8 +2862,11 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   `ASSETCATALOG_COMPILER_APPICON_NAME=AppIconBeta` and refuses to publish
   when the built `CFBundleIconName` doesn't match the channel, in either
   direction. Debug and regular builds keep `AppIcon` (XcodeGen's default),
-  and only the chosen icon goes into `Assets.car`. The next regular release
-  puts the regular icon back on a tester's Mac. Not a second bundle id: a
+  and only the chosen icon goes into `Assets.car`. Both checks run right
+  after the build, before notarizing. The next regular release should put
+  the regular icon back on a tester's Mac; not yet seen, since whether the
+  Dock refreshes its cached icon after an in-place Sparkle update is
+  unverified. Not a second bundle id: a
   beta that is a different app would be a second set of sessions and a
   second keeper.
 

@@ -24,7 +24,8 @@ The mark is the app icon: a near-black tile, a white lowercase **w**, and a
 blue block cursor beside it.
 
 - The source is `macos/Wortel/AppIcon.icon`, an Icon Composer file. It is the
-  only source.
+  only source of the mark everyone sees; the beta variant below is for the
+  beta app only.
 - A beta build wears `macos/Wortel/AppIconBeta.icon`, the owner's variant:
   the mark on a blue blueprint grid, so testers can tell it apart. It is for
   the beta app only, never the site.

@@ -80,6 +80,7 @@ public/
 scripts/opmaak/            regen.sh: the canvas -> src/app/gen (through jsx2astro.mjs);
                            drift.sh and synced: how far the app is ahead of the canvas
 scripts/og/                render.mjs: the inner pages' social cards -> public/og
+scripts/pages/             capture.mjs: the pictures of this site the browser splits show -> public/img/page-*.webp
 ```
 
 ### The app window is live HTML, not a screenshot
@@ -197,14 +198,8 @@ and the browser has the rest. From 640 wide the browser shows the page as
 captured at a wide split (`public/img/page-wide-*.webp`, the splits film's),
 and the marks are placed for that layout, from the paragraph and the button
 as measured on the site at 1074 (`scripts/markup.ts`). Narrower, it shows the
-narrow picture every film shows. That one is a retake of the canvas's own,
-`public/img/page-narrow-*.webp`: this site at 537 by 740 points, 2x, with
-the hero held (`/?t=30`). The canvas's was taken before the hero's stage had
-arrived and shows an empty box under the buttons; the layout is the same to
-the point, so the canvas's marks are where they were. `retaken()` in
-`scripts/app.ts` swaps it in, for the mark-up film on both pages, the splits
-film's browser column, and the "A click picks an element" tile. Retake all
-four pictures when the hero changes. Its second film, `scripts/surfaces.ts`, does the same over three
+narrow picture every film shows (The page in a browser split, below). Its
+second film, `scripts/surfaces.ts`, does the same over three
 previews in one tab's place: rendered Markdown, source, a diff. In each,
 ⇧⌘M turns Mark Up on, the pointer draws the marks (a box is dragged out from
 its corner, a whole rectangle all the way; an arrow and a highlight are
@@ -233,6 +228,53 @@ review film. "More than one window" is `components/layouts/Windows.astro`:
 two windows on one stage, each with its own sidebar and sessions, nothing
 playing; the one behind is not the key window, so its traffic lights are
 grey. Dragging a session between windows is not shown.
+
+### The page in a browser split
+
+A browser split in a film shows a picture of this site's homepage, from its
+top, with the landing sequence held at its end (`/?t=30`). There are two, each
+in light and dark, at 2x:
+
+| File | Points | Shown |
+|---|---|---|
+| `public/img/page-narrow-*.webp` | 537 by 1600 | in a split beside a terminal, on a phone, and in the "A click picks an element" tile |
+| `public/img/page-wide-*.webp` | 1074 by 1600 | where the browser has most of the window: the agent's split in the splits film, and /mark-up's opening film from 640 wide |
+
+The narrow one stands in for the canvas's own picture of the page, at the
+same width, so whatever the canvas drew over the page is where it was. The
+canvas's was taken before the hero's stage had arrived (an empty box under
+the buttons) and was 740 points tall. `components/AppContent.astro` swaps it
+in the generated markup at build time, so the canvas's is never fetched. The
+wide one is another layout of the same page: the marks /mark-up's film draws
+on it are placed from the paragraph and the button as measured on the site
+at 1074 (`scripts/markup.ts`).
+
+A split draws the page at its own width, from the top, and cuts it off at
+its foot (`height: auto`, never `object-fit: cover`: covering a tall split
+cut the page's sides off). So a picture has to be at least the split's height
+times the picture's width over the split's width, or the page's ground shows
+under it. 1600 points is that with room to spare. Measured in headless
+Chromium (2026-11-27) at 1440, 1280, 1000, 760, 430, 390 and 320 wide, in
+the edge column, the agent's split, zoomed, with the sidebar hidden, and in
+both mark-up films: the most any split asked for was 909 points of the wide
+picture (/mark-up's film at 1440) and 919 of the narrow one (a phone 320
+wide), and the least a picture ran past its split's foot was 325 points.
+Worked out for the widths between, the worst is a zoomed split in a window
+601 wide (a 761 wide screen): 1124 of the wide picture.
+
+To retake all four, with the dev server running:
+
+```sh
+node scripts/pages/capture.mjs                  # the site on http://localhost:4340
+SITE=http://localhost:4350 node scripts/pages/capture.mjs wide   # another port, one width
+```
+
+It drives the Chrome on the Mac headless, on a temporary profile, and needs
+`cwebp` (`brew install webp`). Retake them when the homepage's first two
+screens change, then check the marks in both mark-up films still sit on the
+paragraph and the Download button. They are fetched like every picture in a
+window below the first screen: when their stage nears, and the wide one only
+once a film shows it.
 
 ### Motion and interaction
 
@@ -273,9 +315,8 @@ hero", in `web`), the same one the mark-up film after it picks up.
   page where a browser opens by itself, in a column that slides in at the
   outer edge, half the window. Its tab is picked up and carried over the
   middle of the agent's split, which lights all over, and let go it joins
-  that split's tabs in front of the agent's. The page there is a capture at
-  that width (`public/img/page-wide-*.webp`, 1074 by 740 points at 2x, taken
-  of this site with the hero held): retake it when the hero changes. 3.7 s.
+  that split's tabs in front of the agent's. The page there is the picture
+  taken at that width (The page in a browser split, below). 3.7 s.
 - **Zoom**: the page has the keyboard where it was dropped. ⇧⌘↩ gives it
   everything beside the sidebar with Show All Splits lit in its row, and
   ⇧⌘↩ again shows both splits. 2.6 s.

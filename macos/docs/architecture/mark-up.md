@@ -120,7 +120,10 @@ mark's place changed, goes on while an animation with an end is running
 (`document.getAnimations()`, so a script's own animation counts) and for
 400 ms after the last change, and then stops. The page itself growing or
 shrinking is heard too (a `ResizeObserver` on the root), which is how
-something arriving late is noticed when no mark is on it.
+something arriving late is noticed when no mark is on it. Each mark's
+element is watched for its size as well, and stops being watched only when
+no mark is left on it (`release`): two areas over one paragraph share it,
+and moving one of them away stopped the other hearing it (2026-11-26).
 
 **What a page says about itself is not trusted.** An element's name, id,
 selector and text are whatever the page's author wrote, and what is copied

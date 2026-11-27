@@ -68,6 +68,14 @@ final class PaneBar: ChromeBarView, LeafBar {
         for button in [splitRight, splitDown, unzoom] { trailing.addArrangedSubview(button) }
         trailing.spacing = 4
         trailing.translatesAutoresizingMaskIntoConstraints = false
+        // With every button hidden the stack is empty and has no width of its
+        // own, which left the strip's end undetermined. This one wins only
+        // then: any visible button's required width is above it.
+        let empty = trailing.widthAnchor.constraint(equalToConstant: 0)
+        empty.priority = .defaultLow
+        empty.isActive = true
+        trailing.setHuggingPriority(.required, for: .horizontal)
+        trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSubview(trailing)
         stripLeading = strip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         trailingEnd = trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)

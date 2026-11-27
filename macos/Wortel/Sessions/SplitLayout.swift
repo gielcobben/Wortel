@@ -608,15 +608,28 @@ struct SplitLayout: Equatable, Sendable {
     /// them. So parts that were being held at their minimum keep the size
     /// they are drawn at, and a hidden part keeps the share it had.
     ///
-    /// Nothing is written when a part would get no room at all: a weight of
-    /// zero is what `tidied` reads as a damaged file and turns into an equal
-    /// share, so the split would jump at the next insert or remove.
-    private static func setWeights(of parts: inout [Part], shown: [Int], from extents: [CGFloat]) -> Bool {
-        let available = extents.reduce(0, +)
-        let weight = shown.reduce(0) { $0 + parts[$1].weight }
-        guard available > 0, weight > 0, extents.allSatisfy({ $0 > 0 }) else { return false }
-        for (place, index) in shown.enumerated() {
-            parts[index].weight = weight * Double(extents[place] / available)
+    /// Nothing is written when a part the call changed (its extent differs
+    /// from `laidOut`, the extents it was laid out at) would get no room at
+    /// all: a weight of zero is what `tidied` reads as a damaged file and
+    /// turns into an equal share, so the split would jump at the next insert
+    /// or remove.
+    ///
+    /// A part the call did not change that has no room keeps the weight it
+    /// had, and the others share the rest. Its 0pt is only rounding: with
+    /// too little room for every minimum a part left a point wide rounds to
+    /// nothing when the window narrows a little, its weight still positive.
+    /// Rewritten from that 0pt it would be a zero, and refusing for it
+    /// would leave every other divider of the split stuck until the window
+    /// grew again.
+    private static func setWeights(of parts: inout [Part], shown: [Int], from extents: [CGFloat],
+                                   laidOut: [CGFloat]) -> Bool {
+        let kept = Set(shown.indices.filter { extents[$0] <= 0 && extents[$0] == laidOut[$0] })
+        let rewritten = shown.indices.filter { !kept.contains($0) }
+        let available = rewritten.reduce(0) { $0 + extents[$1] }
+        let weight = rewritten.reduce(0) { $0 + parts[shown[$1]].weight }
+        guard available > 0, weight > 0, rewritten.allSatisfy({ extents[$0] > 0 }) else { return false }
+        for place in rewritten {
+            parts[shown[place]].weight = weight * Double(extents[place] / available)
         }
         return true
     }
@@ -652,9 +665,10 @@ struct SplitLayout: Equatable, Sendable {
             let high = both >= firstMinimum + secondMinimum ? both - secondMinimum : max(both - 1, low)
             let first = min(max(position - start, low), high).rounded()
             guard abs(first - extents[place]) >= 0.5 else { return }
+            let laidOut = extents
             extents[place] = first
             extents[place + 1] = both - first
-            changed = Self.setWeights(of: &parts, shown: shown, from: extents)
+            changed = Self.setWeights(of: &parts, shown: shown, from: extents, laidOut: laidOut)
         }
         return changed
     }
@@ -690,6 +704,7 @@ struct SplitLayout: Equatable, Sendable {
             let high = roomy ? total - (needed - minimums[place]) : max(total - 1, low)
             let own = min(max(extent, low), high).rounded()
             guard abs(own - extents[place]) >= 0.5 else { return }
+            let laidOut = extents
             let had = total - extents[place]
             let rest = total - own
             for other in extents.indices where other != place {
@@ -697,7 +712,7 @@ struct SplitLayout: Equatable, Sendable {
             }
             extents[place] = own
             if roomy { Self.raise(&extents, to: minimums, within: total, holding: [place]) }
-            changed = Self.setWeights(of: &parts, shown: shown, from: extents)
+            changed = Self.setWeights(of: &parts, shown: shown, from: extents, laidOut: laidOut)
         }
         return changed
     }

@@ -534,10 +534,19 @@ final class BrowserPage: NSObject {
             let held = heldLoad
             reloadWhenShown = false
             heldLoad = nil
-            // Where the page wanted to go while the note held it, or the
-            // page again, past the cache: it may be owed for a file that
-            // changed.
-            if let held { load(held) } else { reloadFromOrigin() }
+            // Where the page wanted to go while the note held it, asked by
+            // the page itself, so it goes only where the page may go: made
+            // as Wortel's own load it would pass as the person's (an `http`
+            // page sending itself to a `file:` address), and it would set
+            // the tab's address before anything answered (security review,
+            // 2026-11-27). Or the page again, past the cache: it may be
+            // owed for a file that changed.
+            if let held {
+                webView.callAsyncJavaScript("location.assign(address)", arguments: ["address": held.absoluteString],
+                                            in: nil, in: .defaultClient)
+            } else {
+                reloadFromOrigin()
+            }
         }
         noteWaiting()
     }

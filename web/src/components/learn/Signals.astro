@@ -1,0 +1,133 @@
+---
+// Reading the sidebar, on /learn: the real sidebar on the lake at the left,
+// and at the right what each of its signals means (LEARN.signals in
+// data/site.ts, as DESIGN.md lists them under "A session, in the sidebar").
+// Point at a meaning and the rows that show it stay lit while the rest step
+// back; point at a row and its meaning lights. Each meaning carries the
+// sidebar's own mark for it, cloned from the canvas's, so the key is drawn
+// exactly as the rows are.
+import Stage from '../Stage.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import { LEARN } from '../../data/site';
+---
+<div class="sig" data-signals>
+  <Stage photo="lake" at="20% 70%" zoom={2.4} w={234} h={496} class="sig-stage">
+    <div class="win wapp sig-win" aria-hidden="true" data-nosnippet>
+      <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+      <div class="relative flex w-[234px]"><Sidebar /></div>
+    </div>
+  </Stage>
+  <ul class="key" data-reveal-group="0.05">
+    {LEARN.signals.map((s) => (
+      <li data-reveal>
+        <button type="button" class="item" data-signal={s.dot}>
+          <span class="mark wapp" data-mark={s.dot} aria-hidden="true"></span>
+          <span class="name">{s.name}</span>
+          <span class="text">{s.text}</span>
+        </button>
+      </li>
+    ))}
+  </ul>
+</div>
+
+<script>
+  import { Sidebar, named, fitSidebar } from '../../scripts/app';
+  const root = document.querySelector<HTMLElement>('[data-signals]');
+  if (root) {
+    const sb = new Sidebar(named(root, 'Sidebar')!);
+    // A short sidebar with one of each: a folder of sessions in this
+    // project, and one on a branch in another.
+    sb.show(['Section Sessions', 'Quicker panes', 'Landing page hero', 'Marketing screenshots', 'Changelog typography', 'Pricing FAQ copy', 'Section wortel', 'Sparkle appcast cleanup']);
+    sb.select('Quicker panes');
+    const SAYS: Record<string, string> = {
+      'Landing page hero': 'attention',
+      'Marketing screenshots': 'working',
+      'Pricing FAQ copy': 'done',
+      'Changelog typography': 'failed',
+    };
+    for (const [name, s] of Object.entries(SAYS)) sb.status(name, s === 'failed' ? 'attention' : s as 'working' | 'attention' | 'done');
+    // Failed is the attention dot in the system's red (DESIGN.md, chart-4).
+    const failed = named(sb.row('Changelog typography'), 'Attention');
+    failed?.classList.remove('bg-chart-1'); failed?.classList.add('bg-chart-4');
+    // The row on a branch is also done, as the canvas draws it.
+    SAYS['Sparkle appcast cleanup'] = 'branch';
+    fitSidebar(sb.nav);
+
+    // Each meaning's mark: the row's own, cloned.
+    const marks: Record<string, Element | null> = {
+      working: named(sb.row('Marketing screenshots'), 'Working'),
+      attention: named(sb.row('Landing page hero'), 'Attention'),
+      done: named(sb.row('Pricing FAQ copy'), 'Attention'),
+      failed: named(sb.row('Changelog typography'), 'Attention'),
+      branch: named(sb.row('Sparkle appcast cleanup'), 'arrow.triangle.branch'),
+      folder: named(named(sb.nav, 'Section wortel')!, 'Chevron'),
+    };
+    root.querySelectorAll<HTMLElement>('[data-mark]').forEach((m) => {
+      const from = marks[m.dataset.mark!];
+      if (from) m.append(from.cloneNode(true));
+    });
+
+    // Which rows show what: a row may show two (on a branch, and done).
+    // The rows and the folders' headers: a folder is a signal too.
+    const rows = (Array.from(sb.nav.children) as HTMLElement[]).filter((r) => !r.hidden);
+    const shows = (row: HTMLElement, s: string) =>
+      SAYS[row.dataset.name!] === s || (s === 'done' && row.dataset.name === 'Sparkle appcast cleanup')
+      || (s === 'folder' && !!row.dataset.name?.startsWith('Section '));
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-signal]'));
+    const light = (s: string | null) => {
+      root.toggleAttribute('data-lit', !!s);
+      rows.forEach((r) => r.toggleAttribute('data-on', !!s && shows(r, s)));
+      items.forEach((i) => i.toggleAttribute('data-on', i.dataset.signal === s));
+    };
+    items.forEach((i) => {
+      i.addEventListener('pointerenter', () => light(i.dataset.signal!));
+      i.addEventListener('focus', () => light(i.dataset.signal!));
+      i.addEventListener('click', () => light(i.dataset.signal!));
+    });
+    root.querySelector('.key')!.addEventListener('pointerleave', () => light(null));
+    root.querySelector('.key')!.addEventListener('focusout', (e) => { if (!root.contains((e as FocusEvent).relatedTarget as Node)) light(null); });
+    // And the other way: a row says what it shows.
+    const win = root.querySelector<HTMLElement>('.sig-win')!;
+    win.removeAttribute('aria-hidden');
+    rows.forEach((r) => r.addEventListener('pointerenter', () => {
+      const s = Object.keys(marks).find((k) => shows(r, k) && k !== 'done') ?? (shows(r, 'done') ? 'done' : null);
+      light(s);
+    }));
+    win.addEventListener('pointerleave', () => light(null));
+  }
+</script>
+
+<style>
+  .sig { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--col-gap); align-items: start; }
+  .sig > :global(div:first-child) { grid-column: 1 / span 5; }
+  .key { grid-column: 7 / span 6; list-style: none; margin: 0; padding: 0; }
+  @media (max-width: 900px) {
+    .sig > :global(div:first-child), .key { grid-column: 1 / -1; }
+    .key { margin-top: 32px; }
+  }
+  .sig :global(.sig-stage) { padding: 48px; }
+  .sig :global(.stage .win.sig-win) { width: 234px; }
+  @media (max-width: 760px) { .sig :global(.stage) { align-items: center; } .sig :global(.stage .set) { align-items: center; } }
+  .sig :global(.sig-win [data-name="Sidebar"]) { height: 496px; }
+
+  .item {
+    all: unset; box-sizing: border-box; cursor: default; width: 100%;
+    display: grid; grid-template-columns: 24px 136px minmax(0, 1fr); gap: 0 16px; align-items: baseline;
+    padding-block: 16px; border-top: 1px solid var(--line);
+    transition: opacity 200ms var(--ease-out);
+  }
+  li:last-child .item { border-bottom: 1px solid var(--line); }
+  .item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .mark { display: flex; align-items: center; justify-content: center; align-self: center; width: 24px; height: 24px; background: none; }
+  .name { font: 500 15px/24px var(--font-sans); color: var(--ink); }
+  .text { font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
+  @media (max-width: 640px) {
+    .item { grid-template-columns: 24px minmax(0, 1fr); }
+    .text { grid-column: 2; }
+  }
+
+  /* One meaning lit: the others, and the rows that do not show it, step back. */
+  .sig[data-lit] .item:not([data-on]) { opacity: 0.4; }
+    .sig :global([data-name="Sessions"] > [data-name]) { transition: opacity 200ms var(--ease-out); }
+  .sig[data-lit] :global([data-name="Sessions"] > [data-name]:not([data-on])) { opacity: 0.3; }
+</style>

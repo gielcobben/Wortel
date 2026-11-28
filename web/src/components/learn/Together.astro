@@ -1,0 +1,118 @@
+---
+// Agents working together, on /learn: one session hands another a task with
+// the wortel command, waits for it and reads what it said. The window is the
+// canvas's sidebar and a terminal split; what is typed is LEARN.together in
+// data/site.ts, and the sidebar answers as the app's would: the other
+// session starts working when the task lands, and is done when the wait
+// returns. It plays while it is on screen and starts again after a rest.
+import Stage from '../Stage.astro';
+import Window from '../Window.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import SplitTerminal from '../../app/gen/SplitTerminal.astro';
+import Lights from '../Lights.astro';
+import { LEARN } from '../../data/site';
+// The script reads its lines from the page: data/site.ts is for the build
+// only (it asks the update server for the download at the top).
+const script = JSON.stringify(LEARN.together);
+---
+<Stage film="together" photo="hills" at="90% 40%" zoom={1.6} h={320} fold>
+  <Window data-twin data-narrow data-script={script}>
+    <div data-side class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
+    <div data-side class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
+    <div data-end class="flex min-h-0 self-stretch min-w-[80px] flex-1"><SplitTerminal /></div>
+    <!-- With the sidebar folded on a phone, the window carries the lights. -->
+    <div slot="over" data-narrow-only><Lights /></div>
+  </Window>
+</Stage>
+
+<script>
+  import { Sidebar, named, reduced } from '../../scripts/app';
+  const root = document.querySelector<HTMLElement>('[data-film="together"]');
+  if (root) {
+    const win = root.querySelector<HTMLElement>('[data-twin]')!;
+    const LEARN = { together: JSON.parse(win.dataset.script!) as { to: string; lines: { cmd: string; out?: string[] }[] } };
+    const sb = new Sidebar(named(win, 'Sidebar')!);
+    const HERE = 'Quicker panes', THERE = LEARN.together.to;
+    sb.show(['Section Sessions', HERE, 'Landing page hero', THERE, 'Changelog typography']);
+    sb.select(HERE);
+    // The split's tab is the session's own terminal.
+    const tab = named(win, 'Terminal tab')?.querySelector('span');
+    if (tab) tab.textContent = HERE;
+
+    const term = named(win, 'Terminal')!;
+    const rest = named(term, 'Rest')!;
+    const [login, first] = Array.from(term.querySelectorAll<HTMLElement>(':scope > p'));
+    // A line a script prints wraps (web/AGENTS.md): no fixed height, no pre.
+    const loose = (p: HTMLElement) => { p.classList.remove('h-[19px]', 'whitespace-pre'); p.classList.add('min-h-[19px]', 'whitespace-pre-wrap', '[overflow-wrap:anywhere]'); return p; };
+    loose(login); loose(first);
+    // The prompt as the canvas draws it, cursor and all: every new one is a copy.
+    const blank = first.cloneNode(true) as HTMLElement;
+    // The space after the prompt's mark is a span of its own on the canvas,
+    // and the build drops a span that is only a space: put it back.
+    const gap = blank.lastElementChild?.previousElementSibling;
+    if (gap && !gap.textContent) gap.textContent = ' ';
+    const add = (p: HTMLElement) => { term.insertBefore(p, rest); return p; };
+    const out = (text: string) => { const p = loose(document.createElement('p')); p.textContent = text; add(p); };
+    // The terminal keeps to its height: the oldest lines go off the top.
+    const trim = () => { while (term.scrollHeight > term.clientHeight + 1 && term.firstElementChild !== rest) term.firstElementChild!.remove(); };
+    /** Type into a prompt: the words go before its cursor. */
+    const typing = (p: HTMLElement) => { const s = document.createElement('span'); p.insertBefore(s, p.lastElementChild); return s; };
+
+    let timers: number[] = [];
+    const at = (fn: () => void, ms: number) => { timers.push(window.setTimeout(fn, ms)); };
+    const reset = () => {
+      timers.forEach(clearTimeout); timers = [];
+      Array.from(term.children).forEach((c) => { if (c !== rest) c.remove(); });
+      add(login);
+      sb.status(THERE, 'none');
+    };
+    let onScreen = false, playing = false;
+    const run = () => {
+      reset();
+      playing = true;
+      let t = 600;
+      let p = add(blank.cloneNode(true) as HTMLElement);
+      LEARN.together.lines.forEach((line, i) => {
+        let typed: HTMLElement;
+        at(() => { typed = typing(p); }, t);
+        // A character at a time, as quickly as somebody who knows it.
+        for (let k = 1; k <= line.cmd.length; k++) at(() => { typed.textContent = line.cmd.slice(0, k); }, t += 28);
+        // Return: the cursor leaves the line.
+        at(() => { p.lastElementChild?.remove(); }, t += 400);
+        if (i === 0) at(() => sb.status(THERE, 'working'), t + 300);
+        // The wait holds the prompt until the other session is done.
+        if (i === 1) { t += 2800; at(() => sb.status(THERE, 'done'), t - 120); }
+        const lines: readonly string[] = line.out ?? [];
+        at(() => { lines.forEach(out); p = add(blank.cloneNode(true) as HTMLElement); trim(); }, t += 160);
+        t += 700;
+      });
+      // A rest, then again, while it is on screen.
+      at(() => { playing = false; if (onScreen) run(); }, t + 6000);
+    };
+    /** Reduced motion: the whole exchange at once, as it ends. */
+    const finish = () => {
+      reset();
+      LEARN.together.lines.forEach((line) => {
+        const p = add(blank.cloneNode(true) as HTMLElement);
+        p.lastElementChild!.remove();
+        p.append(line.cmd);
+        (line.out ?? []).forEach(out);
+      });
+      add(blank.cloneNode(true) as HTMLElement); trim();
+      sb.status(THERE, 'done');
+    };
+    if (reduced()) finish(); else add(blank.cloneNode(true) as HTMLElement);
+    first.remove();
+    new IntersectionObserver(([e]) => {
+      onScreen = e.isIntersecting;
+      if (onScreen && !playing && !reduced()) run();
+    }, { threshold: 0.45 }).observe(root);
+  }
+</script>
+
+<style>
+  /* Folded, the split's row starts clear of the lights. */
+  @media (max-width: 760px) { :global([data-film="together"] .win[data-narrow] header[data-name="Split bar"]) { padding-left: 78px; padding-right: 72px; } }
+  /* The terminal starts at its top, as a fresh shell does. */
+  :global([data-film="together"] [data-name="Terminal"]) { justify-content: flex-start; }
+</style>

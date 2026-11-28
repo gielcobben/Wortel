@@ -1,0 +1,70 @@
+---
+// Agents: who needs you, as it happens. The whole window, and the corner of
+// the desktop where macOS puts notifications. The chapters are the moments
+// (scripts/scenes.ts): at work, stopped for permission, one shortcut to get
+// there, answered. The window answers to the pointer too: the sessions, the
+// notification, the choices in the prompt.
+//
+// The homepage's section (components/home/Agents.astro) and /learn show it.
+// One to a page: scripts/scenes.ts finds it by its name.
+import Stage from '../Stage.astro';
+import Window from '../Window.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import Terminal from '../../app/gen/Terminal.astro';
+interface Props {
+  /** Which photo, and which part of it (Stage.astro). */
+  photo?: string;
+  at?: string;
+  zoom?: number;
+}
+const { photo = 'haze', at = '50% 60%', zoom = 1 } = Astro.props;
+const chapters = ['At work', 'Needs you', 'Go to it', 'Answered'];
+---
+<Stage film="agents" chapters={chapters} photo={photo} at={at} zoom={zoom}>
+  <Window live>
+    <div class="flex min-h-0 self-stretch w-[234px] min-w-[180px] shrink"><Sidebar /></div>
+    <div class="w-px shrink-0 self-stretch bg-sidebar-border"></div>
+    <div data-end class="flex min-h-0 self-stretch min-w-[80px] flex-1"><Terminal /></div>
+  </Window>
+  <button type="button" class="note" data-note aria-label="Notification: Landing page hero. Claude wants to run npm run build. Go to that session.">
+    <img src="/icon-128.png" width="40" height="40" alt="" />
+    <span class="txt">
+      <span class="ttl"><b>Landing page hero</b><span>now</span></span>
+      <span class="msg">Claude wants to run <span class="mono">npm run build</span></span>
+    </span>
+  </button>
+  <div class="keys glass" data-keys="jump" aria-hidden="true"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↓</kbd></div>
+  <div class="keys glass" data-keys="enter" aria-hidden="true"><kbd>⏎</kbd></div>
+</Stage>
+
+<style>
+  /* A notification arrives top right of the screen, over whatever is there. */
+  .note {
+    all: unset; box-sizing: border-box; cursor: pointer;
+    position: absolute; z-index: 3; top: -8px; right: -24px; width: 344px;
+    display: flex; gap: 10px; align-items: center; padding: 12px 16px 12px 12px;
+    border-radius: 18px;
+    background: #f6f6f6;
+    box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.14), 0 10px 30px rgb(0 0 0 / 0.22);
+    font-family: var(--font-sans); color: #1d1d1f; text-align: left;
+    opacity: 0; visibility: hidden;
+  }
+  .note:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .note img { width: 40px; height: 40px; flex: none; }
+  .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .ttl { display: flex; justify-content: space-between; font-size: 13px; line-height: 16px; }
+  .ttl span { opacity: 0.5; font-size: 12px; }
+  .msg { font-size: 13px; line-height: 16px; opacity: 0.85; }
+  .msg .mono { font-size: 12px; }
+  .keys { left: 50%; bottom: 48px; translate: -50% 0; }
+  @media (prefers-color-scheme: dark) {
+    .note { background: #2c2c2c; color: #f5f5f7; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.16), 0 10px 30px rgb(0 0 0 / 0.5); }
+  }
+  @media (max-width: 760px) {
+    .note { top: 8px; right: 8px; width: 296px; }
+    /* The dots are in the sidebar and the question is in the terminal, so on
+       a phone this window keeps both: the sidebar, and a terminal as wide as
+       the stage beside it. The film pans between them (scripts/scenes.ts). */
+    :global([data-film="agents"] .stage .win) { width: calc(100% + 235px); }
+  }
+</style>

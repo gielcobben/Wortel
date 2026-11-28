@@ -86,6 +86,13 @@ const PAGES: { path: string; changefreq: string; priority: string; sources: stri
     sources: ['src/data/compare.ts', 'src/pages/compare.astro'],
   },
   {
+    // The guided day. Its words are LEARN in src/data/site.ts.
+    path: '/learn',
+    changefreq: 'monthly',
+    priority: '0.8',
+    sources: ['src/data/site.ts', 'src/pages/learn.astro', 'src/components/learn', 'src/components/films', 'src/scripts/learn.ts'],
+  },
+  {
     // A feature in depth. Its words are in src/data/site.ts with the rest.
     path: '/layouts',
     changefreq: 'monthly',

@@ -15,7 +15,7 @@
 // and "not published" has to read as itself rather than as a quiet no.
 import { getCollection } from 'astro:content';
 import { compareVersions, publicRelease } from '../content.config';
-import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, FEATURE_PAGES, betaNote as beta, type Block, type FeaturePage } from './site';
+import { SITE, SECTIONS, FAQ, SPECS, DOCS, DOCS_SECTIONS, FEATURE_PAGES, LEARN, betaNote as beta, type Block, type FeaturePage, type Step } from './site';
 import { COMPARE, APPS, AXES, GROUPS, type Verdict } from './compare';
 
 const abs = (p: string) => new URL(p, SITE.url).href;
@@ -128,6 +128,33 @@ export const featureSections = (page: FeaturePage, level: number): string[] => {
   return out;
 };
 
+/** A step as a list item: its name, what is pressed, and the sentence. */
+const stepMd = (st: Step) => `- **${st.name}**${st.keys ? ` (${st.keys.map((k) => (k.startsWith('`') ? k : `\`${k}\``)).join(', ')})` : ''}: ${st.text}`;
+
+/** /learn's day, a part at a time, its headings at `level`. What a part shows
+ *  as a picture is written out: the worktree folders, the sidebar's signals,
+ *  the commands typed, the four moments of a quit. */
+export const learnSections = (level: number): string[] => {
+  const out: string[] = [];
+  for (const part of LEARN.parts) {
+    out.push('', `${hashes(level)} ${part.at}, ${part.title}: ${part.tone}${beta(part)}`, '');
+    if (part.body) out.push(part.body);
+    if (part.id === 'branches') {
+      const b = LEARN.branches;
+      out.push('', [b.repo, ...b.trees].map((t) => `- \`${t.path}\` on \`${t.branch}\`: ${t.who}`).join('\n'), '', b.shared);
+    }
+    if (part.id === 'signals') out.push('', LEARN.signals.map((sg) => `- **${sg.name}.** ${sg.text}`).join('\n'));
+    if (part.id === 'together') out.push('', '```', ...LEARN.together.lines.flatMap((l) => [`$ ${l.cmd}`, ...('out' in l ? l.out : [])]), '```');
+    if (part.id === 'keys') out.push('', `Every shortcut, as a table: ${abs('/docs#shortcuts')}`);
+    const steps: readonly Step[] = part.id === 'roots' ? LEARN.waterline.steps : (part.steps ?? []);
+    if (steps.length) out.push('', steps.map(stepMd).join('\n'));
+    if (part.link) out.push('', `More: [${part.link[0]}](${abs(part.link[1])})`);
+  }
+  out.push('', `${hashes(level)} ${LEARN.closing.title}: ${LEARN.closing.tone}`, '', LEARN.closing.body, '',
+    LEARN.more.map((m) => `- [${m.name}](${abs(m.href)}): ${m.blurb}`).join('\n'));
+  return out;
+};
+
 // ---- the pages --------------------------------------------------------------
 
 export const llmsFull = (): string => [
@@ -150,6 +177,9 @@ export const llmsFull = (): string => [
     '', `## ${page.heading}: ${page.tone}${beta(page)}`, '', page.lead, '', `Source: ${abs(page.path)}`,
     ...featureSections(page, 3),
   ]),
+  // The guided day, for a model asked how to get started.
+  '', `## ${LEARN.heading}: ${LEARN.tone}`, '', LEARN.lead, '', `Source: ${abs(LEARN.path)}`,
+  ...learnSections(3),
   ...faq(),
   ...compareTables(2),
   ...specs(),
@@ -202,6 +232,21 @@ export const featureMd = (page: FeaturePage): string => [
   '', '## More', '',
   [...FEATURE_PAGES.filter((other) => other !== page).map((other) => `- [${other.name}](${abs(other.path)}): ${other.blurb}`),
     ...page.more.map((m) => `- [${m.name}](${abs(m.href)}): ${m.blurb}`)].join('\n'),
+  ...footer(),
+].join('\n');
+
+/** /learn as Markdown. */
+export const learnMd = (): string => [
+  `# ${LEARN.heading}: ${LEARN.tone}`,
+  '',
+  `> ${LEARN.lead}`,
+  '',
+  `Source: ${abs(LEARN.path)}`,
+  ...facts(),
+  `Reference: ${abs('/docs.md')}`,
+  '',
+  '---',
+  ...learnSections(2),
   ...footer(),
 ].join('\n');
 

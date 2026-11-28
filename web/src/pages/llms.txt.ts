@@ -2,7 +2,7 @@
 // read in one fetch to decide what else to pull. It is deliberately NOT the
 // whole site; /llms-full.txt is. Both render from src/data/site.ts.
 import type { APIRoute } from 'astro';
-import { SITE, SECTIONS, FAQ, DOCS_SECTIONS, FEATURE_PAGES, DOWNLOAD_IS_DMG, HOME, betaNote as beta } from '../data/site';
+import { SITE, SECTIONS, FAQ, DOCS_SECTIONS, FEATURE_PAGES, LEARN, DOWNLOAD_IS_DMG, HOME, betaNote as beta } from '../data/site';
 
 export const GET: APIRoute = () => {
   const abs = (p: string) => new URL(p, SITE.url).href;
@@ -43,6 +43,10 @@ notarized, for macOS ${SITE.minMacOS} ${SITE.minMacOSName} or later.
 
 - [Everything on one page, as Markdown](${abs('/llms-full.txt')}): the complete text of ${SITE.url}, covering what it is, the engine, sessions, coding agents, worktrees, session survival, git and files, configuration, keyboard shortcuts, FAQ and specs.
 - Each main page is also available on its own as Markdown, at the same path with \`.md\` added: [${abs('/index.md')}](${abs('/index.md')}), [${abs('/docs.md')}](${abs('/docs.md')}), [${abs('/compare.md')}](${abs('/compare.md')}), ${FEATURE_PAGES.map((p) => `[${abs(p.path + '.md')}](${abs(p.path + '.md')})`).join(', ')} and [${abs('/updates.md')}](${abs('/updates.md')}) (the full changelog, every release note).
+
+## Getting started
+
+- [${LEARN.heading}](${abs(LEARN.path)}): ${LEARN.lead} The parts, in order: ${LEARN.parts.map((p) => p.title.toLowerCase()).join(', ')}. Also as Markdown: [${abs(LEARN.path + '.md')}](${abs(LEARN.path + '.md')}).
 
 ## Features in depth
 

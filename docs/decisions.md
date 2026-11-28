@@ -3559,6 +3559,23 @@ Deeper records for single areas: `macos/docs/worktrees.md`,
   and the claim is undone, so sending the form again tries again, which is
   what the "check your inbox" page already tells someone whose mail does not
   come. The cost: with Email Sending off, the form looks like it worked.
+- **2026-11-27. `/learn`: the guide is a working day, and it ends under
+  the surface.** Between the homepage (the point, once), the feature pages
+  (one feature in depth) and `/docs` (exact), there was no page that walks
+  a newcomer through Wortel in the order a day asks for it. `/learn` is ten
+  parts, each at a time of day, from the first agent at 08:30 to quitting at
+  23:00, and the last part says the name out loud: the window is above the
+  surface, the process holding the shells is below it, and quitting takes
+  away only the window. Its pictures are the homepage's films (`StartFilm`
+  and `AgentsFilm` were split out of the homepage's sections for it) and
+  five new ones: worktrees drawn as roots, the real sidebar with what each
+  signal means, one session driving another with `wortel`, a keyboard you
+  hold modifiers on, and the quit film. The launch design rejected "a row of
+  steps under the window" (2026-11-11 above); here the steps are the film's
+  own chapters, follow it while it plays and press it, because on a guide
+  the steps are the point. Not done: a sticky index of the day (no pinned
+  anything, 2026-10-08), taking keys from the browser on the keyboard (a key
+  pressed only lights its cap).
 
 ## Contributing
 

@@ -23,18 +23,21 @@ interface Props {
   aside?: boolean;
   /** Only in the beta: a small "Beta" over the heading (data/site.ts, BETA). */
   beta?: boolean;
+  /** When in the day it happens (/learn): a time over the heading, where
+      "Beta" goes, and before it when there is both. */
+  at?: string;
 }
 import { inline } from '../data/inline';
 import Beta from './Beta.astro';
-const { id, title, tone, body, link, aside = false, beta = false } = Astro.props;
+const { id, title, tone, body, link, aside = false, beta = false, at } = Astro.props;
 const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 ---
 <section class="sec" id={id}>
   <slot name="anchors" />
   <div class="page">
-    <div class:list={['row12 open', { aside, flagged: beta }]} data-reveal>
+    <div class:list={['row12 open', { aside, flagged: beta || at }]} data-reveal>
       <div class:list={['k', { stick: aside }]}>
-        {beta && <Beta />}
+        {(beta || at) && <p class="flag">{at && <span class="at">{at}</span>}{beta && <Beta />}</p>}
         <h2 class="h2">{title} {tone && <span class="tone">{tone}</span>}</h2>
         {aside && body && <p class="copy" set:html={inline(body)} />}
         {link && <a class="arrow" href={link[1]}>{link[0]}<Fragment set:html={chevron} /></a>}
@@ -54,7 +57,9 @@ const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true
      two up on their first lines). */
   .flagged { padding-top: 88px; }
   .flagged .k { position: relative; }
-  .flagged .k > :global(.beta) { position: absolute; left: 0; bottom: 100%; margin: 0 0 16px; }
+  .flagged .k > .flag { position: absolute; left: 0; bottom: 100%; display: flex; align-items: center; gap: 16px; margin: 0 0 16px; white-space: nowrap; }
+  /* The time of day: as quiet as a label, in figures that line up. */
+  .at { font: 500 13px/24px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-3); }
   .aside .k .copy { margin-top: 24px; max-width: 400px; }
   /* The column starts on the heading's line: the section's hairline is
      already over it, so its first row brings none of its own. */

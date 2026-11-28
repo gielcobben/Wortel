@@ -680,6 +680,295 @@ export const LAYOUTS_PAGE: FeaturePage = {
 export const FEATURE_PAGES: FeaturePage[] = [LAYOUTS_PAGE, MARKUP_PAGE];
 
 // ==========================================================================
+// /learn: Wortel in the order a day asks for it.
+//
+// The homepage makes each point once, /docs states it exactly, and a feature
+// page shows one feature in depth. /learn is the guided walk between them:
+// one working day, from the first agent in the morning to the ones still
+// working after you quit, in parts that each show the real window and say
+// which keys to press. A part's `steps` are the film's chapters, in order
+// (components/learn/Steps.astro follows the film and the film follows them);
+// a part with no film has steps that stand on their own.
+//
+// The page's thread is the name: wortel is root. The window is what is above
+// the surface; under it are the branches an agent works on (worktrees) and
+// the process that keeps every shell running when the window is gone. The
+// last part says so out loud, with the window taken away and put back.
+//
+// pages/learn.astro lays it out, pages/learn.md.ts writes the same words as
+// Markdown, and llms-full.txt carries them.
+// ==========================================================================
+export type Step = {
+  /** A word or two over it: with a film, the chapter's own name. */
+  name: string;
+  /** What is pressed or typed, each chord one item: '⇧⌘C', 'Return', '`claude`'. */
+  keys?: string[];
+  text: string;
+};
+export type LearnPart = Head & {
+  id: string;
+  /** The time of day the part happens at, over its heading. */
+  at: string;
+  /** In order. With a film, one per chapter. */
+  steps?: Step[];
+};
+export const LEARN = {
+  path: '/learn',
+  /** 53 chars. */
+  title: 'Learn Wortel: a working day with agents, step by step',
+  /** 150 chars. */
+  description:
+    'A guided day in Wortel, the macOS terminal for coding agents: start an agent, give it a branch, see what it did, and quit while it keeps on working.',
+  heading: 'A day with Wortel',
+  tone: 'Learn it in the order you need it',
+  lead: 'One working day, from the first agent in the morning to the ones still working after you quit. Each part shows the real window, then the keys to try it with.',
+  /** The index under the opening: the day, part by part. */
+  dayLabel: 'The day, part by part',
+  parts: [
+    {
+      id: 'start',
+      at: '08:30',
+      title: 'Start an agent',
+      tone: 'It is one more command',
+      body: 'A session is a real shell on Ghostty’s engine, and an agent is whatever you type in it. Tell Settings which one is yours, and every new session opens with it running.',
+      link: ['How new sessions start', '/docs#new-sessions'],
+      steps: [
+        { name: 'A shell', keys: ['⌘N'], text: 'A new session is a shell, with a row of its own in the sidebar.' },
+        { name: 'An agent', keys: ['`claude`'], text: 'Type your agent’s command, `claude`, `codex` or `pi`, and it runs right there.' },
+        { name: 'Settings', keys: ['⌘,'], text: 'In Settings, “New sessions start with” takes that command, or one Wortel found on your Mac.' },
+        { name: 'Every new session', keys: ['⌘N'], text: 'Now every new session opens with your agent running. `⌃⌘N` still opens a plain shell.' },
+      ],
+    },
+    {
+      id: 'branches',
+      at: '09:15',
+      title: 'Give each agent a branch',
+      tone: 'One repository, no collisions',
+      body: 'Two agents in one checkout edit the same files. A worktree session checks a branch out in a folder of its own that shares the repository’s history, so each agent has its own files, and it costs a folder rather than a clone.',
+      link: ['What a worktree session does', '/docs#worktree-behaviour'],
+      steps: [
+        { name: 'A worktree session', keys: ['⌥⇧⌘N'], text: 'New Worktree Session asks for a branch. A new one forks from the default branch, not from where you are.' },
+        { name: 'Or from a command', keys: ['`wortel new --branch hero-photo`'], text: 'The same from a terminal, so an agent can start one too.' },
+        { name: 'Closing keeps it', keys: ['⇧⌘W'], text: 'Closing it keeps the branch and its work, and `⌘P` brings the session back.' },
+      ],
+    },
+    {
+      id: 'signals',
+      at: '10:40',
+      title: 'Read the sidebar',
+      tone: 'Colour only when something happened',
+      body: 'Every session is a row, named for its work. The only colour in the sidebar is what an agent reported about itself: working, needs you, done. Point at a signal to see where it shows up.',
+      link: ['How the agents report', '/docs#agent-detection'],
+    },
+    {
+      id: 'needs-you',
+      at: '11:20',
+      title: 'Go where you are needed',
+      tone: 'One key to the next one waiting',
+      body: 'While you work in one session the others carry on. One that stops for you out of sight sends a notification with the start of its question, and one key takes you there.',
+      steps: [
+        { name: 'At work', text: 'You work in one session. The others carry on, each with its status in the sidebar.' },
+        { name: 'Needs you', text: 'One stops for your permission: an orange dot, and a notification, because it is out of sight.' },
+        { name: 'Go to it', keys: ['⌥⇧⌘↓'], text: 'Takes you to the next session waiting. A click on the notification or the row does the same.' },
+        { name: 'Answered', keys: ['Return'], text: 'Answer, and it gets back to work. The dot is gone once you have seen it.' },
+      ],
+    },
+    {
+      id: 'review',
+      at: '13:30',
+      title: 'See what it did',
+      tone: 'The diff, the commits, the files',
+      body: 'When the dot says done, the work is one key away, in a split beside the terminal: the diff, the commits with their graph, and the project as a tree.',
+      link: ['The keys for each', '/docs#shortcuts'],
+      beta: true,
+      steps: [
+        { name: 'Changes', keys: ['⇧⌘C'], text: 'The working tree file by file, each with its diff, and a place to write the commit.' },
+        { name: 'History', keys: ['⇧⌘H'], text: 'The commits, with their branch graph, beside the terminal.' },
+        { name: 'Files', keys: ['⇧⌘F'], text: 'The project as a tree. Drag a row into the terminal and its path lands at the prompt.' },
+        { name: 'Preview', keys: ['Space'], text: 'A file opens in a preview tab: source, diff or rendered Markdown. Double-click it to keep it.' },
+      ],
+    },
+    {
+      id: 'mark-up',
+      at: '14:10',
+      title: 'Show it what you mean',
+      tone: 'Point at it, say it, paste it',
+      body: '“This one, a bit higher” is hard to type. Mark Up draws on a page, a diff, source or an image, and copies your sentence with its marks as text any agent can read.',
+      link: ['Everything mark-up does', '/mark-up'],
+      beta: true,
+      steps: [
+        { name: 'Point', keys: ['⇧⌘M'], text: 'Mark Up, over the page. Click an element, or drag around anything.' },
+        { name: 'Say it', text: 'Write one sentence around the marks. Each sits in it as a chip with its number.' },
+        { name: 'Copy', keys: ['Return'], text: 'Copies the note, with a picture of each mark, and turns mark-up off.' },
+        { name: 'Paste', keys: ['⌘V'], text: 'Paste it to the agent. Nothing was typed or sent for you.' },
+      ],
+    },
+    {
+      id: 'arrange',
+      at: '15:45',
+      title: 'Make room',
+      tone: 'Split it, drag it, zoom it',
+      body: 'Everything beside the sidebar is made of splits, and each has its own tabs. Split where you are, drag a tab where you want it, and give one split the whole window for as long as you need it.',
+      link: ['Everything a layout does', '/layouts'],
+      beta: true,
+      steps: [
+        { name: 'Split', keys: ['⇧⌘D'], text: 'Splits the terminal down, with a new shell for the dev server. `⌘D` splits to the right.' },
+        { name: 'Drag a tab', text: 'Drag a tab to the edge of a split to make a new one there, or onto its middle to join it.' },
+        { name: 'Zoom', keys: ['⇧⌘↩'], text: 'Gives the split you are in the whole window. Press it again for the rest.' },
+      ],
+    },
+    {
+      id: 'together',
+      at: '17:00',
+      title: 'Let them work together',
+      tone: 'The wortel command, in every session',
+      body: 'Every session has `wortel` on its `PATH`. One agent can hand another a task, wait for it and read what it said. A hook or a script can open a file, a split or a session the same way.',
+      link: ['Every command', '/docs#command'],
+      steps: [
+        { name: 'Hand it a task', keys: ['`wortel send`'], text: 'Types into another session as a paste. `--enter` presses Return after it.' },
+        { name: 'Wait for it', keys: ['`wortel wait`'], text: 'Waits until that session is idle, or until some text appears on its screen.' },
+        { name: 'Read what it said', keys: ['`wortel read`'], text: 'Prints what is on its screen, for the agent that asked.' },
+      ],
+    },
+    {
+      id: 'keys',
+      at: '18:30',
+      title: 'Learn the keys as you go',
+      tone: 'Hold a modifier to see what it does',
+      body: 'Most of Wortel is a key away, and the keys follow the Mac’s own habits. Hold `⌘`, `⇧` or `⌥` on your keyboard, or press them below, and the keys that do something light up. In the app, `⌘/` lists them all.',
+      link: ['Every shortcut', '/docs#shortcuts'],
+    },
+    {
+      id: 'roots',
+      at: '23:00',
+      title: 'Quit, and it carries on',
+      tone: 'Wortel is Dutch for root',
+      body: 'The window is what you see. Under it, a small process holds every shell and what it printed. Quit, update or crash: the agents keep working, and the window comes back to them as they are.',
+      link: ['The parts underneath', '/docs#internals'],
+    },
+  ] satisfies LearnPart[],
+  /** The worktree diagram (components/learn/Branches.astro): one repository
+   *  at the surface, and the folders its branches grow into under it. */
+  branches: {
+    repo: { path: '~/Developer/shop', branch: 'main', who: 'You' },
+    trees: [
+      { path: '~/.wortel/worktrees/shop/hero-photo', branch: 'hero-photo', who: 'Claude Code' },
+      { path: '~/.wortel/worktrees/shop/pricing-copy', branch: 'pricing-copy', who: 'Codex' },
+      { path: '~/.wortel/worktrees/shop/checkout-bug', branch: 'checkout-bug', who: 'Pi' },
+    ],
+    shared: 'Each folder shares the repository’s history, objects and remotes.',
+  },
+  /** The sidebar's signals (components/learn/Signals.astro), as DESIGN.md
+   *  lists them under "A session, in the sidebar". `dot` is how it is drawn. */
+  signals: [
+    { dot: 'working', name: 'Working', text: 'Three small dots in a wave: a turn or a long command is running.' },
+    { dot: 'attention', name: 'Needs you', text: 'An orange dot: a permission, a question. Also on the Dock and, out of sight, a notification.' },
+    { dot: 'done', name: 'Done', text: 'A mint dot: the agent’s turn ended. Your move.' },
+    { dot: 'failed', name: 'Failed', text: 'A red dot: the turn or the command ended in an error.' },
+    { dot: 'branch', name: 'On a branch', text: 'A grey line under the name, with a branch mark: a worktree session.' },
+    { dot: 'folder', name: 'In a folder', text: 'Sessions filed together under one name. Folded, it shows the loudest dot inside it.' },
+  ],
+  /** The together part's terminal (components/learn/Together.astro): what is
+   *  typed in the session in front, and what the other session prints. */
+  together: {
+    to: 'Pricing FAQ copy',
+    lines: [
+      { cmd: 'wortel send Pricing "Shorten each answer to two sentences." --enter' },
+      { cmd: 'wortel wait Pricing --timeout 5m' },
+      { cmd: 'wortel read Pricing --lines 2', out: ['⏺ Done. Every answer is two sentences now, and', '  none of them lost a fact.'] },
+    ],
+  },
+  /** The keyboard (components/learn/Keyboard.astro). */
+  keyboard: {
+    hint: 'Hold a modifier, or press one here',
+    none: 'Nothing in Wortel on these keys.',
+  },
+  /** The last part's film (components/learn/Waterline.astro): the window
+   *  above the surface, and under it the process that holds every shell,
+   *  printing on whether the window is there or not. Each shell's lines are
+   *  what it prints, a chapter at a time. */
+  waterline: {
+    above: 'What you see',
+    below: 'What keeps it running',
+    keeper: 'The process that keeps your terminals running',
+    gone: 'Wortel is not running. The shells are.',
+    shells: [
+      { name: 'Landing page hero', agent: 'claude', lines: ['Resizing hero.jpg to 2400 wide', 'Inlining the critical CSS', 'Running npm run build', 'Done. The hero loads in half the time.'] },
+      { name: 'Pricing FAQ copy', agent: 'codex', lines: ['Reading pricing.md', 'Rewriting answer 3 of 9', 'Rewriting answer 7 of 9', 'Done. Nine answers, two sentences each.'] },
+      { name: 'Changelog typography', agent: 'pi', lines: ['Reading the changelog styles', 'Setting dates in tabular figures', 'Tightening the heading leading', 'Checking it in light and dark'] },
+    ],
+    /** The film's chapters, and the steps under it. */
+    steps: [
+      { name: 'At work', text: 'Three agents at work, each in a session of its own.' },
+      { name: 'Quit', keys: ['⌘Q'], text: 'The window goes. Nothing under it stops.' },
+      { name: 'Still at work', text: 'The shells keep printing, and an agent can finish its turn with nobody watching.' },
+      { name: 'Open again', text: 'Each session comes back to the shell it had, with everything it printed meanwhile.' },
+    ] satisfies Step[],
+  },
+  /** Where to go after the day: the feature pages, then the rest. */
+  more: [
+    ...FEATURE_PAGES.map((p) => ({ name: p.name, blurb: p.blurb, href: p.path })),
+    { name: 'The reference', blurb: 'Every shortcut and command, and the parts worth knowing exactly.', href: '/docs' },
+    { name: 'About', blurb: 'Why Wortel exists, and the six things it will not trade away.', href: '/about' },
+  ],
+  closing: {
+    title: 'Tomorrow, at first light',
+    tone: 'Everything where you left it',
+    body: 'Open the lid and the sessions are there, with what they printed overnight. The reference has every key and command, and the feature pages go deeper.',
+  },
+} as const;
+
+// ---- the keys, for the keyboard on /learn ---------------------------------
+// What each key does with each set of modifiers held, from the shortcut table
+// in DOCS_SECTIONS (#shortcuts) below: change one with the other. A set is
+// written in the order macOS writes it, ⌃⌥⇧⌘. A key is named as its cap
+// says (components/learn/Keyboard.astro): a letter, a digit, a sign, or
+// Return, Tab and the four arrows. `1…9` is the nine digits, one row.
+export const KEYMAP: Record<string, [key: string, action: string, Beta?][]> = {
+  '⌘': [
+    ['N', 'New session'], ['T', 'New terminal tab where you are'], ['W', 'Close tab'],
+    ['D', 'Split right, with a new terminal', { beta: true }], ['P', 'Go to a session or a file'],
+    ['B', 'Show or hide the sidebar'], ['J', 'The terminal below, making one if there is none'],
+    ['K', 'Clear the terminal'], ['O', 'Open a folder'], ['Y', 'Find a prompt you typed to an agent'],
+    ['L', 'Browser: address field'], ['R', 'Browser: reload'], ['F', 'Find in a file or a page'], ['G', 'Next match'],
+    ['A', 'Clear the input line'],
+    ['1…9', 'Jump to a session by its place in the sidebar'],
+    ['0', 'Reset font size'], ['-', 'Smaller font'], ['=', 'Larger font'],
+    ['[', 'Focus the previous split'], [']', 'Focus the next split'],
+    [',', 'Settings'], ['/', 'List every shortcut'],
+    ['↑', 'Jump to the previous prompt'], ['↓', 'Jump to the next prompt'],
+  ],
+  '⇧⌘': [
+    ['N', 'New window'], ['P', 'Run a command'], ['D', 'Split down, with a new terminal', { beta: true }],
+    ['W', 'Close session'], ['T', 'Reopen closed tab'], ['B', 'New browser tab', { beta: true }],
+    ['C', 'Show Changes', { beta: true }], ['H', 'Show History', { beta: true }], ['F', 'Show Files', { beta: true }],
+    ['M', 'Mark up the page or file in front', { beta: true }], ['U', 'Mark session as unread'],
+    ['A', 'Select all'], ['G', 'Previous match'], ['Return', 'Zoom the split you are in, and back', { beta: true }],
+    ['[', 'Previous tab'], [']', 'Next tab'],
+  ],
+  '⌥⌘': [
+    ['N', 'New session at home'], ['P', 'Pin or unpin session'], ['R', 'Rename session'],
+    ['T', 'New tab that asks what it should be', { beta: true }], ['B', 'Changes and Files beside the terminal'],
+    ['L', 'Focus the list in Changes, History or Files'], ['U', 'Browser: a page from a file, its source and back', { beta: true }],
+    ['↑', 'Previous session'], ['↓', 'Next session'],
+  ],
+  '⌥⇧⌘': [['N', 'New worktree session'], ['↓', 'Jump to the next waiting session']],
+  '⌃⌘': [
+    ['N', 'New terminal, without the command Settings starts'], ['F', 'Full screen'],
+    ['=', 'Make the splits equal', { beta: true }], ['[', 'Back through the sessions and tabs you were on'], [']', 'Forward again'],
+    ['←', 'Move the tab to the split on the left', { beta: true }], ['→', 'Move the tab to the split on the right', { beta: true }],
+    ['↑', 'Move the tab to the split above', { beta: true }], ['↓', 'Move the tab to the split below', { beta: true }],
+  ],
+  '⌃⌥⌘': [
+    ['N', 'New terminal at home, without the command'],
+    ['←', 'Focus the split on the left', { beta: true }], ['→', 'Focus the split on the right', { beta: true }],
+    ['↑', 'Focus the split above', { beta: true }], ['↓', 'Focus the split below', { beta: true }],
+  ],
+  '⌃⇧': [['G', 'Show source control'], ['`', 'New terminal tab under the main terminal'], ['Tab', 'Previous tab']],
+  '⌃': [['`', 'The terminal below, and back'], ['Tab', 'Next tab']],
+};
+
+// ==========================================================================
 // /docs: the reference the homepage stopped being.
 //
 // Everything here was on the landing page and made it 13 screens long. None of
@@ -695,6 +984,8 @@ export const DOCS = {
     'The wortel command, every keyboard shortcut, and how sessions, worktrees and the git panel behave. Reference for the native macOS terminal built on Ghostty.',
   heading: 'Reference',
   lead: 'The command, the shortcuts, and the parts that are worth knowing exactly.',
+  /** For someone who came here first: the guided day. */
+  learn: ['New to Wortel? Learn it in a day', '/learn'],
 } as const;
 
 export const DOCS_SECTIONS: Section[] = [

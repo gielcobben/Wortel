@@ -1,0 +1,74 @@
+---
+// The steps under a part of /learn: what to press, in order, a word or two
+// for each and one sentence.
+//
+// With `film`, the steps are that film's chapters (data/site.ts, LEARN): the
+// step on screen is the chapter playing, its hairline fills while the film
+// holds it, and pressing a step plays that chapter (scripts/learn.ts reads
+// the film's own tabs, so film.ts needs nothing from this). Without one they
+// are a short list to try, and stand still.
+//
+// A key is drawn as a cap per glyph, as the films press them: ⇧ ⌘ C. What is
+// typed is code.
+import type { Step } from '../../data/site';
+import { inline } from '../../data/inline';
+interface Props { steps: readonly Step[]; film?: string }
+const { steps, film } = Astro.props;
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+/** A chord as its caps, each modifier and then the key; what is typed as code. */
+const keys = (k: string) => {
+  if (k.startsWith('`')) return `<code>${esc(k.slice(1, -1))}</code>`;
+  const m = k.match(/^([⌃⌥⇧⌘]*)(.+)$/u)!;
+  return `<span class="chord">${[...Array.from(m[1]), m[2]].map((c) => `<kbd${c.length > 1 ? ' class="word"' : ''}>${esc(c)}</kbd>`).join('')}</span>`;
+};
+const body = (s: Step) =>
+  `<span class="top"><span class="name">${esc(s.name)}</span>${s.keys ? `<span class="keys">${s.keys.map(keys).join('')}</span>` : ''}</span>` +
+  `<span class="text">${inline(s.text)}</span>`;
+---
+<ol class:list={['steps', { follow: !!film }]} data-steps={film} style={`--n:${steps.length}`} data-reveal-group="0.06">
+  {steps.map((s, i) => (
+    <li data-step={i} data-reveal>
+      {film
+        ? <button type="button" class="step"><Fragment set:html={body(s)} /></button>
+        : <div class="step"><Fragment set:html={body(s)} /></div>}
+    </li>
+  ))}
+</ol>
+
+<style>
+  .steps { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 32px var(--col-gap); }
+  @media (max-width: 1000px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .steps { grid-template-columns: 1fr; gap: 0; } }
+  .step {
+    all: unset; box-sizing: border-box; position: relative; display: flex; flex-direction: column; gap: 8px;
+    width: 100%; height: 100%; padding-top: 16px; border-top: 1px solid var(--line);
+  }
+  @media (max-width: 640px) { .step { padding-block: 16px; } }
+  button.step { cursor: pointer; }
+  button.step:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+  /* The name, and the keys after it on the same line. */
+  .step :global(.top) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 24px; }
+  .step :global(.name) { font: 500 16px/24px var(--font-display); letter-spacing: -0.01em; color: var(--ink); }
+  .step :global(.keys) { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+  .step :global(.chord) { display: inline-flex; gap: 2px; }
+  .step :global(.chord kbd.word) { padding: 0 8px; }
+  .step :global(.keys code) { font: 500 13px/22px var(--font-mono); padding: 0 6px; border-radius: 6px; background: var(--fog-1); color: var(--ink); border: 1px solid var(--line); }
+  .step :global(.text) { font-size: 15px; line-height: 24px; color: var(--ink-2); text-wrap: pretty; }
+  .step :global(.text code) { white-space: nowrap; font: 500 0.86em var(--font-mono); padding: 2px 6px; border-radius: 6px; background: var(--fog-1); color: var(--ink); border: 1px solid var(--line); }
+  .step :global(.text kbd) { vertical-align: 1px; }
+
+  /* Following a film: the steps not on screen step back, the one on screen
+     has its hairline in ink, filling while the film holds the chapter. */
+  .follow .step { transition: opacity 300ms var(--ease-out); }
+  .follow .step::before {
+    content: ''; position: absolute; left: 0; top: -1px; height: 1px; width: 0; background: var(--ink);
+  }
+  .follow [data-current] .step::before { width: 100%; }
+  .follow.auto [data-current] .step::before { width: 0; animation: fill var(--hold, 4s) linear forwards; }
+  @keyframes fill { to { width: 100%; } }
+  .follow li:not([data-current]) .step :global(.name) { color: var(--ink-2); }
+  @media (hover: hover) and (pointer: fine) {
+    .follow li:not([data-current]) .step:hover :global(.name) { color: var(--ink); }
+  }
+  @media (prefers-reduced-motion: reduce) { .follow.auto [data-current] .step::before { animation: none; width: 100%; } }
+</style>

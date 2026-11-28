@@ -1,0 +1,224 @@
+---
+// The keys, on /learn: a Mac keyboard, and the modifiers on it. Hold ⌘, ⇧, ⌥
+// or ⌃ on your own keyboard, or press them on this one, and the keys that do
+// something in Wortel with that set held are lit; point at one and it says
+// what it does. Under it, the same set as a list, written into the page for
+// every set, so it reads without scripts and a search can find it.
+//
+// What each key does is KEYMAP in data/site.ts, kept in step with the
+// shortcut table on /docs. Nothing here takes a key from the browser: a key
+// pressed with a modifier only lights its cap.
+import { KEYMAP, LEARN } from '../../data/site';
+import Beta from '../Beta.astro';
+
+/** A cap: its id (as KEYMAP names keys), what is printed on it, its width
+ *  in key units, and which `code` a real keyboard sends for it. */
+type Cap = { id: string; label?: string; u?: number; code: string; mod?: string; small?: boolean };
+const L = (c: string): Cap => ({ id: c, code: /[A-Z]/.test(c) ? `Key${c}` : `Digit${c}` });
+const rows: Cap[][] = [
+  [{ id: '`', code: 'Backquote' }, ...'1234567890'.split('').map(L), { id: '-', code: 'Minus' }, { id: '=', code: 'Equal' }, { id: 'Delete', label: 'delete', u: 1.5, code: 'Backspace', small: true }],
+  [{ id: 'Tab', label: 'tab', u: 1.5, code: 'Tab', small: true }, ...'QWERTYUIOP'.split('').map(L), { id: '[', code: 'BracketLeft' }, { id: ']', code: 'BracketRight' }, { id: '\\', code: 'Backslash' }],
+  [{ id: 'Caps', label: 'caps lock', u: 1.75, code: 'CapsLock', small: true }, ...'ASDFGHJKL'.split('').map(L), { id: ';', code: 'Semicolon' }, { id: "'", code: 'Quote' }, { id: 'Return', label: 'return', u: 1.75, code: 'Enter', small: true }],
+  [{ id: 'ShiftL', label: '⇧', u: 2.25, code: 'ShiftLeft', mod: '⇧' }, ...'ZXCVBNM'.split('').map(L), { id: ',', code: 'Comma' }, { id: '.', code: 'Period' }, { id: '/', code: 'Slash' }, { id: 'ShiftR', label: '⇧', u: 2.25, code: 'ShiftRight', mod: '⇧' }],
+];
+const bottom: Cap[] = [
+  { id: 'fn', label: 'fn', code: 'Fn', small: true },
+  { id: 'CtrlL', label: '⌃', code: 'ControlLeft', mod: '⌃' },
+  { id: 'AltL', label: '⌥', code: 'AltLeft', mod: '⌥' },
+  { id: 'CmdL', label: '⌘', u: 1.25, code: 'MetaLeft', mod: '⌘' },
+  { id: 'Space', label: '', u: 5, code: 'Space' },
+  { id: 'CmdR', label: '⌘', u: 1.25, code: 'MetaRight', mod: '⌘' },
+  { id: 'AltR', label: '⌥', code: 'AltRight', mod: '⌥' },
+];
+const arrows = { left: { id: '←', code: 'ArrowLeft' }, up: { id: '↑', code: 'ArrowUp' }, down: { id: '↓', code: 'ArrowDown' }, right: { id: '→', code: 'ArrowRight' } };
+const MODS: Record<string, string> = { '⌃': 'control', '⌥': 'option', '⇧': 'shift', '⌘': 'command' };
+const sets = Object.keys(KEYMAP);
+/** How a key reads after its modifiers, in a list. */
+const shown = (k: string) => (k === 'Return' ? '↩' : k === 'Tab' ? '⇥' : k);
+/** The caps a row of the list stands for: `1…9` is nine. */
+const expand = (k: string) => (/^\d…\d$/.test(k) ? Array.from({ length: +k[2] - +k[0] + 1 }, (_, i) => String(+k[0] + i)) : [k]);
+---
+<div class="kb" data-keyboard data-set="⌘" data-nosnippet data-map={JSON.stringify(Object.fromEntries(sets.map((s) => [s, KEYMAP[s].flatMap(([k, what]) => expand(k).map((one) => [one, what]))])))}>
+  <p class="now" aria-live="polite"><span class="held" data-held>⌘</span><span class="says" data-says>{LEARN.keyboard.hint}</span></p>
+  <div class="board" role="group" aria-label="Keyboard">
+    {rows.map((row) => (
+      <div class="row">
+        {row.map((c) => c.mod
+          ? <button type="button" class="key mod" data-mod={c.mod} data-code={c.code} aria-pressed={c.mod === '⌘' ? 'true' : 'false'} aria-label={MODS[c.mod]} style={`--u:${c.u ?? 1}`}><span>{c.label}</span></button>
+          : <span class:list={['key', { small: c.small }]} data-key={c.id} data-code={c.code} style={`--u:${c.u ?? 1}`}><span>{c.label ?? c.id}</span></span>)}
+      </div>
+    ))}
+    <div class="row">
+      {bottom.map((c) => c.mod
+        ? <button type="button" class="key mod" data-mod={c.mod} data-code={c.code} aria-pressed={c.mod === '⌘' ? 'true' : 'false'} aria-label={MODS[c.mod]} style={`--u:${c.u ?? 1}`}><span>{c.label}</span><small>{MODS[c.mod]}</small></button>
+        : <span class:list={['key', { small: c.small }]} data-key={c.id} data-code={c.code} style={`--u:${c.u ?? 1}`}><span>{c.label}</span></span>)}
+      <div class="arrows" style="--u:3">
+        <span class="key half" data-key={arrows.left.id} data-code={arrows.left.code}><span>{arrows.left.id}</span></span>
+        <div class="updown">
+          <span class="key half" data-key={arrows.up.id} data-code={arrows.up.code}><span>{arrows.up.id}</span></span>
+          <span class="key half" data-key={arrows.down.id} data-code={arrows.down.code}><span>{arrows.down.id}</span></span>
+        </div>
+        <span class="key half" data-key={arrows.right.id} data-code={arrows.right.code}><span>{arrows.right.id}</span></span>
+      </div>
+    </div>
+  </div>
+  <p class="none" data-none hidden>{LEARN.keyboard.none}</p>
+  {sets.map((set) => (
+    <ul class="list" data-list={set} hidden={set !== '⌘'}>
+      {KEYMAP[set].map(([k, what, flag]) => (
+        <li data-for={expand(k).join(' ')}>
+          <span class="chord">{[...Array.from(set), shown(k)].map((g) => <kbd>{g}</kbd>)}</span>
+          <span class="what">{what}{flag?.beta && <Beta />}</span>
+        </li>
+      ))}
+    </ul>
+  ))}
+</div>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-keyboard]');
+  if (root) {
+    // What each key does, from the page (data/site.ts is for the build only).
+    const KEYMAP = JSON.parse(root.dataset.map!) as Record<string, [string, string][]>;
+    const ORDER = ['⌃', '⌥', '⇧', '⌘'];
+    const caps = Array.from(root.querySelectorAll<HTMLElement>('[data-key]'));
+    const mods = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-mod]'));
+    const lists = Array.from(root.querySelectorAll<HTMLElement>('[data-list]'));
+    const held = root.querySelector<HTMLElement>('[data-held]')!;
+    const says = root.querySelector<HTMLElement>('[data-says]')!;
+    const none = root.querySelector<HTMLElement>('[data-none]')!;
+    const hint = says.textContent ?? '';
+    // What was pressed on the picture stays pressed; what is held on a real
+    // keyboard counts while it is held, and then the picture's set is back.
+    let latched = new Set(['⌘']);
+    let physical = new Set<string>();
+    let set = '⌘';
+    const name = (s: Set<string>) => ORDER.filter((m) => s.has(m)).join('');
+    const actions = () => new Map((KEYMAP[set] ?? []).map(([k, what]) => [k, what]));
+
+    const show = () => {
+      const now = physical.size ? physical : latched;
+      set = name(now);
+      root.dataset.set = set;
+      mods.forEach((m) => m.setAttribute('aria-pressed', String(now.has(m.dataset.mod!))));
+      const map = actions();
+      caps.forEach((c) => c.toggleAttribute('data-lit', map.has(c.dataset.key!)));
+      lists.forEach((l) => (l.hidden = l.dataset.list !== set));
+      none.hidden = !set || map.size > 0;
+      held.textContent = set;
+      held.hidden = !set;
+      says.textContent = set ? (map.size ? hint : '') : hint;
+    };
+    const point = (key: string | null) => {
+      const map = actions();
+      caps.forEach((c) => c.toggleAttribute('data-on', c.dataset.key === key));
+      root.querySelectorAll<HTMLElement>(`[data-list="${CSS.escape(set)}"] li`).forEach((li) => li.toggleAttribute('data-on', !!key && li.dataset.for!.split(' ').includes(key)));
+      says.textContent = key && map.has(key) ? map.get(key)! : (map.size || !set ? hint : '');
+    };
+
+    mods.forEach((m) => m.addEventListener('click', () => {
+      const g = m.dataset.mod!;
+      if (latched.has(g)) latched.delete(g); else latched.add(g);
+      latched = new Set(latched);
+      show();
+    }));
+    caps.forEach((c) => {
+      c.addEventListener('pointerenter', () => point(c.dataset.key!));
+      c.addEventListener('pointerleave', () => point(null));
+    });
+    lists.forEach((l) => l.querySelectorAll<HTMLElement>('li').forEach((li) => {
+      li.addEventListener('pointerenter', () => point(li.dataset.for!.split(' ')[0]));
+      li.addEventListener('pointerleave', () => point(null));
+    }));
+
+    // A real keyboard. Only while the keyboard is on screen, and nothing is
+    // taken from the browser: the event goes on as it came.
+    let onScreen = false;
+    new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (!onScreen && physical.size) { physical = new Set(); show(); } }).observe(root);
+    const fromEvent = (e: KeyboardEvent) => {
+      const s = new Set<string>();
+      if (e.ctrlKey) s.add('⌃'); if (e.altKey) s.add('⌥'); if (e.shiftKey) s.add('⇧'); if (e.metaKey) s.add('⌘');
+      return s;
+    };
+    const flash = (code: string) => {
+      const c = root.querySelector<HTMLElement>(`[data-code="${code}"]`);
+      if (!c) return;
+      c.toggleAttribute('data-down', true);
+      setTimeout(() => c.removeAttribute('data-down'), 180);
+      if (c.dataset.key) point(c.dataset.key);
+    };
+    window.addEventListener('keydown', (e) => {
+      if (!onScreen) return;
+      physical = fromEvent(e);
+      show();
+      if (!['Meta', 'Shift', 'Alt', 'Control'].includes(e.key)) flash(e.code);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (!onScreen) return;
+      physical = fromEvent(e);
+      show();
+    });
+    window.addEventListener('blur', () => { physical = new Set(); show(); });
+    show();
+  }
+</script>
+
+<style>
+  .kb { container-type: inline-size; }
+  .now { display: flex; align-items: center; gap: 16px; min-height: 40px; margin: 0 0 24px; }
+  .held { display: inline-flex; align-items: center; height: 40px; padding: 0 16px; border-radius: 999px; background: var(--accent); color: #fff; font: 500 17px/1 var(--font-sans); letter-spacing: 0.08em; }
+  .held[hidden] { display: none; }
+  .says { font-size: 17px; line-height: 24px; color: var(--ink); text-wrap: balance; }
+
+  /* The board: five rows of keys in units, as a Mac's keyboard lays them
+     out, fourteen and a half units wide. A unit is what is left of the row
+     after its gaps, over 14.5. */
+  .board {
+    --gap: 8px; --unit: calc((min(100cqw, 960px) - 48px - 13 * var(--gap)) / 14.5);
+    max-width: 960px; display: flex; flex-direction: column; gap: var(--gap); padding: 24px; border-radius: 24px;
+    background: var(--btn-2);
+  }
+  .row { display: flex; gap: var(--gap); }
+  .key {
+    all: unset; box-sizing: border-box; position: relative; flex: var(--u, 1) 1 0; min-width: 0;
+    height: var(--unit); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font: 400 clamp(11px, 2.2cqw, 17px)/1 var(--font-sans); color: var(--ink-3);
+    background: color-mix(in srgb, var(--fog-0) 40%, transparent);
+    transition: background-color 200ms var(--ease-out), color 200ms var(--ease-out), box-shadow 200ms var(--ease-out), transform 120ms var(--ease-out);
+  }
+  .key.small { font-size: clamp(9px, 1.4cqw, 12px); justify-content: flex-start; align-items: flex-end; padding: 0 0 8px 8px; }
+  /* Lit: something happens on this key with these modifiers. */
+  .key[data-lit] { background: var(--fog-0); color: var(--ink); box-shadow: 0 0 0 1px var(--line-2), 0 1px 0 1px var(--line); font-weight: 500; }
+  .key[data-on] { box-shadow: 0 0 0 2px var(--ink); }
+  .key[data-down] { transform: translateY(1px) scale(0.97); }
+  /* The modifiers: buttons, held in the accent while they count. */
+  .mod { cursor: pointer; color: var(--ink-2); flex-direction: column; gap: 4px; }
+  .mod small { font-size: clamp(8px, 1.2cqw, 11px); line-height: 1; color: inherit; opacity: 0.8; }
+  .mod[aria-pressed="true"] { background: var(--accent); color: #fff; box-shadow: none; }
+  .mod:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (hover: hover) and (pointer: fine) { .mod:hover:not([aria-pressed="true"]) { background: var(--fog-0); color: var(--ink); } }
+  .arrows { flex: 3 1 0; display: flex; gap: var(--gap); align-items: flex-end; min-width: 0; }
+  .arrows > .key, .updown { flex: 1 1 0; }
+  .updown { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .updown .key { flex: none; width: 100%; }
+  .key.half { height: calc(var(--unit) / 2 - 1px); font-size: clamp(9px, 1.4cqw, 12px); }
+
+  .none { margin: 24px 0 0; font-size: 15px; line-height: 24px; color: var(--ink-2); }
+  .list { list-style: none; margin: 32px 0 0; padding: 0; columns: 3 240px; column-gap: var(--col-gap); }
+  .list li { break-inside: avoid; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); transition: opacity 200ms ease; }
+  .list .chord { display: inline-flex; gap: 2px; }
+  .list kbd { min-width: 24px; }
+  .what { font-size: 14px; line-height: 24px; color: var(--ink-2); }
+  .what :global(.beta) { margin-left: 8px; vertical-align: top; }
+  .list:has(li[data-on]) li:not([data-on]) { opacity: 0.4; }
+  .list li[data-on] .what { color: var(--ink); }
+  /* On a phone the keys are a picture of keys, drawn to its own measure:
+     at the site's 8 between them a key would be 12 wide. */
+  @media (max-width: 640px) {
+    .board { --gap: 4px; padding: 8px; border-radius: 16px; --unit: calc((100cqw - 16px - 13 * var(--gap)) / 14.5); }
+    .key { border-radius: 4px; }
+    .key.small { padding: 0 0 4px 4px; }
+    .mod small { display: none; }
+  }
+</style>

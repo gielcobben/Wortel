@@ -69,7 +69,10 @@ npm run build        # → dist/, with the local pixel tools stripped out
 - A docs section that holds more than one subject gets a small heading
   between them (`{ h: '…' }`), not one long paragraph.
 - The homepage is the pitch. `/docs` is the manual. A paragraph that explains
-  how something works belongs on `/docs`.
+  how something works belongs on `/docs`. `/learn` is the guide between
+  them: a working day, a part at a time, with the keys to try each part
+  (`LEARN` in `site.ts`). A part's steps under a film are that film's
+  chapters, in order: change one, change the other.
 - No em-dashes anywhere that ships, HTML comments included.
 - On `/compare`, every claim is read off that product's own site, docs or
   repository, and "unknown" is a real answer.

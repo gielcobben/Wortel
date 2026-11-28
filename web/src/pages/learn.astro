@@ -1,0 +1,144 @@
+---
+// /learn: Wortel in the order a working day asks for it (LEARN in
+// data/site.ts, which says what the page is for). It is built from the
+// homepage's parts and the feature pages' (Section, the films), with the
+// pieces only a guide needs:
+//   Day        the index under the opening: each part at its time;
+//   Steps      under a film, its chapters as steps that follow it;
+//   Branches   worktrees as roots under the repository;
+//   Signals    the sidebar, and what each of its marks means;
+//   Together   one session handing another a task with `wortel`;
+//   Keyboard   hold a modifier, see what the keys do;
+//   Waterline  the last part: quit, and the shells under the surface go on.
+// Neighbouring stages never stand on the same photo (README, Photos).
+import Layout from '../layouts/Layout.astro';
+import Section from '../components/Section.astro';
+import StartFilm from '../components/films/StartFilm.astro';
+import AgentsFilm from '../components/films/AgentsFilm.astro';
+import ReviewFilm from '../components/films/ReviewFilm.astro';
+import MarkupFilm from '../components/films/MarkupFilm.astro';
+import PanesFilm from '../components/films/PanesFilm.astro';
+import Day from '../components/learn/Day.astro';
+import Steps from '../components/learn/Steps.astro';
+import Branches from '../components/learn/Branches.astro';
+import Signals from '../components/learn/Signals.astro';
+import Together from '../components/learn/Together.astro';
+import Keyboard from '../components/learn/Keyboard.astro';
+import Waterline from '../components/learn/Waterline.astro';
+import { inline } from '../data/inline';
+import { SITE, LEARN, type LearnPart } from '../data/site';
+
+const abs = (p: string) => new URL(p, SITE.url).href;
+const schema = [{
+  '@type': 'TechArticle', '@id': abs(`${LEARN.path}#article`), url: abs(LEARN.path), headline: LEARN.title,
+  description: LEARN.description, isPartOf: { '@id': abs('/#website') }, about: { '@id': abs('/#app') }, inLanguage: 'en',
+}];
+const part = Object.fromEntries(LEARN.parts.map((p) => [p.id, p as LearnPart])) as Record<string, LearnPart>;
+const head = (id: string) => {
+  const { steps: _, ...rest } = part[id];
+  return rest;
+};
+const steps = (id: string) => part[id].steps ?? [];
+const chevron = '<svg width="7" height="11" viewBox="0 0 7 11" aria-hidden="true"><path d="M1.5 1.5 5.5 5.5l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+---
+<Layout title={LEARN.title} description={LEARN.description} path={LEARN.path} schema={schema} markdown="/learn.md">
+  <section class="opening">
+    <div class="page">
+      <header data-reveal-group>
+        <h1 class="display" data-reveal>{LEARN.heading} <span class="tone">{LEARN.tone}</span></h1>
+        <p class="lead" data-reveal set:html={inline(LEARN.lead)} />
+        <div class="ctas" data-reveal>
+          <a class="btn" href="/download#learn">Download for macOS<Fragment set:html={chevron} /></a>
+          <a class="btn ghost" href="/docs">The reference</a>
+        </div>
+      </header>
+      <Day />
+    </div>
+  </section>
+
+  <Section {...head('start')}>
+    <StartFilm photo="hills" at="0% 12%" zoom={2} />
+    <Steps film="start" steps={steps('start')} />
+  </Section>
+
+  <Section {...head('branches')}>
+    <Branches />
+    <Steps steps={steps('branches')} />
+  </Section>
+
+  <Section {...head('signals')}>
+    <Signals />
+  </Section>
+
+  <Section {...head('needs-you')}>
+    <AgentsFilm photo="haze" at="20% 50%" zoom={1.4} />
+    <Steps film="agents" steps={steps('needs-you')} />
+  </Section>
+
+  <Section {...head('review')}>
+    <ReviewFilm photo="skye" at="30% 40%" zoom={1.4} />
+    <Steps film="review" steps={steps('review')} />
+  </Section>
+
+  <Section {...head('mark-up')}>
+    <MarkupFilm />
+    <Steps film="markup" steps={steps('mark-up')} />
+  </Section>
+
+  <Section {...head('arrange')}>
+    <PanesFilm />
+    <Steps film="panes" steps={steps('arrange')} />
+  </Section>
+
+  <Section {...head('together')}>
+    <Together />
+    <Steps steps={steps('together')} />
+  </Section>
+
+  <Section {...head('keys')}>
+    <Keyboard />
+  </Section>
+
+  <Section {...head('roots')}>
+    <Waterline />
+    <Steps film="roots" steps={LEARN.waterline.steps} />
+  </Section>
+
+  <div class="page rest">
+    <section class="row12 read">
+      <div class="k"><h2 class="h2">{LEARN.closing.title} <span class="tone">{LEARN.closing.tone}</span></h2></div>
+      <div class="v">
+        <p class="lead" set:html={inline(LEARN.closing.body)} />
+        <ul class="more">
+          {LEARN.more.map((m) => (
+            <li>
+              <a class="arrow" href={m.href}>{m.name}<Fragment set:html={chevron} /></a>
+              <p class="body">{m.blurb}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<script>
+  import '../scripts/scenes';
+  import { followFilms } from '../scripts/learn';
+  followFilms();
+</script>
+
+<style>
+  /* The opening has the feature pages' measures (components/FeaturePage.astro). */
+  .opening { padding-top: 144px; }
+  .opening .lead { max-width: 560px; margin-top: 24px; }
+  .ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 8px; margin-top: 32px; }
+  .ctas .btn:not(.ghost) :global(svg) { margin-left: 2px; }
+  @media (max-width: 900px) { .opening { padding-top: 104px; } }
+  .rest { margin-top: 160px; }
+  @media (max-width: 900px) { .rest { margin-top: 112px; } }
+  .more { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px var(--col-gap); }
+  .more .arrow { margin-top: 0; }
+  .more .body { margin-top: 8px; max-width: 400px; }
+  @media (max-width: 640px) { .more { grid-template-columns: 1fr; gap: 24px; } }
+</style>

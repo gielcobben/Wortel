@@ -1,0 +1,198 @@
+---
+// The last part of /learn, and the name said out loud: wortel is root. One
+// stage, cut in two by the surface. Above it, the window: a short sidebar of
+// three sessions with agents at work. Under it, where the photo goes under
+// water, the process that keeps every terminal running, and the three shells
+// it holds, each printing as it goes.
+//
+// A film in four chapters (scripts/film.ts), with the steps under it
+// following along (components/learn/Steps.astro):
+//   At work        the window and the shells, at work;
+//   Quit           ⌘Q, and the window goes, and its root with it;
+//   Still at work  the shells print on, and two agents finish;
+//   Open again     the window comes back to them, as they are now.
+// The words are LEARN.waterline in data/site.ts. The window is the canvas's
+// sidebar; what is under the surface is a picture in the site's own type.
+import Stage from '../Stage.astro';
+import Sidebar from '../../app/gen/Sidebar.astro';
+import { LEARN } from '../../data/site';
+const W = LEARN.waterline;
+const chapters = W.steps.map((s) => s.name);
+const n = W.shells.length;
+const ends = W.shells.map((_, i) => ((i + 0.5) / n) * 600);
+---
+<Stage film="roots" chapters={chapters} photo="lake" at="50% 66%" zoom={1.2} w={234} h={232} class="wl">
+  <p class="where up">{W.above}</p>
+  <div class="win wapp wl-win" data-wlwin aria-hidden="true" data-nosnippet data-shells={JSON.stringify(W.shells.map((s) => [s.name, s.lines.length]))}>
+    <div class="absolute inset-0 bg-sidebar backdrop-blur-[50px] backdrop-saturate-[1.8]"></div>
+    <div class="relative flex w-[234px]"><Sidebar /></div>
+  </div>
+  <p class="gone" data-gone>{W.gone}</p>
+  <div class="under" data-nosnippet>
+    <p class="where down">{W.below}</p>
+    <svg class="stem" viewBox="0 0 2 48" preserveAspectRatio="none" aria-hidden="true"><path d="M1 0 V48" pathLength="1" vector-effect="non-scaling-stroke" /></svg>
+    <div class="keeper">{W.keeper}</div>
+    <svg class="lines" viewBox="0 0 600 64" preserveAspectRatio="none" aria-hidden="true">
+      {ends.map((x) => <path d={`M300 0 C300 40 ${x} 24 ${x} 64`} pathLength="1" vector-effect="non-scaling-stroke" />)}
+    </svg>
+    <ul class="shells wapp" style={`--n:${n}`}>
+      {W.shells.map((s, i) => (
+        <li class="shell" data-shell={i}>
+          <p class="top"><span class="name">{s.name}</span><span class="state" data-state><span class="wave" aria-hidden="true"><i></i><i></i><i></i></span><span class="dot bg-chart-2" aria-hidden="true"></span></span></p>
+          <p class="cmd">$ {s.agent}</p>
+          <ol class="out" data-out>{s.lines.map((l) => <li hidden>{l}</li>)}</ol>
+        </li>
+      ))}
+    </ul>
+  </div>
+  <div class="keys glass" data-keys="quit" aria-hidden="true"><kbd>⌘</kbd><kbd>Q</kbd></div>
+</Stage>
+
+<script>
+  import { gsap } from 'gsap';
+  import { Sidebar, named, pressKeys, reduced } from '../../scripts/app';
+  import { film } from '../../scripts/film';
+  const root = document.querySelector<HTMLElement>('[data-film="roots"]');
+  if (root) {
+    const win = root.querySelector<HTMLElement>('[data-wlwin]')!;
+    // Each shell's session and how many lines it prints (data/site.ts is for
+    // the build only).
+    const SHELLS = JSON.parse(win.dataset.shells!) as [string, number][];
+    const gone = root.querySelector<HTMLElement>('[data-gone]')!;
+    const stem = root.querySelector<SVGElement>('.stem')!;
+    const quitKeys = root.querySelector<HTMLElement>('[data-keys="quit"]')!;
+    const sb = new Sidebar(named(win, 'Sidebar')!);
+    const names = SHELLS.map(([name]) => name);
+    sb.show(['Section Sessions', ...names]);
+    sb.select(names[0]);
+    const shells = Array.from(root.querySelectorAll<HTMLElement>('[data-shell]'));
+
+    // What each shell has printed by the end of each chapter: one line
+    // working, two when you quit, all four by the time you come back, but
+    // the third agent is still at it. A shell is done on its last line,
+    // unless it is the one still working.
+    const STILL = 2;
+    const printed = [[1, 1, 1], [2, 2, 2], [4, 4, 3], [4, 4, 3]];
+    const done = (shell: number, lines: number) => shell !== STILL && lines === SHELLS[shell][1];
+    // The sidebar knows what the window saw: while it is gone, nothing.
+    let seen = [false, false, false];
+
+    const show = (chapter: number, animate: boolean) => {
+      const counts = printed[chapter];
+      shells.forEach((el, i) => {
+        const items = Array.from(el.querySelectorAll<HTMLElement>('[data-out] li'));
+        items.forEach((li, k) => {
+          const was = li.hidden;
+          li.hidden = k >= counts[i];
+          if (animate && was && !li.hidden) gsap.fromTo(li, { opacity: 0, y: 4 }, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out', delay: 0.3 + k * 0.05 + i * 0.4, clearProps: 'all' });
+        });
+        el.toggleAttribute('data-done', done(i, counts[i]));
+      });
+    };
+    const windowShown = (on: boolean, animate: boolean) => {
+      root.toggleAttribute('data-quit', !on);
+      const d = animate && !reduced() ? 1 : 0;
+      gsap.to(win, { autoAlpha: on ? 1 : 0, y: on ? 0 : 16, scale: on ? 1 : 0.98, duration: 0.5 * d, ease: on ? 'power3.out' : 'power2.inOut', overwrite: true });
+      gsap.to(gone, { autoAlpha: on ? 0 : 1, duration: 0.4 * d, delay: on ? 0 : 0.7 * d, overwrite: true });
+      gsap.to(stem, { opacity: on ? 1 : 0.25, duration: 0.4 * d, overwrite: true });
+    };
+    const statuses = (chapter: number) => {
+      names.forEach((name, i) => {
+        const st = done(i, printed[chapter][i]) ? 'done' : 'working';
+        if (seen[i] !== (st === 'done')) { sb.status(name, st); seen[i] = st === 'done'; }
+      });
+    };
+    // The first paint: everyone at work.
+    names.forEach((name) => sb.status(name, 'working'));
+
+    film(root, (f) => [
+      { hold: 4.5, enter(animate) { windowShown(true, animate); show(0, animate); statuses(0); } },
+      {
+        hold: 4,
+        enter(animate) {
+          show(1, animate);
+          if (!animate || reduced()) { windowShown(false, false); return; }
+          // The keys first, then the window goes.
+          pressKeys(gsap.timeline(), quitKeys, 0, 1);
+          f.later(() => windowShown(false, true), 0.6);
+        },
+      },
+      { hold: 5, enter(animate) { windowShown(false, false); show(2, animate); } },
+      { hold: 5.5, enter(animate) { windowShown(true, animate); show(3, false); statuses(3); } },
+    ], 2);
+  }
+</script>
+
+<style>
+  /* The stage, cut in two: the photo above, and under the surface a band of
+     the page's raised fog over it, so the lake goes under water. */
+  :global(.wl .set) { gap: 0; }
+  .where { margin: 0; font-size: 13px; line-height: 16px; color: var(--ink); text-shadow: 0 1px 8px var(--fog-0); }
+  .up { align-self: flex-start; margin-bottom: 16px; }
+  .wl-win { z-index: 1; }
+  .wl-win :global([data-name="Sidebar"]) { height: 232px; }
+  .gone {
+    position: absolute; top: 128px; left: 50%; translate: -50% 0; z-index: 2; margin: 0;
+    padding: 8px 16px; border-radius: 999px; font-size: 14px; line-height: 24px; white-space: nowrap; color: var(--ink);
+    opacity: 0; visibility: hidden;
+  }
+  .gone { background: color-mix(in srgb, var(--fog-0) 76%, transparent); backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); box-shadow: 0 0 0 0.5px var(--line-2); }
+  .under { position: relative; width: 100%; display: flex; flex-direction: column; align-items: center; margin-top: 48px; padding-top: 24px; }
+  /* The water: to the stage's edges and its foot (its padding is 48, 48). */
+  .under::before {
+    content: ''; position: absolute; z-index: -1; top: 0; left: -48px; right: -48px; bottom: -48px;
+    background: color-mix(in srgb, var(--fog-1) 94%, transparent);
+    border-top: 1px solid var(--line-2);
+  }
+  .down { align-self: flex-start; color: var(--ink-2); text-shadow: none; }
+  /* The window's root: from the surface to the process. Faint while the
+     window is gone. */
+  .stem { position: absolute; top: -48px; left: 50%; width: 2px; height: 72px; translate: -1px 0; overflow: visible; }
+  .stem path, .lines path { fill: none; stroke: var(--ink-3); stroke-width: 1; }
+  [data-quit] .stem path { stroke-dasharray: 2 4; }
+  .keeper {
+    padding: 8px 24px; border-radius: 999px; background: var(--fog-0); color: var(--ink);
+    font: 500 14px/24px var(--font-sans); text-align: center;
+    box-shadow: 0 0 0 1px var(--line-2);
+  }
+  .lines { display: block; width: 100%; height: 64px; }
+  .shells { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 24px; background: none; }
+  .shell {
+    display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border-radius: 16px;
+    background: var(--background); color: var(--foreground); box-shadow: 0 0 0 1px var(--line);
+    font: 500 12px/16px var(--font-mono);
+  }
+  .shell p { margin: 0; }
+  .shell .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 500 13px/16px var(--font-sans); color: var(--ink); }
+  .shell .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shell .cmd { color: var(--ink-3); }
+  .out { list-style: none; margin: 0; padding: 0; min-height: 64px; display: flex; flex-direction: column; gap: 0; }
+  .out li { overflow-wrap: anywhere; }
+  .out li:not(:last-child) { color: var(--ink-3); }
+  /* The state, as the sidebar draws it: three dots in a wave while working,
+     a mint dot once done. */
+  .state { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 16px; flex: none; }
+  .wave { display: flex; gap: 2px; }
+  .wave i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: 0.35; animation: wave 1.4s ease-in-out infinite; }
+  .wave i:nth-child(2) { animation-delay: 0.18s; }
+  .wave i:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes wave { 50% { opacity: 1; } }
+  .dot { display: none; width: 7px; height: 7px; border-radius: 50%; }
+  [data-done] .wave { display: none; }
+  [data-done] .dot { display: block; }
+  @media (prefers-reduced-motion: reduce) { .wave i { animation: none; opacity: 0.6; } }
+  .keys { left: 50%; top: 120px; translate: -50% 0; }
+
+  @media (max-width: 760px) {
+    /* The window keeps its own width: it is a sidebar, not a stage's window. */
+    :global(.wl .win.wl-win) { width: 234px; }
+    .down { margin-bottom: 16px; }
+    .under::before { left: -16px; right: -16px; bottom: -16px; }
+    .stem { top: -48px; }
+    .lines { display: none; }
+    .keeper { margin-bottom: 24px; }
+    .shells { grid-template-columns: 1fr; gap: 16px; }
+    .wl-win { align-self: center; }
+    .gone { white-space: normal; width: max-content; max-width: calc(100% - 32px); text-align: center; }
+  }
+</style>
